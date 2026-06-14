@@ -156,7 +156,7 @@
    way third-party contributions do."
   []
   (module-loader/activate-server!)
-  (let [server-entry (get (module-loader/builtin-index) :isaac.server)
+  (let [server-entry (get (module-loader/builtin-index) :isaac.agent)
         contribs     (get-in server-entry [:manifest :isaac.agent/slash-commands])
         register   (some-> 'isaac.slash.registry/register-slash-entry!
                            requiring-resolve var-get)]

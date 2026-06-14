@@ -11,10 +11,7 @@
   (:require [c3kit.apron.schema :as schema]
             [c3kit.apron.schema.doc :as doc]
             [clojure.string :as s]
-            [isaac.config.cli.common :as cli-common]
-            ;; load-for-side-effect: registers the config validation lexicon
-            ;; that schema-compose checks contributions against.
-            [isaac.config.validation]))
+            [isaac.config.cli.common :as cli-common]))
 
 (defn- ansi [color? code text]
   (if color? (str "\033[" code "m" text "\033[0m") text))

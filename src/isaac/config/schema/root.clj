@@ -7,26 +7,23 @@
     [c3kit.apron.schema.path :as path]
     [clojure.edn :as edn]
     [clojure.string :as str]
-    [isaac.config.schema-base :as schema-base]
-    ;; load-for-side-effect: registers the config validation lexicon
-    ;; (:one-of?, :crew-exists?, …) that schema-compose checks against.
-    [isaac.config.validation]))
+    [isaac.config.schema-base :as schema-base]))
 
 (def ->id schema-base/->id)
 (def schema-fields schema-base/schema-fields)
 (def strip-validation-annotations schema-base/strip-validation-annotations)
 
-(defn- server-manifest []
+(defn- agent-manifest []
   (->> (enumeration-seq (.getResources (.getContextClassLoader (Thread/currentThread))
                                        "isaac-manifest.edn"))
        (map (fn [url] (edn/read-string (slurp url))))
-       (filter #(= :isaac.server (:id %)))
+       (filter #(= :isaac.agent (:id %)))
        first))
 
 (def contributions
   "The server module's :isaac.config/schema contribution map, keyed by
    top-level config key. Pure data — straight off the manifest."
-  (:isaac.config/schema (server-manifest)))
+  (:isaac.config/schema (agent-manifest)))
 
 (defn- table [config-key]
   (get-in contributions [config-key :schema]))

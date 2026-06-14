@@ -1,8 +1,14 @@
+/Users/micahmartin/agents/plan/isaac-server/modules/isaac.cron/deps.edn
 /Users/micahmartin/agents/plan/isaac/modules/marigold.longwave/deps.edn
+/Users/micahmartin/agents/plan/isaac-server/modules/isaac.host/deps.edn
+/Users/micahmartin/agents/plan/isaac-server/deps.edn
+/Users/micahmartin/agents/plan/isaac-server/modules/isaac.hail/deps.edn
 /Users/micahmartin/.gitlibs/libs/io.github.slagyr/gherclj/9c3bb1d50a6bc2aa7c6b52649c32e8a357f67d95/deps.edn
 /Users/micahmartin/agents/plan/isaac/modules/marigold.bridge/deps.edn
 /Users/micahmartin/agents/plan/isaac-foundation/deps.edn
 /Users/micahmartin/agents/plan/isaac/deps.edn
 /Users/micahmartin/agents/plan/isaac-foundation/spec/deps.edn
+/Users/micahmartin/agents/plan/isaac-server/modules/isaac.hooks/deps.edn
+/Users/micahmartin/agents/plan/isaac-agent/deps.edn
 /Users/micahmartin/agents/plan/isaac/modules/isaac.comm.telly/deps.edn
 /Users/micahmartin/.gitlibs/libs/io.github.cleancoders/c3kit-wire/1fae44425883a7605f0392b1fa22dc75aa920727/deps.edn
