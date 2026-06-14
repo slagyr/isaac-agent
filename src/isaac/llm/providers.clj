@@ -29,7 +29,7 @@
    berth epic moved the templates from the legacy top-level :provider
    key to the :isaac.agent/provider-template berth contribution."
   []
-  (let [server-entry (get (module-loader/builtin-index) :isaac.server)]
+  (let [server-entry (get (module-loader/builtin-index) :isaac.agent)]
     (normalize-manifest-providers (get-in server-entry [:manifest :isaac.agent/provider-template]))))
 
 ;; Overlay for dynamically-registered providers (tests / future plugins).
@@ -39,7 +39,7 @@
 (defn- effective-registry []
   (merge (core-catalog) @registry*))
 
-(def ^:private builtin-module-ids #{:isaac.foundation :isaac.server})
+(def ^:private builtin-module-ids #{:isaac.foundation :isaac.agent})
 
 (defn module-providers
   "Provider entries visible from third-party modules. Phase 7 of brth:
