@@ -132,6 +132,22 @@
           (should= :auth-missing (:error result))
           (should-contain "isaac auth login --provider chatgpt" (:message result)))))
 
+    (it "treats keyword :oauth-device auth like the string form"
+      (with-redefs [auth-store/load-tokens (fn [_ _ _] nil)]
+        (let [result (shared/missing-auth-error "chatgpt"
+                                                {:auth :oauth-device
+                                                 :root "/tmp/isaac-home/.isaac"})]
+          (should= :auth-missing (:error result))
+          (should-contain "isaac auth login --provider chatgpt" (:message result)))))
+
+    (it "treats schema-coerced :oauth-device string auth like oauth-device"
+      (with-redefs [auth-store/load-tokens (fn [_ _ _] nil)]
+        (let [result (shared/missing-auth-error "chatgpt"
+                                                {:auth ":oauth-device"
+                                                 :root "/tmp/isaac-home/.isaac"})]
+          (should= :auth-missing (:error result))
+          (should-contain "isaac auth login --provider chatgpt" (:message result)))))
+
     (it "does not fall back to user.home when oauth-device root is missing"
       (let [captured-auth-dir (atom ::unset)]
         (with-redefs [auth-store/load-tokens (fn [auth-dir _ _]

@@ -35,8 +35,19 @@
         (:chatgpt_account_id payload)
         (get payload "chatgpt_account_id"))))
 
+(defn- auth-mode [auth]
+  (when auth
+    (let [s (cond
+              (keyword? auth) (name auth)
+              (string? auth)  auth
+              :else           (str auth))]
+      (str/replace-first s #"^:" ""))))
+
+(defn- oauth-device-auth? [auth]
+  (= "oauth-device" (auth-mode auth)))
+
 (defn resolve-oauth-tokens [provider-name {:keys [auth] :as config}]
-  (when (= "oauth-device" auth)
+  (when (oauth-device-auth? auth)
     (when-let [root (or (:auth-dir config) (:root config))]
       (let [tokens (auth-store/load-tokens root provider-name (fs/instance))]
         (when (and tokens (not (auth-store/token-expired? tokens)))
@@ -65,7 +76,7 @@
     (:simulate-provider config)
     nil
 
-    (= "oauth-device" auth)
+    (oauth-device-auth? auth)
     (when-not (resolve-oauth-tokens provider-name config)
       {:error   :auth-missing
        :message "Missing OpenAI ChatGPT login. Run `isaac auth login --provider chatgpt` first."})
@@ -97,7 +108,7 @@
     (cond-> {"content-type" "application/json"}
       token                             (assoc "Authorization" (str "Bearer " token))
       account-id                        (assoc "ChatGPT-Account-Id" account-id)
-      (= "oauth-device" (:auth config)) (assoc "originator" "isaac"))))
+      (oauth-device-auth? (:auth config)) (assoc "originator" "isaac"))))
 
 ;; endregion ^^^^^ Auth ^^^^^
 
