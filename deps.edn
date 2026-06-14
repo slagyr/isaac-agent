@@ -9,7 +9,7 @@
 
  :aliases
  {:test {:extra-paths ["spec"]
-         :extra-deps  {io.github.slagyr/isaac-foundation-spec {:local/root "../isaac-foundation" :deps/root "spec"}
+         :extra-deps  {io.github.slagyr/isaac-foundation-spec {:local/root "../isaac-foundation/spec"}
                        speclj/speclj                          {:mvn/version "3.13.0"}
                        babashka/process                       {:mvn/version "0.5.22"}
                        io.github.slagyr/gherclj               {:git/tag "v1.3.0" :git/sha "9c3bb1d"}
@@ -20,7 +20,7 @@
                        isaac.comm.telly/isaac.comm.telly      {:local/root "../isaac/modules/isaac.comm.telly"}}}
 
   :spec {:extra-paths ["spec"]
-         :extra-deps  {io.github.slagyr/isaac-foundation-spec {:local/root "../isaac-foundation" :deps/root "spec"}
+         :extra-deps  {io.github.slagyr/isaac-foundation-spec {:local/root "../isaac-foundation/spec"}
                        speclj/speclj                          {:mvn/version "3.13.0"}
                        babashka/process                       {:mvn/version "0.5.22"}
                        io.github.slagyr/gherclj               {:git/tag "v1.3.0" :git/sha "9c3bb1d"}
@@ -32,7 +32,7 @@
          :main-opts   ["-m" "speclj.main" "-c" "-D" "spec"]}
 
   :features {:extra-paths ["spec"]
-             :extra-deps  {io.github.slagyr/isaac-foundation-spec {:local/root "../isaac-foundation" :deps/root "spec"}
+             :extra-deps  {io.github.slagyr/isaac-foundation-spec {:local/root "../isaac-foundation/spec"}
                            speclj/speclj                          {:mvn/version "3.13.0"}
                            babashka/process                       {:mvn/version "0.5.22"}
                            io.github.slagyr/gherclj               {:git/tag "v1.3.0" :git/sha "9c3bb1d"}
