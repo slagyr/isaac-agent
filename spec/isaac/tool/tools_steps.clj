@@ -33,6 +33,13 @@
       (isaac-fs/real-fs)))
 
 (defn- ensure-feature-fs! []
+  ;; When a scenario installs no in-memory fs of its own, fall back to the
+  ;; real filesystem rather than whatever mem-fs a previous feature left
+  ;; registered in the process-global nexus. Without this, tool scenarios
+  ;; that read real system paths (e.g. /etc/hosts) intermittently failed
+  ;; depending on run order.
+  (when (nil? (g/get :mem-fs))
+    (nexus/deregister! [:fs]))
   (let [fs* (feature-fs)]
     (nexus/register! [:fs] fs*)
     fs*))

@@ -11,6 +11,7 @@
     [isaac.config.resolve :as resolve]
     [isaac.config.runtime :as runtime]
     [isaac.foundation.root-steps :as froot]
+    [isaac.foundation.fs-steps :as ffs]
     [isaac.drive.dispatch :as drive-dispatch]
     [isaac.step-tables :as match]
     [isaac.fs :as fs]
@@ -288,8 +289,18 @@
           content))
       (some-> content (str/replace "\\n" "\n")))))
 
+(defn- last-llm-request
+  "The captured LLM request for prompt assertions. The `the user sends`
+   path stores it in :llm-request, but the `isaac is run with` (CLI) path
+   drives prompt-cli/run without a postflight to capture it. Fall back to
+   the process-global last request recorded by drive.dispatch so CLI-run
+   scenarios still see the request the agent actually sent."
+  []
+  (or (g/get :llm-request)
+      (drive-dispatch/last-request)))
+
 (defn- prompt-tools []
-  (vec (or (:tools (g/get :llm-request)) [])))
+  (vec (or (:tools (last-llm-request)) [])))
 
 (defn- prompt-tool-name [tool]
   (or (:name tool)
@@ -477,6 +488,114 @@
       (when-not (tool-registry/lookup (:name tool))
         (tool-registry/register! (assoc tool :handler (fn [_] {:result "ok"})))))
     (update-crew-config! crew-id #(assoc % :tools {:allow allow}))))
+
+(defn- config-applied-value [v]
+  (cond
+    (re-matches #"-?\d+" v)                 (parse-long v)
+    (= "true" (str/lower-case v))           true
+    (= "false" (str/lower-case v))          false
+    (or (str/starts-with? v "[")
+        (str/starts-with? v "{")
+        (str/starts-with? v ":")
+        (str/starts-with? v "\""))          (try (edn/read-string v)
+                                                 (catch Exception _ v))
+    :else                                   v))
+
+(defn- persist-config-entry! [k v]
+  (when-let [root (root-dir)]
+    (with-feature-fs
+      (fn []
+        (let [path    (str root "/config/isaac.edn")
+              fs*     (mem-fs)
+              current (if (fs/exists? fs* path) (edn/read-string (fs/slurp fs* path)) {})
+              kpath   (mapv keyword (str/split k #"\."))
+              updated (assoc-in current kpath (config-applied-value v))]
+          (fs/mkdirs fs* (fs/parent path))
+          (fs/spit   fs* path (pr-str updated))
+          (invalidate-feature-config!))))))
+
+(defn config-applied
+  "Background step `config:`/`And config:` — applies a table of harness
+   settings. `log.output` routes the in-memory logger so `the log has
+   entries matching:` can read structured entries. `bind-server-port` is
+   a server-only concern and is ignored here. Every other dotted key
+   (e.g. `prompt-paths`, `crew.main.soul`) is persisted into the on-disk
+   `config/isaac.edn` so config-reading steps (the catalog resolver,
+   loaded-config-has, …) observe it. The carve dropped this step
+   definition, so features whose Background is `config: | … |` silently
+   ran without it; `default-grover-setup` happens to set :memory logging
+   as a side effect, which is why grover-backed log features still passed."
+  [table]
+  ;; gherclj headerless tables put the lone key/value pair in :headers
+  ;; (e.g. `| prompt-paths | [...] |`), while tables with an explicit
+  ;; `| key | value |` header carry the pairs in :rows. Treat the
+  ;; :headers as a data pair unless it's the literal key/value header.
+  (let [header     (:headers table)
+        header-pair (when (and (= 2 (count header))
+                               (not (and (= "key" (first header))
+                                         (= "value" (second header)))))
+                      [header])]
+    (doseq [[k v] (map (fn [row] [(first row) (second row)])
+                       (concat header-pair (:rows table)))]
+      (cond
+      ;; gherclj passes a flattened key/value table; a stray header row
+      ;; ("key"/"value") can sneak in when two tables are concatenated.
+      (or (str/blank? (str k)) (= "key" k))
+      nil
+
+      (= "log.output" k)
+      (do (log/set-output! (keyword v))
+          (log/clear-entries!))
+
+      (= "bind-server-port" k)
+      nil
+
+      :else
+      (persist-config-entry! k v)))))
+
+;; Agent-local hot-reload wiring. The server-tier `the Isaac server is
+;; started` step (which owns the async config watcher loop) lives in
+;; isaac-server, off the agent's classpath. We register a single
+;; foundation post-write hook at load time that — when a scenario has
+;; "started the server" by setting :config-change-source — drives a
+;; synchronous reload through the agent's own runtime/reload! whenever a
+;; config file is written. This exercises the reload / parse-rejection /
+;; validation-rejection paths without booting a full server.
+(ffs/register-post-write-hook!
+  (fn [path]
+    (when-let [source (g/get :config-change-source)]
+      (let [root (g/get :server-root)
+            fs*  (mem-fs)]
+        (nexus/-with-nested-nexus {:fs fs*}
+          (runtime/notify-path! source path)
+          (loop []
+            (when-let [rel (runtime/poll! source)]
+              (let [comm-reg @comm-registry/*registry*]
+                (runtime/reload! {:root          root
+                                  :fs            fs*
+                                  :old-config    (loader/snapshot "feature: reload old-config")
+                                  :comm-registry comm-reg
+                                  :registries    [comm-reg]
+                                  :host          {:module-index (module-loader/builtin-index)}
+                                  :path          rel}))
+              (recur))))))))
+
+(defn server-started
+  "Agent-local stand-in for the server-tier `the Isaac server is started`
+   Background step. Commits the on-disk config as the live snapshot and
+   arms the load-time post-write hook by storing a memory change-source as
+   :config-change-source. Reload itself is driven synchronously by that
+   hook (see above) on each subsequent config write."
+  []
+  (let [root (root-dir)
+        fs*  (mem-fs)]
+    ;; Commit the starting config so rejected reloads leave the prior
+    ;; snapshot in place for `the loaded config has:` to read.
+    (config/dangerously-install-config!
+      (:config (loader/load-config-result {:root root :fs fs*}))
+      "feature: Isaac server started")
+    (g/assoc! :server-root root)
+    (g/assoc! :config-change-source (runtime/memory-source root))))
 
 (defn crew-tool-allow [crew-id tools-str]
   (with-feature-fs
@@ -1176,11 +1295,11 @@
     (g/should= expected actual)))
 
 (defn system-prompt-contains [text]
-  (let [prompt (get-in (g/get :llm-request) [:messages 0 :content])]
+  (let [prompt (get-in (last-llm-request) [:messages 0 :content])]
     (g/should (str/includes? (or prompt "") text))))
 
 (defn system-prompt-not-contains [text]
-  (let [prompt (get-in (g/get :llm-request) [:messages 0 :content])]
+  (let [prompt (get-in (last-llm-request) [:messages 0 :content])]
     (g/should-not (str/includes? (or prompt "") text))))
 
 (defn last-compaction-request-input-contains [text]
@@ -1281,6 +1400,16 @@
 
 ;; "an (empty) Isaac root at" / "an empty Isaac state directory" routing
 ;; moved to isaac.foundation.root-steps.
+
+(defgiven "the Isaac server is started" isaac.session.session-steps/server-started
+  "Agent-local stand-in for the server-tier step: commits the current
+   on-disk config as the snapshot and arms synchronous hot reload so
+   later config writes drive runtime/reload!.")
+
+(defgiven "config:" isaac.session.session-steps/config-applied
+  "Applies a key/value table of harness settings. Supports log.output
+   (routes the in-memory logger). Lets log-assertion features that don't
+   run 'default Grover setup' still capture structured log entries.")
 
 (defgiven "default Grover setup" isaac.session.session-steps/default-grover-setup
   "One-line Background: in-memory state dir at target/test-state plus

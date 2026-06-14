@@ -187,9 +187,9 @@ Feature: Config Command
 
   Scenario: validate reports unknown tool refs with file and valid set
     # Phase 6 of the berth epic (isaac-w7o5) replaced the legacy
-    # :tool-exists? validator with [:registered-in? :isaac.server/tools].
+    # :tool-exists? validator with [:registered-in? :isaac.agent/tools].
     # The new validator says "must be a registered contribution to
-    # :isaac.server/tools" rather than "references undefined tool", but
+    # :isaac.agent/tools" rather than "references undefined tool", but
     # still reports the bad value, source file, and known-set.
     Given config file "isaac.edn" containing:
       """
@@ -205,7 +205,7 @@ Feature: Config Command
     Then the stderr matches:
       | pattern                                                  |
       | crew\.main\.tools\.allow                                |
-      | must be a registered contribution to :isaac.server/tools |
+      | must be a registered contribution to :isaac.agent/tools |
       | bad value: bogus-tool                                    |
       | file: config/crew/main\.edn                              |
       | valid: .*read.*                                          |
