@@ -71,10 +71,6 @@
   {:usage "auth <subcommand> [options]",
    :summary "Manage authentication credentials",
    :namespace isaac.llm.auth.cli},
-  :config
-  {:usage "config <subcommand> [options]",
-   :summary "Inspect and validate Isaac configuration",
-   :namespace isaac.config.cli.command},
   :crew
   {:usage "crew",
    :summary "List configured crew members",
