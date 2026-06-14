@@ -138,14 +138,14 @@
 
     (it "activates a module when an allowed tool is missing from the registry"
       (module-loader/clear-activations!)
-      (let [module-index {:isaac.module.tool-test {:manifest {:isaac.server/tools {:echo_mod {:factory 'isaac.module.tool-test/tool-spec}}}}}
+      (let [module-index {:isaac.module.tool-test {:manifest {:isaac.agent/tools {:echo_mod {:factory 'isaac.module.tool-test/tool-spec}}}}}
             result      (sut/execute "echo_mod" {:msg "hi"} #{"echo_mod"} module-index)]
         (should= "module:hi" (:result result))
         (should-not-be-nil (sut/lookup "echo_mod"))))
 
     (it "registers a factory-returned tool spec using user-config"
       (module-loader/clear-activations!)
-      (let [module-index {:isaac.tool.doodad {:manifest {:isaac.server/tools {:doodad {:factory 'isaac.tool.registry-spec/doodad-tool
+      (let [module-index {:isaac.tool.doodad {:manifest {:isaac.agent/tools {:doodad {:factory 'isaac.tool.registry-spec/doodad-tool
                                                                                        :schema  {:api-key {:type :string}}}}}}}]
         (nexus/-with-nexus {:tool-registry (atom {})
                              :config        (atom {:tools {:doodad {:api-key "shazam"}}})}

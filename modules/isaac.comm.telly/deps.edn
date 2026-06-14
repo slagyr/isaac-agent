@@ -1,0 +1,5 @@
+{:paths ["src" "resources" "spec"]
+ :deps  {io.github.slagyr/isaac    {:local/root "../.."}
+         speclj/speclj             {:mvn/version "3.13.0"}
+         babashka/process          {:mvn/version "0.5.22"}
+         io.github.slagyr/gherclj  {:git/tag "v1.2.0" :git/sha "de202c8"}}}

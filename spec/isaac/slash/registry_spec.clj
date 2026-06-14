@@ -76,7 +76,7 @@
         (should= "echo" (:name (sut/lookup "echo" module-index))))))
 
   (it "registers a berth command under its berth-key name"
-    (let [module-index {:isaac.slash.echo {:manifest {:isaac.server/slash-commands {:echo {:factory 'isaac.slash.registry-spec/echo-command}}}}}]
+    (let [module-index {:isaac.slash.echo {:manifest {:isaac.agent/slash-commands {:echo {:factory 'isaac.slash.registry-spec/echo-command}}}}}]
       (nexus/-with-nexus {:config (atom {})
                            :fs (fs/mem-fs)}
         (module-loader/clear-activations!)

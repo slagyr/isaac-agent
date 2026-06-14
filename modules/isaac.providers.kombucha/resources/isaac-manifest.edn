@@ -1,0 +1,14 @@
+{:id      :isaac.providers.kombucha
+ :version "0.1.0"
+ :factory isaac.module.protocol/module
+
+ ;; Provider templates contribute to isaac.foundation's
+ ;; :isaac.agent/provider-template berth (phase 7 of the berth epic).
+ ;; The user instantiates a kombucha provider in their :providers
+ ;; config and inherits this template via :type :kombucha.
+ :isaac.agent/provider-template
+ {:kombucha {:template {:api      "chat-completions"
+                        :base-url "https://api.kombucha.test/v1"
+                        :auth     "api-key"
+                        :models   ["kombucha-large" "kombucha-small"]}
+             :schema   {:fizz-level {:type :int}}}}}

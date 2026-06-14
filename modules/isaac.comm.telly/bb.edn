@@ -1,0 +1,24 @@
+{:paths ["src" "resources" "spec"]
+
+ :deps  {io.github.slagyr/isaac    {:local/root "../.."}
+         speclj/speclj             {:mvn/version "3.13.0"}
+         babashka/process          {:mvn/version "0.5.22"}
+         io.github.slagyr/gherclj  {:git/tag "v1.1.1" :git/sha "02636df"}}
+
+ :tasks
+ {spec     {:doc      "Run telly specs (in-process)"
+            :requires ([speclj.main :as speclj])
+            :task     (apply speclj/-main "-c" "-D" "spec" *command-line-args*)}
+
+  features {:doc      "Run telly features (in-process; excludes @slow and @wip)"
+            :requires ([gherclj.main :as main])
+            :task     (let [feature-args (if (seq *command-line-args*)
+                                           *command-line-args*
+                                           (->> (file-seq (java.io.File. "features"))
+                                                (filter (fn [f] (.isFile f)))
+                                                (map (fn [f] (.getPath f)))
+                                                (filter (fn [p] (clojure.string/ends-with? p ".feature")))
+                                                sort))]
+                        (apply main/-main (concat ["-s" "isaac.features.steps.*"]
+                                                  ["-t" "~slow" "-t" "~wip"]
+                                                  feature-args)))}}}
