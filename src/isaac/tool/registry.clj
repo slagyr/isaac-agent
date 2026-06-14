@@ -37,7 +37,7 @@
   (swap! (registry-atom) assoc name tool))
 
 (defn register-tool-entry!
-  "Per-entry factory for the :isaac.server/tools berth (phase 6 of
+  "Per-entry factory for the :isaac.agent/tools berth (phase 6 of
    the berth epic). The berth processor passes `[tool-id entry-map]`
    for :map-shaped contributions; this fn resolves the entry's
    :factory symbol, applies the user-config slot for the tool, and
@@ -65,10 +65,10 @@
   ;; extensions), call the berth's per-entry factory directly so the
   ;; single tool lands in the registry without paying for a full
   ;; process-manifest-berths! sweep.
-  (when-let [module-id (module-loader/supporting-module-id module-index :isaac.server/tools name)]
+  (when-let [module-id (module-loader/supporting-module-id module-index :isaac.agent/tools name)]
     (module-loader/activate! module-id module-index)
     (let [tool-kw (keyword name)
-          entry   (get-in module-index [module-id :manifest :isaac.server/tools tool-kw])]
+          entry   (get-in module-index [module-id :manifest :isaac.agent/tools tool-kw])]
       (when entry
         (register-tool-entry! [tool-kw entry])))
     (lookup name)))

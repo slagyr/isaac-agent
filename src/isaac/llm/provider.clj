@@ -94,14 +94,14 @@
         api-id       (api/resolve-api name cfg)
         factory      (or (api/factory-for api-id)
                          ;; Phase 7 of brth (isaac-ho18): api registrations
-                         ;; flow through the :isaac.server/llm-api berth
+                         ;; flow through the :isaac.agent/llm-api berth
                          ;; factory rather than activate!'s register-extensions!
                          ;; pass. Activate the providing module (for its
                          ;; bootstrap), then invoke the berth's per-entry
                          ;; factory directly so the api lands in api/-registry.
-                         (when-let [module-id (module-loader/supporting-module-id module-index :isaac.server/llm-api api-id)]
+                         (when-let [module-id (module-loader/supporting-module-id module-index :isaac.agent/llm-api api-id)]
                            (module-loader/activate! module-id module-index)
-                           (let [entry (get-in module-index [module-id :manifest :isaac.server/llm-api (keyword api-id)])]
+                           (let [entry (get-in module-index [module-id :manifest :isaac.agent/llm-api (keyword api-id)])]
                              (when entry
                                (api/register-api-entry! [(keyword api-id) entry])))
                            (api/factory-for api-id)))]

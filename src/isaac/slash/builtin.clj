@@ -151,13 +151,13 @@
 (defn ensure-registered!
   "Make sure isaac.foundation's slash commands are installed in the slash
    registry. Phase 7 of the berth epic (isaac-ho18) moved slash-command
-   registration into the :isaac.server/slash-commands berth, so the
+   registration into the :isaac.agent/slash-commands berth, so the
    built-ins now flow through the berth's per-entry factory the same
    way third-party contributions do."
   []
   (module-loader/activate-server!)
   (let [server-entry (get (module-loader/builtin-index) :isaac.server)
-        contribs     (get-in server-entry [:manifest :isaac.server/slash-commands])
+        contribs     (get-in server-entry [:manifest :isaac.agent/slash-commands])
         register   (some-> 'isaac.slash.registry/register-slash-entry!
                            requiring-resolve var-get)]
     (doseq [entry contribs]

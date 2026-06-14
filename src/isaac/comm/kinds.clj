@@ -1,6 +1,6 @@
 (ns isaac.comm.kinds
   "Enumerate user-configurable comm kinds from the manifest index. Comm is an
-   agent-owned berth (:isaac.server/comm); this manifest-reading helper lives
+   agent-owned berth (:isaac.agent/comm); this manifest-reading helper lives
    with it rather than in the HTTP server module."
   (:require
     [isaac.module.loader :as module-loader]))
@@ -12,7 +12,7 @@
   ([] (comm-kinds (module-loader/builtin-index)))
   ([module-index]
    (->> (vals module-index)
-        (mapcat #(get-in % [:manifest :isaac.server/comm]))
+        (mapcat #(get-in % [:manifest :isaac.agent/comm]))
         (remove (fn [[_ v]] (false? (:configurable? v))))
         (map (fn [[k _]] (name k)))
         sort

@@ -181,7 +181,7 @@
     provider-key))
 
 (defn register-api-entry!
-  "Per-entry factory for the :isaac.server/llm-api berth (phase 7 of
+  "Per-entry factory for the :isaac.agent/llm-api berth (phase 7 of
    the berth epic). Receives `[api-id entry]`; resolves the entry's
    symbol-valued :factory and registers it under api-id."
   [[api-id entry]]

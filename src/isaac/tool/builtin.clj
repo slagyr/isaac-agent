@@ -159,9 +159,9 @@
   (when-let [spec (get built-in-tool-specs tool-name)]
     (if-let [pred (:available? spec)]
       (if (pred)
-        (module-loader/register-builtin-berth-entry! :isaac.server/tools tool-name)
+        (module-loader/register-builtin-berth-entry! :isaac.agent/tools tool-name)
         (log/warn :tool/register-skipped :tool tool-name :reason "available? returned false"))
-      (module-loader/register-builtin-berth-entry! :isaac.server/tools tool-name))))
+      (module-loader/register-builtin-berth-entry! :isaac.agent/tools tool-name))))
 
 (defn register-all!
   "Register all built-in tools with the tool registry.

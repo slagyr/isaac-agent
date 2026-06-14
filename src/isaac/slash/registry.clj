@@ -39,14 +39,14 @@
   ;; factory. Activate each module for its bootstrap + non-slash
   ;; extensions, then install slash entries directly.
   (doseq [[module-id entry] module-index
-          :let [contribs (get-in entry [:manifest :isaac.server/slash-commands])]
+          :let [contribs (get-in entry [:manifest :isaac.agent/slash-commands])]
           :when (seq contribs)]
     (module-loader/activate! module-id module-index)
     (doseq [pair contribs]
       (register-slash-entry! pair))))
 
 (defn register-slash-entry!
-  "Per-entry factory for the :isaac.server/slash-commands berth (phase 7
+  "Per-entry factory for the :isaac.agent/slash-commands berth (phase 7
    of the berth epic). Receives `[command-id entry]`; resolves the
    entry's symbol-valued :factory and registers the resulting spec under
    the berth key — the command's name."
