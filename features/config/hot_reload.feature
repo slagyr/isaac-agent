@@ -34,7 +34,7 @@ Feature: Config hot-reload
       | path  | value                            |
       | model | grover                           |
       | soul  | Keep the Marigold on course. |
-    And the Isaac server is started
+    And the Isaac config harness is started
 
   Scenario: a change under config/ fires a reload and updates the cfg
     When the isaac EDN file "config/crew/cordelia.edn" exists with:

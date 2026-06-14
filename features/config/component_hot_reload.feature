@@ -14,7 +14,7 @@ Feature: Hot reload of config-driven components
       | hooks.cage-check.template    | Brain checks the lock: {{status}} |
       | hooks.cage-check.session-key | hook:cage-check                   |
       | hooks.cage-check.crew        | main                              |
-    And the Isaac server is started
+    And the Isaac config harness is started
     And the hook "cage-check" registry entry has:
       | path     | value                             |
       | template | Brain checks the lock: {{status}} |
@@ -31,7 +31,7 @@ Feature: Hot reload of config-driven components
       | cron.evening-plan.expr   | 0 21 * * *                              |
       | cron.evening-plan.crew   | main                                    |
       | cron.evening-plan.prompt | What are we going to do tonight, Brain? |
-    And the Isaac server is started
+    And the Isaac config harness is started
     And the cron job "evening-plan" has:
       | path   | value                                   |
       | prompt | What are we going to do tonight, Brain? |

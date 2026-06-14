@@ -27,7 +27,7 @@ Feature: Config hot-reload integration
       | path  | value                              |
       | model | grover                             |
       | soul  | Keep the Marigold on course. |
-    And the Isaac server is started
+    And the Isaac config harness is started
 
   Scenario: the real watcher picks up an on-disk change within the timeout
     When the isaac EDN file "config/crew/cordelia.edn" exists with:

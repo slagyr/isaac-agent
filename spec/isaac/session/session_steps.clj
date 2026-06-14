@@ -1401,10 +1401,10 @@
 ;; "an (empty) Isaac root at" / "an empty Isaac state directory" routing
 ;; moved to isaac.foundation.root-steps.
 
-(defgiven "the Isaac server is started" isaac.session.session-steps/server-started
-  "Agent-local stand-in for the server-tier step: commits the current
-   on-disk config as the snapshot and arms synchronous hot reload so
-   later config writes drive runtime/reload!.")
+(defgiven "the Isaac config harness is started" isaac.session.session-steps/server-started
+  "Agent-local stand-in for the server-tier `the Isaac server is started`
+   step: commits the current on-disk config as the snapshot and arms
+   synchronous hot reload so later config writes drive runtime/reload!.")
 
 (defgiven "config:" isaac.session.session-steps/config-applied
   "Applies a key/value table of harness settings. Supports log.output
