@@ -1,5 +1,0 @@
-(ns core)
-(defn before [x] x)
-(defn target [x] x)
-(defn after [x] x)
-(def tail 1)
