@@ -8,7 +8,6 @@
     [isaac.bridge.prompt-cli :as sut]
     [isaac.config.loader :as loader]
     [isaac.config.runtime :as runtime]
-    [isaac.server.routes]
     [isaac.session.spec-helper :as helper]
     [isaac.session.context :as session-ctx]
     [isaac.session.store.spi :as store]

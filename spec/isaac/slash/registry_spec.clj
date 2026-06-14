@@ -4,7 +4,6 @@
     [isaac.nexus :as nexus]
     [isaac.logger :as log]
     [isaac.module.loader :as module-loader]
-    [isaac.server.routes]
     [isaac.slash.registry :as sut]
     [speclj.core :refer :all]))
 

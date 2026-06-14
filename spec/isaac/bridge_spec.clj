@@ -11,7 +11,6 @@
     [isaac.bridge.status :as bridge-status]
     [isaac.drive.turn :as single-turn]
     [isaac.marigold :as marigold]
-    [isaac.server.routes]
     [isaac.session.store.spi :as store]
     [isaac.session.spec-helper :as helper]
     [isaac.nexus :as nexus]

@@ -3,7 +3,6 @@
     [isaac.config.api :as config]
     [isaac.fs :as fs]
     [isaac.marigold :as marigold]
-    [isaac.server.routes]
     [isaac.session.store.spi :as store]
     [isaac.session.spec-helper :as helper]
     [isaac.session.context :as sut]

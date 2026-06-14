@@ -6,7 +6,6 @@
     [isaac.config.loader :as loader]
     [isaac.drive.turn :as single-turn]
     [isaac.marigold :as marigold]
-    [isaac.server.routes]
     [isaac.session.spec-helper :as helper]
     [speclj.core :refer :all]))
 
