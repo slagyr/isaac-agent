@@ -7,7 +7,10 @@
     [c3kit.apron.schema.path :as path]
     [clojure.edn :as edn]
     [clojure.string :as str]
-    [isaac.config.schema-base :as schema-base]))
+    [isaac.config.schema-base :as schema-base]
+    ;; load-for-side-effect: registers the config validation lexicon
+    ;; (:one-of?, :crew-exists?, …) that schema-compose checks against.
+    [isaac.config.validation]))
 
 (def ->id schema-base/->id)
 (def schema-fields schema-base/schema-fields)
