@@ -3,12 +3,13 @@
     [isaac.fs :as fs]
     [isaac.llm.providers :as sut]
     [isaac.marigold :as marigold]
+    [isaac.marigold.agent :as marigold.agent]
     [isaac.nexus :as nexus]
     [speclj.core :refer [after around describe it should-be-nil should-contain should=]]))
 
 (describe "isaac.llm.providers"
 
-  (marigold/with-apis)
+  (marigold.agent/with-apis)
 
   #_{:clj-kondo/ignore [:unresolved-symbol]}
   (around [example]

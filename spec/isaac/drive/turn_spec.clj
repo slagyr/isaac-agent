@@ -14,6 +14,7 @@
     [isaac.llm.tool-loop :as tool-loop]
     [isaac.logger :as log]
     [isaac.marigold :as marigold]
+    [isaac.marigold.agent :as marigold.agent]
     [isaac.session.context :as session-ctx]
     [isaac.session.store.spi :as store]
     [isaac.session.store.sidecar :as sidecar-store]
@@ -61,7 +62,7 @@
 
 (describe "turn usage"
 
-  (marigold/with-manifest)
+  (marigold.agent/with-manifest)
 
   (describe "normalize-usage"
     (it "normalizes provider usage aliases into transcript-friendly keys"
