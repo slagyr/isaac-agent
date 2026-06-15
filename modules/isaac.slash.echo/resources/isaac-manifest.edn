@@ -1,0 +1,6 @@
+{:id      :isaac.slash.echo
+ :version "0.1.0"
+ :factory isaac.module.protocol/module
+
+ :isaac.agent/slash-commands
+ {:echo {:factory isaac.slash.echo/echo-command}}}

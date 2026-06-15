@@ -33,7 +33,10 @@
                                                                 :git/tag "v0.1.0"
  :git/sha "535ce491e45875ac97bf97a4b2306def7bb82a7c"
                                                                 :deps/root "modules/marigold.longwave"}
-                       isaac.comm.telly/isaac.comm.telly      {:local/root "modules/isaac.comm.telly"}}}
+                       isaac.comm.telly/isaac.comm.telly      {:local/root "modules/isaac.comm.telly"}
+                       isaac.providers.kombucha/isaac.providers.kombucha {:local/root "modules/isaac.providers.kombucha"}
+                       isaac.slash.echo/isaac.slash.echo    {:local/root "modules/isaac.slash.echo"}
+                       isaac.api.tin-can/isaac.api.tin-can  {:local/root "modules/isaac.api.tin-can"}}}
 
   :spec {:extra-paths ["spec"]
          :extra-deps  {io.github.slagyr/isaac-foundation-spec {:git/url "https://github.com/slagyr/isaac-foundation.git"
@@ -53,7 +56,10 @@
                                                                 :git/tag "v0.1.0"
  :git/sha "535ce491e45875ac97bf97a4b2306def7bb82a7c"
                                                                 :deps/root "modules/marigold.longwave"}
-                       isaac.comm.telly/isaac.comm.telly      {:local/root "modules/isaac.comm.telly"}}
+                       isaac.comm.telly/isaac.comm.telly      {:local/root "modules/isaac.comm.telly"}
+                       isaac.providers.kombucha/isaac.providers.kombucha {:local/root "modules/isaac.providers.kombucha"}
+                       isaac.slash.echo/isaac.slash.echo    {:local/root "modules/isaac.slash.echo"}
+                       isaac.api.tin-can/isaac.api.tin-can  {:local/root "modules/isaac.api.tin-can"}}
          :main-opts   ["-m" "speclj.main" "-c" "-D" "spec"]}
 
   :features {:extra-paths ["spec"]
@@ -74,7 +80,10 @@
                                                                     :git/tag "v0.1.0"
  :git/sha "535ce491e45875ac97bf97a4b2306def7bb82a7c"
                                                                     :deps/root "modules/marigold.longwave"}
-                           isaac.comm.telly/isaac.comm.telly      {:local/root "modules/isaac.comm.telly"}}
+                           isaac.comm.telly/isaac.comm.telly      {:local/root "modules/isaac.comm.telly"}
+                           isaac.providers.kombucha/isaac.providers.kombucha {:local/root "modules/isaac.providers.kombucha"}
+                           isaac.slash.echo/isaac.slash.echo    {:local/root "modules/isaac.slash.echo"}
+                           isaac.api.tin-can/isaac.api.tin-can  {:local/root "modules/isaac.api.tin-can"}}
              :main-opts   ["-m" "gherclj.main"
                            "-f" "features"
                            "-s" "isaac.**-steps"

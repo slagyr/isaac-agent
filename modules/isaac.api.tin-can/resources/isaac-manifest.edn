@@ -1,0 +1,5 @@
+{:id      :isaac.api.tin-can
+ :version "0.1.0"
+ :factory isaac.module.protocol/module
+
+ :isaac.agent/llm-api {:tin-can {:factory isaac.api.tin-can/make}}}
