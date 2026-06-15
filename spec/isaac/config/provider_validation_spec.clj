@@ -42,4 +42,12 @@
                  :bad-value    "ghost-provider"
                  :valid-values known-providers}]
                (mapv #(select-keys % [:key :value :bad-value :valid-values])
-                     (filter #(= "providers.dreamy.type" (:key %)) (:errors result)))))))
+                     (filter #(= "providers.dreamy.type" (:key %)) (:errors result))))))
+
+  (it "rejects a typed provider when auth api-key is inherited but api-key is missing"
+    (marigold/write-config!
+      {:providers {:dreamy {:type :helm-systems}}})
+    (let [result (marigold/load-config)]
+      (should (some #(and (= "providers.dreamy.api-key" (:key %))
+                          (re-find #"is required when auth is api-key" (:value %)))
+                    (:errors result))))))
