@@ -85,6 +85,11 @@
    processes manifest berths, starts modules, and reconciles comm
    slots so :comm/activated entries appear in the log.")
 
+(defwhen "the Isaac server is started" isaac.agent.module-steps/isaac-process-started
+  "Agent-local alias for the monolith server boot step. Same runtime
+   install path — comm berth reconciliation triggers lazy module
+   activation on first slot use.")
+
 (defthen "the available slash commands include:" isaac.agent.module-steps/available-slash-commands-include
   "Asserts each table row matches a registered slash command (built-ins
    and module-declared) after lazy module activation.")
