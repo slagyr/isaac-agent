@@ -48,5 +48,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-clojure-agent-
 
-      - name: Run bb ci
-        run: bb ci
+      - name: Run specs
+        run: clojure -M:spec
+
+      - name: Run features
+        run: clojure -M:features
