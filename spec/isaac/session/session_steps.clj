@@ -553,6 +553,10 @@
       :else
       (persist-config-entry! k v)))))
 
+(defn isaac-config-path-is [path value]
+  (when-not (str/blank? (or value ""))
+    (persist-config-entry! path value)))
+
 ;; Agent-local hot-reload wiring. The server-tier `the Isaac server is
 ;; started` step (which owns the async config watcher loop) lives in
 ;; isaac-server, off the agent's classpath. We register a single
@@ -1410,6 +1414,11 @@
   "Applies a key/value table of harness settings. Supports log.output
    (routes the in-memory logger). Lets log-assertion features that don't
    run 'default Grover setup' still capture structured log entries.")
+
+(defgiven #"the isaac config path \"([^\"]+)\" is \"([^\"]*)\"" isaac.session.session-steps/isaac-config-path-is
+  "Persists one dotted config path into config/isaac.edn under the
+   current feature root so behavior-resolution scenarios can rewrite
+   defaults, crew, model, and provider values incrementally.")
 
 (defgiven "default Grover setup" isaac.session.session-steps/default-grover-setup
   "One-line Background: in-memory state dir at target/test-state plus

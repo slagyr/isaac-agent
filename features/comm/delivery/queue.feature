@@ -87,7 +87,7 @@ Feature: Delivery queue
       | error | :delivery/dead-lettered | 7f3a | :permanent |
 
   Scenario: delivery worker tick is registered with the shared scheduler
-    When the Isaac system is started
-    Then the scheduled tasks include:
+    When the comm delivery system is started
+    Then the delivery scheduled tasks include:
       | id            | trigger.kind | trigger.ms |
       | delivery/tick | interval     | 10000      |

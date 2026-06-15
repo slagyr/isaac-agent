@@ -78,6 +78,17 @@
         output   (fcli/await-text current-reply #(str/includes? % expected))]
     (g/should (str/includes? output expected))))
 
+(defn reply-matches [table]
+  (let [output   (or (current-reply) "")
+        patterns (fcli/extract-patterns table)]
+    (doseq [pattern patterns]
+      (g/should (re-find (re-pattern pattern) output)))))
+
+(defn reply-does-not-contain [expected]
+  (let [output   (current-reply)
+        expected (fcli/unescape-expected expected)]
+    (g/should-not (str/includes? (or output "") expected))))
+
 ;; region ----- Routing -----
 
 (defwhen "the Isaac process is started" isaac.agent.module-steps/isaac-process-started
@@ -97,5 +108,11 @@
 (defthen "the reply contains {expected:string}" isaac.agent.module-steps/reply-contains
   "Polls up to 1s for the user-visible reply (bridge/comm result or CLI
    output) to contain the substring.")
+
+(defthen "the reply matches:" isaac.agent.module-steps/reply-matches
+  "Comm-neutral regex match against the current reply text.")
+
+(defthen "the reply does not contain {expected:string}" isaac.agent.module-steps/reply-does-not-contain
+  "Asserts the current reply omits the substring.")
 
 ;; endregion ^^^^^ Routing ^^^^^
