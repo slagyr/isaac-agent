@@ -143,18 +143,4 @@
     (it "falls back from simulated provider ids to the base provider config"
       (let [cfg {:providers {marigold/grover-api {:api marigold/grover-api :effort 3}}}]
         (should= {:api marigold/grover-api :effort 3}
-                 (sut/resolve-provider cfg (str marigold/grover-api ":" marigold/quantum-anvil))))))
-
-  (describe "server-config"
-
-    (it "returns default port 6674 and host 0.0.0.0 when no config is provided"
-      (let [result (sut/server-config {})]
-        (should= 6674 (:port result))
-        (should= "127.0.0.1" (:host result))
-        (should= true (:hot-reload result))))
-
-    (it "allows server.hot-reload to disable config watching"
-      (should= false (:hot-reload (sut/server-config {:server {:hot-reload false}}))))
-
-    (it "aliases gateway.port to server.port"
-      (should= 9000 (:port (sut/server-config {:gateway {:port 9000}}))))))
+                 (sut/resolve-provider cfg (str marigold/grover-api ":" marigold/quantum-anvil)))))))

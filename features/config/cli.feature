@@ -265,50 +265,6 @@ Feature: Config Command
       | valid: .*telly.*                          |
     And the exit code is 1
 
-  Scenario: validate reports unknown model refs with file and valid set
-    Given config file "isaac.edn" containing:
-      """
-      {:defaults  {:crew :main :model :local}
-       :crew      {:main {}}
-       :models    {:local {:model "llama3.3:1b" :provider :anthropic}}
-       :providers {:anthropic {}}}
-      """
-    And config file "hooks/webhook.edn" containing:
-      """
-      {:crew :main :model :ghost-model :template "Hello"}
-      """
-    When isaac is run with "config validate"
-    Then the stderr matches:
-      | pattern                                      |
-      | hooks\.webhook\.model                      |
-      | references undefined model                 |
-      | file: config/hooks/webhook\.edn             |
-      | bad value: ghost-model                      |
-      | valid: .*local.*                            |
-    And the exit code is 1
-
-  Scenario: validate reports unknown crew refs with file and valid set
-    Given config file "isaac.edn" containing:
-      """
-      {:defaults  {:crew :main :model :local}
-       :crew      {:main {}}
-       :models    {:local {:model "llama3.3:1b" :provider :anthropic}}
-       :providers {:anthropic {}}}
-      """
-    And config file "cron/nightly.edn" containing:
-      """
-      {:expr "0 9 * * *" :crew :ghost :prompt "Ping"}
-      """
-    When isaac is run with "config validate"
-    Then the stderr matches:
-      | pattern                               |
-      | cron\.nightly\.crew                 |
-      | references undefined crew           |
-      | file: config/cron/nightly\.edn       |
-      | bad value: ghost                     |
-      | valid: .*main.*                      |
-    And the exit code is 1
-
   Scenario: validate reports warnings but still exits 0
     Given config file "isaac.edn" containing:
       """

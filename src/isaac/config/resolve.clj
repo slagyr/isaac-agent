@@ -118,14 +118,3 @@
     (if-let [model-override (:model-override opts)]
       (apply-model-override cfg ctx (->id model-override))
       ctx)))
-
-(defn server-config [config]
-  (let [config (loader/normalize-config config)]
-    {:port       (or (get-in config [:server :port])
-                     (get-in config [:gateway :port])
-                     6674)
-     :host       (or (get-in config [:server :host])
-                     (get-in config [:gateway :host])
-                     "127.0.0.1")
-     :hot-reload (let [hot-reload (get-in config [:server :hot-reload])]
-                   (if (boolean? hot-reload) hot-reload true))}))
