@@ -53,42 +53,20 @@ jobs:
 
       - name: Run features - config llm module crew
         id: features_config
-        continue-on-error: true
         shell: bash
         run: clojure -M:features $(find features/config features/crew features/llm features/module -type f -name '*.feature' | sort)
 
       - name: Run features - session
         id: features_session
-        continue-on-error: true
         shell: bash
         run: clojure -M:features $(find features/session -type f -name '*.feature' | sort)
 
       - name: Run features - bridge comm prompts tagging
         id: features_bridge
-        continue-on-error: true
         shell: bash
         run: clojure -M:features $(find features/bridge features/comm features/prompts features/tagging -type f -name '*.feature' | sort)
 
       - name: Run features - tool
         id: features_tool
-        continue-on-error: true
         shell: bash
         run: clojure -M:features $(find features/tool -type f -name '*.feature' | sort)
-
-      - name: Check feature groups
-        shell: bash
-        run: |
-          declare -A outcomes=(
-            [config_llm_module_crew]="${{ steps.features_config.outcome }}"
-            [session]="${{ steps.features_session.outcome }}"
-            [bridge_comm_prompts_tagging]="${{ steps.features_bridge.outcome }}"
-            [tool]="${{ steps.features_tool.outcome }}"
-          )
-          failed=0
-          for group in config_llm_module_crew session bridge_comm_prompts_tagging tool; do
-            echo "$group=${outcomes[$group]}"
-            if [[ "${outcomes[$group]}" != "success" ]]; then
-              failed=1
-            fi
-          done
-          exit "$failed"
