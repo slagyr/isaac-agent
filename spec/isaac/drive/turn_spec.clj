@@ -115,7 +115,19 @@
                    :total-tokens  25
                    :cache-read    0
                    :cache-write   0}
-                 (:usage assistant)))))
+                 (:usage assistant))))
+
+    (it "stores the configured model when the provider omits :model"
+      (helper/create-session! test-dir "model-test")
+      (sut/process-response! "model-test"
+                             {:content  "Two! Two clouds!"
+                              :response {:message {:role "assistant" :content "Two! Two clouds!"}}}
+                             {:model "count" :provider "grover:grok"})
+      (let [assistant (-> (helper/get-transcript test-dir "model-test")
+                          last
+                          :message)]
+        (should= "count" (:model assistant))
+        (should= "grover:grok" (:provider assistant)))))
 
   (describe "streaming helpers"
 
