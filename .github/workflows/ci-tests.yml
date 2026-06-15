@@ -57,25 +57,5 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-clojure-agent-
 
-      - name: Run specs
-        run: clojure -M:spec
-
-      - name: Run features - config llm module crew
-        id: features_config
-        shell: bash
-        run: clojure -M:features $(find features/config features/crew features/llm features/module -type f -name '*.feature' | sort)
-
-      - name: Run features - session
-        id: features_session
-        shell: bash
-        run: clojure -M:features $(find features/session -type f -name '*.feature' | sort)
-
-      - name: Run features - bridge comm prompts tagging
-        id: features_bridge
-        shell: bash
-        run: clojure -M:features $(find features/bridge features/comm features/prompts features/tagging -type f -name '*.feature' | sort)
-
-      - name: Run features - tool
-        id: features_tool
-        shell: bash
-        run: clojure -M:features $(find features/tool -type f -name '*.feature' | sort)
+      - name: Run bb ci
+        run: bb ci
