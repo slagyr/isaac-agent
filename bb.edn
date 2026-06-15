@@ -4,20 +4,43 @@
         io.github.slagyr/gherclj    {:git/tag "v1.3.0" :git/sha "9c3bb1d"}}
 
  :tasks
- {spec     {:doc  "Run speclj specs (pass file/dir to narrow)"
-            :task (if (seq *command-line-args*)
-                    (apply shell "clojure" "-M:spec" *command-line-args*)
-                    (shell "clojure" "-M:spec"))}
+ {spec     {:doc      "Run speclj specs (pass file/dir to narrow)"
+            :requires ([clojure.java.shell :as sh])
+            :task     (let [{:keys [exit out err]}
+                            (apply sh/sh "clojure" "-M:spec" *command-line-args*)]
+                        (when (seq out) (print out))
+                        (when (seq err) (binding [*out* *err*] (print err)))
+                        (when (pos? exit) (System/exit exit)))}
 
-  ci       {:doc  "Run all spec + non-wip features"
-            :task (do (shell "clojure" "-M:spec")
-                      (shell "clojure" "-M:features"))}
+  ci       {:doc      "Run all spec + non-wip features"
+            :requires ([clojure.java.shell :as sh])
+            :task     (letfn [(run! [& args]
+                              (let [{:keys [exit out err]} (apply sh/sh args)]
+                                (when (seq out) (print out))
+                                (when (seq err) (binding [*out* *err*] (print err)))
+                                (when (pos? exit) (System/exit exit))))]
+                        (run! "clojure" "-M:spec")
+                        (run! "clojure" "-M:features"))}
 
-  features {:doc  "Run gherclj feature specs (excludes @slow and @wip)"
-            :task (do
-                    (run 'clean)
-                    (apply shell "clojure" "-M:features"
-                      *command-line-args*))}
+  verify   {:doc      "Run the full verification gate"
+            :requires ([clojure.java.shell :as sh])
+            :task     (letfn [(run! [& args]
+                              (let [{:keys [exit out err]} (apply sh/sh args)]
+                                (when (seq out) (print out))
+                                (when (seq err) (binding [*out* *err*] (print err)))
+                                (when (pos? exit) (System/exit exit))))]
+                        (run! "clojure" "-M:spec")
+                        (run! "clojure" "-M:features"))}
+
+  features {:doc      "Run gherclj feature specs (excludes @slow and @wip)"
+            :requires ([clojure.java.shell :as sh])
+            :task     (do
+                        (run 'clean)
+                        (let [{:keys [exit out err]}
+                              (apply sh/sh "clojure" "-M:features" *command-line-args*)]
+                          (when (seq out) (print out))
+                          (when (seq err) (binding [*out* *err*] (print err)))
+                          (when (pos? exit) (System/exit exit))))}
 
   clean    {:doc  "Remove generated and test artifacts"
             :task (do (babashka.fs/delete-tree "target")
