@@ -1,0 +1,12 @@
+;; Subproject deps.edn — lets consumers pull the agent spec tree
+;; (step definitions, helpers) as a separate coordinate from production
+;; isaac-agent via :deps/root "spec":
+;;
+;;   io.github.slagyr/isaac-agent-spec
+;;     {:git/url "https://github.com/slagyr/isaac-agent.git"
+;;      :git/sha "..."
+;;      :deps/root "spec"}
+{:paths ["."]
+ :deps  {speclj/speclj            {:mvn/version "3.13.0"}
+         babashka/process         {:mvn/version "0.5.22"}
+         io.github.slagyr/gherclj {:git/tag "v1.3.0" :git/sha "9c3bb1d"}}}
