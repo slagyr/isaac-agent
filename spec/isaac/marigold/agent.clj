@@ -51,14 +51,7 @@
              :isaac.agent/provider          {:description "Materialized providers."
                                               :schema      {:type       :map
                                                             :key-spec   {:type :keyword}
-                                                            :value-spec {:type :map}}}
-             :isaac.agent/comm              {:description "Communication channels."
-                                              :schema      {:type       :map
-                                                            :key-spec   {:type :keyword}
-                                                            :value-spec {:type    :map
-                                                                         :schema  {:namespace     {:type :symbol :validations [:present?]}
-                                                                                   :extra-schema  {:type :schema-map}
-                                                                                   :configurable? {:type :boolean}}}}}}
+                                                            :value-spec {:type :map}}}}
 
    :isaac.agent/llm-api {(keyword marigold/helm-api)   {:factory 'isaac.llm.api.grover/make}
                           (keyword marigold/sky-api)    {:factory 'isaac.llm.api.grover/make}
@@ -80,9 +73,9 @@
                                  (keyword marigold/bearing-command) {:factory 'isaac.marigold/bearing-slash-factory}
                                  (keyword marigold/muster-command)  {:factory 'isaac.marigold/muster-slash-factory}}
 
-   :isaac.agent/comm {(keyword marigold/longwave) {:namespace 'isaac.marigold-comms}
-                       (keyword marigold/skybeam)  {:namespace 'isaac.marigold-comms}
-                       (keyword marigold/logbook)  {:namespace 'isaac.marigold-comms}}
+   :isaac.server/comm {(keyword marigold/longwave) {:namespace 'isaac.marigold-comms}
+                        (keyword marigold/skybeam)  {:namespace 'isaac.marigold-comms}
+                        (keyword marigold/logbook)  {:namespace 'isaac.marigold-comms}}
 
    :isaac.config/schema (select-keys config-schema/contributions agent-schema-keys)
    :isaac.config/check  check-contributions/server})

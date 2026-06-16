@@ -1,7 +1,6 @@
 (ns isaac.config.schema.root
-  "Server-side views over the :isaac.config/schema contributions. The
-   module manifest (resources/isaac-manifest.edn) is the single source
-   of truth for every config table; the defs here are read from it."
+  "Views over :isaac.config/schema contributions gathered from every
+   builtin manifest on the classpath."
   (:require
     [c3kit.apron.schema :as schema]
     [c3kit.apron.schema.path :as path]
@@ -13,17 +12,14 @@
 (def schema-fields schema-base/schema-fields)
 (def strip-validation-annotations schema-base/strip-validation-annotations)
 
-(defn- agent-manifest []
+(defn- classpath-manifests []
   (->> (enumeration-seq (.getResources (.getContextClassLoader (Thread/currentThread))
                                        "isaac-manifest.edn"))
-       (map (fn [url] (edn/read-string (slurp url))))
-       (filter #(= :isaac.agent (:id %)))
-       first))
+       (map (fn [url] (edn/read-string (slurp url))))))
 
 (def contributions
-  "The server module's :isaac.config/schema contribution map, keyed by
-   top-level config key. Pure data — straight off the manifest."
-  (:isaac.config/schema (agent-manifest)))
+  "Merged :isaac.config/schema contributions from every builtin manifest."
+  (apply merge (keep :isaac.config/schema (classpath-manifests))))
 
 (defn- table [config-key]
   (get-in contributions [config-key :schema]))

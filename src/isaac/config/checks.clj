@@ -10,7 +10,7 @@
   (schema-base/->id value))
 
 (def ^:private manifest-schema-kinds
-  [:isaac.agent/comm :isaac.agent/provider-template :isaac.agent/slash-commands :isaac.agent/tools])
+  [:isaac.server/comm :isaac.agent/comm :isaac.agent/provider-template :isaac.agent/slash-commands :isaac.agent/tools])
 
 (defn- verify-manifest-schema-fragment [module-id field-schema]
   (try
@@ -40,7 +40,8 @@
                       {:key   (str "modules." (->id module-id))
                        :value (str ":type is the slot discriminator, not a field"
                                    " (comm " (name extension-id) ")")}))
-                  (get-in entry [:manifest :isaac.agent/comm])))
+                  (or (get-in entry [:manifest :isaac.server/comm])
+                      (get-in entry [:manifest :isaac.agent/comm]))))
           module-index))
 
 (defn check-resolved-providers

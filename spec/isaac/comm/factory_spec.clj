@@ -37,6 +37,6 @@
 
   (it "loads the contributing module's :namespace on first dispatch"
     (binding [registered-in/*module-index*
-              {:isaac.comm.lazy {:manifest {:isaac.agent/comm
+              {:isaac.comm.lazy {:manifest {:isaac.server/comm
                                             {:lazyimpl {:namespace 'isaac.comm.factory-lazy-fixture}}}}}]
       (should= :isaac.comm.factory-lazy-fixture/lazy (sut/create! [:comms :bert] {:type :lazyimpl})))))

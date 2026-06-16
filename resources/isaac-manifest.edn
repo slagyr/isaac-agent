@@ -52,20 +52,7 @@
                 {:type :map,
                  :key-spec {:type :keyword},
                  :value-spec
-                 {:type :map, :schema {:template {:type :map}}}}},
-               :comm
-               {:description
-                "Communication channels (Discord, iMessage, ACP, …). Manifest contributions name available impls and carry the impl's :namespace (whose load implements isaac.comm.factory/create for that :type) plus its :extra-schema (extension fields composed into [:comms] slots of that :type). User-instantiated comm slots in the [:comms] config slot also count toward this berth, so `[:registered-in? :isaac.agent/comm [:comms]]` accepts both manifest impl ids (the common :type values) and slot ids.",
-                :schema
-                {:type :map,
-                 :key-spec {:type :keyword},
-                 :value-spec
-                 {:type :map,
-                  :schema
-                  {:namespace
-                   {:type :symbol, :validations [:present?]},
-                   :extra-schema {:type :schema-map},
-                   :configurable? {:type :boolean}}}}}},
+                 {:type :map, :schema {:template {:type :map}}}}}},
  :isaac/cli
  {:auth
   {:usage "auth <subcommand> [options]",
@@ -499,29 +486,8 @@
     :description
     "Directory-name to prompt-type mapping for prepared prompts",
     :key-spec {:type :string},
-    :value-spec {:type :string}}},
-  :comms
-  {:schema
-   {:name "comms table",
-    :type :map,
-    :description
-    "Communication channel configurations (map of name -> comm config)",
-    :key-spec {:type :id},
-    :value-spec
-    {:name :comm,
-     :type :map,
-     :factory isaac.comm.factory/create!,
-     :dynamic-schema {:berth :isaac.agent/comm, :path [:extra-schema]},
-     :schema
-     {:type
-      {:type :id,
-       :options-from :comms,
-       :description "Manifest comm kind to instantiate",
-       :validations [[:registered-in? :isaac.agent/comm [:comms]]]},
-      :crew
-      {:type :id,
-       :description "Crew id this comm routes into",
-       :validations [:crew-exists?]}}}}}},
+    :value-spec {:type :string}}}},
+
  :isaac.config/check
  {:comm-reserved-schema
   {:fn isaac.config.checks/check-comm-reserved-schema},

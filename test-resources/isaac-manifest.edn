@@ -1,0 +1,30 @@
+{:id       :isaac.agent.schema-comms
+ :version  "0.0.0"
+ :builtin? true
+ :factory  isaac.module.protocol/module
+ :description "Test-only comm schema + server comm berth so agent CI matches the server-owned :comms shape without pulling isaac-server onto the classpath."
+
+ :berths {:isaac.server/comm {:description "Communication channels (test fixture berth declaration for :registered-in? :isaac.server/comm)."
+                              :schema      {:type       :map
+                                            :key-spec   {:type :keyword}
+                                            :value-spec {:type    :map
+                                                         :schema  {:namespace     {:type :symbol :validations [:present?]}
+                                                                   :extra-schema  {:type :schema-map}
+                                                                   :configurable? {:type :boolean}}}}}}
+
+ :isaac.config/schema
+ {:comms {:schema {:name        "comms table"
+                   :type        :map
+                   :description "Communication channel configurations (map of name -> comm config)"
+                   :key-spec    {:type :id}
+                   :value-spec  {:name           :comm
+                                 :type           :map
+                                 :factory        isaac.comm.factory/create!
+                                 :dynamic-schema {:berth :isaac.server/comm :path [:extra-schema]}
+                                 :schema         {:type {:type         :id
+                                                         :options-from :comms
+                                                         :description  "Manifest comm kind to instantiate"
+                                                         :validations  [[:registered-in? :isaac.server/comm [:comms]]]}
+                                                  :crew {:type        :id
+                                                         :description "Crew id this comm routes into"
+                                                         :validations [:crew-exists?]}}}}}}}
