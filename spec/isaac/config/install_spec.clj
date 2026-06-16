@@ -1,11 +1,11 @@
-(ns isaac.config.install-spec
+(ns isaac.agent.config.install-spec
   (:require
-    [speclj.core :refer :all]
-    [isaac.config.install :as sut]
+    [isaac.agent.config.install :as sut]
     [isaac.config.loader :as config]
     [isaac.fs :as fs]
     [isaac.nexus :as nexus]
-    [isaac.session.store.spi :as store]))
+    [isaac.session.store.spi :as store]
+    [speclj.core :refer :all]))
 
 (describe "config install coordinator"
 

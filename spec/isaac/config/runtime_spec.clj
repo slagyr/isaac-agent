@@ -1,7 +1,7 @@
 (ns isaac.agent.config.runtime-spec
   (:require
     [isaac.agent.config.runtime :as sut]
-    [isaac.config.install :as install]
+    [isaac.agent.config.install :as install]
     [speclj.core :refer :all]))
 
 (describe "isaac.agent.config.runtime"

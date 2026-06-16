@@ -6,7 +6,7 @@
    Each fn delegates to its source at call time, so `with-redefs` on the
    underlying fn still takes effect for callers through this API."
   (:require
-    [isaac.config.install :as install]))
+    [isaac.agent.config.install :as install]))
 
 (defn install!
   "Ensures the session store for a committed config snapshot. opts keys:

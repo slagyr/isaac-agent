@@ -1,4 +1,4 @@
-(ns isaac.config.install
+(ns isaac.agent.config.install
   "Agent-side config install: ensures the session store only. Comm/service
    reconcile and berth activation are server-boot responsibilities (isaac-95lv)."
   (:require
