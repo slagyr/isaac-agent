@@ -10,7 +10,7 @@
     [isaac.comm.protocol :as comm]
     [isaac.config.loader :as loader]
     [isaac.config.root :as root]
-    [isaac.config.runtime :as runtime]
+    [isaac.agent.config.runtime :as runtime]
     [isaac.fs :as fs]
     [isaac.drive.turn :as single-turn]
     [isaac.session.context :as session-ctx]

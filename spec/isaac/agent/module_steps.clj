@@ -4,7 +4,7 @@
     [gherclj.core :as g :refer [defthen defwhen helper!]]
     [isaac.bridge.status :as bridge]
     [isaac.config.loader :as loader]
-    [isaac.config.runtime :as runtime]
+    [isaac.agent.config.runtime :as runtime]
     [isaac.foundation.cli-steps :as fcli]
     [isaac.fs :as fs]
     [isaac.nexus :as nexus]

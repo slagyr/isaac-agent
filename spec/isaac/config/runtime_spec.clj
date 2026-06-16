@@ -1,10 +1,10 @@
-(ns isaac.config.runtime-spec
+(ns isaac.agent.config.runtime-spec
   (:require
+    [isaac.agent.config.runtime :as sut]
     [isaac.config.install :as install]
-    [isaac.config.runtime :as sut]
     [speclj.core :refer :all]))
 
-(describe "isaac.config.runtime"
+(describe "isaac.agent.config.runtime"
 
   (describe "install delegates"
 

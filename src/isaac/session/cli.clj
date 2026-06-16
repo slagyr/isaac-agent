@@ -12,7 +12,7 @@
     [isaac.config.api :as config]
     [isaac.config.loader :as loader]
     [isaac.config.root :as root]
-    [isaac.config.runtime :as runtime]
+    [isaac.agent.config.runtime :as runtime]
     [isaac.fs :as fs]
     [isaac.bridge.status :as bridge]
     [isaac.session.context :as session-ctx]

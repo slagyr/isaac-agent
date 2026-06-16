@@ -7,7 +7,7 @@
     [isaac.comm.protocol :as comm]
     [isaac.bridge.prompt-cli :as sut]
     [isaac.config.loader :as loader]
-    [isaac.config.runtime :as runtime]
+    [isaac.agent.config.runtime :as runtime]
     [isaac.session.spec-helper :as helper]
     [isaac.session.context :as session-ctx]
     [isaac.session.store.spi :as store]
