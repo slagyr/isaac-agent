@@ -3,13 +3,10 @@
     [clojure.string :as str]
     [gherclj.core :as g :refer [defthen defwhen helper!]]
     [isaac.bridge.status :as bridge]
-    [isaac.comm.registry :as comm-registry]
-    [isaac.config.api :as config]
     [isaac.config.loader :as loader]
     [isaac.config.runtime :as runtime]
     [isaac.foundation.cli-steps :as fcli]
     [isaac.fs :as fs]
-    [isaac.module.loader :as module-loader]
     [isaac.nexus :as nexus]
     [isaac.slash.registry :as slash-registry]
     [isaac.tool.memory :as memory]))
@@ -49,16 +46,10 @@
 (defn isaac-process-started []
   (with-feature-fs
     (fn []
-      (let [root         (root-dir)
-            fs*          (mem-fs)
-            load-result  (loader/load-config-result {:root root :fs fs*})
-            cfg          (:config load-result)
-            module-index (merge (module-loader/builtin-index) (:module-index cfg))
-            cfg*         (assoc cfg :module-index module-index)]
-        (config/dangerously-install-config! cfg* "feature: Isaac process started")
-        (module-loader/process-manifest-berths! module-index)
-        (runtime/install-config-berths! {:config       cfg*
-                                         :module-index module-index})
+      (let [root (root-dir)
+            fs*  (mem-fs)
+            cfg  (loader/load-config! root fs* "feature: Isaac process started")]
+        (runtime/install! {:config cfg})
         (g/assoc! :runtime-root-dir root)))))
 
 (defn available-slash-commands-include [table]
@@ -91,14 +82,9 @@
 ;; region ----- Routing -----
 
 (defwhen "the Isaac process is started" isaac.agent.module-steps/isaac-process-started
-  "Boots the agent runtime without an HTTP server: commits config,
-   processes manifest berths, starts modules, and reconciles comm
-   slots so :comm/activated entries appear in the log.")
-
-(defwhen "the Isaac server is started" isaac.agent.module-steps/isaac-process-started
-  "Agent-local alias for the monolith server boot step. Same runtime
-   install path — comm berth reconciliation triggers lazy module
-   activation on first slot use.")
+  "Boots the agent runtime without an HTTP server: load-config! commits
+   config and reconciles eager-load modules; install! ensures the session
+   store. Comm/service reconcile is server-only (isaac-95lv).")
 
 (defthen "the available slash commands include:" isaac.agent.module-steps/available-slash-commands-include
   "Asserts each table row matches a registered slash command (built-ins

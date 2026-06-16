@@ -9,9 +9,9 @@
     [isaac.config.api :as config]
     [isaac.config.loader :as loader]
     [isaac.config.resolve :as resolve]
-    [isaac.config.runtime :as runtime]
+
     [isaac.foundation.root-steps :as froot]
-    [isaac.foundation.fs-steps :as ffs]
+
     [isaac.drive.dispatch :as drive-dispatch]
     [isaac.step-tables :as match]
     [isaac.fs :as fs]
@@ -115,10 +115,8 @@
 (defn- invalidate-feature-config! []
   (g/dissoc! :feature-config))
 
-(defn- notify-config-change! [path]
-  (invalidate-feature-config!)
-  (when-let [source (g/get :config-change-source)]
-    (runtime/notify-path! source path)))
+(defn- notify-config-change! [_path]
+  (invalidate-feature-config!))
 
 (defn- with-current-time [f]
   (if-let [current-time (g/get :current-time)]
@@ -556,50 +554,6 @@
 (defn isaac-config-path-is [path value]
   (when-not (str/blank? (or value ""))
     (persist-config-entry! path value)))
-
-;; Agent-local hot-reload wiring. The server-tier `the Isaac server is
-;; started` step (which owns the async config watcher loop) lives in
-;; isaac-server, off the agent's classpath. We register a single
-;; foundation post-write hook at load time that — when a scenario has
-;; "started the server" by setting :config-change-source — drives a
-;; synchronous reload through the agent's own runtime/reload! whenever a
-;; config file is written. This exercises the reload / parse-rejection /
-;; validation-rejection paths without booting a full server.
-(ffs/register-post-write-hook!
-  (fn [path]
-    (when-let [source (g/get :config-change-source)]
-      (let [root (g/get :server-root)
-            fs*  (mem-fs)]
-        (nexus/-with-nested-nexus {:fs fs*}
-          (runtime/notify-path! source path)
-          (loop []
-            (when-let [rel (runtime/poll! source)]
-              (let [comm-reg @comm-registry/*registry*]
-                (runtime/reload! {:root          root
-                                  :fs            fs*
-                                  :old-config    (loader/snapshot "feature: reload old-config")
-                                  :comm-registry comm-reg
-                                  :registries    [comm-reg]
-                                  :host          {:module-index (module-loader/builtin-index)}
-                                  :path          rel}))
-              (recur))))))))
-
-(defn server-started
-  "Agent-local stand-in for the server-tier `the Isaac server is started`
-   Background step. Commits the on-disk config as the live snapshot and
-   arms the load-time post-write hook by storing a memory change-source as
-   :config-change-source. Reload itself is driven synchronously by that
-   hook (see above) on each subsequent config write."
-  []
-  (let [root (root-dir)
-        fs*  (mem-fs)]
-    ;; Commit the starting config so rejected reloads leave the prior
-    ;; snapshot in place for `the loaded config has:` to read.
-    (config/dangerously-install-config!
-      (:config (loader/load-config-result {:root root :fs fs*}))
-      "feature: Isaac server started")
-    (g/assoc! :server-root root)
-    (g/assoc! :config-change-source (runtime/memory-source root))))
 
 (defn crew-tool-allow [crew-id tools-str]
   (with-feature-fs
@@ -1404,11 +1358,6 @@
 
 ;; "an (empty) Isaac root at" / "an empty Isaac state directory" routing
 ;; moved to isaac.foundation.root-steps.
-
-(defgiven "the Isaac config harness is started" isaac.session.session-steps/server-started
-  "Agent-local stand-in for the server-tier `the Isaac server is started`
-   step: commits the current on-disk config as the snapshot and arms
-   synchronous hot reload so later config writes drive runtime/reload!.")
 
 (defgiven "config:" isaac.session.session-steps/config-applied
   "Applies a key/value table of harness settings. Supports log.output

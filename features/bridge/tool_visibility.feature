@@ -22,8 +22,9 @@ Feature: Crew tools reach every comm path
 
   Scenario: a crew with no :tools section still gets zero tools over every comm
     Given the isaac EDN file "config/crew/main.edn" exists with:
-      | path | value |
-      | model | grover |
-      | soul | Marvin. Paranoid droid. |
+      | path  | value                    |
+      | model | grover                   |
+      | soul  | Marvin. Paranoid droid.  |
+      | tools | #delete                  |
     When isaac is run with "prompt hi"
     Then the prompt has 0 tools
