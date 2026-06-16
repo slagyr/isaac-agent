@@ -47,19 +47,30 @@
       (should= (set (keys (:sigs reconfigurable/Reconfigurable)))
                (set (keys (:sigs sut/Reconfigurable)))))
 
-    (it "on-startup! delegates to the instance's protocol method"
+    (it "on-load delegates to the instance's protocol method"
       (let [called   (atom nil)
             instance (reify sut/Reconfigurable
-                       (on-startup! [_ slice] (reset! called slice) ::started)
-                       (on-config-change! [_ _ _] nil))]
-        (should= ::started (sut/on-startup! instance {:a 1}))
+                       (on-load [_ slice] (reset! called slice) ::loaded)
+                       (on-config-change! [_ _ _] nil)
+                       (on-unload [_ _] nil))]
+        (should= ::loaded (sut/on-load instance {:a 1}))
+        (should= {:a 1} @called)))
+
+    (it "on-unload delegates to the instance's protocol method"
+      (let [called   (atom nil)
+            instance (reify sut/Reconfigurable
+                       (on-load [_ _] nil)
+                       (on-config-change! [_ _ _] nil)
+                       (on-unload [_ slice] (reset! called slice) ::unloaded))]
+        (should= ::unloaded (sut/on-unload instance {:a 1}))
         (should= {:a 1} @called)))
 
     (it "on-config-change! delegates to the instance's protocol method"
       (let [called   (atom nil)
             instance (reify sut/Reconfigurable
-                       (on-startup! [_ _] nil)
-                       (on-config-change! [_ old new] (reset! called [old new]) ::changed))]
+                       (on-load [_ _] nil)
+                       (on-config-change! [_ old new] (reset! called [old new]) ::changed)
+                       (on-unload [_ _] nil))]
         (should= ::changed (sut/on-config-change! instance {:old 1} {:new 2}))
         (should= [{:old 1} {:new 2}] @called))))
 

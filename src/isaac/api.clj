@@ -16,8 +16,9 @@
 
 (def Reconfigurable
   "Protocol implemented by long-running module instances.
-   on-startup! is called when the instance is first started;
-   on-config-change! is called on every config reload.
+   on-load is called when the instance is first started;
+   on-config-change! is called on config slice updates;
+   on-unload is called when the instance is evicted.
    See isaac.reconfigurable/Reconfigurable for method signatures."
   reconfigurable/Reconfigurable)
 

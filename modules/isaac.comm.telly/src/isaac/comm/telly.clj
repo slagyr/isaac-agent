@@ -26,7 +26,7 @@
   (on-turn-end [_ _ _] nil)
   (send! [_ _] {:ok false :transient? false})
   api/Reconfigurable
-  (on-startup! [_ slice]
+  (on-load [_ slice]
     (log/info :telly/started
               :module (let [name (:name host)]
                         (if (keyword? name) (clojure.core/name name) (str name))))
@@ -35,16 +35,16 @@
                    :host       host
                    :last-event :started}))
   (on-config-change! [_ old-slice new-slice]
-    (if (nil? new-slice)
-      (reset! state {:slice      nil
-                     :started?   false
-                     :host       host
-                     :last-event :stopped
-                     :prior      old-slice})
-      (swap! state assoc
-             :slice new-slice
-             :last-event :changed
-             :prior old-slice))))
+    (swap! state assoc
+           :slice new-slice
+           :last-event :changed
+           :prior old-slice))
+  (on-unload [_ old-slice]
+    (reset! state {:slice      nil
+                   :started?   false
+                   :host       host
+                   :last-event :stopped
+                   :prior      old-slice})))
 
 (defn make [host]
   (->Telly host (atom {})))

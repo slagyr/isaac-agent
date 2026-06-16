@@ -10,8 +10,9 @@
 
 (defn- fake-component [started]
   (reify reconfigurable/Reconfigurable
-    (on-startup! [_ slice] (reset! started slice))
-    (on-config-change! [_ _old _new] nil)))
+    (on-load [_ slice] (reset! started slice))
+    (on-config-change! [_ _old _new] nil)
+    (on-unload [_ _] nil)))
 
 (describe "config install coordinator"
 

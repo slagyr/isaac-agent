@@ -43,8 +43,9 @@
 
     (it "a type implementing api/Reconfigurable satisfies api/Reconfigurable"
       (let [r (reify sut/Reconfigurable
-                (on-startup! [_ _] :started)
-                (on-config-change! [_ _ _] :changed))]
+                (on-load [_ _] :loaded)
+                (on-config-change! [_ _ _] :changed)
+                (on-unload [_ _] :unloaded))]
         (should (satisfies? sut/Reconfigurable r)))))
 
   (describe "comm registry delegates"
