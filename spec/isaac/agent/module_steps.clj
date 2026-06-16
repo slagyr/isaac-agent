@@ -57,7 +57,6 @@
             cfg*         (assoc cfg :module-index module-index)]
         (config/dangerously-install-config! cfg* "feature: Isaac process started")
         (module-loader/process-manifest-berths! module-index)
-        (module-loader/start-modules! module-index)
         (runtime/install-config-berths! {:config       cfg*
                                          :module-index module-index})
         (g/assoc! :runtime-root-dir root)))))
