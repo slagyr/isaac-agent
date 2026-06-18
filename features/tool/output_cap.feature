@@ -8,7 +8,7 @@ Feature: Global cap on tool-result output before transcript persist
 
   Background:
     Given an empty Isaac root at "/test"
-    And the EDN isaac file "isaac.edn" exists with:
+    And the isaac EDN file isaac.edn exists with:
       | path                     | value |
       | tools.defaults.max-lines | 5     |
       | tools.defaults.max-bytes | 100   |

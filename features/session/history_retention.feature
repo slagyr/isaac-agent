@@ -17,7 +17,7 @@ Feature: Compaction history retention policy
     Given an empty Isaac root at "/test"
 
   Scenario: Under :retain, compacted entries remain in the transcript file
-    Given the EDN isaac file "isaac.edn" exists with:
+    Given the isaac EDN file isaac.edn exists with:
       | path                       | value   |
       | defaults.history-retention | :retain |
     And the following sessions exist:
@@ -46,7 +46,7 @@ Feature: Compaction history retention policy
       | compaction | Caught up the model. |
 
   Scenario: Under :prune, compacted entries are removed from the transcript file
-    Given the EDN isaac file "isaac.edn" exists with:
+    Given the isaac EDN file isaac.edn exists with:
       | path                       | value  |
       | defaults.history-retention | :prune |
     And the following sessions exist:
@@ -77,7 +77,7 @@ Feature: Compaction history retention policy
       | compaction | Caught up the model. |
 
   Scenario: Retention is locked at session creation; changing defaults later does not flip it
-    Given the EDN isaac file "isaac.edn" exists with:
+    Given the isaac EDN file isaac.edn exists with:
       | path                       | value   |
       | defaults.history-retention | :retain |
     And the following sessions exist:
@@ -86,7 +86,7 @@ Feature: Compaction history retention policy
     Then session "locked-keep" matches:
       | key               | value   |
       | history-retention | :retain |
-    When the EDN isaac file "isaac.edn" exists with:
+    When the isaac EDN file isaac.edn exists with:
       | path                       | value  |
       | defaults.history-retention | :prune |
     Then session "locked-keep" matches:
@@ -94,7 +94,7 @@ Feature: Compaction history retention policy
       | history-retention | :retain |
 
   Scenario: Explicit create-time override wins over crew and defaults
-    Given the EDN isaac file "isaac.edn" exists with:
+    Given the isaac EDN file isaac.edn exists with:
       | path                        | value  |
       | defaults.history-retention  | :prune |
       | crew.main.history-retention | :prune |

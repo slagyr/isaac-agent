@@ -16,7 +16,7 @@ Feature: Delivery queue
     Given the comm "stub" returns:
       | ok   |
       | true |
-    And the EDN isaac file "comm/delivery/pending/7f3a.edn" contains:
+    And the isaac EDN file comm/delivery/pending/7f3a.edn exists with:
       | path    | value                                |
       | id      | 7f3a                                 |
       | comm    | stub                                 |
@@ -32,7 +32,7 @@ Feature: Delivery queue
     Given the comm "stub" returns:
       | ok    | transient? |
       | false | true       |
-    And the EDN isaac file "comm/delivery/pending/7f3a.edn" contains:
+    And the isaac EDN file comm/delivery/pending/7f3a.edn exists with:
       | path     | value                                | #comment                          |
       | id       | 7f3a                                 |                                   |
       | comm     | stub                                 |                                   |
@@ -40,7 +40,7 @@ Feature: Delivery queue
       | content  | Trying once more.                    |                                   |
       | attempts | 0                                    | fresh delivery, no prior failures |
     When the delivery worker ticks at "2026-04-21T10:00:00Z"
-    Then the EDN isaac file "comm/delivery/pending/7f3a.edn" contains:
+    Then the isaac file "comm/delivery/pending/7f3a.edn" EDN contains:
       | path            | value                | #comment                                  |
       | attempts        | 1                    | incremented from 0 after this failure     |
       | next-attempt-at | 2026-04-21T10:00:01Z | tick time + 1 second (first backoff step) |
@@ -49,7 +49,7 @@ Feature: Delivery queue
     Given the comm "stub" returns:
       | ok    | transient? |
       | false | true       |
-    And the EDN isaac file "comm/delivery/pending/7f3a.edn" contains:
+    And the isaac EDN file comm/delivery/pending/7f3a.edn exists with:
       | path     | value                                | #comment                                          |
       | id       | 7f3a                                 |                                                   |
       | comm     | stub                                 |                                                   |
@@ -58,7 +58,7 @@ Feature: Delivery queue
       | attempts | 4                                    | one short of the 5-attempt max; this tick is last |
     When the delivery worker ticks at "2026-04-21T10:00:00Z"
     Then the isaac file "comm/delivery/pending/7f3a.edn" does not exist
-    And the EDN isaac file "comm/delivery/failed/7f3a.edn" contains:
+    And the isaac file "comm/delivery/failed/7f3a.edn" EDN contains:
       | path     | value | #comment                                |
       | attempts | 5     | hit the max on this tick; dead-lettered |
       | id       | 7f3a  |                                         |
@@ -70,7 +70,7 @@ Feature: Delivery queue
     Given the comm "stub" returns:
       | ok    | transient? |
       | false | false      |
-    And the EDN isaac file "comm/delivery/pending/7f3a.edn" contains:
+    And the isaac EDN file comm/delivery/pending/7f3a.edn exists with:
       | path    | value   |
       | id      | 7f3a    |
       | comm    | stub    |
@@ -78,7 +78,7 @@ Feature: Delivery queue
       | content | Hello   |
     When the delivery worker ticks
     Then the isaac file "comm/delivery/pending/7f3a.edn" does not exist
-    And the EDN isaac file "comm/delivery/failed/7f3a.edn" contains:
+    And the isaac file "comm/delivery/failed/7f3a.edn" EDN contains:
       | path     | value | #comment                           |
       | attempts | 0     | not incremented; single-tick close |
       | id       | 7f3a  |                                    |
