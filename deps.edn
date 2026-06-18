@@ -1,7 +1,7 @@
 {:paths ["src" "resources"]
 
  :deps {io.github.slagyr/isaac-foundation {:git/url "https://github.com/slagyr/isaac-foundation.git"
-                                          :git/tag "v0.1.0" :git/sha "57f6100890ec1fb3bbf9b048aa8f2ffd8000ae32"}
+                                          :git/tag "v0.1.0" :git/sha "fe83ebe3104be4f840303951a4dd3f91b63900c1"}
         cheshire/cheshire                 {:mvn/version "5.13.0"}
         clj-commons/clj-yaml              {:mvn/version "1.0.29"}
         com.cleancoders.c3kit/apron       {:mvn/version "3.0.0"}
@@ -16,7 +16,7 @@
 
   :test {:extra-paths ["spec" "test-resources"]
          :extra-deps  {io.github.slagyr/isaac-foundation-spec {:git/url "https://github.com/slagyr/isaac-foundation.git"
-                                                                 :git/tag "v0.1.0" :git/sha "57f6100890ec1fb3bbf9b048aa8f2ffd8000ae32"
+                                                                 :git/tag "v0.1.0" :git/sha "fe83ebe3104be4f840303951a4dd3f91b63900c1"
                                                                  :deps/root "spec"}
                        speclj/speclj                          {:mvn/version "3.13.0"}
                        babashka/process                       {:mvn/version "0.5.22"}
@@ -24,10 +24,10 @@
                        io.github.cleancoders/c3kit-wire       {:git/tag "2.5.1" :git/sha "1fae444"}
                        org.babashka/http-client               {:mvn/version "0.4.22"}
                        marigold.bridge/marigold.bridge        {:git/url "https://github.com/slagyr/isaac-foundation.git"
-                                                               :git/tag "v0.1.0" :git/sha "57f6100890ec1fb3bbf9b048aa8f2ffd8000ae32"
+                                                               :git/tag "v0.1.0" :git/sha "fe83ebe3104be4f840303951a4dd3f91b63900c1"
                                                                :deps/root "modules/marigold.bridge"}
                        marigold.longwave/marigold.longwave    {:git/url "https://github.com/slagyr/isaac-foundation.git"
-                                                                :git/tag "v0.1.0" :git/sha "57f6100890ec1fb3bbf9b048aa8f2ffd8000ae32"
+                                                                :git/tag "v0.1.0" :git/sha "fe83ebe3104be4f840303951a4dd3f91b63900c1"
                                                                 :deps/root "modules/marigold.longwave"}
                        isaac.comm.telly/isaac.comm.telly      {:local/root "modules/isaac.comm.telly"}
                        isaac.providers.kombucha/isaac.providers.kombucha {:local/root "modules/isaac.providers.kombucha"}
@@ -36,7 +36,7 @@
 
   :spec {:extra-paths ["spec" "test-resources"]
          :extra-deps  {io.github.slagyr/isaac-foundation-spec {:git/url "https://github.com/slagyr/isaac-foundation.git"
-                                                                 :git/tag "v0.1.0" :git/sha "57f6100890ec1fb3bbf9b048aa8f2ffd8000ae32"
+                                                                 :git/tag "v0.1.0" :git/sha "fe83ebe3104be4f840303951a4dd3f91b63900c1"
                                                                  :deps/root "spec"}
                        speclj/speclj                          {:mvn/version "3.13.0"}
                        babashka/process                       {:mvn/version "0.5.22"}
@@ -44,10 +44,10 @@
                        io.github.cleancoders/c3kit-wire       {:git/tag "2.5.1" :git/sha "1fae444"}
                        org.babashka/http-client               {:mvn/version "0.4.22"}
                        marigold.bridge/marigold.bridge        {:git/url "https://github.com/slagyr/isaac-foundation.git"
-                                                               :git/tag "v0.1.0" :git/sha "57f6100890ec1fb3bbf9b048aa8f2ffd8000ae32"
+                                                               :git/tag "v0.1.0" :git/sha "fe83ebe3104be4f840303951a4dd3f91b63900c1"
                                                                :deps/root "modules/marigold.bridge"}
                        marigold.longwave/marigold.longwave    {:git/url "https://github.com/slagyr/isaac-foundation.git"
-                                                                :git/tag "v0.1.0" :git/sha "57f6100890ec1fb3bbf9b048aa8f2ffd8000ae32"
+                                                                :git/tag "v0.1.0" :git/sha "fe83ebe3104be4f840303951a4dd3f91b63900c1"
                                                                 :deps/root "modules/marigold.longwave"}
                        isaac.comm.telly/isaac.comm.telly      {:local/root "modules/isaac.comm.telly"}
                        isaac.providers.kombucha/isaac.providers.kombucha {:local/root "modules/isaac.providers.kombucha"}
@@ -57,7 +57,7 @@
 
   :features {:extra-paths ["spec" "test-resources"]
              :extra-deps  {io.github.slagyr/isaac-foundation-spec {:git/url "https://github.com/slagyr/isaac-foundation.git"
-                                                                 :git/tag "v0.1.0" :git/sha "57f6100890ec1fb3bbf9b048aa8f2ffd8000ae32"
+                                                                 :git/tag "v0.1.0" :git/sha "fe83ebe3104be4f840303951a4dd3f91b63900c1"
                                                                  :deps/root "spec"}
                            speclj/speclj                          {:mvn/version "3.13.0"}
                            babashka/process                       {:mvn/version "0.5.22"}
@@ -65,10 +65,10 @@
                            io.github.cleancoders/c3kit-wire       {:git/tag "2.5.1" :git/sha "1fae444"}
                            org.babashka/http-client               {:mvn/version "0.4.22"}
                            marigold.bridge/marigold.bridge        {:git/url "https://github.com/slagyr/isaac-foundation.git"
-                                                                   :git/tag "v0.1.0" :git/sha "57f6100890ec1fb3bbf9b048aa8f2ffd8000ae32"
+                                                                   :git/tag "v0.1.0" :git/sha "fe83ebe3104be4f840303951a4dd3f91b63900c1"
                                                                    :deps/root "modules/marigold.bridge"}
                            marigold.longwave/marigold.longwave    {:git/url "https://github.com/slagyr/isaac-foundation.git"
-                                                                    :git/tag "v0.1.0" :git/sha "57f6100890ec1fb3bbf9b048aa8f2ffd8000ae32"
+                                                                    :git/tag "v0.1.0" :git/sha "fe83ebe3104be4f840303951a4dd3f91b63900c1"
                                                                     :deps/root "modules/marigold.longwave"}
                            isaac.comm.telly/isaac.comm.telly      {:local/root "modules/isaac.comm.telly"}
                            isaac.providers.kombucha/isaac.providers.kombucha {:local/root "modules/isaac.providers.kombucha"}
