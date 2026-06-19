@@ -387,4 +387,30 @@
 (defn make [name cfg]
   (->GroverAPI name cfg))
 
+(defonce ^:private test-registration-enabled* (atom false))
+
+(defn register-test-api!
+  "Install the Grover mock LLM API for specs and local dev."
+  []
+  (api/register! :grover make))
+
+(defn register-test-provider!
+  "Register the Grover provider template used by test configs."
+  []
+  ((requiring-resolve 'isaac.llm.providers/register!)
+   "grover" {:api "grover" :auth "none"}))
+
+(defn test-registration-enabled? []
+  @test-registration-enabled*)
+
+(defn disable-test-registration! []
+  (reset! test-registration-enabled* false))
+
+(defn install-test-fixture!
+  "Enable and install the Grover mock API for specs/features."
+  []
+  (reset! test-registration-enabled* true)
+  (register-test-api!)
+  (register-test-provider!))
+
 ;; endregion ^^^^^ Public API ^^^^^

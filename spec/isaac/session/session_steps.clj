@@ -45,6 +45,7 @@
 (g/before-scenario g/reset!)
 (g/before-scenario #(config/dangerously-install-config! nil "spec"))
 (g/before-scenario module-loader/clear-activations!)
+(g/before-scenario grover/install-test-fixture!)
 (g/before-scenario slash-registry/clear!)
 
 ;; Capture the real `sidecar-store/create-store` once at load time so we can
@@ -465,10 +466,12 @@
     (invalidate-feature-config!)))
 
 (defn default-grover-setup []
+  (grover/install-test-fixture!)
   (froot/initialize-root! "target/test-state" true)
   (with-feature-fs write-grover-defaults!))
 
 (defn default-grover-setup-in [dir]
+  (grover/install-test-fixture!)
   (froot/initialize-root! dir true)
   (with-feature-fs write-grover-defaults!))
 

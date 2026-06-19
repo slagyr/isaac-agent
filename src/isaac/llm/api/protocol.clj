@@ -180,12 +180,19 @@
     (log/info :api/registered :api (clojure.core/name provider-key))
     provider-key))
 
+(defn- grover-test-registration-enabled? []
+  (try
+    ((requiring-resolve 'isaac.llm.api.grover/test-registration-enabled?))
+    (catch Exception _ false)))
+
 (defn register-api-entry!
   "Per-entry factory for the :isaac.agent/llm-api berth (phase 7 of
    the berth epic). Receives `[api-id entry]`; resolves the entry's
    symbol-valued :factory and registers it under api-id."
   [[api-id entry]]
-  (register! api-id (some-> (:factory entry) requiring-resolve var-get)))
+  (when (or (not= api-id :grover)
+            (grover-test-registration-enabled?))
+    (register! api-id (some-> (:factory entry) requiring-resolve var-get))))
 
 (defn mark-built-ins!
   "Snapshot the current registry as the built-in set. Called once after all

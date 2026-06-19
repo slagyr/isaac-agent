@@ -9,6 +9,7 @@
     [isaac.llm.api.responses :as responses]
     [isaac.llm.api.protocol :as sut]
     [isaac.llm.provider :as llm-provider]
+    [isaac.module.loader :as module-loader]
     [isaac.nexus :as nexus]
     [speclj.core :refer :all]))
 
@@ -143,7 +144,24 @@
       (sut/register! "spec-test" (fn [_ _] ::v2))
       (should= ::v2 ((sut/factory-for :spec-test) "x" {}))))
 
+  (describe "production built-ins"
+
+    (it "does not register grover when the agent module activates outside test mode"
+      (let [was-enabled? (grover/test-registration-enabled?)]
+        (try
+          (grover/disable-test-registration!)
+          (sut/unregister! :grover)
+          (module-loader/clear-activations!)
+          (module-loader/activate! :isaac.agent (module-loader/builtin-index))
+          (should-not (contains? (sut/registered-apis) :grover))
+          (finally
+            (if was-enabled?
+              (grover/install-test-fixture!)
+              (grover/disable-test-registration!)))))))
+
   (describe "resolve-api"
+
+    (before (grover/install-test-fixture!))
 
     (it "returns keyword apis"
       (should= :ollama (sut/resolve-api "ollama" {}))

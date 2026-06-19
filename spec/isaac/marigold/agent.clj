@@ -86,8 +86,13 @@
   {:isaac.foundation {:coord {} :manifest marigold/baseline-foundation-manifest :path nil}
    :isaac.agent      {:coord {} :manifest baseline-agent-manifest :path nil}})
 
+(defn register-grover-test-fixture!
+  []
+  (isaac.llm.api.grover/install-test-fixture!))
+
 (defn register-apis!
   []
+  (register-grover-test-fixture!)
   (let [grover-factory (api/factory-for :grover)]
     (api/register! (keyword marigold/helm-api)   grover-factory)
     (api/register! (keyword marigold/sky-api)    grover-factory)
@@ -121,6 +126,7 @@
   (binding [module-loader/*foundation-index-override* nil]
     (reset-extension-registries!)
     (module-loader/activate-foundation!)
+    (register-grover-test-fixture!)
     (thunk)))
 
 (defmacro with-real-manifest
