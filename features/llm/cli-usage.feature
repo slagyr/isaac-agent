@@ -10,7 +10,7 @@ Feature: Top-level CLI usage
       | pattern                                          |
       | Usage: isaac \[options\] <command> \[args\]      |
       | Global Options:                                  |
-      | --root <dir>\s+Override Isaac's root directory   |
+      | --root <dir>\s+Isaac root directory              |
       | --help, -h\s+Show this message                   |
       | Commands:                                        |
     And the exit code is 0
