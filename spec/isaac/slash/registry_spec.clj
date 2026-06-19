@@ -58,6 +58,22 @@
                     (filter #(= :slash/override (:event %)))
                     (mapv #(select-keys % [:level :event :command]))))))
 
+  (it "does not warn when the same handler is registered twice"
+    (let [handler (constantly :same)]
+      (sut/register! {:name "echo" :description "Echo" :handler handler})
+      (log/capture-logs
+        (sut/register! {:name "echo" :description "Echo again" :handler handler})
+        (should= []
+                 (->> @log/captured-logs
+                      (filter #(#{:slash/override :slash/registered} (:event %)))
+                      (mapv #(select-keys % [:level :event :command])))))))
+
+  (it "does not warn when built-in slash commands are berth-processed twice"
+    (log/capture-logs
+      (module-loader/process-manifest-berths! (module-loader/builtin-index))
+      (module-loader/process-manifest-berths! (module-loader/builtin-index))
+      (should= 0 (count (filter #(= :slash/override (:event %)) @log/captured-logs)))))
+
   (it "activates slash command modules before listing all commands"
     (let [module-index {:isaac.slash.echo {:manifest {:slash-commands {:echo {}}}}}]
       (with-redefs [module-loader/activate! (fn [_ _]

@@ -18,10 +18,12 @@
 (defn register! [{:keys [name] :as command}]
   (let [name     (str name)
         previous (get @commands* name)]
-    (swap! commands* assoc name (assoc command :name name))
-    (if previous
-      (log/warn :slash/override :command name)
-      (log/info :slash/registered :command name :module name))
+    (when (or (nil? previous)
+              (not= (:handler previous) (:handler command)))
+      (swap! commands* assoc name (assoc command :name name))
+      (if previous
+        (log/warn :slash/override :command name)
+        (log/info :slash/registered :command name :module name)))
     name))
 
 (defn unregister! [name]
