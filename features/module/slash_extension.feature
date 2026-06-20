@@ -25,11 +25,10 @@ Feature: Slash command extension
       {:log     {:output :memory}
        :modules {:isaac.slash.echo {:local/root "modules/isaac.slash.echo"}}}
       """
-    When the user sends "/echo Hieronymus's emergency lettuce" on session "main" via memory comm
+    When manifest berths are processed for the loaded config
     Then the log has entries matching:
-      | level | event             | module           |
-      | :info | :module/activated | isaac.slash.echo |
-      | :info | :slash/registered | echo             |
+      | level | event             | berth                       | entry | module           |
+      | :info | :berth/registered | :isaac.agent/slash-commands | echo  | isaac.slash.echo |
 
   Scenario: Module-declared slash commands appear alongside built-ins after activation
     Given an empty Isaac root at "/tmp/isaac"

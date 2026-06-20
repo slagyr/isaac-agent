@@ -7,6 +7,7 @@
     [isaac.agent.config.runtime :as runtime]
     [isaac.foundation.cli-steps :as fcli]
     [isaac.fs :as fs]
+    [isaac.module.loader :as module-loader]
     [isaac.nexus :as nexus]
     [isaac.slash.registry :as slash-registry]
     [isaac.tool.memory :as memory]))
@@ -52,6 +53,16 @@
         (runtime/install! {:config cfg})
         (g/assoc! :runtime-root-dir root)))))
 
+(defn manifest-berths-processed-for-loaded-config []
+  (with-feature-fs
+    (fn []
+      (let [root (root-dir)
+            fs*  (mem-fs)
+            {:keys [config]} (loader/load-config-result {:root root :fs fs*})
+            module-index (:module-index config)]
+        (when module-index
+          (module-loader/process-manifest-berths! module-index))))))
+
 (defn available-slash-commands-include [table]
   (let [cfg       (loader/snapshot "feature: available slash commands")
         commands  (slash-registry/all-commands (:module-index cfg))
@@ -85,6 +96,10 @@
   "Boots the agent runtime without an HTTP server: load-config! commits
    config and reconciles eager-load modules; install! ensures the session
    store. Comm/service reconcile is server-only (isaac-95lv).")
+
+(defwhen "manifest berths are processed for the loaded config"
+  isaac.agent.module-steps/manifest-berths-processed-for-loaded-config
+  "Runs process-manifest-berths! for the feature's loaded module index.")
 
 (defthen "the available slash commands include:" isaac.agent.module-steps/available-slash-commands-include
   "Asserts each table row matches a registered slash command (built-ins

@@ -26,9 +26,8 @@
     (when (or (nil? previous)
               (not (same-registration? previous command)))
       (swap! commands* assoc name (assoc command :name name))
-      (if previous
-        (log/warn :slash/override :command name)
-        (log/info :slash/registered :command name :module name)))
+      (when previous
+        (log/warn :slash/override :command name)))
     name))
 
 (defn unregister! [name]

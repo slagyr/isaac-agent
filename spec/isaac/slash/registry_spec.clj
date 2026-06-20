@@ -44,10 +44,10 @@
                 {:name "zecho" :description "ZEcho"}]
                (filterv #(contains? #{"echo" "zecho"} (:name %)) commands))))
 
-  (it "logs :slash/registered when a new command is registered"
+  (it "does not log when a new command is registered (berth pass logs :berth/registered)"
     (log/capture-logs
       (sut/register! {:name "echo" :description "Echo" :handler identity})
-      (should= [{:level :info :event :slash/registered :command "echo"}]
+      (should= []
                (mapv #(select-keys % [:level :event :command]) @log/captured-logs))))
 
   (it "logs :slash/override and keeps the replacement when a name collides"
@@ -67,7 +67,7 @@
         (sut/register! {:name "echo" :description "Echo again" :handler handler})
         (should= []
                  (->> @log/captured-logs
-                      (filter #(#{:slash/override :slash/registered} (:event %)))
+                      (filter #(= :slash/override (:event %)))
                       (mapv #(select-keys % [:level :event :command])))))))
 
   (it "does not warn when the same factory re-registers with a different handler ref"
@@ -82,7 +82,7 @@
                       :factory     'isaac.slash.registry-spec/echo-command})
       (should= []
                (->> @log/captured-logs
-                    (filter #(#{:slash/override :slash/registered} (:event %)))
+                    (filter #(= :slash/override (:event %)))
                     (mapv #(select-keys % [:level :event :command]))))))
 
   (it "does not warn when built-in slash commands are berth-processed twice"
