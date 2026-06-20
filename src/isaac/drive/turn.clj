@@ -14,8 +14,7 @@
      [isaac.session.compaction :as compaction]
      [isaac.session.context :as session-ctx]
      [isaac.session.store.spi :as store]
-     [isaac.tool.builtin :as builtin]
-     [isaac.tool.registry :as tool-registry])
+    [isaac.tool.registry :as tool-registry])
   (:import (clojure.lang ExceptionInfo)))
 
 ;; region ----- Error Formatting -----
@@ -581,9 +580,6 @@
 (defn- merge-allowed-tools [crew-tools auto-tools]
   (not-empty (into (set (or crew-tools [])) auto-tools)))
 
-(defn- ensure-default-tools-registered! []
-  (builtin/register-all!))
-
 (defn build-chat-request [p {:keys [boot-files effort guidance model nonce origin rules-text skill-menu-text soul transcript tools]}]
   (let [prompt-out (api/build-prompt p {:boot-files boot-files
                                         :guidance   guidance
@@ -837,7 +833,6 @@
         finish!     #(finish-turn! ch session-key %)]
     (try
       (comm/on-turn-start ch session-key input)
-      (ensure-default-tools-registered!)
       (finish! (run-turn-body! session-key input ctx))
       (catch ExceptionInfo e
         (if (= :cancelled (:type (ex-data e)))

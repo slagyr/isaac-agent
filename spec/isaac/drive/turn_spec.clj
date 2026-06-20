@@ -20,6 +20,7 @@
     [isaac.session.store.sidecar :as sidecar-store]
     [isaac.session.spec-helper :as helper]
     [isaac.nexus :as nexus]
+    [isaac.tool.builtin :as builtin]
     [isaac.tool.registry :as tool-registry]
     [speclj.core :refer :all]))
 
@@ -557,14 +558,39 @@
         (with-redefs [sut/build-turn       (fn [c]
                                              (should= charge c)
                                              (base-execution-ctx provider c))
-                      sut/ensure-default-tools-registered! (fn [] nil)
                       tool-loop/run        (fn [_ _ request _ _]
                                              (reset! captured request)
                                              {:message {:role "assistant" :content "ready"} :model "test-model" :usage {} :tool-calls []})
                       sut/process-response! (fn [& _] nil)]
           (sut/run-turn! charge))
         (should-not-be-nil @captured)
-        (should= "test-model" (:model @captured)))))
+        (should= "test-model" (:model @captured))))
+
+    (it "does not bulk-register built-in tools on each turn"
+      (helper/create-session! test-dir "no-reregister" {:crew "main"})
+      (let [provider      (->TestProvider marigold/quantum-anvil {:api marigold/anvil-api})
+            register-calls (atom 0)
+            charge        {:charge/type    :charge
+                           :session-key    "no-reregister"
+                           :input          "first"
+                           :root      test-dir
+                           :session-store  (store/registered-store)
+                           :comm           null-comm/channel
+                           :crew           "main"
+                           :model          "test-model"
+                           :provider       provider
+                           :soul           "You are Isaac."
+                           :context-window 4096}]
+        (with-redefs [builtin/register-all! (fn [& _] (swap! register-calls inc))
+                      tool-loop/run         (fn [_ _ _ _ _]
+                                              {:message {:role "assistant" :content "ok"}
+                                               :model   "test-model"
+                                               :usage   {}
+                                               :tool-calls []})
+                      sut/process-response! (fn [& _] nil)]
+          (sut/run-turn! charge)
+          (sut/run-turn! (assoc charge :input "second")))
+        (should= 0 @register-calls))))
 
   (describe "logging"
     #_{:clj-kondo/ignore [:unresolved-symbol]}

@@ -37,4 +37,10 @@
 
   (it "registers web_search when it is allowed"
     (sut/register-all! #{"web_search"})
-    (should= #{"web_search"} (set (map :name (registry/all-tools))))))
+    (should= #{"web_search"} (set (map :name (registry/all-tools)))))
+
+  (it "skips tools already present in the registry"
+    (sut/register-all! #{"read"})
+    (let [count-before (count (registry/all-tools))]
+      (sut/register-all! #{"read"})
+      (should= count-before (count (registry/all-tools))))))

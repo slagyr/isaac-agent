@@ -3,6 +3,7 @@
   (:require
     [isaac.logger :as log]
     [isaac.module.loader :as module-loader]
+    [isaac.tool.registry :as tool-registry]
     [isaac.tool.exec :as exec]
     [isaac.tool.file :as file]
     [isaac.tool.glob :as glob]
@@ -156,12 +157,13 @@
       (boolean (and normalized (contains? normalized tool-name)))))
 
 (defn- register-built-in-tool! [tool-name]
-  (when-let [spec (get built-in-tool-specs tool-name)]
-    (if-let [pred (:available? spec)]
-      (if (pred)
-        (module-loader/register-builtin-berth-entry! :isaac.agent/tools tool-name)
-        (log/warn :tool/register-skipped :tool tool-name :reason "available? returned false"))
-      (module-loader/register-builtin-berth-entry! :isaac.agent/tools tool-name))))
+  (when-not (tool-registry/lookup tool-name)
+    (when-let [spec (get built-in-tool-specs tool-name)]
+      (if-let [pred (:available? spec)]
+        (if (pred)
+          (module-loader/register-builtin-berth-entry! :isaac.agent/tools tool-name)
+          (log/warn :tool/register-skipped :tool tool-name :reason "available? returned false"))
+        (module-loader/register-builtin-berth-entry! :isaac.agent/tools tool-name)))))
 
 (defn register-all!
   "Register all built-in tools with the tool registry.
