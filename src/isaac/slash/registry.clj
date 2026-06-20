@@ -15,11 +15,16 @@
 (defn registered-command [name]
   (get @commands* (str name)))
 
+(defn- same-registration? [previous {:keys [factory handler]}]
+  (if (and (:factory previous) factory)
+    (= (:factory previous) factory)
+    (= (:handler previous) handler)))
+
 (defn register! [{:keys [name] :as command}]
   (let [name     (str name)
         previous (get @commands* name)]
     (when (or (nil? previous)
-              (not= (:handler previous) (:handler command)))
+              (not (same-registration? previous command)))
       (swap! commands* assoc name (assoc command :name name))
       (if previous
         (log/warn :slash/override :command name)
@@ -58,7 +63,8 @@
         spec       (factory)]
     (register! {:name        command-id
                 :description (:description spec)
-                :handler     (:handler spec)})))
+                :handler     (:handler spec)
+                :factory     (:factory entry)})))
 
 (defn- prompt-catalog-opts [opts]
   (let [root (or (:root opts)

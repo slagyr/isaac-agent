@@ -1,9 +1,11 @@
 (ns isaac.slash.registry-spec
   (:require
     [isaac.fs :as fs]
+    [isaac.main :as main]
     [isaac.nexus :as nexus]
     [isaac.logger :as log]
     [isaac.module.loader :as module-loader]
+    [isaac.slash.builtin :as builtin]
     [isaac.slash.registry :as sut]
     [speclj.core :refer :all]))
 
@@ -68,9 +70,45 @@
                       (filter #(#{:slash/override :slash/registered} (:event %)))
                       (mapv #(select-keys % [:level :event :command])))))))
 
+  (it "does not warn when the same factory re-registers with a different handler ref"
+    (sut/register! {:name        "echo"
+                    :description "A"
+                    :handler     (constantly :a)
+                    :factory     'isaac.slash.registry-spec/echo-command})
+    (log/capture-logs
+      (sut/register! {:name        "echo"
+                      :description "B"
+                      :handler     (constantly :b)
+                      :factory     'isaac.slash.registry-spec/echo-command})
+      (should= []
+               (->> @log/captured-logs
+                    (filter #(#{:slash/override :slash/registered} (:event %)))
+                    (mapv #(select-keys % [:level :event :command]))))))
+
   (it "does not warn when built-in slash commands are berth-processed twice"
     (log/capture-logs
       (module-loader/process-manifest-berths! (module-loader/builtin-index))
+      (module-loader/process-manifest-berths! (module-loader/builtin-index))
+      (should= 0 (count (filter #(= :slash/override (:event %)) @log/captured-logs)))))
+
+  (it "does not warn when CLI-init and server-boot both berth-process builtins"
+    (log/capture-logs
+      (let [mem (fs/mem-fs)]
+        (@#'main/register-module-cli-commands! nil mem "server")
+        (module-loader/process-manifest-berths! (module-loader/builtin-index)))
+      (should= 0 (count (filter #(= :slash/override (:event %)) @log/captured-logs)))))
+
+  (it "does not warn when berth processing precedes ensure-registered! and a second berth pass"
+    (log/capture-logs
+      (module-loader/process-manifest-berths! (module-loader/builtin-index))
+      (builtin/ensure-registered!)
+      (module-loader/process-manifest-berths! (module-loader/builtin-index))
+      (should= 0 (count (filter #(= :slash/override (:event %)) @log/captured-logs)))))
+
+  (it "does not warn when lookup activates builtins before a second berth pass"
+    (log/capture-logs
+      (module-loader/process-manifest-berths! (module-loader/builtin-index))
+      (sut/lookup "crew" (module-loader/builtin-index))
       (module-loader/process-manifest-berths! (module-loader/builtin-index))
       (should= 0 (count (filter #(= :slash/override (:event %)) @log/captured-logs)))))
 
