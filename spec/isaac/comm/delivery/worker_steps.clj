@@ -3,6 +3,7 @@
     [clojure.edn :as edn]
     [clojure.string :as str]
     [gherclj.core :as g :refer [defgiven defthen defwhen helper!]]
+    [isaac.comm.delivery.queue :as queue]
     [isaac.comm.delivery.worker :as worker]
     [isaac.comm.protocol :as comm]
     [isaac.comm.registry :as comm-registry]
@@ -53,9 +54,17 @@
     (g/update! :stub-comm-calls #(conj (or % []) record))
     (or (g/get :stub-comm-result) {:ok true})))
 
+(def ^:private default-stub-comm-names
+  #{"stub" "longwave" "skybeam" "logbook"})
+
+(defn- stub-comm-instances []
+  (into {}
+        (map (fn [name] [name (->StubComm)]))
+        (or (g/get :stub-comm-names) default-stub-comm-names)))
+
 (defn- with-stub-comm [f]
   (binding [comm-registry/*registry* (atom (assoc (comm-registry/fresh-registry)
-                                                  :instances {"stub" (->StubComm)}))]
+                                                  :instances (stub-comm-instances)))]
     (f)))
 
 (defn comm-stub-returns [_comm-name table]
@@ -114,5 +123,12 @@
 (defgiven #"the comm \"([^\"]+)\" returns:" isaac.comm.delivery.worker-steps/comm-stub-returns)
 
 (defthen #"the comm \"([^\"]+)\" was called with:" isaac.comm.delivery.worker-steps/comm-stub-was-called-with)
+
+(defn delivery-queue-is-empty []
+  (with-feature-fs
+    (fn []
+      (g/should= [] (queue/list-pending)))))
+
+(defthen "the delivery queue is empty" isaac.comm.delivery.worker-steps/delivery-queue-is-empty)
 
 (defthen "the delivery scheduled tasks include:" isaac.comm.delivery.worker-steps/scheduled-tasks-include)
