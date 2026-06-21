@@ -398,7 +398,7 @@
                  (assoc state session-key {:lock lock})))))
     (when @claimed? lock)))
 
-(declare run-compaction-check!)
+(declare run-compaction-check! active-tools)
 
 (defn- perform-compaction! [session-key attempt prompt-tokens {:keys [compaction-llm-done context-window model provider soul splice-ready transcript-lock] ch :comm :as opts}]
   (let [provider-name (api/display-name provider)]
@@ -465,12 +465,12 @@
             (do
               (store/update-session! (or (:session-store opts) (nexus/get-in [:sessions :store])) session-key {:compaction-disabled false
                                                                                               :compaction          {:consecutive-failures 0}})
-              (when ch
-                (comm/on-compaction-success ch session-key {:summary      (:summary result)
-                                                            :tokens-saved (max 0 (- prompt-tokens (:last-input-tokens (session-entry opts session-key) 0)))
-                                                            :duration-ms  (- (System/currentTimeMillis) started-at)}))
-              (when-not (:chunked result)
-                (let [updated-total (:last-input-tokens (session-entry opts session-key) 0)]
+              (let [updated-total (compaction/estimate-prompt-tokens session-key opts)]
+                (when ch
+                  (comm/on-compaction-success ch session-key {:summary      (:summary result)
+                                                              :tokens-saved (max 0 (- prompt-tokens updated-total))
+                                                              :duration-ms  (- (System/currentTimeMillis) started-at)}))
+                (when-not (:chunked result)
                   (if (>= updated-total prompt-tokens)
                     (log/warn :session/compaction-stopped
                               :session session-key
@@ -481,14 +481,7 @@
                               :total-tokens updated-total
                               :context-window context-window)
                     (run-compaction-check! session-key
-                                           {:comm            ch
-                                            :context-window  context-window
-                                            :model           model
-                                            :provider        provider
-                                            :root       (:root opts)
-                                            :session-store   (:session-store opts)
-                                            :soul            soul
-                                            :transcript-lock transcript-lock}
+                                           (assoc opts :comm ch :transcript-lock transcript-lock)
                                            (inc attempt)
                                            false)))))))))))
 
@@ -510,13 +503,17 @@
                                                       :splice-ready        splice-ready})
       future*)))
 
+(defn- compaction-estimate-opts [session-key {:keys [provider allowed-tools module-index] :as opts}]
+  (assoc opts :tools (when provider (active-tools provider allowed-tools module-index))))
+
 (defn- run-compaction-check! [session-key {:keys [context-window model provider] :as opts} attempt allow-async?]
-  (let [entry        (session-entry opts session-key)
-        _failures    (consecutive-compaction-failures entry)
-        total-tokens (:last-input-tokens entry 0)
-        config       (or (:compaction opts)
-                         (compaction/resolve-config entry context-window))
-        prov-name    (when provider (api/display-name provider))]
+  (let [estimate-opts (compaction-estimate-opts session-key opts)
+        entry         (session-entry estimate-opts session-key)
+        _failures     (consecutive-compaction-failures entry)
+        total-tokens  (compaction/estimate-prompt-tokens session-key estimate-opts)
+        config        (or (:compaction estimate-opts)
+                          (compaction/resolve-config entry context-window))
+        prov-name     (when provider (api/display-name provider))]
     (log/debug :session/compaction-check
                :session session-key
                :provider prov-name
@@ -524,7 +521,7 @@
                :total-tokens total-tokens
                :context-window context-window)
     (cond
-      (= :reset (:context-mode opts))
+      (= :reset (:context-mode estimate-opts))
       (log/info :session/compaction-skipped
                 :session session-key
                 :provider prov-name
@@ -542,10 +539,10 @@
                 :context-window context-window
                 :reason :disabled)
 
-      (compaction/should-compact? (assoc entry :compaction config) context-window)
+      (compaction/should-compact? total-tokens (assoc entry :compaction config) context-window)
       (if (and allow-async? (:async? config))
-        (start-async-compaction! session-key opts)
-        (perform-compaction! session-key attempt total-tokens opts)))))
+        (start-async-compaction! session-key estimate-opts)
+        (perform-compaction! session-key attempt total-tokens estimate-opts)))))
 
 (defn check-compaction!
   ([session-key opts]
@@ -791,8 +788,9 @@
    Unresolved charges (unknown crew, no model) are rejected upstream in
    bridge/route-charge!, so we only see resolved charges here."
   [session-key input ctx]
-  (let [{:keys [boot-files provider]} ctx
-        {:keys [crew comm compaction context-mode model soul context-window]} (:charge ctx)]
+  (let [{:keys [boot-files provider rules-text skill-menu-text allowed-tools]} ctx
+        {:keys [crew comm compaction context-mode model soul context-window
+                guidance nonce origin module-index]} (:charge ctx)]
     (cond
       (bridge/cancelled? session-key)
       (bridge/cancelled-result)
@@ -800,14 +798,22 @@
       :else
       (do
         (log/info :drive/turn-accepted {:session session-key :crew crew})
-        (check-compaction! ctx session-key {:boot-files     boot-files
-                                            :compaction     compaction
-                                            :context-mode   context-mode
-                                            :model          model
-                                            :soul           soul
-                                            :context-window context-window
-                                            :provider       provider
-                                            :comm           comm})
+        (check-compaction! ctx session-key {:boot-files        boot-files
+                                            :rules-text        rules-text
+                                            :skill-menu-text   skill-menu-text
+                                            :compaction        compaction
+                                            :context-mode      context-mode
+                                            :model             model
+                                            :soul              soul
+                                            :context-window    context-window
+                                            :provider          provider
+                                            :comm              comm
+                                            :input             input
+                                            :guidance          guidance
+                                            :nonce             nonce
+                                            :origin            origin
+                                            :module-index      module-index
+                                            :allowed-tools     allowed-tools})
         (if (bridge/cancelled? session-key)
           (bridge/cancelled-result)
           (execute-llm-turn! session-key input ctx))))))

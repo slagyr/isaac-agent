@@ -3,6 +3,7 @@
     [clojure.string :as str]
     [isaac.config.loader :as loader]
     [isaac.llm.api.protocol :as llm]
+    [isaac.llm.prompt.builder :as prompt-builder]
     [isaac.logger :as log]
     [isaac.session.context :as session-ctx]
     [isaac.session.compaction-schema :as compaction-schema]
@@ -25,10 +26,42 @@
 (defn resolve-config [session-entry context-window]
   (session-ctx/resolve-compaction-config {} session-entry {:crew-cfg {} :model-cfg {} :provider-cfg {}} context-window))
 
-(defn should-compact? [session-entry context-window]
-  (let [total     (:last-input-tokens session-entry 0)
-        {:keys [threshold]} (resolve-config session-entry context-window)]
-    (>= total (* threshold context-window))))
+(defn should-compact? [estimated-tokens session-entry context-window]
+  (let [{:keys [threshold]} (resolve-config session-entry context-window)]
+    (>= estimated-tokens (* threshold context-window))))
+
+(defn- transcript-for-estimate [transcript context-mode input]
+  (let [transcript (or transcript [])
+        transcript (if (= :reset context-mode)
+                     (if-let [current-user (last transcript)] [current-user] [])
+                     transcript)]
+    (if (seq input)
+      (conj transcript {:type "message" :message {:role "user" :content input}})
+      transcript)))
+
+(defn estimate-prompt-tokens
+  "Estimate tokens for the outbound prompt from the live transcript (and
+   optional pending user input), not lagging session counters."
+  [session-key {:keys [session-store soul boot-files rules-text skill-menu-text
+                       context-window model tools nonce guidance origin input
+                       transcript context-mode]
+                :or   {soul ""}}]
+  (let [session-store (or session-store (nexus/get-in [:sessions :store]))
+        transcript    (or transcript
+                          (when session-store (store/get-transcript session-store session-key)))
+        transcript    (transcript-for-estimate transcript context-mode input)
+        prompt        (prompt-builder/build {:soul              soul
+                                             :boot-files        boot-files
+                                             :rules-text        rules-text
+                                             :skill-menu-text   skill-menu-text
+                                             :nonce             nonce
+                                             :guidance          guidance
+                                             :origin            origin
+                                             :transcript        transcript
+                                             :context-window    context-window
+                                             :model             model
+                                             :tools             tools})]
+    (:tokenEstimate prompt)))
 
 (defn compaction-target [entries {:keys [strategy head]} context-window]
   (let [tokens*     (mapv :tokens entries)

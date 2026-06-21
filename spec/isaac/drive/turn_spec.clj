@@ -379,11 +379,10 @@
         (helper/update-session! test-dir session-key {:last-input-tokens   800
                                                       :compaction-disabled true
                                                       :compaction          {:consecutive-failures 2}})
-        (with-redefs [compaction/compact!      (fn [& _]
-                                                 (helper/update-session! test-dir session-key {:last-input-tokens 200})
-                                                 {:summary "Shorter now"})
-                      sut/run-compaction-check! (fn [next-session-key next-opts next-attempt allow-async?]
-                                                  (reset! follow-up [next-session-key next-opts next-attempt allow-async?]))]
+        (with-redefs [compaction/compact!              (fn [& _] {:summary "Shorter now"})
+                      compaction/estimate-prompt-tokens (fn [_ _] 200)
+                      sut/run-compaction-check!        (fn [next-session-key next-opts next-attempt allow-async?]
+                                                         (reset! follow-up [next-session-key next-opts next-attempt allow-async?]))]
           (#'sut/perform-compaction! session-key 2 800 {:comm           (memory-comm/channel events)
                                                         :context-window 1000
                                                         :model          "test-model"
@@ -410,8 +409,9 @@
             events        (atom [])]
         (helper/create-session! test-dir session-key)
         (helper/update-session! test-dir session-key {:last-input-tokens 800})
-        (with-redefs [compaction/compact!      (fn [& _] {:summary "No progress"})
-                      sut/run-compaction-check! (fn [& _] (throw (ex-info "should not re-run" {})))]
+        (with-redefs [compaction/compact!               (fn [& _] {:summary "No progress"})
+                      compaction/estimate-prompt-tokens (fn [_ _] 800)
+                      sut/run-compaction-check!         (fn [& _] (throw (ex-info "should not re-run" {})))]
           (log/capture-logs
             (#'sut/perform-compaction! session-key 2 800 {:comm           (memory-comm/channel events)
                                                           :context-window 1000

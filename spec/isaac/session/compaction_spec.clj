@@ -55,33 +55,50 @@
 
   (describe "should-compact?"
     (it "uses strategy threshold percentage times context-window"
-      (should-not (sut/should-compact? {:last-input-tokens 159 :compaction {:strategy :slinky :threshold 0.8 :head 0.4}} 200))
-      (should (sut/should-compact? {:last-input-tokens 160 :compaction {:strategy :slinky :threshold 0.8 :head 0.4}} 200)))
+      (should-not (sut/should-compact? 159 {:compaction {:strategy :slinky :threshold 0.8 :head 0.4}} 200))
+      (should (sut/should-compact? 160 {:compaction {:strategy :slinky :threshold 0.8 :head 0.4}} 200)))
 
-    (it "ignores cumulative total-tokens when the latest prompt is small"
-      (should-not (sut/should-compact? {:total-tokens 5000
-                                        :last-input-tokens 30
-                                        :compaction {:strategy :slinky :threshold 0.8 :head 0.4}}
-                                       200)))
+    (it "keys off the live prompt estimate, not lagging last-input-tokens"
+      (should (sut/should-compact? 310778 {:last-input-tokens 100000} 278528))
+      (should-not (sut/should-compact? 30 {:total-tokens 5000 :last-input-tokens 5000
+                                            :compaction {:strategy :slinky :threshold 0.8 :head 0.4}}
+                                          200)))
 
-    (it "returns true when last-input-tokens reaches the default threshold"
-      (should (sut/should-compact? {:last-input-tokens 9000} 10000)))
+    (it "returns true when the estimate reaches the default threshold"
+      (should (sut/should-compact? 9000 {} 10000)))
 
-    (it "returns true when last-input-tokens equals exactly 80% threshold"
-      (should (sut/should-compact? {:last-input-tokens 800} 1000)))
+    (it "returns true when the estimate equals exactly 80% threshold"
+      (should (sut/should-compact? 800 {} 1000)))
 
-    (it "returns false when last-input-tokens is below the configured threshold"
-      (should-not (sut/should-compact? {:last-input-tokens 799} 1000)))
+    (it "returns false when the estimate is below the configured threshold"
+      (should-not (sut/should-compact? 799 {} 1000)))
 
-    (it "returns true when last-input-tokens exceeds context-window"
-      (should (sut/should-compact? {:last-input-tokens 15000} 10000)))
+    (it "returns true when the estimate exceeds context-window"
+      (should (sut/should-compact? 15000 {} 10000)))
 
-    (it "defaults to 0 when last-input-tokens is missing"
-      (should-not (sut/should-compact? {} 10000)))
+    (it "returns false for a zero estimate"
+      (should-not (sut/should-compact? 0 {} 10000)))
 
     (it "works with small context windows"
-      (should (sut/should-compact? {:last-input-tokens 80} 100))
-      (should-not (sut/should-compact? {:last-input-tokens 79} 100))))
+      (should (sut/should-compact? 80 {} 100))
+      (should-not (sut/should-compact? 79 {} 100))))
+
+  (describe "estimate-prompt-tokens"
+    #_{:clj-kondo/ignore [:unresolved-symbol]}
+    (around [example]
+      (nexus/-with-nexus {:root test-root :fs (fs/mem-fs)}
+        (storage/with-memory-store
+          (example))))
+
+    (it "estimates from the live transcript instead of last-input-tokens"
+      (let [key-str "isaac:main:cli:chat:estimate123"]
+        (storage/create-session! test-root key-str)
+        (storage/append-message! test-root key-str {:role "user" :content (apply str (repeat 4000 "word "))})
+        (let [estimate (sut/estimate-prompt-tokens key-str {:soul           "You are helpful."
+                                                           :context-window 10000
+                                                           :model          "test-model"})]
+          (should (> estimate 1000))
+          (should (< estimate 10000))))))
 
   (describe "sliding compaction target"
     (it "for rubberband compacts the whole effective history"
