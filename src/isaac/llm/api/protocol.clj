@@ -8,8 +8,7 @@
    the impl namespaces all require this one for the protocol."
   (:require
     [c3kit.apron.schema :as schema]
-    [clojure.string :as str]
-    [isaac.logger :as log]))
+    [clojure.string :as str]))
 
 (defprotocol Api
   (chat
@@ -177,7 +176,6 @@
   [provider-key factory]
   (let [provider-key (->api provider-key)]
     (swap! -registry assoc provider-key factory)
-    (log/info :api/registered :api (clojure.core/name provider-key))
     provider-key))
 
 (defn- grover-test-registration-enabled? []

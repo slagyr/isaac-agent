@@ -43,9 +43,6 @@ Feature: Api extension
     Then the log has entries matching:
       | level | event             | module            |
       | :info | :module/activated | isaac.api.tin-can |
-    And the log has entries matching:
-      | level | event           | api     |
-      | :info | :api/registered | tin-can |
 
   Scenario: Provider validation fails when the api's module is not declared
     Given an empty Isaac root at "/tmp/isaac"
