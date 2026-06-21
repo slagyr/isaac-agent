@@ -5,6 +5,8 @@
  :description "Test-only comm schema + server comm berth so agent CI matches the server-owned :comms shape without pulling isaac-server onto the classpath."
 
  :berths {:isaac.server/comm {:description "Communication channels (test fixture berth declaration for :registered-in? :isaac.server/comm)."
+                              :register-fn   isaac.comm.registry/register-instance!
+                              :deregister-fn isaac.comm.registry/deregister-instance!
                               :schema      {:type       :map
                                             :key-spec   {:type :keyword}
                                             :value-spec {:type    :map
