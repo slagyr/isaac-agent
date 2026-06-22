@@ -5,6 +5,7 @@
     [clojure.tools.cli :as tools-cli]
     [isaac.cli.registry :as cli]
     [isaac.cli.common :as cli-common]
+    [isaac.cli.table :as table]
     [isaac.config.loader :as loader]
     [isaac.config.root :as root]
     [isaac.crew.store :as store]
@@ -32,9 +33,10 @@
 
 (defn- soul-source [crew-cfg]
   (when-let [s (:soul crew-cfg)]
-    (if (> (count s) 40)
-      (str (subs s 0 37) "...")
-      s)))
+    (let [oneline (-> s (str/replace #"\s+" " ") str/trim)]
+      (if (> (count oneline) 40)
+        (str (subs oneline 0 37) "...")
+        oneline))))
 
 (defn- derive-root [opts]
   (root/default-root opts))
@@ -65,31 +67,37 @@
 (defn- resolve-crew-by-name [opts crew-id]
   (some #(when (= crew-id (:name %)) %) (resolve-crew opts)))
 
-(defn format-crew [rows]
-  (let [cols    [[:name "Name"] [:model "Model"] [:provider "Provider"] [:soul-source "Soul"] [:tags-text "Tags"]]
-        widths  (map (fn [[k header]]
-                       (apply max (count header) (map #(count (str (get % k ""))) rows)))
-                     cols)
-        pad     (fn [s w] (str s (apply str (repeat (- w (count s)) " "))))
-        header  (str/join "  " (map (fn [[_ h] w] (pad h w)) cols widths))
-        rule    (str/join "  " (map (fn [_ w] (apply str (repeat w "─"))) cols widths))
-        lines   (map (fn [row]
-                       (str/join "  " (map (fn [[k _] w] (pad (str (get row k "")) w)) cols widths)))
-                      rows)]
-    (str/join "\n" (concat [header rule] lines))))
+(defn- effective-color? [opts]
+  (cond
+    (:no-color opts)            false
+    (= "always" (:color opts))  true
+    (= "never"  (:color opts))  false
+    :else                       nil))
+
+(defn format-crew
+  ([rows] (format-crew rows {}))
+  ([rows opts]
+   (table/render {:columns [{:key :name        :header "Name"     :align :left}
+                            {:key :model       :header "Model"    :align :left}
+                            {:key :provider    :header "Provider" :align :left}
+                            {:key :soul-source :header "Soul"     :align :left}
+                            {:key :tags-text   :header "Tags"     :align :left}]
+                  :rows    rows
+                  :zebra?  true
+                  :color?  (effective-color? opts)})))
 
 (defn- render-list! [rows opts]
   (let [rows (vec (sort-by :name rows))]
     (cond
       (:json opts) (cli-common/print-json! rows)
       (:edn opts)  (cli-common/print-edn! rows)
-      :else        (println (format-crew rows)))))
+      :else        (println (format-crew rows opts)))))
 
 (defn- render-show! [row opts]
   (cond
     (:json opts) (cli-common/print-json! row)
     (:edn opts)  (cli-common/print-edn! row)
-    :else        (println (format-crew [row]))))
+    :else        (println (format-crew [row] opts))))
 
 (defn run [opts]
   (let [required-tags (set (map keyword (:tag opts)))

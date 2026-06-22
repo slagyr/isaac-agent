@@ -2,6 +2,7 @@
   (:require
     [cheshire.core :as json]
     [clojure.edn :as edn]
+    [clojure.string :as str]
     [isaac.config.loader :as loader]
     [isaac.crew.cli :as sut]
     [speclj.core :refer :all]))
@@ -59,4 +60,30 @@
     (with-redefs [loader/load-config! (fn [& _] crew-cfg)]
       (let [output (with-out-str (should= 0 (sut/run (assoc crew-opts :without-tag ["role/worker"]))))]
         (should-contain "sue" output)
-        (should-not-contain "joe" output)))))
+        (should-not-contain "joe" output))))
+
+  (it "collapses multi-line soul to a single-line snippet"
+    (with-redefs [loader/load-config! (fn [& _]
+                                        {:crew   {"joe" {:model "grover"
+                                                         :soul  "# SOUL.md — Joe\n\nYou are Joe."}}
+                                         :models {"grover" {:model "echo" :provider "grover"}}})]
+      (let [joe (some #(when (= "joe" (:name %)) %) (sut/resolve-crew crew-opts))]
+        (should= "# SOUL.md — Joe You are Joe." (:soul-source joe)))))
+
+  (it "truncates collapsed soul with an ellipsis"
+    (with-redefs [loader/load-config! (fn [& _]
+                                        {:crew   {"joe" {:model "grover"
+                                                         :soul  (str/join "\n\n" (repeat 10 "word"))}}
+                                         :models {"grover" {:model "echo" :provider "grover"}}})]
+      (let [joe (some #(when (= "joe" (:name %)) %) (sut/resolve-crew crew-opts))]
+        (should= 40 (count (:soul-source joe)))
+        (should (str/ends-with? (:soul-source joe) "...")))))
+
+  (it "renders table rows without embedded newlines in soul cells"
+    (with-redefs [loader/load-config! (fn [& _]
+                                        {:crew   {"joe" {:model "grover"
+                                                         :soul  "Line one\nLine two\nLine three"}}
+                                         :models {"grover" {:model "echo" :provider "grover"}}})]
+      (let [output (with-out-str (should= 0 (sut/run crew-opts)))]
+        (should-contain "Line one Line two Line three" output)
+        (should-not (re-find #"Line one\n" output))))))
