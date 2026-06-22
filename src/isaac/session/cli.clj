@@ -408,3 +408,9 @@
 
 (defmethod cli-api/option-spec :sessions [_id]
   option-spec)
+
+(defmethod cli-api/subcommands :sessions [_id]
+  [{:name "show"   :summary "Show one session"}
+   {:name "set"    :summary "Set a mutable field: sessions set <id>.<path> <value>"}
+   {:name "unset"  :summary "Clear a mutable field: sessions unset <id>.<path>"}
+   {:name "delete" :summary "Delete a session"}])

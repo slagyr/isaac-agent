@@ -144,3 +144,6 @@
 
 (defmethod cli-api/option-spec :crew [_id]
   option-spec)
+
+(defmethod cli-api/subcommands :crew [_id]
+  [{:name "show" :summary "Show one crew member"}])

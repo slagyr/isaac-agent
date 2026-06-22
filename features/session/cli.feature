@@ -13,6 +13,18 @@ Feature: Sessions Command
     Then the stdout contains "Usage: isaac sessions"
     And the exit code is 0
 
+  Scenario: sessions --help lists its subcommands
+    When isaac is run with "sessions --help"
+    Then the stdout matches:
+      | pattern                                          |
+      | Usage: isaac sessions                            |
+      | Subcommands:                                     |
+      | show\s+Show one session                          |
+      | set\s+Set a mutable field.*<id>\.<path> <value>  |
+      | unset\s+Clear a mutable field.*<id>\.<path>      |
+      | delete\s+Delete a session                        |
+    And the exit code is 0
+
   Scenario: sessions defaults to one flat table sorted alphabetically with a CREW column
     Given the following sessions exist:
       | name         | crew  | total-tokens | last-input-tokens | updated-at          |

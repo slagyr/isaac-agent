@@ -10,6 +10,15 @@ Feature: Crew Command
     Then the stdout contains "Usage: isaac crew"
     And the exit code is 0
 
+  Scenario: crew --help lists its subcommands
+    When isaac is run with "crew --help"
+    Then the stdout matches:
+      | pattern              |
+      | Usage: isaac crew    |
+      | Subcommands:         |
+      | show\s+Show one crew |
+    And the exit code is 0
+
   Scenario: crew lists configured crew members with underlined headers
     Given default Grover setup
     And the isaac EDN file "config/crew/ketch.edn" exists with:
