@@ -19,7 +19,7 @@ Feature: Rules (always-on prepared prompts)
       | soul  | You are Hieronymus, the ship's botanist. |
 
   Scenario: a rule's body is always present in the cached system prompt
-    Given the isaac file "config/rules/greenhouse-standards.md" exists with:
+    Given the isaac file "prompts/rules/greenhouse-standards.md" exists with:
       """
       ---
       type: rule
@@ -36,7 +36,7 @@ Feature: Rules (always-on prepared prompts)
       | system[0].cache_control.type | ephemeral                                                    | cached, project-stable            |
 
   Scenario: global and project rules both apply
-    Given the isaac file "config/rules/ship-wide.md" exists with:
+    Given the isaac file "prompts/rules/ship-wide.md" exists with:
       """
       ---
       type: rule
@@ -47,7 +47,7 @@ Feature: Rules (always-on prepared prompts)
     And the following sessions exist:
       | name       | crew       | cwd           |
       | greenhouse | hieronymus | target/garden |
-    And the file "target/garden/.isaac/rules/greenhouse.md" contains:
+    And the file "target/garden/prompts/rules/greenhouse.md" contains:
       """
       ---
       type: rule
@@ -60,7 +60,7 @@ Feature: Rules (always-on prepared prompts)
       | system[0].text | #"(?s).*Address the Captain formally.*Never vent atmosphere.*" | both rules applied (union) |
 
   Scenario: rules are rendered in a stable (sorted) order
-    Given the isaac file "config/rules/airlock.md" exists with:
+    Given the isaac file "prompts/rules/airlock.md" exists with:
       """
       ---
       type: rule
@@ -68,7 +68,7 @@ Feature: Rules (always-on prepared prompts)
       ---
       Seal both doors before cycling.
       """
-    And the isaac file "config/rules/quarantine.md" exists with:
+    And the isaac file "prompts/rules/quarantine.md" exists with:
       """
       ---
       type: rule

@@ -18,7 +18,7 @@ Feature: Prompt-template command expansion
       | path  | value                                    |
       | model | grover                                   |
       | soul  | You are Hieronymus, the ship's botanist. |
-    And the isaac file "config/commands/tend.md" exists with:
+    And the isaac file "prompts/commands/tend.md" exists with:
       """
       ---
       type: command
@@ -43,7 +43,7 @@ Feature: Prompt-template command expansion
       | path  | value                                    |
       | model | grover                                   |
       | soul  | You are Hieronymus, the ship's botanist. |
-    And the isaac file "config/skills/greenhouse-protocol/SKILL.md" exists with:
+    And the isaac file "prompts/skills/greenhouse-protocol/SKILL.md" exists with:
       """
       ---
       type: skill
@@ -51,7 +51,7 @@ Feature: Prompt-template command expansion
       ---
       Always quarantine new specimens for one cycle before integration.
       """
-    And the isaac file "config/commands/tend.md" exists with:
+    And the isaac file "prompts/commands/tend.md" exists with:
       """
       ---
       type: command

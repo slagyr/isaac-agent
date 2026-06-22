@@ -202,7 +202,7 @@
           (recur parent (conj acc path)))))))
 
 (defn- prompt-marker-paths [config]
-  (concat [".isaac"]
+  (concat [".isaac" "prompts"]
           (remove str/blank?
                   (concat (:prompt-paths config)
                           (:command-paths config)
@@ -217,7 +217,7 @@
         (absolute-path cwd))))
 
 (defn- global-roots [root config]
-  (concat [{:layer :global :mode :typed-base :path (str root "/config")}]
+  (concat [{:layer :global :mode :typed-base :path (str root "/prompts")}]
           (map (fn [path] {:layer :global :mode :generic-root :path (join-path root path)})
                (:prompt-paths config))
           (map (fn [path] {:default-type :command :layer :global :mode :typed-root :path (join-path root path)})
@@ -227,7 +227,7 @@
 
 (defn- project-roots [project-root config]
   (when project-root
-    (concat [{:layer :project :mode :typed-base :path (str project-root "/.isaac")}]
+    (concat [{:layer :project :mode :typed-base :path (str project-root "/prompts")}]
             (map (fn [path] {:layer :project :mode :generic-root :path (join-path project-root path)})
                  (:prompt-paths config))
             (map (fn [path] {:default-type :command :layer :project :mode :typed-root :path (join-path project-root path)})

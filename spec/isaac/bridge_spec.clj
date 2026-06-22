@@ -208,7 +208,7 @@
         (should= "/prune orchid" (:input @captured))))
 
     (it "expands configured prompt-template commands before running the turn"
-      (write-file! (str *root* "/config/commands/tend.md")
+      (write-file! (str *root* "/prompts/commands/tend.md")
                    (str "---\n"
                         "type: command\n"
                         "params: [specimen]\n"
@@ -223,12 +223,12 @@
         (should= "Tend the dilithium-orchid in the greenhouse." (:input @captured))))
 
     (it "inlines declared skill bodies into expanded prompt-template commands"
-      (write-file! (str *root* "/config/skills/greenhouse-protocol/SKILL.md")
+      (write-file! (str *root* "/prompts/skills/greenhouse-protocol/SKILL.md")
                    (str "---\n"
                         "type: skill\n"
                         "---\n\n"
                         "Always quarantine new specimens for one cycle before integration."))
-      (write-file! (str *root* "/config/commands/tend.md")
+      (write-file! (str *root* "/prompts/commands/tend.md")
                    (str "---\n"
                         "type: command\n"
                         "params: [specimen]\n"

@@ -138,7 +138,7 @@
 
   (it "includes resolved prompt-template commands when listing advertised commands"
     (nexus/-with-nested-nexus {:fs (fs/mem-fs)}
-      (write-file! (str root "/config/commands/work.md")
+      (write-file! (str root "/prompts/commands/work.md")
                    (str "---\n"
                         "type: command\n"
                         "description: Start work on a ready bean\n"
@@ -156,7 +156,7 @@
 
   (it "keeps a registered slash command when a prompt-template command has the same name"
     (nexus/-with-nested-nexus {:fs (fs/mem-fs)}
-      (write-file! (str root "/config/commands/status.md")
+      (write-file! (str root "/prompts/commands/status.md")
                    (str "---\n"
                         "type: command\n"
                         "description: Prompt template status\n"

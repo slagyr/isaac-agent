@@ -21,7 +21,7 @@ Feature: Skill bundled resources via load_skill
       | greenhouse | hieronymus |
 
   Scenario: load_skill fetches a bundled resource file from the skill's directory
-    Given the isaac file "config/skills/greenhouse-protocol/SKILL.md" exists with:
+    Given the isaac file "prompts/skills/greenhouse-protocol/SKILL.md" exists with:
       """
       ---
       type: skill
@@ -29,7 +29,7 @@ Feature: Skill bundled resources via load_skill
       ---
       Follow the checklist in checklist.md.
       """
-    And the isaac file "config/skills/greenhouse-protocol/checklist.md" exists with:
+    And the isaac file "prompts/skills/greenhouse-protocol/checklist.md" exists with:
       """
       1. Check soil moisture.
       2. Quarantine new specimens for one cycle.
@@ -45,7 +45,7 @@ Feature: Skill bundled resources via load_skill
       | 2. Quarantine new specimens for one cycle. |
 
   Scenario: a resource path that escapes the skill directory is rejected
-    Given the isaac file "config/skills/greenhouse-protocol/SKILL.md" exists with:
+    Given the isaac file "prompts/skills/greenhouse-protocol/SKILL.md" exists with:
       """
       ---
       type: skill

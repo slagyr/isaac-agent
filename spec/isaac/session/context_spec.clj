@@ -44,19 +44,19 @@
 
   (it "returns global and project rules in stable name order"
     (let [cfg {:root test-root}]
-      (fs/spit (nexus/get :fs) (str test-root "/config/rules/quarantine.md")
+      (fs/spit (nexus/get :fs) (str test-root "/prompts/rules/quarantine.md")
                (str "---\n"
                     "type: rule\n"
                     "description: Quarantine discipline\n"
                     "---\n\n"
                     "Isolate new specimens for one cycle."))
-      (fs/spit (nexus/get :fs) (str test-root "/config/rules/airlock.md")
+      (fs/spit (nexus/get :fs) (str test-root "/prompts/rules/airlock.md")
                (str "---\n"
                     "type: rule\n"
                     "description: Airlock discipline\n"
                     "---\n\n"
                     "Seal both doors before cycling."))
-      (fs/spit (nexus/get :fs) (str test-root "/project/.isaac/rules/greenhouse.md")
+      (fs/spit (nexus/get :fs) (str test-root "/project/prompts/rules/greenhouse.md")
                (str "---\n"
                     "type: rule\n"
                     "description: Greenhouse standing orders\n"
@@ -78,7 +78,7 @@
       (example)))
 
   (it "returns a cached skill menu and load_skill when skills are discovered"
-    (fs/spit (nexus/get :fs) (str test-root "/config/skills/greenhouse-protocol/SKILL.md")
+    (fs/spit (nexus/get :fs) (str test-root "/prompts/skills/greenhouse-protocol/SKILL.md")
              (str "---\n"
                   "type: skill\n"
                   "description: Use when tending specimens\n"
@@ -91,13 +91,13 @@
              (sut/read-skill-disclosure {:root test-root} test-root (str test-root "/project"))))
 
   (it "falls back to list_skills when the configured threshold is exceeded"
-    (fs/spit (nexus/get :fs) (str test-root "/config/skills/a/SKILL.md")
+    (fs/spit (nexus/get :fs) (str test-root "/prompts/skills/a/SKILL.md")
              (str "---\n"
                   "type: skill\n"
                   "description: First\n"
                   "---\n\n"
                   "One."))
-    (fs/spit (nexus/get :fs) (str test-root "/config/skills/b/SKILL.md")
+    (fs/spit (nexus/get :fs) (str test-root "/prompts/skills/b/SKILL.md")
              (str "---\n"
                   "type: skill\n"
                   "description: Second\n"

@@ -22,7 +22,7 @@
 
   (it "loads a discovered skill body for the calling session"
     (helper/create-session! "/test/isaac" "work-sess" {:crew "main" :cwd "/workspace/project"})
-    (write-skill! "/test/isaac/config/skills/greenhouse-protocol/SKILL.md"
+    (write-skill! "/test/isaac/prompts/skills/greenhouse-protocol/SKILL.md"
                   (str "---\n"
                        "type: skill\n"
                        "description: Use when tending specimens\n"
@@ -34,13 +34,13 @@
 
   (it "lists discovered skills in stable sorted order"
     (helper/create-session! "/test/isaac" "work-sess" {:crew "main" :cwd "/workspace/project"})
-    (write-skill! "/test/isaac/config/skills/greenhouse-protocol/SKILL.md"
+    (write-skill! "/test/isaac/prompts/skills/greenhouse-protocol/SKILL.md"
                   (str "---\n"
                        "type: skill\n"
                        "description: Use when tending specimens\n"
                        "---\n\n"
                        "Always quarantine new specimens for one cycle."))
-    (write-skill! "/test/isaac/config/skills/aeroponics/SKILL.md"
+    (write-skill! "/test/isaac/prompts/skills/aeroponics/SKILL.md"
                   (str "---\n"
                        "type: skill\n"
                        "description: Use for soil-free growing\n"
@@ -61,13 +61,13 @@
 
   (it "loads a bundled resource from a directory-packaged skill"
     (helper/create-session! "/test/isaac" "work-sess" {:crew "main" :cwd "/workspace/project"})
-    (write-skill! "/test/isaac/config/skills/greenhouse-protocol/SKILL.md"
+    (write-skill! "/test/isaac/prompts/skills/greenhouse-protocol/SKILL.md"
                   (str "---\n"
                        "type: skill\n"
                        "description: Use when tending specimens\n"
                        "---\n\n"
                        "Follow checklist.md."))
-    (write-skill! "/test/isaac/config/skills/greenhouse-protocol/checklist.md"
+    (write-skill! "/test/isaac/prompts/skills/greenhouse-protocol/checklist.md"
                   "1. Check soil moisture.\n2. Quarantine new specimens.")
     (should= {:result "1. Check soil moisture.\n2. Quarantine new specimens."}
              (sut/load-skill-tool {"session_key" "work-sess"
@@ -76,7 +76,7 @@
 
   (it "rejects a resource path that escapes the skill directory"
     (helper/create-session! "/test/isaac" "work-sess" {:crew "main" :cwd "/workspace/project"})
-    (write-skill! "/test/isaac/config/skills/greenhouse-protocol/SKILL.md"
+    (write-skill! "/test/isaac/prompts/skills/greenhouse-protocol/SKILL.md"
                   (str "---\n"
                        "type: skill\n"
                        "description: Use when tending specimens\n"
@@ -90,7 +90,7 @@
 
   (it "returns not found when the bundled resource does not exist"
     (helper/create-session! "/test/isaac" "work-sess" {:crew "main" :cwd "/workspace/project"})
-    (write-skill! "/test/isaac/config/skills/greenhouse-protocol/SKILL.md"
+    (write-skill! "/test/isaac/prompts/skills/greenhouse-protocol/SKILL.md"
                   (str "---\n"
                        "type: skill\n"
                        "description: Use when tending specimens\n"

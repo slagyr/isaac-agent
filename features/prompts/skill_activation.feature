@@ -27,7 +27,7 @@ Feature: Model-driven skill activation
       | greenhouse | hieronymus |
 
   Scenario: discovered skills are advertised (name + description) in the cached system prompt
-    Given the isaac file "config/skills/greenhouse-protocol/SKILL.md" exists with:
+    Given the isaac file "prompts/skills/greenhouse-protocol/SKILL.md" exists with:
       """
       ---
       type: skill
@@ -41,7 +41,7 @@ Feature: Model-driven skill activation
       | system[0].cache_control.type | ephemeral                                                  | menu sits in the cached prefix |
 
   Scenario: the model loads a skill body on demand via load_skill
-    Given the isaac file "config/skills/greenhouse-protocol/SKILL.md" exists with:
+    Given the isaac file "prompts/skills/greenhouse-protocol/SKILL.md" exists with:
       """
       ---
       type: skill
@@ -59,7 +59,7 @@ Feature: Model-driven skill activation
       | Always quarantine new specimens for one cycle before integration. |
 
   Scenario: the skill menu is rendered in a stable (sorted) order
-    Given the isaac file "config/skills/aeroponics/SKILL.md" exists with:
+    Given the isaac file "prompts/skills/aeroponics/SKILL.md" exists with:
       """
       ---
       type: skill
@@ -67,7 +67,7 @@ Feature: Model-driven skill activation
       ---
       Mist the roots on a schedule.
       """
-    And the isaac file "config/skills/greenhouse-protocol/SKILL.md" exists with:
+    And the isaac file "prompts/skills/greenhouse-protocol/SKILL.md" exists with:
       """
       ---
       type: skill
