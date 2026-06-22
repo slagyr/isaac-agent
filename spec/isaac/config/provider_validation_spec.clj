@@ -1,5 +1,7 @@
 (ns isaac.config.provider-validation-spec
   (:require
+    [isaac.config.loader :as loader]
+    [isaac.config.paths :as paths]
     [isaac.fs :as fs]
     [isaac.marigold :as marigold]
     [isaac.marigold.agent :as marigold.agent]
@@ -50,4 +52,16 @@
     (let [result (marigold/load-config)]
       (should (some #(and (= "providers.dreamy.api-key" (:key %))
                           (re-find #"is required when auth is api-key" (:value %)))
-                    (:errors result))))))
+                    (:errors result)))))
+
+  (it "loads a typed provider whose inherited :api validates against :isaac.agent/llm-api"
+    (marigold.agent/with-real-manifest
+      (let [fs*  (fs/mem-fs)
+            root "/test/provider-cli-load"
+            cfg-root (paths/config-root root)]
+        (fs/mkdirs fs* cfg-root)
+        (fs/spit fs* (str cfg-root "/isaac.edn") "{}")
+        (fs/spit fs* (str cfg-root "/providers/chatgpt.edn") "{:type :chatgpt}")
+        (let [result (loader/load-config-result {:root root :fs fs*})]
+          (should= [] (:errors result))
+          (should= "chatgpt" (name (get-in result [:config :providers "chatgpt" :type]))))))))
