@@ -27,7 +27,9 @@
   (mapcat (fn [[module-id entry]]
             (mapcat (fn [kind]
                       (mapcat (fn [[_ extension]]
-                                (when-let [field-schema (or (:extra-schema extension) (:schema extension))]
+                                (when-let [field-schema (or (:extra-schema extension)
+                                                             (:send-schema extension)
+                                                             (:schema extension))]
                                   (verify-manifest-schema-fragment module-id field-schema)))
                               (get-in entry [:manifest kind])))
                     manifest-schema-kinds))
@@ -36,7 +38,8 @@
 (defn- comm-reserved-schema-errors [module-index]
   (mapcat (fn [[module-id entry]]
             (keep (fn [[extension-id extension]]
-                    (when (contains? (:extra-schema extension) :type)
+                    (when (or (contains? (:extra-schema extension) :type)
+                              (contains? (:send-schema extension) :type))
                       {:key   (str "modules." (->id module-id))
                        :value (str ":type is the slot discriminator, not a field"
                                    " (comm " (name extension-id) ")")}))

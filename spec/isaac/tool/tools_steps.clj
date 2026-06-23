@@ -12,6 +12,7 @@
     [isaac.session.session-steps :as session-steps]
     [isaac.session.store.spi :as session-store-proto]
     [isaac.nexus :as nexus]
+    [isaac.comm.delivery.queue :as delivery-queue]
     [isaac.tool.builtin :as builtin]
     [isaac.tool.file :as file]
     [isaac.tool.glob :as glob]
@@ -477,7 +478,67 @@
     (g/should= [] (:failures r))))
 
 (defn tool-result-is-error []
-  (g/should (:isError (g/get :tool-result))))
+  (let [result (g/get :tool-result)]
+    (g/should (or (:isError result)
+                  (and (string? result) (str/starts-with? result "Error:"))))))
+
+(defn- loaded-feature-config []
+  (or (g/get :feature-config)
+      (let [cfg (:config (loader/load-config-result {:root (root) :fs (feature-fs)}))]
+        (g/assoc! :feature-config cfg)
+        cfg)))
+
+(defn- record-value [record path-str]
+  (if (str/includes? path-str "/")
+    (get record (keyword path-str))
+    (match/get-path record path-str)))
+
+(defn- actual->str [actual]
+  (cond
+    (nil? actual)     nil
+    (keyword? actual) (name actual)
+    :else             (str actual)))
+
+(defn prompt-tool-has-parameters [tool-name table]
+  (with-feature-fs
+    (fn []
+      (let [cfg   (loaded-feature-config)
+            _     (loader/set-snapshot! cfg "prompt-tool-has-parameters")
+            allow #{(str tool-name)}
+            _     (builtin/register-all! allow)
+            tool  (first (filter #(= tool-name (:name %))
+                                 (registry/tool-definitions allow (:module-index cfg))))
+            props (get-in tool [:parameters :properties])
+            req   (set (get-in tool [:parameters :required]))]
+        (g/should (some? tool))
+        (doseq [row (table-rows table)]
+          (let [param (get row "param")
+                spec  (get props param)]
+            (when (nil? spec)
+              (throw (ex-info (str "missing parameter: " param) {:param param :props props})))
+            (g/should (some? spec))
+            (g/should= (get row "type") (:type spec))
+            (g/should= (= "true" (get row "required"))
+                       (contains? req param))))))))
+
+(defn pending-comm-delivery-matches [table]
+  (with-feature-fs
+    (fn []
+      (let [pending (delivery-queue/list-pending)]
+        (g/should (pos? (count pending)))
+        (doseq [row (table-rows table)]
+          (let [path     (get row "path")
+                expected (get row "value")
+                actual   (record-value (first pending) path)]
+            (g/should= expected (actual->str actual))))))))
+
+(defn no-pending-comm-deliveries []
+  (with-feature-fs
+    (fn []
+      (g/should= [] (delivery-queue/list-pending)))))
+
+(defn comm-send-tool-result-is-error []
+  (tool-result-is-error))
 
 (defn tool-result-indicates-error []
   (g/should (:isError (g/get :tool-result))))
@@ -578,6 +639,14 @@
 (defthen "the tool result JSON has:" isaac.tool.tools-steps/tool-result-json-has)
 
 (defthen "the tool result is an error" isaac.tool.tools-steps/tool-result-is-error)
+
+(defthen #"the prompt tool \"([^\"]+)\" has parameters:" isaac.tool.tools-steps/prompt-tool-has-parameters)
+
+(defthen "a pending comm delivery matches:" isaac.tool.tools-steps/pending-comm-delivery-matches)
+
+(defthen "there are no pending comm deliveries" isaac.tool.tools-steps/no-pending-comm-deliveries)
+
+(defthen "the comm_send tool result is an error" isaac.tool.tools-steps/comm-send-tool-result-is-error)
 
 (defthen "the tool result should indicate an error" isaac.tool.tools-steps/tool-result-indicates-error)
 

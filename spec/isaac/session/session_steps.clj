@@ -567,6 +567,21 @@
                        (mapv keyword))]
         (update-crew-config! crew-id #(assoc % :tools {:allow allow}))))))
 
+(defn telly-comm-module-registered []
+  ;; Module ids contain dots; persist-config-entry! splits on "." so we
+  ;; must write :isaac.comm.telly as a single :modules key.
+  (when-let [root (root-dir)]
+    (with-feature-fs
+      (fn []
+        (let [path    (str root "/config/isaac.edn")
+              fs*     (mem-fs)
+              current (if (fs/exists? fs* path) (edn/read-string (fs/slurp fs* path)) {})
+              updated (update current :modules assoc :isaac.comm.telly
+                              {:local/root "modules/isaac.comm.telly"})]
+          (fs/mkdirs fs* (fs/parent path))
+          (fs/spit   fs* path (pr-str updated))
+          (invalidate-feature-config!))))))
+
 (defn ollama-server-running []
   (g/update! :provider-configs
              (fn [m] (assoc (or m {}) "ollama" {:base-url "http://localhost:11434"}))))
@@ -1390,6 +1405,8 @@
 (defgiven "the crew {crew-id:string} allows tools: {tools:string}" isaac.session.session-steps/crew-tool-allow
   "Patches :tools.allow on an existing crew config. Comma-separated tool
    names; no need to repeat model/soul fields already set by default Grover setup.")
+
+(defgiven "the telly comm module is registered" isaac.session.session-steps/telly-comm-module-registered)
 
 (defgiven "the Ollama server is running" isaac.session.session-steps/ollama-server-running
   "Sets the test 'ollama' provider-config to localhost:11434. Does not

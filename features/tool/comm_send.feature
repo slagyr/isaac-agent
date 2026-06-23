@@ -26,7 +26,6 @@ Feature: comm_send tool
       | name       | crew |
       | dawn-watch | main |
 
-  @wip
   Scenario: comm_send exposes only the common fields for a comm with no :send-schema
     Given config:
       | key                | value   |
@@ -37,7 +36,6 @@ Feature: comm_send tool
       | comm    | string | true     |
       | content | string | true     |
 
-  @wip
   Scenario: a comm's :send-schema adds namespaced comm-specific fields to comm_send
     Given the telly comm module is registered
     And config:
@@ -51,7 +49,6 @@ Feature: comm_send tool
       | telly/target | string | false    |
       | telly/loft   | string | false    |
 
-  @wip
   Scenario: calling comm_send enqueues a delivery record, queue-first
     Given the telly comm module is registered
     And config:
@@ -70,7 +67,6 @@ Feature: comm_send tool
       | telly/target | bridge          |
       | telly/loft   | high            |
 
-  @wip
   Scenario: comm_send to an unknown comm slot errors without enqueueing
     And the following model responses are queued:
       | type     | tool_call | arguments                                    |

@@ -95,7 +95,8 @@
   {:factory isaac.tool.builtin/memory-search-tool-factory},
   :load_skill {:factory isaac.tool.skill/load-skill-tool-factory},
   :list_skills {:factory isaac.tool.skill/list-skills-tool-factory},
-  :memory_get {:factory isaac.tool.builtin/memory-get-tool-factory}},
+  :memory_get {:factory isaac.tool.builtin/memory-get-tool-factory},
+  :comm_send {:factory isaac.tool.comm-send/comm-send-tool-factory}},
  :isaac.agent/provider-template
  {:anthropic
   {:template

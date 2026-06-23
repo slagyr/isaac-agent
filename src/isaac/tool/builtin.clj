@@ -10,13 +10,14 @@
     [isaac.tool.grep :as grep]
     [isaac.tool.memory :as memory]
     [isaac.tool.session :as session]
+    [isaac.tool.comm-send :as comm-send]
     [isaac.tool.web-fetch :as web-fetch]
     [isaac.tool.web-search :as web-search]))
 
 ;; region ----- Registration -----
 
 (def ^:private ordered-built-in-tools
-  ["read" "write" "edit" "grep" "glob" "web_fetch" "web_search" "memory_write" "memory_get" "memory_search" "exec" "session_info" "session_model" "load_skill" "list_skills" "hail-send"])
+  ["read" "write" "edit" "grep" "glob" "web_fetch" "web_search" "memory_write" "memory_get" "memory_search" "exec" "session_info" "session_model" "load_skill" "list_skills" "comm_send" "hail-send"])
 
 (def ^:private built-in-tool-specs
   {"read"          {:name        "read"
@@ -156,7 +157,14 @@
   (or (= ::all allowed-tools)
       (boolean (and normalized (contains? normalized tool-name)))))
 
+(defn- register-comm-send! []
+  (tool-registry/unregister! "comm_send")
+  (tool-registry/register-tool-entry!
+    [:comm_send {:factory 'isaac.tool.comm-send/comm-send-tool-factory}]))
+
 (defn- register-built-in-tool! [tool-name]
+  (when (= tool-name "comm_send")
+    (register-comm-send!))
   (when-not (tool-registry/lookup tool-name)
     (when-let [spec (get built-in-tool-specs tool-name)]
       (if-let [pred (:available? spec)]

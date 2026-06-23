@@ -12,4 +12,6 @@
                                  :validations [[:present-when? :type :telly]]}
                          :color {:type :string}
                          :mood  {:type :string
-                                 :validations [[:one-of? "happy" "sad" "grumpy"]]}}}}}
+                                 :validations [[:one-of? "happy" "sad" "grumpy"]]}}
+          :send-schema  {:telly/target {:type :string :description "Telly recipient"}
+                         :telly/loft   {:type :string :description "Telly loft"}}}}}
