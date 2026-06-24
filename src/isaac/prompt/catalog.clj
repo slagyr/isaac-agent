@@ -5,6 +5,7 @@
     [clojure.string :as str]
     [isaac.fs :as fs]
     [isaac.logger :as log]
+    [isaac.template :as template]
     [isaac.tool.fs-bounds :as fs-bounds]))
 
 (def ^:private default-prompt-dir-names
@@ -157,12 +158,6 @@
                       (str/split trimmed #"\s+" arg-count))]
     (zipmap params (concat arg-values (repeat "")))))
 
-(defn- render-template [template bindings]
-  (reduce-kv (fn [text param value]
-               (str/replace text (str "{{" param "}}") (or value "")))
-             (or template "")
-             bindings))
-
 (defn- skill-bodies [catalog skill-names]
   (->> skill-names
        (map normalize-entry-name)
@@ -268,7 +263,9 @@
 (defn resolve-command-prompt [{:keys [config cwd fs root]} command-name args]
   (let [catalog (resolve-catalog {:config config :cwd cwd :fs fs :root root})]
     (when-let [entry (get-in catalog [:commands (normalize-entry-name command-name)])]
-      (let [body     (-> entry entry-body (render-template (bind-params entry args)) str/trim)
+      (let [body     (-> entry entry-body
+                         (template/render (bind-params entry args) {:on-missing :keep})
+                         str/trim)
             skills   (skill-bodies catalog (:skills entry))
             parts    (remove str/blank? (cons body skills))]
         {:input (str/join "\n\n" parts)
