@@ -5,7 +5,7 @@
     [clojure.string :as str]
     [isaac.fs :as fs]
     [isaac.logger :as log]
-    [isaac.template :as template]
+    [isaac.prompt.template :as template]
     [isaac.tool.fs-bounds :as fs-bounds]))
 
 (def ^:private default-prompt-dir-names
