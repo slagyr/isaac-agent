@@ -43,9 +43,24 @@ Feature: Memory Comm
       | turn-end    |           |
 
   Scenario: Compaction triggers during a memory comm turn
-    Given the following sessions exist:
-      | name        | total-tokens | #comment              |
-      | memory-chat | 30000       | exceeds 90% of 32768  |
+    # Compaction keys off the live outbound-prompt estimate (system prompt +
+    # transcript), so a small context window plus a non-trivial transcript
+    # pushes the estimate past 0.8 * window. head 0.1 keeps the
+    # post-compaction estimate under threshold so compaction makes progress.
+    Given the isaac EDN file "config/models/grover.edn" exists with:
+      | path | value |
+      | model | echo |
+      | provider | grover |
+      | context-window | 200 |
+    And the following sessions exist:
+      | name        | compaction.head |
+      | memory-chat | 0.1             |
+    And session "memory-chat" has transcript:
+      | type    | message.role | message.content                                                              |
+      | message | user         | Please summarize the work we did on the logging subsystem and the tool loop   |
+      | message | assistant    | We discussed logging output sinks, the compaction trigger, and tool dispatch  |
+      | message | user         | And what about the retry behavior we changed in the dispatcher last week      |
+      | message | assistant    | We made the dispatcher retry idempotent and added backoff between attempts    |
     And the following model responses are queued:
       | type | content                | model |
       | text | Summary of prior chat  | echo  |

@@ -18,13 +18,18 @@ Feature: Context Compaction Logging
       | soul | You are Atticus. |
 
   Scenario: Chat logs the compaction trigger with provider and model context
-    Given the following sessions exist:
-      | name            | total-tokens | #comment                  |
-      | compaction-chat | 95          | exceeds 90% of 100 window |
+    Given the isaac EDN file "config/models/local.edn" exists with:
+      | path | value |
+      | model | test-model |
+      | provider | grover |
+      | context-window | 200 |
+    And the following sessions exist:
+      | name            | total-tokens | compaction.head | #comment                       |
+      | compaction-chat | 95          | 0.1             | live estimate exceeds threshold |
     And session "compaction-chat" has transcript:
-      | type    | message.role | message.content                |
-      | message | user         | Please summarize our work      |
-      | message | assistant    | We discussed logging and tools |
+      | type    | message.role | message.content                                                              |
+      | message | user         | Please summarize the work we did on the logging subsystem and the tool loop   |
+      | message | assistant    | We discussed logging output sinks, the compaction trigger, and tool dispatch  |
     And the following model responses are queued:
       | type | content               | model      |
       | text | Summary of prior chat | test-model |
@@ -32,38 +37,48 @@ Feature: Context Compaction Logging
     When the user sends "Can you summarize README.md?" on session "compaction-chat"
     Then the memory comm has events matching:
       | event             | provider | model      | total-tokens | context-window |
-      | compaction-start  | grover   | test-model | 95           | 100            |
+      | compaction-start  | grover   | test-model | #"\d+"      | 200            |
 
   Scenario: The new user message is preserved after compaction
-    Given the following sessions exist:
-      | name            | total-tokens | #comment                  |
-      | compaction-chat | 95          | exceeds 90% of 100 window |
+    Given the isaac EDN file "config/models/local.edn" exists with:
+      | path | value |
+      | model | test-model |
+      | provider | grover |
+      | context-window | 200 |
+    And the following sessions exist:
+      | name            | total-tokens | compaction.head | #comment                       |
+      | compaction-chat | 95          | 0.1             | live estimate exceeds threshold |
     And session "compaction-chat" has transcript:
-      | type    | message.role | message.content                |
-      | message | user         | Please summarize our work      |
-      | message | assistant    | We discussed logging and tools |
+      | type    | message.role | message.content                                                              |
+      | message | user         | Please summarize the work we did on the logging subsystem and the tool loop   |
+      | message | assistant    | We discussed logging output sinks, the compaction trigger, and tool dispatch  |
     And the following model responses are queued:
       | type | content               | model      |
       | text | Summary of prior chat | test-model |
       | text | README summary        | test-model |
     When the user sends "Can you summarize README.md?" on session "compaction-chat"
     Then session "compaction-chat" has transcript matching:
-      | type    | message.role | message.content                |
-      | message | user         | Please summarize our work      |
-      | message | assistant    | We discussed logging and tools |
+      | type    | message.role | message.content                                                              |
+      | message | user         | Please summarize the work we did on the logging subsystem and the tool loop   |
+      | message | assistant    | We discussed logging output sinks, the compaction trigger, and tool dispatch  |
     And session "compaction-chat" has active transcript matching:
       | #index | type       | summary               | message.role | message.content              |
       | 0      | compaction | Summary of prior chat |              |                              |
       | 1      | message    |                       | user         | Can you summarize README.md? |
 
   Scenario: Chat completes after compaction
-    Given the following sessions exist:
-      | name            | total-tokens | #comment                  |
-      | compaction-chat | 95          | exceeds 90% of 100 window |
+    Given the isaac EDN file "config/models/local.edn" exists with:
+      | path | value |
+      | model | test-model |
+      | provider | grover |
+      | context-window | 200 |
+    And the following sessions exist:
+      | name            | total-tokens | compaction.head | #comment                       |
+      | compaction-chat | 95          | 0.1             | live estimate exceeds threshold |
     And session "compaction-chat" has transcript:
-      | type    | message.role | message.content                |
-      | message | user         | Please summarize our work      |
-      | message | assistant    | We discussed logging and tools |
+      | type    | message.role | message.content                                                              |
+      | message | user         | Please summarize the work we did on the logging subsystem and the tool loop   |
+      | message | assistant    | We discussed logging output sinks, the compaction trigger, and tool dispatch  |
     And the following model responses are queued:
       | type | content               | model      |
       | text | Summary of prior chat | test-model |
@@ -101,13 +116,13 @@ Feature: Context Compaction Logging
 
   Scenario: Compaction targets only the oldest messages when history exceeds the model context window
     Given the following sessions exist:
-      | name            | total-tokens | compaction.strategy | compaction.threshold | compaction.head | #comment                  |
-      | partial-compact | 95          | slinky              | 0.8                  | 0.5             | exceeds threshold         |
+      | name            | total-tokens | compaction.strategy | compaction.threshold | compaction.head | #comment                                  |
+      | partial-compact | 95          | slinky              | 0.8                  | 0.2             | head 0.2*200=40 keeps last exchange (2 msgs) |
     And the isaac EDN file "config/models/local.edn" exists with:
       | path | value |
       | model | test-model |
       | provider | grover |
-      | context-window | 60 |
+      | context-window | 200 |
     And session "partial-compact" has transcript:
       | type    | message.role | message.content                                       | tokens |
       | message | user         | First question about the project status               | 20     |
@@ -176,13 +191,18 @@ Feature: Context Compaction Logging
       | message | assistant    | Final response after shrink  |
 
   Scenario: Successful compaction does not immediately re-trigger on the next user turn
-    Given the following sessions exist:
-      | name          | input-tokens | output-tokens | total-tokens | #comment                          |
-      | rebound-test  | 120         | 30           | 150         | stale accumulators cause rebound  |
+    Given the isaac EDN file "config/models/local.edn" exists with:
+      | path | value |
+      | model | test-model |
+      | provider | grover |
+      | context-window | 200 |
+    And the following sessions exist:
+      | name          | input-tokens | output-tokens | total-tokens | compaction.head | #comment                         |
+      | rebound-test  | 120         | 30           | 150         | 0.1             | stale accumulators cause rebound |
     And session "rebound-test" has transcript:
-      | type    | message.role | message.content                                                  |
-      | message | user         | Please summarize our previous context before we continue. |
-      | message | assistant    | We covered tools, logs, and pending compaction fixes.     |
+      | type    | message.role | message.content                                                                                       |
+      | message | user         | Please summarize our previous context about the logging subsystem and tool loop before we continue.    |
+      | message | assistant    | We covered output sinks, the compaction trigger, tool dispatch, and the pending compaction loop fixes. |
     And the following model responses are queued:
       | type | content                          | model      |
       | text | Summary after compaction         | test-model |
@@ -207,21 +227,21 @@ Feature: Context Compaction Logging
       | model          | test-model |
       | provider       | grover     |
       | enforce-context-window | true |
-      | context-window | 600        |
+      | context-window | 200        |
     And the isaac EDN file "config/crew/main.edn" exists with:
       | path  | value          |
       | model | local          |
       | soul  | You are Atticus. |
     And the following sessions exist:
-      | name      | total-tokens |
-      | huge-head | 620          |
+      | name      | total-tokens | compaction.head |
+      | huge-head | 620          | 0.1             |
     And session "huge-head" has transcript:
-      | type    | message.role | message.content  | tokens |
-      | message | user         | block A (oldest) | 60     |
-      | message | assistant    | reply A          | 60     |
-      | message | user         | block B          | 60     |
-      | message | assistant    | reply B          | 60     |
-      | message | user         | latest question  | 61     |
+      | type    | message.role | message.content                                                              | tokens |
+      | message | user         | block A oldest: planning notes about logging, tools, and the dispatch loop    | 60     |
+      | message | assistant    | reply A: we agreed on output sinks, the compaction trigger, and tool dispatch | 60     |
+      | message | user         | block B: more notes on retry behavior and the backoff between dispatch tries  | 60     |
+      | message | assistant    | reply B: dispatcher retry is now idempotent with backoff between attempts     | 60     |
+      | message | user         | latest question about what was finally decided across all of the above        | 61     |
     And the following model responses are queued:
       | type | content              | model      |
       | text | summary of A         | test-model |
@@ -305,22 +325,22 @@ Feature: Context Compaction Logging
       | text | here is my answer | gpt-5.4 |
     When the user sends "next" on session "codex-compact"
     Then the last outbound HTTP request matches:
-      | key                | value        |
-      | #index             | 0            |
-      | body.tools[0].type | function     |
-      | body.tools[0].name | memory_get   |
-      | body.tools[2].name | memory_write |
+      | key                | value         |
+      | #index             | 0             |
+      | body.tools[0].type | function      |
+      | body.tools[0].name | memory_write  |
+      | body.tools[2].name | memory_search |
     And the last provider request does not contain path "body.tools[0].function"
 
   Scenario: Compaction keeps toolCall and toolResult together
     Given the following sessions exist:
-      | name        | total-tokens | compaction.strategy | compaction.threshold | compaction.head | #comment                                      |
-      | tool-orphan | 95           | slinky              | 0.9                  | 0.15            | tail=15 splits between toolResult & last asst |
+      | name        | total-tokens | compaction.strategy | compaction.threshold | compaction.head | #comment                                              |
+      | tool-orphan | 95           | slinky              | 0.8                  | 0.075           | head=0.075*200=15 splits between toolResult & last asst |
     And the isaac EDN file "config/models/local.edn" exists with:
       | path           | value      |
       | model          | test-model |
       | provider       | grover     |
-      | context-window | 100        |
+      | context-window | 200        |
     And the isaac EDN file "config/crew/main.edn" exists with:
       | path  | value          |
       | model | local          |

@@ -56,9 +56,24 @@ Feature: Chat and Provider Logging
       | :debug | :chat/stream-completed | log-stream-test |
 
   Scenario: Compaction check and start are logged during chat
-    Given the following sessions exist:
-      | name              | total-tokens | #comment                     |
-      | log-compact-test  | 30000       | exceeds 90% of 32768 window  |
+    # Compaction keys off the live outbound-prompt estimate (system floor +
+    # transcript), so a small window plus a non-trivial transcript pushes the
+    # estimate past 0.8 * window. head 0.1 keeps the post-compaction estimate
+    # under threshold so compaction makes progress.
+    Given the isaac EDN file "config/models/grover.edn" exists with:
+      | path           | value |
+      | model          | echo  |
+      | provider       | grover |
+      | context-window | 200   |
+    And the following sessions exist:
+      | name             | compaction.head |
+      | log-compact-test | 0.1             |
+    And session "log-compact-test" has transcript:
+      | type    | message.role | message.content                                                              |
+      | message | user         | Please summarize the work we did on the logging subsystem and the tool loop   |
+      | message | assistant    | We discussed logging output sinks, the compaction trigger, and tool dispatch  |
+      | message | user         | And what about the retry behavior we changed in the dispatcher last week      |
+      | message | assistant    | We made the dispatcher retry idempotent and added backoff between attempts    |
     And the following model responses are queued:
       | type | content               | model |
       | text | Summary of prior chat | echo  |
@@ -70,15 +85,30 @@ Feature: Chat and Provider Logging
       | :info  | :session/compaction-started | log-compact-test |
 
   Scenario: Compaction entry precedes the triggering user message in transcript
-    Given the following sessions exist:
-      | name             | total-tokens | #comment                     |
-      | log-order-test   | 30000       | exceeds 90% of 32768 window  |
+    # Compaction keys off the live outbound-prompt estimate (system floor +
+    # transcript), so a small window plus a non-trivial transcript pushes the
+    # estimate past 0.8 * window. head 0.1 keeps the post-compaction estimate
+    # under threshold so compaction makes progress.
+    Given the isaac EDN file "config/models/grover.edn" exists with:
+      | path           | value |
+      | model          | echo  |
+      | provider       | grover |
+      | context-window | 200   |
+    And the following sessions exist:
+      | name           | compaction.head |
+      | log-order-test | 0.1             |
+    And session "log-order-test" has transcript:
+      | type    | message.role | message.content                                                              |
+      | message | user         | Please summarize the work we did on the logging subsystem and the tool loop   |
+      | message | assistant    | We discussed logging output sinks, the compaction trigger, and tool dispatch  |
+      | message | user         | And what about the retry behavior we changed in the dispatcher last week      |
+      | message | assistant    | We made the dispatcher retry idempotent and added backoff between attempts    |
     And the following model responses are queued:
       | type | content               | model |
       | text | Summary of prior chat | echo  |
       | text | Here is my answer     | echo  |
     When the user sends "Continue" on session "log-order-test"
-    Then session "log-order-test" has transcript matching:
-      | #index | type       |
-      | 1      | compaction |
-      | 2      | message    |
+    Then session "log-order-test" has active transcript matching:
+      | #index | type       | message.role |
+      | 0      | compaction |              |
+      | 1      | message    | user         |

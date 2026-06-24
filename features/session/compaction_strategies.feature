@@ -25,7 +25,7 @@ Feature: Compaction Strategies
       | path | value |
       | model | test-model |
       | provider | grover |
-      | context-window | 100 |
+      | context-window | 160 |
     And the isaac EDN file "config/crew/main.edn" exists with:
       | path | value |
       | model | local |
@@ -59,7 +59,7 @@ Feature: Compaction Strategies
       | path | value |
       | model | test-model |
       | provider | grover |
-      | context-window | 200 |
+      | context-window | 180 |
     And the isaac EDN file "config/crew/main.edn" exists with:
       | path | value |
       | model | local |

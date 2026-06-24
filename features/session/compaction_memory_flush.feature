@@ -19,13 +19,20 @@ Feature: Compaction with memory flush
     And the current time is "2026-04-21T10:00:00Z"
 
   Scenario: compaction-turn memory_write calls persist and the summary is produced
-    Given the following sessions exist:
-      | name         | total-tokens |
-      | mundane-chat | 95          |
+    Given the isaac EDN file "config/models/local.edn" exists with:
+      | path | value |
+      | model | test-model |
+      | provider | grover |
+      | context-window | 200 |
+    And the following sessions exist:
+      | name         | compaction.head |
+      | mundane-chat | 0.1             |
     And session "mundane-chat" has transcript:
-      | type    | message.role | message.content                    |
-      | message | user         | I take tea with two sugars.        |
-      | message | assistant    | Noted — tea with two sugars it is. |
+      | type    | message.role | message.content                                                              |
+      | message | user         | I take tea with two sugars and a splash of milk first thing every morning    |
+      | message | assistant    | Noted — tea with two sugars and a splash of milk, served first thing it is   |
+      | message | user         | Also remember I prefer the loose-leaf Assam blend over the supermarket bags   |
+      | message | assistant    | Understood — loose-leaf Assam over supermarket teabags, noted for the future  |
     And the following model responses are queued:
       | type      | tool         | arguments                                         | content                           | model      |
       | tool_call | memory_write | {"content": "User prefers tea with two sugars."} |                                   | test-model |

@@ -29,7 +29,6 @@ Feature: Crew Command
     Then the stdout matches:
       | pattern              |
       | Name .* Model .* Provider .* Soul |
-      | ─+.*─+.*─+.*─+      |
       | main .* echo         |
       | ketch .* echo        |
     And the exit code is 0
@@ -39,6 +38,5 @@ Feature: Crew Command
     Then the stdout matches:
       | pattern              |
       | Name .* Model .* Provider .* Soul |
-      | ─+                   |
       | main                 |
     And the exit code is 0

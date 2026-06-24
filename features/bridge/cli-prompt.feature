@@ -146,18 +146,25 @@ Feature: Prompt single-turn command
     And the stdout contains "Hello"
 
   Scenario: prompt shows compaction lifecycle on stderr
+    # The compacting banner prints the live outbound-prompt estimate (system
+    # floor + transcript), not the lagging total-tokens counter. A small window
+    # plus a non-trivial transcript pushes the estimate past 0.8 * window;
+    # head 0.1 keeps the post-compaction estimate under threshold so compaction
+    # makes progress and succeeds.
     Given the isaac EDN file "config/models/grover.edn" exists with:
       | path           | value |
       | model          | echo  |
       | provider       | grover |
-      | context-window | 100   |
+      | context-window | 200   |
     Given the following sessions exist:
-      | name           | total-tokens |
-      | prompt-default | 95           |
+      | name           | compaction.head |
+      | prompt-default | 0.1             |
     And session "prompt-default" has transcript:
-      | type    | message.role | message.content |
-      | message | user         | older prompt    |
-      | message | assistant    | older reply     |
+      | type    | message.role | message.content                                                              |
+      | message | user         | Please summarize the work we did on the logging subsystem and the tool loop   |
+      | message | assistant    | We discussed logging output sinks, the compaction trigger, and tool dispatch  |
+      | message | user         | And what about the retry behavior we changed in the dispatcher last week      |
+      | message | assistant    | We made the dispatcher retry idempotent and added backoff between attempts    |
     And the following model responses are queued:
       | type | content            | model |
       | text | Summary so far     | echo  |
@@ -165,7 +172,6 @@ Feature: Prompt single-turn command
     When isaac is run with "prompt -m 'next'"
     Then the stderr matches:
       | 🥬 compacting |
-      | 95            |
       | ✨ compacted  |
     And the stdout contains "here is the answer"
     And the stdout does not contain "🥬 compacting"

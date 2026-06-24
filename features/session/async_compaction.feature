@@ -10,7 +10,7 @@ Feature: Async Compaction
       | path | value |
       | model | test-model |
       | provider | grover |
-      | context-window | 200 |
+      | context-window | 180 |
     And the isaac EDN file "config/crew/main.edn" exists with:
       | path | value |
       | model | local |

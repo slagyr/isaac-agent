@@ -8,7 +8,7 @@ Feature: Context Management
       | path | value |
       | model | echo |
       | provider | grover |
-      | context-window | 100 |
+      | context-window | 100000 |
 
   # --- Token Tracking ---
 
@@ -26,14 +26,25 @@ Feature: Context Management
 
   # --- Compaction Trigger ---
 
-  Scenario: Compaction triggers at 90% context usage
-    Given the following sessions exist:
-      | name            | last-input-tokens | #comment                    |
-      | context-compact | 95                | exceeds 90% of 100 window   |
+  Scenario: Compaction triggers when the live prompt estimate exceeds the threshold
+    # The decision keys off the estimated outbound-prompt size (system prompt +
+    # transcript), not lagging counters. A small context window plus a non-trivial
+    # transcript pushes the estimate past 0.8 * window. head 0.1 keeps the
+    # post-compaction estimate under threshold so compaction makes progress.
+    Given the isaac EDN file "config/models/grover.edn" exists with:
+      | path | value |
+      | model | echo |
+      | provider | grover |
+      | context-window | 200 |
+    And the following sessions exist:
+      | name            | compaction.head |
+      | context-compact | 0.1             |
     And session "context-compact" has transcript:
-      | type    | message.role | message.content               |
-      | message | user         | Please summarize our work     |
-      | message | assistant    | We discussed logging and tools |
+      | type    | message.role | message.content                                                              |
+      | message | user         | Please summarize the work we did on the logging subsystem and the tool loop   |
+      | message | assistant    | We discussed logging output sinks, the compaction trigger, and tool dispatch  |
+      | message | user         | And what about the retry behavior we changed in the dispatcher last week      |
+      | message | assistant    | We made the dispatcher retry idempotent and added backoff between attempts    |
     And the following model responses are queued:
       | type | content                | model |
       | text | Summary of prior chat  | echo  |
@@ -66,15 +77,20 @@ Feature: Context Management
   # --- Compaction Process ---
 
   Scenario: Conversation is compacted into a summary
-    Given the following sessions exist:
-      | name            | last-input-tokens | #comment                    |
-      | context-summary | 95                | exceeds 90% of 100 window   |
+    Given the isaac EDN file "config/models/grover.edn" exists with:
+      | path | value |
+      | model | echo |
+      | provider | grover |
+      | context-window | 200 |
+    And the following sessions exist:
+      | name            | compaction.head |
+      | context-summary | 0.1             |
     And session "context-summary" has transcript:
-      | type    | message.role | message.content              |
-      | message | user         | What is Clojure?             |
-      | message | assistant    | A functional Lisp on JVM... |
-      | message | user         | What about Babashka?         |
-      | message | assistant    | A fast Clojure scripting... |
+      | type    | message.role | message.content                                                              |
+      | message | user         | What is Clojure and how does it differ from other Lisps running on the JVM    |
+      | message | assistant    | Clojure is a functional Lisp on the JVM with immutable data and rich seqs     |
+      | message | user         | What about Babashka and where does it fit for fast-starting scripts           |
+      | message | assistant    | Babashka is a fast-starting Clojure scripting runtime built on GraalVM        |
     And the following model responses are queued:
       | type | content                | model |
       | text | Summary of prior chat  | echo  |
@@ -94,9 +110,14 @@ Feature: Context Management
     result can therefore make the summarizer prompt larger than the
     conversation it is trying to summarize. The summarizer prompt must
     use the same head-and-tail truncation as the live prompt path.
-    Given the following sessions exist:
-      | name              | last-input-tokens |
-      | context-summarize | 95                |
+    Given the isaac EDN file "config/models/grover.edn" exists with:
+      | path | value |
+      | model | echo |
+      | provider | grover |
+      | context-window | 160 |
+    And the following sessions exist:
+      | name              | compaction.head |
+      | context-summarize | 0.1             |
     And session "context-summarize" has transcript:
       | type       | message.role | message.content                                                                                                                                                                                            |
       | message    | user         | Read the big file                                                                                                                                                                                           |
@@ -176,7 +197,12 @@ Feature: Context Management
   # --- Tool Result Truncation ---
 
   Scenario: Large tool results are truncated in prompts
-    Given the following sessions exist:
+    Given the isaac EDN file "config/models/grover.edn" exists with:
+      | path | value |
+      | model | echo |
+      | provider | grover |
+      | context-window | 100 |
+    And the following sessions exist:
       | name             |
       | context-truncate |
     And session "context-truncate" has transcript:
