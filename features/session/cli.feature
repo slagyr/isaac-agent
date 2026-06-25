@@ -13,14 +13,12 @@ Feature: Sessions Command
     Then the stdout contains "Usage: isaac sessions"
     And the exit code is 0
 
-  @wip
   Scenario: bare sessions shows management help
     When isaac is run with "sessions"
     Then the stdout contains "Usage: isaac sessions"
     And the stdout contains "Subcommands:"
     And the exit code is 0
 
-  @wip
   Scenario: sessions --help shows management help and lists subcommands
     When isaac is run with "sessions --help"
     Then the stdout contains "Usage: isaac sessions"
@@ -29,7 +27,6 @@ Feature: Sessions Command
     And the stdout contains "show"
     And the exit code is 0
 
-  @wip
   Scenario: sessions list shows one flat table sorted alphabetically with a CREW column
     Given the following sessions exist:
       | name         | crew  | total-tokens | last-input-tokens | updated-at          |
@@ -47,7 +44,6 @@ Feature: Sessions Command
     And the stdout does not contain "crew: ketch"
     And the exit code is 0
 
-  @wip
   Scenario: sessions list --crew filters by current crew member
     Given the following sessions exist:
       | name         | crew  | total-tokens | updated-at           |
@@ -60,20 +56,17 @@ Feature: Sessions Command
     And the stdout does not contain "design-chat"
     And the exit code is 0
 
-  @wip
   Scenario: sessions list with no sessions prints a message
     When isaac is run with "sessions list"
     Then the stdout contains "no sessions"
     And the exit code is 0
 
-  @wip
   Scenario: sessions list --crew with unknown crew member prints an error
     When isaac is run with "sessions list --crew nonexistent"
     Then the stderr contains "unknown crew"
     And the stderr contains "nonexistent"
     And the exit code is 1
 
-  @wip
   Scenario: sessions list output has aligned columns with a header row
     Given the following sessions exist:
       | name         | total-tokens | last-input-tokens | updated-at           |
@@ -120,7 +113,6 @@ Feature: Sessions Command
     And session "design-chat" does not exist
     And the isaac file "sessions/design-chat.jsonl" does not exist
 
-  @wip
   Scenario: sessions list output is colorized when --color always is set
     Given the following sessions exist:
       | name        | total-tokens | updated-at          |
@@ -131,7 +123,6 @@ Feature: Sessions Command
       | \x1b\[1m.*SESSION     |
       | design-chat.*\x1b\[   |
 
-  @wip
   Scenario: sessions list --no-color suppresses ANSI escapes
     Given the following sessions exist:
       | name        | total-tokens | updated-at          |
@@ -142,7 +133,6 @@ Feature: Sessions Command
       | ^[^\x1b]*$ |
     And the stdout contains "design-chat"
 
-  @wip
   Scenario: sessions list USED shows last-turn context size, not cumulative billing
     Given the following sessions exist:
       | name   | total-tokens | last-input-tokens | updated-at          |
