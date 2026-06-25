@@ -363,41 +363,64 @@
             (print-session-table sessions cfg crew-filter color?))
           0)))))
 
+(defn- print-help! []
+  (println (cli/command-help (cli/get-command "sessions")))
+  0)
+
+(defn- run-list [opts list-args]
+  (let [{:keys [options errors]} (parse-option-map list-args)]
+    (cond
+      (:help options)
+      (print-help!)
+
+      (seq errors)
+      (do
+        (doseq [error errors] (println error))
+        1)
+
+      :else
+      (run (merge (dissoc opts :_raw-args) options)))))
+
 (defn run-fn [{:keys [_raw-args] :as opts}]
-  (let [subcmd (first _raw-args)]
+  (let [raw-args (or _raw-args [])
+        subcmd   (first raw-args)]
     (cond
       (= "show" subcmd)
-      (let [{:keys [options errors]} (parse-option-map (drop 2 _raw-args))]
+      (let [{:keys [options errors]} (parse-option-map (drop 2 raw-args))]
         (if (seq errors)
           (do
             (doseq [error errors] (println error))
             1)
-          (run-show (merge (dissoc opts :_raw-args) options) (second _raw-args))))
+          (run-show (merge (dissoc opts :_raw-args) options) (second raw-args))))
 
       (= "delete" subcmd)
-      (run-delete opts (second _raw-args))
+      (run-delete opts (second raw-args))
 
       (= "set" subcmd)
-      (run-mutation opts :set (second _raw-args) (nth _raw-args 2 nil))
+      (run-mutation opts :set (second raw-args) (nth raw-args 2 nil))
 
       (= "unset" subcmd)
-      (run-mutation opts :unset (second _raw-args) nil)
+      (run-mutation opts :unset (second raw-args) nil)
+
+      (= "list" subcmd)
+      (run-list opts (rest raw-args))
+
+      (and subcmd (not (str/starts-with? subcmd "-")))
+      (do
+        (binding [*out* *err*]
+          (println (str "Unknown sessions subcommand: " subcmd)))
+        1)
 
       :else
-      (let [{:keys [options errors]} (parse-option-map (or _raw-args []))]
+      (let [{:keys [options errors]} (parse-option-map raw-args)]
         (cond
-          (:help options)
-          (do
-            (println (cli/command-help (cli/get-command "sessions")))
-            0)
-
           (seq errors)
           (do
             (doseq [error errors] (println error))
             1)
 
           :else
-          (run (merge (dissoc opts :_raw-args) options)))))))
+          (print-help!))))))
 
 ;; endregion ^^^^^ Command ^^^^^
 
@@ -410,7 +433,8 @@
   option-spec)
 
 (defmethod cli-api/subcommands :sessions [_id]
-  [{:name "show"   :summary "Show one session"}
+  [{:name "list"   :summary "List stored sessions"}
+   {:name "show"   :summary "Show one session"}
    {:name "set"    :summary "Set a mutable field: sessions set <id>.<path> <value>"}
    {:name "unset"  :summary "Clear a mutable field: sessions unset <id>.<path>"}
    {:name "delete" :summary "Delete a session"}])

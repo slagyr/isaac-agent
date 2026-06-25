@@ -17,9 +17,15 @@
       (helper/with-memory-store
         (it))))
 
+  (it "shows management help by default instead of listing sessions"
+    (helper/create-session! "/test/sessions" "joe" {:crew "main"})
+    (let [output (with-out-str (should= 0 (sut/run-fn {:home "/test" :_raw-args []})))]
+      (should-not-contain "joe" output)
+      (should-not-contain "SESSION" output)))
+
   (it "renders list output as JSON with sorted tags"
     (helper/create-session! "/test/sessions" "joe" {:crew "main" :tags #{:role/worker :project/chess}})
-    (let [output (with-out-str (should= 0 (sut/run-fn {:home "/test" :_raw-args ["--json"]})))
+    (let [output (with-out-str (should= 0 (sut/run-fn {:home "/test" :_raw-args ["list" "--json"]})))
           rows   (json/parse-string output true)
           joe    (some #(when (= "joe" (:name %)) %) rows)]
       (should= "joe" (:name joe))
@@ -38,7 +44,7 @@
   (it "filters sessions by tag"
     (helper/create-session! "/test/sessions" "joe" {:crew "main" :tags #{:project/chess}})
     (helper/create-session! "/test/sessions" "sue" {:crew "main" :tags #{:project/poker}})
-    (let [output (with-out-str (should= 0 (sut/run-fn {:home "/test" :_raw-args ["--tag" "project/chess"]})))]
+    (let [output (with-out-str (should= 0 (sut/run-fn {:home "/test" :_raw-args ["list" "--tag" "project/chess"]})))]
       (should-contain "joe" output)
       (should-not-contain "sue" output)))
 
@@ -46,7 +52,7 @@
     (helper/create-session! "/test/sessions" "joe" {:crew "main" :tags #{:project/chess}})
     (helper/create-session! "/test/sessions" "sue" {:crew "main" :tags #{:project/chess}})
     (store/mark-in-flight! (store/registered-store) "joe")
-    (let [output (with-out-str (should= 0 (sut/run-fn {:home "/test" :_raw-args ["--tag" "project/chess" "--not-in-flight"]})))]
+    (let [output (with-out-str (should= 0 (sut/run-fn {:home "/test" :_raw-args ["list" "--tag" "project/chess" "--not-in-flight"]})))]
       (should-contain "sue" output)
       (should-not-contain "joe" output)))
 

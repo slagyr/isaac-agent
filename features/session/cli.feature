@@ -1,5 +1,5 @@
 Feature: Sessions Command
-  `isaac sessions` lists stored conversation sessions.
+  `isaac sessions` is a management command; `isaac sessions list` lists stored conversation sessions.
 
   Background:
     Given default Grover setup
@@ -13,25 +13,32 @@ Feature: Sessions Command
     Then the stdout contains "Usage: isaac sessions"
     And the exit code is 0
 
+  Scenario: sessions shows help by default
+    When isaac is run with "sessions"
+    Then the stdout contains "Usage: isaac sessions"
+    And the stdout contains "Subcommands:"
+    And the exit code is 0
+
   Scenario: sessions --help lists its subcommands
     When isaac is run with "sessions --help"
     Then the stdout matches:
       | pattern                                          |
       | Usage: isaac sessions                            |
       | Subcommands:                                     |
+      | list\s+List stored sessions                      |
       | show\s+Show one session                          |
       | set\s+Set a mutable field.*<id>\.<path> <value>  |
       | unset\s+Clear a mutable field.*<id>\.<path>      |
       | delete\s+Delete a session                        |
     And the exit code is 0
 
-  Scenario: sessions defaults to one flat table sorted alphabetically with a CREW column
+  Scenario: sessions list shows one flat table sorted alphabetically with a CREW column
     Given the following sessions exist:
       | name         | crew  | total-tokens | last-input-tokens | updated-at          |
       | charlie-chat | main  | 778          | 778               | 2026-04-12T10:00:00 |
       | bravo-chat   | ketch | 12000        | 12000             | 2026-04-11T10:00:00 |
       | alpha-chat   | main  | 5000         | 5000              | 2026-04-12T15:00:00 |
-    When isaac is run with "sessions"
+    When isaac is run with "sessions list"
     Then the stdout matches:
       | pattern                                           |
       | SESSION       AGE    USED  WINDOW  PCT  CREW      |
@@ -47,20 +54,20 @@ Feature: Sessions Command
       | name         | crew  | total-tokens | updated-at           |
       | design-chat  | main  | 5000        | 2026-04-12T15:00:00 |
       | pirate-chat  | ketch | 12000       | 2026-04-11T10:00:00 |
-    When isaac is run with "sessions --crew ketch"
+    When isaac is run with "sessions list --crew ketch"
     Then the stdout matches:
       | pattern      |
       | pirate-chat  |
     And the stdout does not contain "design-chat"
     And the exit code is 0
 
-  Scenario: sessions with no sessions prints a message
-    When isaac is run with "sessions"
+  Scenario: sessions list with no sessions prints a message
+    When isaac is run with "sessions list"
     Then the stdout contains "no sessions"
     And the exit code is 0
 
   Scenario: sessions --crew with unknown crew member prints an error
-    When isaac is run with "sessions --crew nonexistent"
+    When isaac is run with "sessions list --crew nonexistent"
     Then the stderr contains "unknown crew"
     And the stderr contains "nonexistent"
     And the exit code is 1
@@ -71,7 +78,7 @@ Feature: Sessions Command
       | design-chat  | 5000         | 5000              | 2026-04-12T15:00:00  |
       | review-chat  | 778          | 778               | 2026-04-12T10:00:00  |
       | pirate-chat  | 12000        | 12000             | 2026-04-11T10:00:00  |
-    When isaac is run with "sessions --crew main"
+    When isaac is run with "sessions list --crew main"
     Then the stdout matches:
       | pattern                                              |
       | SESSION      AGE    USED  WINDOW  PCT                |
@@ -115,7 +122,7 @@ Feature: Sessions Command
     Given the following sessions exist:
       | name        | total-tokens | updated-at          |
       | design-chat | 28000        | 2026-04-12T15:00:00 |
-    When isaac is run with "sessions --color always"
+    When isaac is run with "sessions list --color always"
     Then the stdout matches:
       | pattern               |
       | \x1b\[1m.*SESSION     |
@@ -125,7 +132,7 @@ Feature: Sessions Command
     Given the following sessions exist:
       | name        | total-tokens | updated-at          |
       | design-chat | 5000         | 2026-04-12T15:00:00 |
-    When isaac is run with "sessions --no-color"
+    When isaac is run with "sessions list --no-color"
     Then the stdout matches:
       | pattern    |
       | ^[^\x1b]*$ |
@@ -135,7 +142,7 @@ Feature: Sessions Command
     Given the following sessions exist:
       | name   | total-tokens | last-input-tokens | updated-at          |
       | chatty | 1000000      | 5000              | 2026-04-12T15:00:00 |
-    When isaac is run with "sessions"
+    When isaac is run with "sessions list"
     Then the stdout matches:
       | pattern                              |
       | chatty\s+\S+\s+5,000\s+32,768\s+\d+% |
@@ -151,7 +158,7 @@ Feature: Sessions Command
       | type | content | model | wait |
       | text | working | echo  | true |
     When the user sends "more" on session "design-chat"
-    And isaac is run with "sessions"
+    And isaac is run with "sessions list"
     Then the stdout matches:
       | pattern          |
       | design-chat ✈️   |
@@ -168,7 +175,7 @@ Feature: Sessions Command
       | type | content | model | wait |
       | text | working | echo  | true |
     When the user sends "more" on session "design-chat"
-    And isaac is run with "sessions --in-flight"
+    And isaac is run with "sessions list --in-flight"
     Then the stdout contains "design-chat"
     And the stdout does not contain "pirate-chat"
     When the turn ends on session "design-chat"
@@ -183,13 +190,13 @@ Feature: Sessions Command
       | type | content | model | wait |
       | text | working | echo  | true |
     When the user sends "more" on session "design-chat"
-    And isaac is run with "sessions --not-in-flight"
+    And isaac is run with "sessions list --not-in-flight"
     Then the stdout contains "pirate-chat"
     And the stdout does not contain "design-chat"
     When the turn ends on session "design-chat"
 
   @wip
   Scenario: sessions --in-flight with --not-in-flight is an error
-    When isaac is run with "sessions --in-flight --not-in-flight"
+    When isaac is run with "sessions list --in-flight --not-in-flight"
     Then the exit code is 1
     And the stderr contains "mutually exclusive"

@@ -67,8 +67,8 @@
    :summary "Run a single prompt turn and exit",
    :namespace isaac.bridge.prompt-cli},
   :sessions
-  {:usage "sessions [options]",
-   :summary "List stored conversation sessions",
+  {:usage "sessions [subcommand] [options]",
+   :summary "Manage stored conversation sessions",
    :namespace isaac.session.cli}},
  :isaac.agent/llm-api
  {:messages {:factory isaac.llm.api.messages/make},
