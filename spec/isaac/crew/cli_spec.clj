@@ -35,14 +35,22 @@
         (should= "grover" (:provider joe))
         (should= #{:project/chess :role/worker} (:tags joe)))))
 
-  (it "renders show output as JSON"
+  (it "renders show output as JSON with full soul and no presentation fields"
     (with-redefs [loader/load-config! (fn [& _] crew-cfg)]
       (let [output (with-out-str (should= 0 (sut/run-fn (assoc crew-opts :_raw-args ["show" "joe" "--json"]))))
             row    (json/parse-string output true)]
         (should= "joe" (:name row))
         (should= "echo" (:model row))
         (should= "grover" (:provider row))
-        (should= ["project/chess" "role/worker"] (:tags row)))))
+        (should= "You are Joe." (:soul row))
+        (should= ["project/chess" "role/worker"] (:tags row))
+        (should-not (contains? row :soul-source))
+        (should-not (contains? row :tags-text)))))
+
+  (it "crew show --help prints subcommand help"
+    (let [output (with-out-str (should= 0 (sut/run-fn (assoc crew-opts :_raw-args ["show" "--help"]))))]
+      (should-contain "Usage: isaac crew show <name>" output)
+      (should-contain "Show one crew member" output)))
 
   (it "filters crews by tag"
     (with-redefs [loader/load-config! (fn [& _] crew-cfg)]

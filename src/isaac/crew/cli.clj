@@ -31,6 +31,13 @@
     {:options (->> options (remove (comp nil? val)) (into {}))
      :errors  errors}))
 
+(defn- parse-with-arguments [raw-args]
+  (let [{:keys [options arguments errors]}
+        (tools-cli/parse-opts raw-args option-spec)]
+    {:options (->> options (remove (comp nil? val)) (into {}))
+     :arguments arguments
+     :errors  errors}))
+
 (defn- soul-source [crew-cfg]
   (when-let [s (:soul crew-cfg)]
     (let [oneline (-> s (str/replace #"\s+" " ") str/trim)]
@@ -42,10 +49,10 @@
   (root/default-root opts))
 
 (defn resolve-crew
-  "Returns a seq of {:name :model :provider :soul-source :tags} for display."
+  "Returns a seq of {:name :model :provider :soul :soul-source :tags}."
   [opts]
   (let [{:keys [crew models]} opts
-        root (derive-root opts)
+        root      (derive-root opts)
         cfg       (if crew
                     (cli-common/build-cfg crew models)
                     (loader/load-config! root (fs/instance) "crew cli"))
@@ -53,16 +60,17 @@
         crew-map  (cond-> (:crew cfg)
                     (not (contains? (:crew cfg) "main")) (assoc "main" {}))]
     (map (fn [[crew-id crew-member]]
-           (let [model-id    (or (:model crew-member) (get-in cfg [:defaults :model]))
-                 model-cfg   (get-in cfg [:models model-id])
-                 model-name  (or (:model model-cfg) model-id "-")
-                 provider    (or (:provider model-cfg) "-")]
-              {:name        crew-id
-               :model       model-name
-               :provider    provider
-               :tags        (or (:tags crew-member) #{})
-               :soul-source (soul-source crew-member)}))
-          crew-map)))
+           (let [model-id   (or (:model crew-member) (get-in cfg [:defaults :model]))
+                 model-cfg  (get-in cfg [:models model-id])
+                 model-name (or (:model model-cfg) model-id "-")
+                 provider   (or (:provider model-cfg) "-")]
+             {:name        crew-id
+              :model       model-name
+              :provider    provider
+              :soul        (:soul crew-member)
+              :tags        (or (:tags crew-member) #{})
+              :soul-source (soul-source crew-member)}))
+         crew-map)))
 
 (defn- resolve-crew-by-name [opts crew-id]
   (some #(when (= crew-id (:name %)) %) (resolve-crew opts)))
@@ -93,11 +101,24 @@
       (:edn opts)  (cli-common/print-edn! rows)
       :else        (println (format-crew rows opts)))))
 
+(defn- show-payload [row]
+  (select-keys row [:name :model :provider :soul :tags]))
+
+(defn- print-show-detail! [row]
+  (println (str "Name: " (:name row)))
+  (println (str "Model: " (:model row)))
+  (println (str "Provider: " (:provider row)))
+  (when-let [soul (:soul row)]
+    (println "Soul:")
+    (println soul))
+  (when (seq (:tags row))
+    (println (str "Tags: " (text-tags (:tags row))))))
+
 (defn- render-show! [row opts]
   (cond
-    (:json opts) (cli-common/print-json! row)
-    (:edn opts)  (cli-common/print-edn! row)
-    :else        (println (format-crew [row] opts))))
+    (:json opts) (cli-common/print-json! (show-payload row))
+    (:edn opts)  (cli-common/print-edn! (show-payload row))
+    :else        (print-show-detail! row)))
 
 (defn run [opts]
   (let [required-tags (set (map keyword (:tag opts)))
@@ -115,27 +136,87 @@
 (defn- run-show [opts crew-id]
   (if-let [row (resolve-crew-by-name opts crew-id)]
     (do
-      (render-show! (assoc row :tags-text (text-tags (:tags row))) opts)
+      (render-show! row opts)
       0)
     (do
       (binding [*out* *err*]
         (println (str "crew not found: " crew-id)))
       1)))
 
+(defn- print-help! []
+  (println (cli/command-help (cli/get-command "crew")))
+  0)
+
+(defn- show-help-text []
+  (let [options (-> (tools-cli/parse-opts [] option-spec)
+                    :summary
+                    str/trim-newline)]
+    (str/join "\n"
+              ["Usage: isaac crew show <name>"
+               ""
+               "Show one crew member"
+               ""
+               "Options:"
+               options])))
+
+(defn- print-show-help! []
+  (println (show-help-text))
+  0)
+
+(defn- run-list [opts list-args]
+  (let [{:keys [options errors]} (parse-option-map list-args)]
+    (cond
+      (:help options)
+      (print-help!)
+
+      (seq errors)
+      (do
+        (doseq [error errors] (println error))
+        1)
+
+      :else
+      (run (merge (dissoc opts :_raw-args) options)))))
+
 (defn run-fn [opts]
-  (let [raw-args (or (:_raw-args opts) [])]
-    (if (= "show" (first raw-args))
-      (let [{:keys [options errors]} (parse-option-map (drop 2 raw-args))]
+  (let [raw-args (or (:_raw-args opts) [])
+        subcmd   (first raw-args)]
+    (cond
+      (= "show" subcmd)
+      (let [{:keys [options arguments errors]} (parse-with-arguments (rest raw-args))]
         (cond
           (:help options)
-          (do (println (cli/command-help (cli/get-command "crew"))) 0)
+          (print-show-help!)
 
           (seq errors)
-          (do (doseq [error errors] (println error)) 1)
+          (do
+            (doseq [error errors] (println error))
+            1)
 
           :else
-          (run-show (merge (dissoc opts :_raw-args) options) (second raw-args))))
-      (cli-common/standard-run-fn "crew" parse-option-map run opts))))
+          (let [crew-id (first arguments)]
+            (if (str/blank? crew-id)
+              (print-show-help!)
+              (run-show (merge (dissoc opts :_raw-args) options) crew-id)))))
+
+      (= "list" subcmd)
+      (run-list opts (rest raw-args))
+
+      (and subcmd (not (str/starts-with? subcmd "-")))
+      (do
+        (binding [*out* *err*]
+          (println (str "Unknown crew subcommand: " subcmd)))
+        1)
+
+      :else
+      (let [{:keys [options errors]} (parse-option-map raw-args)]
+        (cond
+          (seq errors)
+          (do
+            (doseq [error errors] (println error))
+            1)
+
+          :else
+          (print-help!))))))
 
 ;; ----- :isaac/cli berth implementation -----
 
@@ -146,4 +227,5 @@
   option-spec)
 
 (defmethod cli-api/subcommands :crew [_id]
-  [{:name "show" :summary "Show one crew member"}])
+  [{:name "list" :summary "List configured crew members"}
+   {:name "show" :summary "Show one crew member"}])

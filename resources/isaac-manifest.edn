@@ -59,8 +59,8 @@
    :summary "Manage authentication credentials",
    :namespace isaac.llm.auth.cli},
   :crew
-  {:usage "crew",
-   :summary "List configured crew members",
+  {:usage "crew [subcommand] [options]",
+   :summary "Manage configured crew members",
    :namespace isaac.crew.cli},
   :prompt
   {:usage "prompt -m <message> [options]",

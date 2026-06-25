@@ -16,7 +16,6 @@ Feature: Crew tags
     And the stdout contains ":project/chess"
     And the exit code is 0
 
-  @wip
   Scenario: isaac crew list table includes a Tags column
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
@@ -29,7 +28,6 @@ Feature: Crew tags
       | Name .* Model .* Provider .* Soul .* Tags |
     And the exit code is 0
 
-  @wip
   Scenario: isaac crew list --json includes tags on each record
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
@@ -43,7 +41,6 @@ Feature: Crew tags
       | 0.tags | ["project/chess", "role/worker"] |
     And the exit code is 0
 
-  @wip
   Scenario: isaac crew list --edn includes tags as a set on each record
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
@@ -57,7 +54,6 @@ Feature: Crew tags
       | 0.tags | #{:role/worker :project/chess} |
     And the exit code is 0
 
-  @wip
   Scenario: isaac crew list --tag filters to crews carrying that tag
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
@@ -73,7 +69,6 @@ Feature: Crew tags
     And the stdout does not contain "sue"
     And the exit code is 0
 
-  @wip
   Scenario: isaac crew list --tag is repeatable with AND semantics
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
@@ -89,7 +84,6 @@ Feature: Crew tags
     And the stdout does not contain "sue"
     And the exit code is 0
 
-  @wip
   Scenario: isaac crew list --without-tag excludes crews carrying that tag
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
@@ -105,7 +99,6 @@ Feature: Crew tags
     And the stdout does not contain "joe"
     And the exit code is 0
 
-  @wip
   Scenario: isaac crew list --without-tag is repeatable with AND-NOT semantics
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
@@ -126,7 +119,6 @@ Feature: Crew tags
     And the stdout does not contain "sue"
     And the exit code is 0
 
-  @wip
   Scenario: isaac crew list --untagged shows only crews with empty tags
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
@@ -141,7 +133,6 @@ Feature: Crew tags
     And the stdout does not contain "joe"
     And the exit code is 0
 
-  @wip
   Scenario: isaac crew list composes --tag and --without-tag
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
@@ -169,13 +160,12 @@ Feature: Crew tags
     And the stdout contains ":project/chess"
     And the exit code is 0
 
-  @wip
   Scenario: isaac crew show <name> --json includes tags and full soul
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
       | path  | value                          |
       | model | grover                         |
-      | soul  | You are Joe.\nKeep the lantern dry. |
+      | soul  | "You are Joe.\nKeep the lantern dry." |
       | tags  | #{:role/worker :project/chess} |
     When isaac is run with "crew show joe --json"
     Then the stdout JSON contains:
