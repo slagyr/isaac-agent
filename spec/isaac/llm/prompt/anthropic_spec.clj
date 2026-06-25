@@ -22,7 +22,7 @@
 
     (it "includes max_tokens"
       (let [p (sut/build {:model "claude-sonnet-4-6" :soul "You are Isaac." :transcript sample-transcript})]
-        (should= 4096 (:max_tokens p))))
+        (should= 16000 (:max_tokens p))))
 
     (it "puts soul in system as content block with cache_control"
       (let [p (sut/build {:model "claude-sonnet-4-6" :soul "You are Isaac." :transcript sample-transcript})]

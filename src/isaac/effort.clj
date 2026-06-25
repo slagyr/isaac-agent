@@ -10,6 +10,17 @@
     (<= n 6)  "medium"
     :else     "high"))
 
+(defn effort->adaptive-level
+  "Maps Isaac's 0-10 effort knob to Anthropic adaptive output_config.effort levels."
+  [n]
+  (cond
+    (nil? n)  nil
+    (zero? n) nil
+    (= n 10)  "max"
+    (<= n 3)  "low"
+    (<= n 6)  "medium"
+    :else     "high"))
+
 (defn resolve-effort
   "Resolves effort integer from the chain: session > crew > model > provider > defaults > 7.
    Each map may contain an :effort key. Returns the first non-nil value or 7."

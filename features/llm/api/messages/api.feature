@@ -28,7 +28,6 @@ Feature: Anthropic Messages API surface
       | model             | type | content |
       | claude-sonnet-4-6 | text | ok      |
 
-  @wip
   Scenario: adaptive thinking sends type adaptive and an effort level, no budget_tokens
     Given the isaac EDN file "config/crew/thinker.edn" exists with:
       | path   | value       |
@@ -43,7 +42,6 @@ Feature: Anthropic Messages API surface
       | body.max_tokens           | 16000    |
     And the last provider request does not contain path "body.thinking.budget_tokens"
 
-  @wip
   Scenario: effort 0 sends no thinking block
     Given the isaac EDN file "config/crew/thinker.edn" exists with:
       | path   | value       |
@@ -57,24 +55,68 @@ Feature: Anthropic Messages API surface
       | key             | value |
       | body.max_tokens | 16000 |
 
-  @wip
-  Scenario Outline: effort maps to the Anthropic adaptive effort level
+  Scenario: effort 1 maps to adaptive effort low
     Given the isaac EDN file "config/crew/thinker.edn" exists with:
       | path   | value       |
       | model  | claude      |
       | soul   | Think hard. |
-      | effort | <effort>    |
+      | effort | 1           |
     When the user sends "hi" on session "thinking"
     Then the last outbound HTTP request matches:
-      | key                       | value   |
-      | body.output_config.effort | <level> |
+      | key                       | value |
+      | body.output_config.effort | low   |
 
-    Examples:
-      | effort | level  |
-      | 1      | low    |
-      | 3      | low    |
-      | 4      | medium |
-      | 6      | medium |
-      | 7      | high   |
-      | 9      | high   |
-      | 10     | max    |
+  Scenario: effort 3 maps to adaptive effort low
+    Given the isaac EDN file "config/crew/thinker.edn" exists with:
+      | path   | value       |
+      | model  | claude      |
+      | soul   | Think hard. |
+      | effort | 3           |
+    When the user sends "hi" on session "thinking"
+    Then the last outbound HTTP request matches:
+      | key                       | value |
+      | body.output_config.effort | low   |
+
+  Scenario: effort 4 maps to adaptive effort medium
+    Given the isaac EDN file "config/crew/thinker.edn" exists with:
+      | path   | value       |
+      | model  | claude      |
+      | soul   | Think hard. |
+      | effort | 4           |
+    When the user sends "hi" on session "thinking"
+    Then the last outbound HTTP request matches:
+      | key                       | value  |
+      | body.output_config.effort | medium |
+
+  Scenario: effort 6 maps to adaptive effort medium
+    Given the isaac EDN file "config/crew/thinker.edn" exists with:
+      | path   | value       |
+      | model  | claude      |
+      | soul   | Think hard. |
+      | effort | 6           |
+    When the user sends "hi" on session "thinking"
+    Then the last outbound HTTP request matches:
+      | key                       | value  |
+      | body.output_config.effort | medium |
+
+  Scenario: effort 9 maps to adaptive effort high
+    Given the isaac EDN file "config/crew/thinker.edn" exists with:
+      | path   | value       |
+      | model  | claude      |
+      | soul   | Think hard. |
+      | effort | 9           |
+    When the user sends "hi" on session "thinking"
+    Then the last outbound HTTP request matches:
+      | key                       | value |
+      | body.output_config.effort | high  |
+
+  Scenario: effort 10 maps to adaptive effort max
+    Given the isaac EDN file "config/crew/thinker.edn" exists with:
+      | path   | value       |
+      | model  | claude      |
+      | soul   | Think hard. |
+      | effort | 10          |
+    When the user sends "hi" on session "thinking"
+    Then the last outbound HTTP request matches:
+      | key                       | value |
+      | body.output_config.effort | max   |

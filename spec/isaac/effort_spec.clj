@@ -30,6 +30,25 @@
     (it "maps nil to nil"
       (should-be-nil (sut/effort->string nil))))
 
+  (describe "effort->adaptive-level"
+    (it "maps 0 to nil (omit)"
+      (should-be-nil (sut/effort->adaptive-level 0)))
+
+    (it "maps 1 to low"
+      (should= "low" (sut/effort->adaptive-level 1)))
+
+    (it "maps 6 to medium"
+      (should= "medium" (sut/effort->adaptive-level 6)))
+
+    (it "maps 7 to high"
+      (should= "high" (sut/effort->adaptive-level 7)))
+
+    (it "maps 10 to max"
+      (should= "max" (sut/effort->adaptive-level 10)))
+
+    (it "maps nil to nil"
+      (should-be-nil (sut/effort->adaptive-level nil))))
+
   (describe "resolve-effort"
     (it "returns default 7 when nothing is configured"
       (should= 7 (sut/resolve-effort {} {} {} {} {})))

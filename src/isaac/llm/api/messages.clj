@@ -3,6 +3,7 @@
     [clojure.string :as str]
     [isaac.llm.api.protocol :as api]
     [isaac.llm.api.openai.shared :as shared]
+    [isaac.effort :as effort]
     [isaac.llm.followup :as followup]
     [isaac.llm.http :as llm-http]
     [isaac.llm.prompt.builder :as builder]))
@@ -73,7 +74,7 @@
 (defn build
   "Build an Anthropic Messages API request body."
   [{:keys [boot-files guidance model nonce origin rules-text skill-menu-text soul transcript tools max-tokens]
-     :or   {max-tokens 4096}}]
+     :or   {max-tokens 16000}}]
   (let [system-text (builder/build-system-text soul boot-files rules-text skill-menu-text nonce)
         messages    (-> (extract-messages transcript nonce guidance origin)
                       vec
@@ -135,10 +136,14 @@
 
 ;; region ----- Effort Translation -----
 
-(defn- effort->thinking [effort budget-max]
-  (when (and effort (pos? effort))
-    {:type          "enabled"
-     :budget_tokens (int (* effort (/ (or budget-max 32000) 10)))}))
+(defn- apply-effort-to-body [request]
+  (let [effort (:effort request)
+        body   (dissoc request :effort)]
+    (if-let [level (effort/effort->adaptive-level effort)]
+      (assoc body
+        :thinking      {:type "adaptive"}
+        :output_config {:effort level})
+      body)))
 
 ;; endregion ^^^^^ Effort Translation ^^^^^
 
@@ -156,11 +161,9 @@
         auth-err (missing-auth-error provider-name cfg)]
     (if auth-err
       auth-err
-      (let [headers  (auth-headers provider-name cfg)
-            thinking (effort->thinking (:effort request) (:thinking-budget-max cfg))
-            body     (cond-> (dissoc request :effort)
-                       thinking (assoc :thinking thinking))
-            resp     (llm-http/post-json! url headers body (http-opts cfg))]
+      (let [headers (auth-headers provider-name cfg)
+            body    (apply-effort-to-body request)
+            resp    (llm-http/post-json! url headers body (http-opts cfg))]
         (if (:error resp)
           resp
           (let [content (:content resp)
@@ -185,10 +188,8 @@
         auth-err (missing-auth-error provider-name cfg)]
     (if auth-err
       auth-err
-      (let [headers  (auth-headers provider-name cfg)
-            thinking (effort->thinking (:effort request) (:thinking-budget-max cfg))
-            body     (cond-> (-> request (dissoc :effort) (assoc :stream true))
-                       thinking (assoc :thinking thinking))
+      (let [headers (auth-headers provider-name cfg)
+            body    (-> request apply-effort-to-body (assoc :stream true))
             initial  {:role "assistant" :content "" :usage {}}
             result   (llm-http/post-sse! url headers body on-chunk process-sse-event initial (http-opts cfg))]
         (if (:error result)

@@ -263,44 +263,50 @@
           (should (api/error? result))
           (should-not-throw (schema/conform! api/error-response result))))))
 
-  (describe "effort->thinking"
+  (describe "adaptive effort"
 
-    (it "maps effort 10 to 100% of default budget-max (32000)"
+    (it "maps effort 10 to adaptive thinking with max effort level"
       (let [captured (atom nil)]
         (with-redefs [llm-http/post-json! (fn [_ _ body & _] (reset! captured body) {})]
           (sut/chat {:model "claude" :effort 10 :messages []} "anthropic" (api-key-config)))
-        (should= {:type "enabled" :budget_tokens 32000} (:thinking @captured))))
+        (should= {:type "adaptive"} (:thinking @captured))
+        (should= "max" (get-in @captured [:output_config :effort]))
+        (should-be-nil (:budget_tokens (:thinking @captured)))))
 
-    (it "maps effort 5 to 50% of default budget-max (16000)"
+    (it "maps effort 5 to adaptive thinking with medium effort level"
       (let [captured (atom nil)]
         (with-redefs [llm-http/post-json! (fn [_ _ body & _] (reset! captured body) {})]
           (sut/chat {:model "claude" :effort 5 :messages []} "anthropic" (api-key-config)))
-        (should= {:type "enabled" :budget_tokens 16000} (:thinking @captured))))
+        (should= {:type "adaptive"} (:thinking @captured))
+        (should= "medium" (get-in @captured [:output_config :effort]))))
 
-    (it "maps effort 1 to 10% of default budget-max (3200)"
+    (it "maps effort 1 to adaptive thinking with low effort level"
       (let [captured (atom nil)]
         (with-redefs [llm-http/post-json! (fn [_ _ body & _] (reset! captured body) {})]
           (sut/chat {:model "claude" :effort 1 :messages []} "anthropic" (api-key-config)))
-        (should= {:type "enabled" :budget_tokens 3200} (:thinking @captured))))
+        (should= {:type "adaptive"} (:thinking @captured))
+        (should= "low" (get-in @captured [:output_config :effort]))))
 
-    (it "maps effort 0 to nil (omits thinking block)"
+    (it "maps effort 7 to adaptive thinking with high effort level"
+      (let [captured (atom nil)]
+        (with-redefs [llm-http/post-json! (fn [_ _ body & _] (reset! captured body) {})]
+          (sut/chat {:model "claude" :effort 7 :messages []} "anthropic" (api-key-config)))
+        (should= {:type "adaptive"} (:thinking @captured))
+        (should= "high" (get-in @captured [:output_config :effort]))))
+
+    (it "omits thinking and output_config when effort is 0"
       (let [captured (atom nil)]
         (with-redefs [llm-http/post-json! (fn [_ _ body & _] (reset! captured body) {})]
           (sut/chat {:model "claude" :effort 0 :messages []} "anthropic" (api-key-config)))
-        (should-be-nil (:thinking @captured))))
+        (should-be-nil (:thinking @captured))
+        (should-be-nil (:output_config @captured))))
 
     (it "omits thinking block when :effort absent"
       (let [captured (atom nil)]
         (with-redefs [llm-http/post-json! (fn [_ _ body & _] (reset! captured body) {})]
           (sut/chat {:model "claude" :messages []} "anthropic" (api-key-config)))
-        (should-be-nil (:thinking @captured))))
-
-    (it "scales budget with thinking-budget-max from config"
-      (let [captured (atom nil)
-            config   (assoc (api-key-config) :thinking-budget-max 64000)]
-        (with-redefs [llm-http/post-json! (fn [_ _ body & _] (reset! captured body) {})]
-          (sut/chat {:model "claude" :effort 5 :messages []} "anthropic" config))
-        (should= {:type "enabled" :budget_tokens 32000} (:thinking @captured))))
+        (should-be-nil (:thinking @captured))
+        (should-be-nil (:output_config @captured))))
 
     (it "strips :effort from the outbound request body"
       (let [captured (atom nil)]
