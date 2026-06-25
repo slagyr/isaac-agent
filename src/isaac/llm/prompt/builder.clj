@@ -26,14 +26,19 @@
 (defn- text-block [text]
   {:type "text" :text text})
 
+(defn- non-blank-text? [text]
+  (and text (not (str/blank? text))))
+
 (defn- text-blocks [content]
   (cond
     (string? content)
-    [(text-block content)]
+    (when (non-blank-text? content)
+      [(text-block content)])
 
     (and (vector? content) (every? map? content))
     (let [parts (->> content
                      (filter #(= "text" (:type %)))
+                     (filter #(non-blank-text? (:text %)))
                      vec)]
       (when (seq parts) parts))
 
@@ -134,7 +139,7 @@
 
                      (= "toolResult" (:role msg))
                      (let [text (content->text (:content msg))]
-                       (when text
+                       (when (non-blank-text? text)
                          {:role    "user"
                           :content [(text-block (if context-window
                                                   (truncate-tool-result text context-window)
@@ -164,6 +169,15 @@
                                              nonce)
                      (inject-turn-framing nonce guidance origin))]
     (filter-fn messages context-window)))
+
+(def compaction-summary-fallback
+  "Session history compacted.")
+
+(defn non-blank-summary
+  "Return summary text suitable for prompt/compaction storage; never blank."
+  [summary]
+  (let [text (str/trim (or summary ""))]
+    (if (str/blank? text) compaction-summary-fallback text)))
 
 (defn- find-last-compaction
   "Find the last compaction entry in the transcript, if any."
@@ -275,7 +289,7 @@
       (let [preserved (when-let [first-kept-entry-id (:firstKeptEntryId compaction)]
                         (messages-from-entry-id transcript first-kept-entry-id))]
         (into [{:role "system" :content system-text}
-               {:role "user" :content (:summary compaction)}]
+               {:role "user" :content (non-blank-summary (:summary compaction))}]
               (filter-fn (-> (sanitize-user-messages (if (seq preserved)
                                                        preserved
                                                        (messages-after-compaction transcript compaction))
@@ -299,7 +313,7 @@
      (if compaction
        (let [preserved (when-let [id (:firstKeptEntryId compaction)]
                          (messages-from-entry-id transcript id))]
-         (into [{:role "user" :content (:summary compaction)}]
+         (into [{:role "user" :content (non-blank-summary (:summary compaction))}]
                (f (-> (sanitize-user-messages (if (seq preserved)
                                                 preserved
                                                 (messages-after-compaction transcript compaction))

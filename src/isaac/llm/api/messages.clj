@@ -51,14 +51,19 @@
     (update messages idx
             (fn [msg]
               (let [content (:content msg)]
-                (if (string? content)
+                (cond
+                  (and (string? content) (not (str/blank? content)))
                   (assoc msg :content [{:type          "text"
                                         :text          content
                                         :cache_control {:type "ephemeral"}}])
+
+                  (vector? content)
                   (let [last-idx (dec (count content))]
                     (assoc msg :content
                            (update content last-idx
-                                   #(assoc % :cache_control {:type "ephemeral"}))))))))
+                                   #(assoc % :cache_control {:type "ephemeral"}))))
+
+                  :else msg))))
     messages))
 
 (defn build-tools
@@ -217,7 +222,9 @@
                                                            (fn [tc result]
                                                              {:type        "tool_result"
                                                               :tool_use_id (:id tc)
-                                                              :content     result}))}]
+                                                              :content     (if (str/blank? (str result))
+                                                                              "(empty)"
+                                                                              result)}))}]
     (followup/append-followup-messages request assistant-msg [tool-result])))
 
 (deftype MessagesAPI [provider-name cfg]

@@ -259,6 +259,69 @@
                   {:role "user" :content "Follow-up"}]
                  (subvec (:messages p) 1)))))
 
+  (context "Anthropic provider"
+
+    (defn- empty-text-blocks? [messages]
+      (some (fn [msg]
+              (let [content (:content msg)]
+                (cond
+                  (string? content) (clojure.string/blank? content)
+                  (vector? content) (some #(and (= "text" (:type %))
+                                               (clojure.string/blank? (:text %)))
+                                        content)
+                  :else false)))
+            messages))
+
+    (it "drops blank user and assistant messages"
+      (let [messages [{:role "user" :content ""}
+                      {:role "assistant" :content ""}
+                      {:role "user" :content "real"}]
+            filtered (sut/filter-messages-anthropic messages nil)]
+        (should= 1 (count filtered))
+        (should= "real" (get-in (first filtered) [:content 0 :text]))))
+
+    (it "drops blank tool results"
+      (let [messages [{:role "toolResult" :content ""}
+                      {:role "toolResult" :content "ok"}]
+            filtered (sut/filter-messages-anthropic messages nil)]
+        (should= 1 (count filtered))
+        (should= "ok" (get-in (first filtered) [:content 0 :text]))))
+
+    (it "filters empty text parts from block content"
+      (let [messages [{:role "assistant" :content [{:type "text" :text ""}
+                                                   {:type "text" :text "visible"}]}]
+            filtered (sut/filter-messages-anthropic messages nil)]
+        (should= 1 (count filtered))
+        (should= "visible" (get-in (first filtered) [:content 0 :text]))))
+
+    (it "build with blank transcript entries produces no empty text blocks"
+      (let [transcript [{:type "session" :id "sess-1" :timestamp 1000}
+                        {:type "message" :id "m1" :parentId "sess-1" :timestamp 2000
+                         :message {:role "user" :content ""}}
+                        {:type "message" :id "m2" :parentId "m1" :timestamp 3000
+                         :message {:role "assistant" :content ""}}
+                        {:type "message" :id "m3" :parentId "m2" :timestamp 4000
+                         :message {:role "user" :content "still here"}}]
+            p          (sut/build {:model "claude-sonnet-4-6"
+                                   :soul  "You are Isaac."
+                                   :transcript transcript
+                                   :filter-fn sut/filter-messages-anthropic})]
+        (should-not (empty-text-blocks? (:messages p)))
+        (should= "still here" (get-in p [:messages 1 :content 0 :text]))))
+
+    (it "uses a fallback when compaction summary is blank"
+      (let [transcript [{:type "session" :id "sess-1" :timestamp 1000}
+                        {:type "compaction" :id "c1" :parentId "sess-1" :timestamp 2000
+                         :summary ""}
+                        {:type "message" :id "m1" :parentId "c1" :timestamp 3000
+                         :message {:role "user" :content "next"}}]
+            p          (sut/build {:model "claude-sonnet-4-6"
+                                   :soul  "You are Isaac."
+                                   :transcript transcript
+                                   :filter-fn sut/filter-messages-anthropic})]
+        (should= sut/compaction-summary-fallback (get-in p [:messages 1 :content]))
+        (should-not (empty-text-blocks? (:messages p))))))
+
   (context "OpenAI provider"
 
     (it "formats assistant tool call as tool_calls array"

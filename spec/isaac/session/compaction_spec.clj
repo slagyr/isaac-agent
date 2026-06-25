@@ -7,6 +7,7 @@
     ;; Loading this registers the :responses factory so make-provider
     ;; can construct a real ResponsesAPI when callers pass `:api "responses"`.
      [isaac.llm.api.responses]
+     [isaac.llm.prompt.builder :as prompt-builder]
      [isaac.logger :as log]
      [isaac.fs :as fs]
      [isaac.session.compaction :as sut]
@@ -159,6 +160,21 @@
         (should= "system" (-> @chat-called :messages first :role))
         (should= "compaction" (:type result))
         (should= "Summary of conversation" (:summary result))))
+
+    (it "stores a non-blank summary when the model returns empty content"
+      (let [key-str  "isaac:main:cli:chat:blank-summary"
+            _session (storage/create-session! test-root key-str)
+            _msg1    (storage/append-message! test-root key-str {:role "user" :content "Hello"})
+            _msg2    (storage/append-message! test-root key-str {:role "assistant" :content "Hi"})
+            mock-chat (fn [_request _tool-fn]
+                        {:message {:content ""}})
+            result   (sut/compact! key-str
+                       {:model          "test-model"
+                        :soul           "You are helpful."
+                        :context-window 10000
+                        :chat-fn        mock-chat})]
+        (should= "compaction" (:type result))
+        (should= prompt-builder/compaction-summary-fallback (:summary result))))
 
     (it "instructs the compaction prompt to preserve agent and user attribution"
       (let [key-str     "isaac:main:cli:chat:attribution123"

@@ -360,7 +360,7 @@
       (deliver compaction-llm-done true))
     (if (response-error response)
       response
-      (let [summary          (response-content response)
+      (let [summary          (prompt-builder/non-blank-summary (response-content response))
             spliced-transcript (atom nil)
             splice!          (fn []
                                (let [compaction-entry (store/splice-compaction! session-store key-str
