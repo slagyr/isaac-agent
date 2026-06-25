@@ -46,6 +46,9 @@
     {:options (->> options (remove (comp nil? val)) (into {}))
      :errors  errors}))
 
+(defn- help-requested? [args]
+  (boolean (some #{"--help" "-h"} args)))
+
 ;; region ----- Formatting -----
 
 (defn format-age
@@ -367,6 +370,19 @@
   (println (cli/command-help (cli/get-command "sessions")))
   0)
 
+(defn- subcommand-help-text [usage description]
+  (let [options (-> (tools-cli/parse-opts [] option-spec) :summary str/trim-newline)]
+    (str/join "\n" [usage "" description "" "Options:" options])))
+
+(defn- print-subcommand-help! [usage description]
+  (println (subcommand-help-text usage description))
+  0)
+
+(def ^:private set-help    ["Usage: isaac sessions set <id>.<path> <value>" "Set a value on a session field."])
+(def ^:private unset-help  ["Usage: isaac sessions unset <id>.<path>" "Clear a value on a session field."])
+(def ^:private show-help   ["Usage: isaac sessions show <id>" "Show full detail for one session."])
+(def ^:private delete-help ["Usage: isaac sessions delete <id>" "Delete one session."])
+
 (defn- run-list [opts list-args]
   (let [{:keys [options errors]} (parse-option-map list-args)]
     (cond
@@ -386,21 +402,29 @@
         subcmd   (first raw-args)]
     (cond
       (= "show" subcmd)
-      (let [{:keys [options errors]} (parse-option-map (drop 2 raw-args))]
-        (if (seq errors)
-          (do
-            (doseq [error errors] (println error))
-            1)
-          (run-show (merge (dissoc opts :_raw-args) options) (second raw-args))))
+      (if (help-requested? (rest raw-args))
+        (apply print-subcommand-help! show-help)
+        (let [{:keys [options errors]} (parse-option-map (drop 2 raw-args))]
+          (if (seq errors)
+            (do
+              (doseq [error errors] (println error))
+              1)
+            (run-show (merge (dissoc opts :_raw-args) options) (second raw-args)))))
 
       (= "delete" subcmd)
-      (run-delete opts (second raw-args))
+      (if (help-requested? (rest raw-args))
+        (apply print-subcommand-help! delete-help)
+        (run-delete opts (second raw-args)))
 
       (= "set" subcmd)
-      (run-mutation opts :set (second raw-args) (nth raw-args 2 nil))
+      (if (help-requested? (rest raw-args))
+        (apply print-subcommand-help! set-help)
+        (run-mutation opts :set (second raw-args) (nth raw-args 2 nil)))
 
       (= "unset" subcmd)
-      (run-mutation opts :unset (second raw-args) nil)
+      (if (help-requested? (rest raw-args))
+        (apply print-subcommand-help! unset-help)
+        (run-mutation opts :unset (second raw-args) nil))
 
       (= "list" subcmd)
       (run-list opts (rest raw-args))

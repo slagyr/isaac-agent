@@ -27,25 +27,21 @@ Feature: Sessions Command
     And the stdout contains "show"
     And the exit code is 0
 
-  @wip
   Scenario: sessions set --help shows the set usage
     When isaac is run with "sessions set --help"
     Then the stdout contains "Usage: isaac sessions set <id>.<path> <value>"
     And the exit code is 0
 
-  @wip
   Scenario: sessions unset --help shows the unset usage
     When isaac is run with "sessions unset --help"
     Then the stdout contains "Usage: isaac sessions unset <id>.<path>"
     And the exit code is 0
 
-  @wip
   Scenario: sessions show --help shows the show usage
     When isaac is run with "sessions show --help"
     Then the stdout contains "Usage: isaac sessions show <id>"
     And the exit code is 0
 
-  @wip
   Scenario: sessions delete --help shows the delete usage
     When isaac is run with "sessions delete --help"
     Then the stdout contains "Usage: isaac sessions delete <id>"
