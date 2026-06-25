@@ -1,8 +1,11 @@
 Feature: Anthropic Messages API surface
-  Wire-shape tests for the messages API. Effort integers on
-  the request map are translated to an integer thinking budget on
-  body.thinking.budget_tokens, scaling linearly with the model's
-  thinking-budget-max config field. Effort 0 omits the thinking block.
+  Wire-shape tests for the messages API. Isaac's 0-10 effort knob maps to
+  Anthropic adaptive thinking: effort 0 omits the thinking block; effort
+  1-10 sends body.thinking.type "adaptive" with body.output_config.effort
+  (low/medium/high/max). max_tokens is a flat output cap (16000). There is
+  no budget_tokens — the deprecated enabled/budget path is not used. The
+  adapter is model-name-agnostic; a model that should not think sets
+  effort 0 in config.
 
   Background:
     Given an Isaac root at "target/test-state"
@@ -10,11 +13,10 @@ Feature: Anthropic Messages API surface
       | key        | value  |
       | log.output | memory |
     And the isaac EDN file "config/models/claude.edn" exists with:
-      | path                | value                     |
-      | model               | claude-sonnet-4-5         |
-      | provider            | grover:anthropic          |
-      | context-window      | 200000                    |
-      | thinking-budget-max | 32000                     |
+      | path           | value             |
+      | model          | claude-sonnet-4-6 |
+      | provider       | grover:anthropic  |
+      | context-window | 200000            |
     And the isaac EDN file "config/crew/thinker.edn" exists with:
       | path  | value       |
       | model | claude      |
@@ -24,9 +26,25 @@ Feature: Anthropic Messages API surface
       | thinking | thinker |
     And the following model responses are queued:
       | model             | type | content |
-      | claude-sonnet-4-5 | text | ok      |
+      | claude-sonnet-4-6 | text | ok      |
 
-  Scenario: Effort 0 omits the thinking block entirely
+  @wip
+  Scenario: adaptive thinking sends type adaptive and an effort level, no budget_tokens
+    Given the isaac EDN file "config/crew/thinker.edn" exists with:
+      | path   | value       |
+      | model  | claude      |
+      | soul   | Think hard. |
+      | effort | 7           |
+    When the user sends "hi" on session "thinking"
+    Then the last outbound HTTP request matches:
+      | key                       | value    |
+      | body.thinking.type        | adaptive |
+      | body.output_config.effort | high     |
+      | body.max_tokens           | 16000    |
+    And the last provider request does not contain path "body.thinking.budget_tokens"
+
+  @wip
+  Scenario: effort 0 sends no thinking block
     Given the isaac EDN file "config/crew/thinker.edn" exists with:
       | path   | value       |
       | model  | claude      |
@@ -34,73 +52,29 @@ Feature: Anthropic Messages API surface
       | effort | 0           |
     When the user sends "hi" on session "thinking"
     Then the last provider request does not contain path "body.thinking"
+    And the last provider request does not contain path "body.output_config"
+    And the last outbound HTTP request matches:
+      | key             | value |
+      | body.max_tokens | 16000 |
 
-  Scenario: Effort 1 maps to 10% of budget-max (3200 tokens)
+  @wip
+  Scenario Outline: effort maps to the Anthropic adaptive effort level
     Given the isaac EDN file "config/crew/thinker.edn" exists with:
       | path   | value       |
       | model  | claude      |
       | soul   | Think hard. |
-      | effort | 1           |
+      | effort | <effort>    |
     When the user sends "hi" on session "thinking"
     Then the last outbound HTTP request matches:
-      | key                         | value   |
-      | body.thinking.type          | enabled |
-      | body.thinking.budget_tokens | 3200    |
+      | key                       | value   |
+      | body.output_config.effort | <level> |
 
-  Scenario: Effort 5 maps to 50% of budget-max (16000 tokens)
-    Given the isaac EDN file "config/crew/thinker.edn" exists with:
-      | path   | value       |
-      | model  | claude      |
-      | soul   | Think hard. |
-      | effort | 5           |
-    When the user sends "hi" on session "thinking"
-    Then the last outbound HTTP request matches:
-      | key                         | value   |
-      | body.thinking.type          | enabled |
-      | body.thinking.budget_tokens | 16000   |
-
-  Scenario: Effort 10 maps to 100% of budget-max (32000 tokens)
-    Given the isaac EDN file "config/crew/thinker.edn" exists with:
-      | path   | value       |
-      | model  | claude      |
-      | soul   | Think hard. |
-      | effort | 10          |
-    When the user sends "hi" on session "thinking"
-    Then the last outbound HTTP request matches:
-      | key                         | value   |
-      | body.thinking.type          | enabled |
-      | body.thinking.budget_tokens | 32000   |
-
-  Scenario: thinking-budget-max 64000 scales 50% effort to 32000 tokens
-    Given the isaac EDN file "config/models/claude.edn" exists with:
-      | path                | value                     |
-      | model               | claude-sonnet-4-5         |
-      | provider            | grover:anthropic          |
-      | context-window      | 200000                    |
-      | thinking-budget-max | 64000                     |
-    And the isaac EDN file "config/crew/thinker.edn" exists with:
-      | path   | value       |
-      | model  | claude      |
-      | soul   | Think hard. |
-      | effort | 5           |
-    When the user sends "hi" on session "thinking"
-    Then the last outbound HTTP request matches:
-      | key                         | value |
-      | body.thinking.budget_tokens | 32000 |
-
-  Scenario: thinking-budget-max 64000 scales effort 10 to 64000 tokens
-    Given the isaac EDN file "config/models/claude.edn" exists with:
-      | path                | value                     |
-      | model               | claude-sonnet-4-5         |
-      | provider            | grover:anthropic          |
-      | context-window      | 200000                    |
-      | thinking-budget-max | 64000                     |
-    And the isaac EDN file "config/crew/thinker.edn" exists with:
-      | path   | value       |
-      | model  | claude      |
-      | soul   | Think hard. |
-      | effort | 10          |
-    When the user sends "hi" on session "thinking"
-    Then the last outbound HTTP request matches:
-      | key                         | value |
-      | body.thinking.budget_tokens | 64000 |
+    Examples:
+      | effort | level  |
+      | 1      | low    |
+      | 3      | low    |
+      | 4      | medium |
+      | 6      | medium |
+      | 7      | high   |
+      | 9      | high   |
+      | 10     | max    |
