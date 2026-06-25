@@ -16,45 +16,49 @@ Feature: Crew tags
     And the stdout contains ":project/chess"
     And the exit code is 0
 
-  Scenario: isaac crew table includes a Tags column
+  @wip
+  Scenario: isaac crew list table includes a Tags column
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
       | path  | value           |
       | model | grover          |
       | tags  | #{:role/worker} |
-    When isaac is run with "crew"
+    When isaac is run with "crew list"
     Then the stdout matches:
       | pattern                                   |
       | Name .* Model .* Provider .* Soul .* Tags |
     And the exit code is 0
 
-  Scenario: isaac crew --json includes tags on each record
+  @wip
+  Scenario: isaac crew list --json includes tags on each record
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
       | path  | value                          |
       | model | grover                         |
       | tags  | #{:role/worker :project/chess} |
-    When isaac is run with "crew --json"
+    When isaac is run with "crew list --json"
     Then the stdout JSON contains:
       | path   | value                            |
       | 0.name | "joe"                            |
       | 0.tags | ["project/chess", "role/worker"] |
     And the exit code is 0
 
-  Scenario: isaac crew --edn includes tags as a set on each record
+  @wip
+  Scenario: isaac crew list --edn includes tags as a set on each record
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
       | path  | value                          |
       | model | grover                         |
       | tags  | #{:role/worker :project/chess} |
-    When isaac is run with "crew --edn"
+    When isaac is run with "crew list --edn"
     Then the stdout EDN contains:
       | path   | value                          |
       | 0.name | "joe"                          |
       | 0.tags | #{:role/worker :project/chess} |
     And the exit code is 0
 
-  Scenario: isaac crew --tag filters to crews carrying that tag
+  @wip
+  Scenario: isaac crew list --tag filters to crews carrying that tag
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
       | path  | value           |
@@ -64,12 +68,13 @@ Feature: Crew tags
       | path  | value           |
       | model | grover          |
       | tags  | #{:role/verify} |
-    When isaac is run with "crew --tag role/worker"
+    When isaac is run with "crew list --tag role/worker"
     Then the stdout contains "joe"
     And the stdout does not contain "sue"
     And the exit code is 0
 
-  Scenario: isaac crew --tag is repeatable with AND semantics
+  @wip
+  Scenario: isaac crew list --tag is repeatable with AND semantics
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
       | path  | value                          |
@@ -79,12 +84,13 @@ Feature: Crew tags
       | path  | value           |
       | model | grover          |
       | tags  | #{:role/worker} |
-    When isaac is run with "crew --tag role/worker --tag project/chess"
+    When isaac is run with "crew list --tag role/worker --tag project/chess"
     Then the stdout contains "joe"
     And the stdout does not contain "sue"
     And the exit code is 0
 
-  Scenario: isaac crew --without-tag excludes crews carrying that tag
+  @wip
+  Scenario: isaac crew list --without-tag excludes crews carrying that tag
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
       | path  | value           |
@@ -94,12 +100,13 @@ Feature: Crew tags
       | path  | value           |
       | model | grover          |
       | tags  | #{:role/verify} |
-    When isaac is run with "crew --without-tag role/worker"
+    When isaac is run with "crew list --without-tag role/worker"
     Then the stdout contains "sue"
     And the stdout does not contain "joe"
     And the exit code is 0
 
-  Scenario: isaac crew --without-tag is repeatable with AND-NOT semantics
+  @wip
+  Scenario: isaac crew list --without-tag is repeatable with AND-NOT semantics
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
       | path  | value           |
@@ -113,13 +120,14 @@ Feature: Crew tags
       | path  | value         |
       | model | grover        |
       | tags  | #{:role/plan} |
-    When isaac is run with "crew --without-tag role/worker --without-tag role/verify"
+    When isaac is run with "crew list --without-tag role/worker --without-tag role/verify"
     Then the stdout contains "ann"
     And the stdout does not contain "joe"
     And the stdout does not contain "sue"
     And the exit code is 0
 
-  Scenario: isaac crew --untagged shows only crews with empty tags
+  @wip
+  Scenario: isaac crew list --untagged shows only crews with empty tags
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
       | path  | value           |
@@ -128,12 +136,13 @@ Feature: Crew tags
     And the isaac EDN file "config/crew/sue.edn" exists with:
       | path  | value  |
       | model | grover |
-    When isaac is run with "crew --untagged"
+    When isaac is run with "crew list --untagged"
     Then the stdout contains "sue"
     And the stdout does not contain "joe"
     And the exit code is 0
 
-  Scenario: isaac crew composes --tag and --without-tag
+  @wip
+  Scenario: isaac crew list composes --tag and --without-tag
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
       | path  | value                |
@@ -143,7 +152,7 @@ Feature: Crew tags
       | path  | value           |
       | model | grover          |
       | tags  | #{:role/worker} |
-    When isaac is run with "crew --tag role/worker --without-tag wip"
+    When isaac is run with "crew list --tag role/worker --without-tag wip"
     Then the stdout contains "sue"
     And the stdout does not contain "joe"
     And the exit code is 0
@@ -160,17 +169,22 @@ Feature: Crew tags
     And the stdout contains ":project/chess"
     And the exit code is 0
 
-  Scenario: isaac crew show <name> --json includes tags
+  @wip
+  Scenario: isaac crew show <name> --json includes tags and full soul
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
       | path  | value                          |
       | model | grover                         |
+      | soul  | You are Joe.\nKeep the lantern dry. |
       | tags  | #{:role/worker :project/chess} |
     When isaac is run with "crew show joe --json"
     Then the stdout JSON contains:
-      | path | value                            |
-      | name | "joe"                            |
-      | tags | ["project/chess", "role/worker"] |
+      | path | value                                      |
+      | name | "joe"                                      |
+      | soul | "You are Joe.\nKeep the lantern dry."      |
+      | tags | ["project/chess", "role/worker"]           |
+    And the stdout does not contain "\"soul-source\""
+    And the stdout does not contain "\"tags-text\""
     And the exit code is 0
 
   Scenario: isaac config set crew.<name>.tags.<keyword> adds a tag
