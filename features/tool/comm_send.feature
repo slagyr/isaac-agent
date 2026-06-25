@@ -11,8 +11,8 @@ Feature: comm_send tool
 
   New steps this feature introduces (see bean isaac-2s0b):
   - the prompt tool "<name>" has parameters:   (asserts the tool's
-    :parameters schema; exact param set; namespaced keys like
-    telly/target are single keyword keys, not nested paths)
+    :parameters schema; exact param set; send-schema fields appear as
+    API-safe JSON keys like telly.target, not slash-separated paths)
   - a pending comm delivery matches:           (id-agnostic scan of
     comm/delivery/pending/*.edn)
   - there are no pending comm deliveries
@@ -46,8 +46,8 @@ Feature: comm_send tool
       | param        | type   | required |
       | comm         | string | true     |
       | content      | string | true     |
-      | telly/target | string | false    |
-      | telly/loft   | string | false    |
+      | telly.target | string | false    |
+      | telly.loft   | string | false    |
 
   Scenario: calling comm_send enqueues a delivery record, queue-first
     Given the telly comm module is registered
@@ -56,7 +56,7 @@ Feature: comm_send tool
       | comms.tannoy.type | telly |
     And the following model responses are queued:
       | type     | tool_call | arguments                                                                                |
-      | toolCall | comm_send | {"comm":"tannoy","content":"Lantern is lit.","telly/target":"bridge","telly/loft":"high"} |
+      | toolCall | comm_send | {"comm":"tannoy","content":"Lantern is lit.","telly.target":"bridge","telly.loft":"high"} |
       | text     |           | Done.                                                                                    |
     When the user sends "tell the bridge" on session "dawn-watch"
     And the turn ends on session "dawn-watch"

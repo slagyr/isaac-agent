@@ -59,7 +59,7 @@
 
 (defn- field-json-key [field]
   (if-let [ns* (namespace field)]
-    (str ns* "/" (name field))
+    (str ns* "." (name field))
     (name field)))
 
 (defn- field-present? [validations]
