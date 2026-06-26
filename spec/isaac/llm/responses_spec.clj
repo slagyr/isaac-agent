@@ -8,6 +8,8 @@
     [isaac.llm.api.openai.shared :as shared]
     [isaac.llm.http :as llm-http]
     [isaac.logger :as log]
+    [isaac.fs :as fs]
+    [isaac.nexus :as nexus]
     [speclj.core :refer :all]))
 
 (defn- jwt-with-account-id [account-id]
@@ -21,6 +23,8 @@
                           :root "/tmp/isaac-home/.isaac"})
 
 (describe "OpenAI Responses Provider"
+
+  (around [example] (nexus/-with-nested-nexus {:fs (fs/mem-fs)} (example)))
 
   (describe "chat"
 

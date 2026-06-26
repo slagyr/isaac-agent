@@ -1,5 +1,6 @@
 (ns isaac.session.store-spec
   (:require
+    [isaac.fs :as fs]
     [isaac.marigold :as marigold]
     [isaac.session.store.spi :as store]
     [isaac.session.store.memory :as memory]
@@ -7,6 +8,8 @@
     [speclj.core :refer :all]))
 
 (describe "isaac.session.store.spi"
+
+  (around [example] (nexus/-with-nested-nexus {:fs (fs/mem-fs)} (example)))
 
   (it "defines a SessionStore protocol"
     (should-not-be-nil store/SessionStore))

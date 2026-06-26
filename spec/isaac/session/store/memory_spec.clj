@@ -1,12 +1,16 @@
 (ns isaac.session.store.memory-spec
   (:require
+    [isaac.fs :as fs]
     [isaac.marigold :as marigold]
+    [isaac.nexus :as nexus]
     [isaac.session.store.spi :as store]
     [isaac.session.store.impl-common :as c]
     [isaac.session.store.memory :as sut]
     [speclj.core :refer :all]))
 
 (describe "MemorySessionStore"
+
+  (around [example] (nexus/-with-nested-nexus {:fs (fs/mem-fs)} (example)))
 
   (describe "open-session!"
 

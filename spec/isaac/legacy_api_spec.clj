@@ -2,12 +2,13 @@
   (:require
     [isaac.config.loader :as loader]
     [isaac.fs :as fs]
+    [isaac.nexus :as nexus]
     [speclj.core :refer :all]))
 
 (describe "legacy API compatibility"
-  (it "returns the bound filesystem instance"
+  (it "returns the installed filesystem instance"
     (let [mem-fs (fs/mem-fs)]
-      (binding [fs/*fs* mem-fs]
+      (nexus/-with-nexus {:fs mem-fs}
         (should= mem-fs (fs/instance)))))
 
   (it "exposes load-config as a config-only wrapper"

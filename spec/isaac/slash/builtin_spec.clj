@@ -21,6 +21,8 @@
 
 (describe "slash builtin"
 
+  (around [example] (nexus/-with-nested-nexus {:fs (fs/mem-fs)} (example)))
+
   (describe "resolve-cwd-path"
 
     (it "keeps absolute paths"

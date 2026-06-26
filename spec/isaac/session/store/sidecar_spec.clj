@@ -10,7 +10,7 @@
 
 (describe "sidecar session store"
 
-  (it "uses the installed runtime fs without binding fs/*fs*"
+  (it "uses the installed runtime fs without binding a thread-local fs"
     (let [mem      (fs/mem-fs)
           fs-store (nexus/-with-nexus {:fs mem}
                      (sut/create-store test-dir))]

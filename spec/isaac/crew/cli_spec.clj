@@ -5,6 +5,8 @@
     [clojure.string :as str]
     [isaac.config.loader :as loader]
     [isaac.crew.cli :as sut]
+    [isaac.fs :as fs]
+    [isaac.nexus :as nexus]
     [speclj.core :refer :all]))
 
 (def crew-cfg
@@ -16,6 +18,8 @@
 (def crew-opts {:root "/test/crew" :home "/test/crew-home"})
 
 (describe "crew cli"
+
+  (around [example] (nexus/-with-nested-nexus {:fs (fs/mem-fs)} (example)))
 
   (it "renders list output as JSON with sorted tags"
     (with-redefs [loader/load-config! (fn [& _] crew-cfg)]

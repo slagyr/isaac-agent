@@ -120,7 +120,7 @@
         (should= 0 (:output-tokens entry))
         (should= 0 (:total-tokens entry))))
 
-    (it "supports an explicit fs arity without binding fs/*fs*"
+    (it "supports an explicit fs arity without binding a thread-local fs"
       (let [mem   (fs/mem-fs)
             entry (sut/create-session! test-dir test-key {} mem)]
         (should= test-key (:id entry))

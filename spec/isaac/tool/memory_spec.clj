@@ -71,7 +71,7 @@
       (should= "tea note"
                (fs/slurp (nexus/get :fs) (str test-dir "/crew/" marigold/first-mate "/memory/2026-04-21.md")))))
 
-  (it "uses the installed runtime fs without binding fs/*fs*"
+  (it "uses the installed runtime fs without binding a thread-local fs"
     (let [mem (fs/mem-fs)]
       (helper/with-memory-store
         (nexus/-with-nexus {:root test-dir :fs mem}

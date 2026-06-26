@@ -33,7 +33,7 @@
   (it "returns nil when AGENTS.md is missing"
     (should-be-nil (sut/read-boot-files (str test-root "/missing-project")))))
 
-  (it "reads AGENTS.md from the installed runtime fs without binding fs/*fs*"
+  (it "reads AGENTS.md from the installed runtime fs without binding a thread-local fs"
     (let [mem (fs/mem-fs)]
       (fs/spit mem (str test-root "/project-runtime/AGENTS.md") "## Runtime Rules\nNo globals.")
       (nexus/-with-nexus {:fs mem}

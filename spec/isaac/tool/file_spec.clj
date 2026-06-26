@@ -45,7 +45,7 @@
         (should (:isError result))
         (should (re-find #"not found" (:error result)))))
 
-    (it "uses the installed runtime fs without binding fs/*fs*"
+    (it "uses the installed runtime fs without binding a thread-local fs"
       (let [mem  (fs/mem-fs)
             path (str support/test-dir "/runtime-fs.txt")]
         (fs/spit mem path "runtime fs")
