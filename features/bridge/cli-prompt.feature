@@ -245,7 +245,6 @@ Feature: Prompt single-turn command
   # --prefer: the multi-match tiebreak for :reach :one (isaac-4e4b). Replaces the
   # confusingly-named --resume; --session stays the exact selector.
 
-  @wip
   Scenario: --prefer oldest picks the oldest of multiple matching sessions
     Given the isaac EDN file "config/crew/ketch.edn" exists with:
       | path | value |
@@ -259,6 +258,10 @@ Feature: Prompt single-turn command
       | type    | message.role | message.content |
       | message | user         | Earlier         |
       | message | assistant    | Aye             |
+    And the following sessions exist:
+      | name   | crew  | updated-at          |
+      | older  | ketch | 2026-04-10T10:00:00 |
+      | recent | ketch | 2026-04-12T15:00:00 |
     And the following model responses are queued:
       | type | content | model |
       | text | On it.  | echo  |
@@ -271,7 +274,6 @@ Feature: Prompt single-turn command
       | message | assistant    | On it.          |
     And the exit code is 0
 
-  @wip
   Scenario: --prefer recent picks the most recent of multiple matching sessions
     Given the isaac EDN file "config/crew/ketch.edn" exists with:
       | path | value |
@@ -297,7 +299,6 @@ Feature: Prompt single-turn command
       | message | assistant    | On it.          |
     And the exit code is 0
 
-  @wip
   Scenario: --prefer is a no-op when the match is unambiguous
     Given the following sessions exist:
       | name |
@@ -318,7 +319,6 @@ Feature: Prompt single-turn command
       | message | assistant    | On it.          |
     And the exit code is 0
 
-  @wip
   Scenario: --prefer with an unknown value errors clearly
     When isaac is run with "prompt --crew ketch --prefer sideways -m 'Hi'"
     Then the stderr contains "--prefer must be recent or oldest"

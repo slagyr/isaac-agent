@@ -33,14 +33,22 @@
        (filter #(session-matches? % select))
        vec))
 
-(defn- pick-most-recent [sessions]
-  (->> sessions (sort-by :updated-at) last))
+(def prefer-modes #{:recent :oldest})
+
+(defn- pick-by-prefer [sessions prefer]
+  (let [sorted (sort-by :updated-at sessions)]
+    (case (or prefer :recent)
+      :oldest (first sorted)
+      :recent (last sorted))))
 
 (defn- describe-select? [{:keys [crew session-tags]}]
   (boolean (or crew (seq session-tags))))
 
 (defn- explicit-session? [{:keys [session]}]
   (seq session))
+
+(defn- resume-select? [{:keys [resume]}]
+  resume)
 
 (defn- no-match-message [select]
   (cond
@@ -64,6 +72,8 @@
      :session-tags       — tag set (AND)
      :crew               — crew id
      :reach              — :one (sync tools; default)
+     :prefer             — :recent | :oldest; multi-match tiebreak when :reach :one (default :recent)
+     :resume             — select across all sessions (--resume); mutually exclusive with describe flags
      :create             — :never | :if-missing | :always (default :if-missing)
      :default-session-key — fallback when no describe/explicit selector (default prompt-default)
 
@@ -73,7 +83,7 @@
      {:session-key nil :session nil :create? true :create-identity {...}}  ; generated key
      {:error :no-match :message \"...\"}"
   [select session-store]
-  (let [select         (merge {:reach :one :create :if-missing :default-session-key "prompt-default"}
+  (let [select         (merge {:reach :one :prefer :recent :create :if-missing :default-session-key "prompt-default"}
                               select)
         create         (:create select)
         all-sessions   (store/list-sessions session-store)]
@@ -106,7 +116,7 @@
                               (:session-tags select) (assoc :tags (:session-tags select)))}
 
           (seq matches)
-          (let [picked (pick-most-recent matches)]
+          (let [picked (pick-by-prefer matches (:prefer select))]
             {:session-key (:id picked) :session picked :create? false})
 
           (= create :never)
@@ -119,6 +129,28 @@
            :create-identity (cond-> {}
                               (:crew select) (assoc :crew (:crew select))
                               (:session-tags select) (assoc :tags (:session-tags select)))}))
+
+      (resume-select? select)
+      (let [matches (matching-sessions {} all-sessions)]
+        (cond
+          (= create :always)
+          {:session-key     nil
+           :session         nil
+           :create?         true
+           :create-identity {}}
+
+          (seq matches)
+          (let [picked (pick-by-prefer matches (:prefer select))]
+            {:session-key (:id picked) :session picked :create? false})
+
+          (= create :never)
+          {:error :no-match :message (no-match-message select)}
+
+          :else
+          {:session-key     (:default-session-key select)
+           :session         nil
+           :create?         true
+           :create-identity {}}))
 
       :else
       (let [session-key (:default-session-key select)

@@ -29,7 +29,15 @@
 
     (it "rejects invalid --create values"
       (let [errors (sut/validate-select-options {:crew "ketch" :create :sometimes})]
-        (should (pos? (count errors))))))
+        (should (pos? (count errors)))))
+
+    (it "rejects invalid --prefer values"
+      (let [errors (sut/validate-select-options {:crew "ketch" :prefer "sideways"})]
+        (should= ["--prefer must be recent or oldest"] errors)))
+
+    (it "accepts --prefer recent and oldest"
+      (should= [] (sut/validate-select-options {:crew "ketch" :prefer "oldest"}))
+      (should= [] (sut/validate-select-options {:session "foo" :prefer "recent"}))))
 
   (describe "build-select"
 
@@ -47,7 +55,12 @@
     (it "parses --create never|if-missing|always"
       (should= :never (sut/parse-create "never"))
       (should= :if-missing (sut/parse-create "if-missing"))
-      (should= :always (sut/parse-create "always"))))
+      (should= :always (sut/parse-create "always")))
+
+    (it "maps --prefer and --resume into the select map"
+      (let [select (sut/build-select {:crew "ketch" :prefer "oldest" :resume true})]
+        (should= :oldest (:prefer select))
+        (should (true? (:resume select))))))
 
   (describe "build-override"
 

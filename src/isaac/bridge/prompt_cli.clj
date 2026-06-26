@@ -88,15 +88,8 @@
       (print-error! (get-in result [:errors 0 :value]))
       false)))
 
-(defn- resolve-via-resume [session-store]
-  (if-let [recent (store/most-recent-session session-store)]
-    {:session-key (:id recent) :session recent :create? false}
-    {:session-key "prompt-default" :session nil :create? true :create-identity {}}))
-
 (defn- resolve-target [opts session-store]
-  (if (:resume opts)
-    (resolve-via-resume session-store)
-    (session-selector/resolve-session-targets (selector-cli/build-select opts) session-store)))
+  (session-selector/resolve-session-targets (selector-cli/build-select opts) session-store))
 
 (defn- ensure-session! [target override opts cfg session-store]
   (if (:create? target)

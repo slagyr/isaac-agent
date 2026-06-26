@@ -61,6 +61,43 @@
         (should= false (:create? result))
         (should= "recent" (:session-key result))))
 
+    (it "selects the oldest crew session when :prefer :oldest"
+      (helper/create-session! "/test" "older" {:crew "ketch" :updated-at "2026-04-10T10:00:00"})
+      (helper/create-session! "/test" "recent" {:crew "ketch" :updated-at "2026-04-12T15:00:00"})
+      (let [result (sut/resolve-session-targets {:crew    "ketch"
+                                               :prefer  :oldest
+                                               :create  :if-missing}
+                                              (store/registered-store))]
+        (should= false (:create? result))
+        (should= "older" (:session-key result))))
+
+    (it "selects the most recent crew session when :prefer :recent"
+      (helper/create-session! "/test" "older" {:crew "ketch" :updated-at "2026-04-10T10:00:00"})
+      (helper/create-session! "/test" "recent" {:crew "ketch" :updated-at "2026-04-12T15:00:00"})
+      (let [result (sut/resolve-session-targets {:crew    "ketch"
+                                               :prefer  :recent
+                                               :create  :if-missing}
+                                              (store/registered-store))]
+        (should= false (:create? result))
+        (should= "recent" (:session-key result))))
+
+    (it "ignores :prefer when an explicit session id is unambiguous"
+      (helper/create-session! "/test" "foo" {:crew "main"})
+      (let [result (sut/resolve-session-targets {:session ["foo"]
+                                               :prefer  :oldest
+                                               :create  :never}
+                                              (store/registered-store))]
+        (should= false (:create? result))
+        (should= "foo" (:session-key result))))
+
+    (it "--resume selects the most recent session across all crews by default"
+      (helper/create-session! "/test" "older" {:crew "ketch" :updated-at "2026-04-10T10:00:00"})
+      (helper/create-session! "/test" "recent" {:crew "main" :updated-at "2026-04-12T15:00:00"})
+      (let [result (sut/resolve-session-targets {:resume true :create :if-missing}
+                                              (store/registered-store))]
+        (should= false (:create? result))
+        (should= "recent" (:session-key result))))
+
     (it "creates a crew session when none match"
       (let [result (sut/resolve-session-targets {:crew   "ketch"
                                                :create :if-missing}
