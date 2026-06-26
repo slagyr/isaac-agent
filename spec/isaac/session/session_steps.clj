@@ -10,6 +10,7 @@
     [isaac.config.loader :as loader]
     [isaac.config.resolve :as resolve]
 
+    [isaac.foundation.harness-config-steps :as fconfig]
     [isaac.foundation.root-steps :as froot]
 
     [isaac.drive.dispatch :as drive-dispatch]
@@ -490,69 +491,13 @@
         (tool-registry/register! (assoc tool :handler (fn [_] {:result "ok"})))))
     (update-crew-config! crew-id #(assoc % :tools {:allow allow}))))
 
-(defn- config-applied-value [v]
-  (cond
-    (re-matches #"-?\d+" v)                 (parse-long v)
-    (= "true" (str/lower-case v))           true
-    (= "false" (str/lower-case v))          false
-    (or (str/starts-with? v "[")
-        (str/starts-with? v "{")
-        (str/starts-with? v ":")
-        (str/starts-with? v "\""))          (try (edn/read-string v)
-                                                 (catch Exception _ v))
-    :else                                   v))
+(defn config-applied
+  "Delegates to the foundation-grade `config:` step implementation."
+  [table]
+  (fconfig/config-applied table))
 
 (defn- persist-config-entry! [k v]
-  (when-let [root (root-dir)]
-    (with-feature-fs
-      (fn []
-        (let [path    (str root "/config/isaac.edn")
-              fs*     (mem-fs)
-              current (if (fs/exists? fs* path) (edn/read-string (fs/slurp fs* path)) {})
-              kpath   (mapv keyword (str/split k #"\."))
-              updated (assoc-in current kpath (config-applied-value v))]
-          (fs/mkdirs fs* (fs/parent path))
-          (fs/spit   fs* path (pr-str updated))
-          (invalidate-feature-config!))))))
-
-(defn config-applied
-  "Background step `config:`/`And config:` — applies a table of harness
-   settings. `log.output` routes the in-memory logger so `the log has
-   entries matching:` can read structured entries. `bind-server-port` is
-   a server-only concern and is ignored here. Every other dotted key
-   (e.g. `prompt-paths`, `crew.main.soul`) is persisted into the on-disk
-   `config/isaac.edn` so config-reading steps (the catalog resolver,
-   loaded-config-has, …) observe it. The carve dropped this step
-   definition, so features whose Background is `config: | … |` silently
-   ran without it; `default-grover-setup` happens to set :memory logging
-   as a side effect, which is why grover-backed log features still passed."
-  [table]
-  ;; gherclj headerless tables put the lone key/value pair in :headers
-  ;; (e.g. `| prompt-paths | [...] |`), while tables with an explicit
-  ;; `| key | value |` header carry the pairs in :rows. Treat the
-  ;; :headers as a data pair unless it's the literal key/value header.
-  (let [header     (:headers table)
-        header-pair (when (and (= 2 (count header))
-                               (not (and (= "key" (first header))
-                                         (= "value" (second header)))))
-                      [header])]
-    (doseq [[k v] (map (fn [row] [(first row) (second row)])
-                       (concat header-pair (:rows table)))]
-      (cond
-      ;; gherclj passes a flattened key/value table; a stray header row
-      ;; ("key"/"value") can sneak in when two tables are concatenated.
-      (or (str/blank? (str k)) (= "key" k))
-      nil
-
-      (= "log.output" k)
-      (do (log/set-output! (keyword v))
-          (log/clear-entries!))
-
-      (= "bind-server-port" k)
-      nil
-
-      :else
-      (persist-config-entry! k v)))))
+  (fconfig/persist-config-entry! k v))
 
 (defn isaac-config-path-is [path value]
   (when-not (str/blank? (or value ""))
@@ -1376,11 +1321,6 @@
 
 ;; "an (empty) Isaac root at" / "an empty Isaac state directory" routing
 ;; moved to isaac.foundation.root-steps.
-
-(defgiven "config:" isaac.session.session-steps/config-applied
-  "Applies a key/value table of harness settings. Supports log.output
-   (routes the in-memory logger). Lets log-assertion features that don't
-   run 'default Grover setup' still capture structured log entries.")
 
 (defgiven #"the isaac config path \"([^\"]+)\" is \"([^\"]*)\"" isaac.session.session-steps/isaac-config-path-is
   "Persists one dotted config path into config/isaac.edn under the
