@@ -67,7 +67,7 @@ Feature: Prompt single-turn command
     Then the stderr contains "context length exceeded"
     And the exit code is 1
 
-  Scenario: --crew resolves the crew member's model
+  Scenario: --crew resolves the crew member's model on the crew session
     Given the isaac EDN file "config/models/grover2.edn" exists with:
       | path | value |
       | model | echo-alt |
@@ -77,14 +77,145 @@ Feature: Prompt single-turn command
       | path | value |
       | model | grover2 |
       | soul | You are a pirate. |
+    And the following sessions exist:
+      | name          | crew  |
+      | ketch-session | ketch |
     And the following model responses are queued:
       | model    | type | content |
       | echo-alt | text | Ahoy    |
     When isaac is run with "prompt --crew ketch -m 'hello'"
     Then the exit code is 0
-    And session "prompt-default" has transcript matching:
+    And session "ketch-session" has transcript matching:
       | type    | message.model | message.crew |
       | message | echo-alt      | ketch        |
+
+  Scenario: --crew targets the crew's existing session
+    Given the isaac EDN file "config/crew/ketch.edn" exists with:
+      | path | value |
+      | model | grover |
+      | soul | You are a pirate. |
+    And the following sessions exist:
+      | name          | crew  |
+      | ketch-session | ketch |
+    And the following model responses are queued:
+      | type | content | model |
+      | text | Hello   | echo  |
+    When isaac is run with "prompt --crew ketch -m 'Hi'"
+    Then session "ketch-session" has transcript matching:
+      | type    | message.role | message.content |
+      | message | user         | Hi              |
+      | message | assistant    | Hello           |
+
+  Scenario: --crew with no match creates one
+    Given the isaac EDN file "config/crew/ketch.edn" exists with:
+      | path | value |
+      | model | grover |
+      | soul | You are a pirate. |
+    And the following model responses are queued:
+      | type | content | model |
+      | text | Hello   | echo  |
+    When isaac is run with "prompt --crew ketch -m 'Hi'"
+    Then the exit code is 0
+    And the following sessions match:
+      | crew  |
+      | ketch |
+
+  Scenario: --crew with multiple matches resumes the most recent
+    Given the isaac EDN file "config/crew/ketch.edn" exists with:
+      | path | value |
+      | model | grover |
+      | soul | You are a pirate. |
+    And the following sessions exist:
+      | name    | crew  | updated-at           |
+      | older   | ketch | 2026-04-10T10:00:00 |
+      | recent  | ketch | 2026-04-12T15:00:00 |
+    And session "recent" has transcript:
+      | type    | message.role | message.content |
+      | message | user         | Earlier         |
+      | message | assistant    | Earlier reply   |
+    And the following model responses are queued:
+      | type | content   | model |
+      | text | Continued | echo  |
+    When isaac is run with "prompt --crew ketch -m 'Next'"
+    Then session "recent" has transcript matching:
+      | type    | message.role | message.content |
+      | message | user         | Earlier         |
+      | message | assistant    | Earlier reply   |
+      | message | user         | Next            |
+      | message | assistant    | Continued       |
+
+  Scenario: --session-tag selects by tag
+    Given the following sessions exist:
+      | name   | tags               |
+      | tagged | #{:project/chess}  |
+    And the following model responses are queued:
+      | type | content | model |
+      | text | Hello   | echo  |
+    When isaac is run with "prompt --session-tag project/chess -m 'Hi'"
+    Then session "tagged" has transcript matching:
+      | type    | message.role | message.content |
+      | message | user         | Hi              |
+      | message | assistant    | Hello           |
+
+  Scenario: repeated --session-tag AND-composes
+    Given the following sessions exist:
+      | name    | tags                            |
+      | tagged  | #{:project/chess :wip}          |
+      | partial | #{:project/chess}               |
+    And the following model responses are queued:
+      | type | content | model |
+      | text | Hello   | echo  |
+    When isaac is run with "prompt --session-tag project/chess --session-tag wip -m 'Hi'"
+    Then session "tagged" has transcript matching:
+      | type    | message.role | message.content |
+      | message | user         | Hi              |
+      | message | assistant    | Hello           |
+
+  Scenario: --create never with no match errors
+    When isaac is run with "prompt --crew ketch --create never -m 'Hi'"
+    Then the stderr contains "no session"
+    And the exit code is 1
+
+  Scenario: --create always starts a fresh session even when one matches
+    Given the isaac EDN file "config/crew/ketch.edn" exists with:
+      | path | value |
+      | model | grover |
+      | soul | You are a pirate. |
+    And the following sessions exist:
+      | name          | crew  |
+      | ketch-session | ketch |
+    And the following model responses are queued:
+      | type | content | model |
+      | text | Hello   | echo  |
+    When isaac is run with "prompt --crew ketch --create always -m 'Hi'"
+    Then the exit code is 0
+    And the following sessions match:
+      | crew  |
+      | ketch |
+    And the session count is 2
+
+  Scenario: --with-model overrides the model for the turn
+    Given the isaac EDN file "config/models/grover2.edn" exists with:
+      | path | value |
+      | model | echo-alt |
+      | provider | grover |
+      | context-window | 16384 |
+    And the following sessions exist:
+      | name           | crew |
+      | prompt-default | main |
+    And the following model responses are queued:
+      | model    | type | content |
+      | echo-alt | text | Alt     |
+    When isaac is run with "prompt --session prompt-default --with-model grover2 -m 'hello'"
+    Then the exit code is 0
+    And session "prompt-default" has transcript matching:
+      | type    | message.model |
+      | message | echo-alt      |
+
+  Scenario: --session with selection flags errors clearly
+    When isaac is run with "prompt --session bridge --crew main -m 'Hi'"
+    Then the stderr contains "mutually exclusive"
+    And the exit code is 1
 
   Scenario: prompt sets cwd on the created session
     Given the following model responses are queued:
@@ -95,19 +226,22 @@ Feature: Prompt single-turn command
       | id             | cwd |
       | prompt-default | #*  |
 
-  Scenario: --crew uses the crew member's soul
+  Scenario: --crew uses the crew member's soul on the crew session
     Given the isaac EDN file "config/crew/ketch.edn" exists with:
       | path | value |
       | model | grover |
       | soul | You are a pirate. |
+    And the following sessions exist:
+      | name          | crew  |
+      | ketch-session | ketch |
     And the following model responses are queued:
       | model | type | content |
       | echo  | text | Arr     |
     When isaac is run with "prompt --crew ketch -m 'hello'"
     Then the exit code is 0
     And the following sessions match:
-      | id             | crew  |
-      | prompt-default | ketch |
+      | id            | crew  |
+      | ketch-session | ketch |
 
   Scenario: prompt-created sessions load AGENTS.md from cwd
     Given the following model responses are queued:

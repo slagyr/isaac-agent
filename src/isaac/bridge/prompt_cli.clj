@@ -14,13 +14,10 @@
     [isaac.fs :as fs]
     [isaac.drive.turn :as single-turn]
     [isaac.session.context :as session-ctx]
+    [isaac.session.selector :as session-selector]
+    [isaac.session.selector-cli :as selector-cli]
     [isaac.session.store.spi :as store]
     [isaac.tool.builtin :as builtin]))
-
-(defn- option-tags [opts]
-  (->> (:tag opts)
-       (map keyword)
-       set))
 
 (defn- stderr-line! [text]
   (binding [*out* *err*]
@@ -91,65 +88,86 @@
       (print-error! (get-in result [:errors 0 :value]))
       false)))
 
+(defn- resolve-via-resume [session-store]
+  (if-let [recent (store/most-recent-session session-store)]
+    {:session-key (:id recent) :session recent :create? false}
+    {:session-key "prompt-default" :session nil :create? true :create-identity {}}))
+
+(defn- resolve-target [opts session-store]
+  (if (:resume opts)
+    (resolve-via-resume session-store)
+    (session-selector/resolve-session-targets (selector-cli/build-select opts) session-store)))
+
+(defn- ensure-session! [target override opts cfg session-store]
+  (if (:create? target)
+    (let [identity    (or (:create-identity target) {})
+          create-opts (merge {:cwd           (System/getProperty "user.dir")
+                              :config        cfg
+                              :origin        {:kind :cli}
+                              :session-store session-store}
+                             identity
+                             (select-keys override [:model :crew :effort :context-mode]))
+          entry       (session-ctx/create-with-resolved-behavior!
+                        (:session-key target) create-opts)]
+      (:id entry))
+    (:session-key target)))
+
 (defn run [opts]
   (if-not (:message opts)
     (do (println "Error: -m/--message is required")
         1)
-    (if (= false (ensure-local-config! opts))
-      1
-      (let [root     (root-of opts)
-            cfg           (loader/load-config! root (fs/instance) "prompt-cli")
-            _             (runtime/install! {:config cfg})
-            session-store (store/registered-store)
-            resumed-key   (when (:resume opts)
-                            (:id (store/most-recent-session session-store)))
-            session-key    (or (:session opts) resumed-key "prompt-default")
-            crew-override  (when (string? (:crew opts)) (:crew opts))
-            session        (store/get-session session-store session-key)
-            session-crew   (:crew session)
-            _              (when (nil? session)
-                              (session-ctx/create-with-resolved-behavior!
-                                session-key {:crew          crew-override
-                                            :tags          (option-tags opts)
-                                            :cwd           (System/getProperty "user.dir")
-                                            :config        cfg
-                                            :origin        {:kind :cli}
-                                            :session-store session-store}))
-            {:keys [comm text]} (make-prompt-comm)]
-        (builtin/register-all!)
-        (let [result (bridge/dispatch!
-                       (charge/build {:session-key    session-key
-                                      :input          (:message opts)
-                                      :config         cfg
-                                      :crew           (or crew-override session-crew)
-                                      :model-override (:model opts)
-                                      :origin         {:kind :cli}
-                                      :comm           comm}))]
-          (if (or (:error result) (get-in result [:response :error]))
-            (do
-              (binding [*out* *err*]
-                (println (single-turn/error-message result)))
-              1)
-            (do
-              (if (:json opts)
-                (println (json/generate-string {:session  session-key
-                                                :response @text}))
-                (println @text))
-              0)))))))
+    (let [validation-errors (selector-cli/validate-select-options opts)]
+      (if (seq validation-errors)
+        (do (doseq [error validation-errors] (print-error! error)) 1)
+        (if (= false (ensure-local-config! opts))
+          1
+          (let [root          (root-of opts)
+                cfg           (loader/load-config! root (fs/instance) "prompt-cli")
+                _             (runtime/install! {:config cfg})
+                session-store (store/registered-store)
+                override      (selector-cli/build-override opts)
+                target        (resolve-target opts session-store)]
+            (if (:error target)
+              (do (print-error! (:message target)) 1)
+              (let [session-key (ensure-session! target override opts cfg session-store)
+                    session     (store/get-session session-store session-key)
+                    {:keys [comm text]} (make-prompt-comm)]
+                (builtin/register-all!)
+                (let [result (bridge/dispatch!
+                               (charge/build {:session-key    session-key
+                                              :input          (:message opts)
+                                              :config         cfg
+                                              :crew           (or (:crew override) (:crew session))
+                                              :model-override (or (:model override) (:model opts))
+                                              :origin         {:kind :cli}
+                                              :comm           comm}))]
+                  (if (or (:error result) (get-in result [:response :error]))
+                    (do
+                      (binding [*out* *err*]
+                        (println (single-turn/error-message result)))
+                      1)
+                    (do
+                      (if (:json opts)
+                        (println (json/generate-string {:session  session-key
+                                                          :response @text}))
+                        (println @text))
+                      0)))))))))))
 
 (def option-spec
-  [["-m" "--message TEXT" "Message to send (required)"]
-   ["-s" "--session KEY" "Session id (default: prompt-default)"]
-   ["-R" "--resume" "Resume the most recent session"]
-   [nil "--tag TAG" "Tag the created session (repeatable)"
-    :assoc-fn (fn [m k v] (update m k (fnil conj []) v))]
-   ["-c" "--crew ID" "Crew member id (default: main)"]
-   ["-M" "--model ALIAS" "Override crew member's default model"]
-   ["-j" "--json" "Output result as JSON"]
-   ["-h" "--help" "Show help"]])
+  (concat
+    [["-m" "--message TEXT" "Message to send (required)"]
+     ["-j" "--json" "Output result as JSON"]
+     ["-h" "--help" "Show help"]]
+    selector-cli/select-option-spec
+    selector-cli/override-option-spec))
 
 (defn- parse-option-map [raw-args]
-  (let [{:keys [arguments options errors]} (tools-cli/parse-opts raw-args option-spec)]
+  (let [{:keys [arguments options errors]} (tools-cli/parse-opts raw-args option-spec)
+        options (cond-> options
+                        (and (nil? (:message options)) (seq arguments))
+                        (assoc :message (str/join " " arguments))
+                        (:create options)
+                        (update :create selector-cli/parse-create))]
     {:options   (->> options
                      (remove (comp nil? val))
                      (into {}))
@@ -157,10 +175,7 @@
      :errors    errors}))
 
 (defn run-fn [{:keys [_raw-args] :as opts}]
-  (let [{:keys [arguments options errors]} (parse-option-map (or _raw-args []))
-        options (cond-> options
-                        (and (nil? (:message options)) (seq arguments))
-                        (assoc :message (str/join " " arguments)))]
+  (let [{:keys [options errors]} (parse-option-map (or _raw-args []))]
     (cond
       (:help options)
       (do

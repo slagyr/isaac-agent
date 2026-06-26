@@ -18,8 +18,7 @@
 (def crew-soul (:soul (marigold/crew-cfg crew-name)))
 
 (def base-opts
-  {:root "/test/prompt"
-   :crew      crew-name})
+  {:root "/test/prompt"})
 
 ;; A complete cfg with both crews (atticus + ketch) so tests that exercise
 ;; --session / --crew dispatch against both can share one stub. Loader stubs
@@ -170,7 +169,7 @@
         (should= "echo-alt" (:model @captured))
         (should= "You are a pirate." (:soul @captured))))
 
-    (it "lets --crew override the stored session crew"
+    (it "lets --with-crew override the stored session crew"
       (helper/create-session! "/test/prompt" (str "agent:" crew-name ":cli:direct:user1") {:crew "ketch"})
       (let [captured (atom nil)]
         (with-redefs [bridge/dispatch! (fn [charge]
@@ -178,12 +177,23 @@
                                          (comm/on-text-chunk (:comm charge) (str "agent:" crew-name ":cli:direct:user1") "Ok")
                                          {})]
           (with-out-str
-            (sut/run {:root "/test/prompt"
-                      :message   "Next"
-                      :session   (str "agent:" crew-name ":cli:direct:user1")
-                      :crew      crew-name})))
+            (sut/run {:root        "/test/prompt"
+                      :message     "Next"
+                      :session     (str "agent:" crew-name ":cli:direct:user1")
+                      :with-crew   crew-name})))
         (should= "echo" (:model @captured))
         (should= crew-soul (:soul @captured))))
+
+    (it "selects an existing crew session with --crew"
+      (helper/create-session! "/test/prompt" "ketch-session" {:crew "ketch"})
+      (let [used-key (atom nil)]
+        (with-redefs [bridge/dispatch! (fn [charge]
+                                         (reset! used-key (:session-key charge))
+                                         (comm/on-text-chunk (:comm charge) (:session-key charge) "Ok")
+                                         {})]
+          (with-out-str
+            (sut/run (assoc base-opts :message "hello" :crew "ketch"))))
+        (should= "ketch-session" @used-key)))
 
     (it "stores cwd on a newly created prompt session"
       (with-redefs [bridge/dispatch! (fake-dispatch! "Hello")]
@@ -197,7 +207,7 @@
         (with-out-str
           (sut/run (assoc base-opts :message "Hi" :session "fresh-prompt")))
         (let [session (helper/get-session "/test/prompt" "fresh-prompt")]
-          (should= crew-name (:crew session))
+          (should= "main" (:crew session))
           (should-not (contains? session :agent)))))
 
     (it "outputs JSON when --json is set"
@@ -207,12 +217,14 @@
           (should (str/includes? output "\"response\""))
           (should (str/includes? output "Hello")))))
 
-    (it "tags a newly created session when --tag is provided"
+    (it "tags a newly created session when --session-tag is provided"
       (with-redefs [bridge/dispatch! (fake-dispatch! "Hello")]
         (with-out-str
-          (sut/run (assoc base-opts :message "Hi" :tag ["project/chess" "wip"] :session "tagged-prompt")))
-        (let [session (helper/get-session "/test/prompt" "tagged-prompt")]
-          (should= #{:project/chess :wip} (:tags session)))))
+          (sut/run (assoc base-opts :message "Hi" :session-tag ["project/chess" "wip"])))
+        (let [sessions (helper/list-sessions "/test/prompt")
+              tagged   (first (filter #(= #{:project/chess :wip} (:tags %)) sessions))]
+          (should (some? tagged))
+          (should= #{:project/chess :wip} (:tags tagged)))))
 
     (it "returns 1 when run-turn! returns an error"
       (with-redefs [bridge/dispatch! (fn [& _] {:error {:message "context length exceeded"}})]
