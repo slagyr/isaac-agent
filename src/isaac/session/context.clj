@@ -20,8 +20,8 @@
   ([cwd]
    (read-boot-files cwd (fs/instance)))
   ([cwd fs*]
-   (when cwd
-     (let [path (str cwd "/AGENTS.md")]
+   (when-let [project-root (prompt-catalog/discover-project-root cwd fs*)]
+     (let [path (str project-root "/AGENTS.md")]
        (when (fs/exists? fs* path)
          (fs/slurp fs* path))))))
 

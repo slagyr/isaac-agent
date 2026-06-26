@@ -47,7 +47,7 @@ Feature: Rules (always-on prepared prompts)
     And the following sessions exist:
       | name       | crew       | cwd           |
       | greenhouse | hieronymus | target/garden |
-    And the file "target/garden/prompts/rules/greenhouse.md" contains:
+    And the file "target/garden/.isaac/prompts/rules/greenhouse.md" contains:
       """
       ---
       type: rule

@@ -197,19 +197,25 @@
           (recur parent (conj acc path)))))))
 
 (defn- prompt-marker-paths [config]
-  (concat [".isaac" "prompts"]
+  (concat ["AGENTS.md" ".isaac/prompts"]
           (remove str/blank?
                   (concat (:prompt-paths config)
                           (:command-paths config)
                           (:skill-paths config)))))
 
-(defn- project-root [fs* cwd config]
-  (when cwd
-    (or (some (fn [ancestor]
-                (when (some #(fs/exists? fs* (join-path ancestor %)) (prompt-marker-paths config))
-                  ancestor))
-              (ancestor-paths cwd))
-        (absolute-path cwd))))
+(defn discover-project-root
+  "Nearest ancestor of cwd that looks like a project root (AGENTS.md or
+  .isaac/prompts, plus any configured extra prompt roots)."
+  ([cwd]
+   (discover-project-root cwd (fs/instance) {}))
+  ([cwd fs*]
+   (discover-project-root cwd fs* {}))
+  ([cwd fs* config]
+   (when cwd
+     (some (fn [ancestor]
+             (when (some #(fs/exists? fs* (join-path ancestor %)) (prompt-marker-paths config))
+               ancestor))
+           (ancestor-paths cwd)))))
 
 (defn- global-roots [root config]
   (concat [{:layer :global :mode :typed-base :path (str root "/prompts")}]
@@ -222,7 +228,7 @@
 
 (defn- project-roots [project-root config]
   (when project-root
-    (concat [{:layer :project :mode :typed-base :path (str project-root "/prompts")}]
+    (concat [{:layer :project :mode :typed-base :path (str project-root "/.isaac/prompts")}]
             (map (fn [path] {:layer :project :mode :generic-root :path (join-path project-root path)})
                  (:prompt-paths config))
             (map (fn [path] {:default-type :command :layer :project :mode :typed-root :path (join-path project-root path)})
@@ -241,7 +247,7 @@
   (let [fs*           fs
         config        (or config {})
         dir-names     (normalize-prompt-dir-names config)
-        project-root* (project-root fs* cwd config)
+        project-root* (discover-project-root cwd fs* config)
         start-ns      (System/nanoTime)
         root-specs    (concat (global-roots root config)
                               (project-roots project-root* config))

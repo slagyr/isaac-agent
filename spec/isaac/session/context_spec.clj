@@ -20,9 +20,14 @@
     (nexus/-with-nexus {:fs (fs/mem-fs)}
       (example)))
 
-  (it "reads AGENTS.md from the cwd"
+  (it "reads AGENTS.md from the discovered project root"
     (fs/spit (nexus/get :fs) (str test-root "/project/AGENTS.md") "## House Rules\nNo tabs.")
     (let [boot-files (sut/read-boot-files (str test-root "/project"))]
+      (should (.contains boot-files "House Rules"))))
+
+  (it "reads AGENTS.md by walking up from a nested cwd"
+    (fs/spit (nexus/get :fs) (str test-root "/project/AGENTS.md") "## House Rules\nNo tabs.")
+    (let [boot-files (sut/read-boot-files (str test-root "/project/src/deep"))]
       (should (.contains boot-files "House Rules"))))
 
   (it "returns nil when AGENTS.md is missing"
@@ -56,7 +61,7 @@
                     "description: Airlock discipline\n"
                     "---\n\n"
                     "Seal both doors before cycling."))
-      (fs/spit (nexus/get :fs) (str test-root "/project/prompts/rules/greenhouse.md")
+      (fs/spit (nexus/get :fs) (str test-root "/project/.isaac/prompts/rules/greenhouse.md")
                (str "---\n"
                     "type: rule\n"
                     "description: Greenhouse standing orders\n"

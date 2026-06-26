@@ -100,7 +100,7 @@ Feature: Prepared-prompt catalog (commands + skills)
     And the following sessions exist:
       | name   | crew | cwd         |
       | proj-s | main | target/proj |
-    And the file "target/proj/prompts/commands/work.md" contains:
+    And the file "target/proj/.isaac/prompts/commands/work.md" contains:
       """
       ---
       type: command
@@ -117,7 +117,7 @@ Feature: Prepared-prompt catalog (commands + skills)
     Given the following sessions exist:
       | name   | crew | cwd                  |
       | deep-s | main | target/proj/src/deep |
-    And the file "target/proj/prompts/commands/work.md" contains:
+    And the file "target/proj/.isaac/prompts/commands/work.md" contains:
       """
       ---
       type: command
@@ -128,7 +128,7 @@ Feature: Prepared-prompt catalog (commands + skills)
     When the prompt catalog for session "deep-s" is resolved
     Then the prompt catalog contains:
       | name | type    | description  | #comment                                  |
-      | work | command | PROJECT work | root found at ancestor target/proj/prompts |
+      | work | command | PROJECT work | root found at ancestor target/proj/.isaac/prompts |
 
   Scenario: custom directory names map to types via prompt-dir-names config
     Given config:

@@ -619,7 +619,7 @@
             :root     {:type :string  :description "Isaac state directory"}
             :effort        {:type :long    :description "Per-turn effort budget, nil when model disallows effort"}
             :allowed-tools {:type :ignore  :description "Set of tool keywords allowed for this turn's crew"}
-            :boot-files    {:type :ignore  :description "Boot-file contents read from the session cwd"}
+            :boot-files    {:type :ignore  :description "Boot-file contents read from the discovered project root"}
             :rules-text    {:type :ignore  :description "Always-on prepared rule bodies read from global/project roots"}
             :skill-menu-text {:type :ignore :description "Advertised skill descriptions injected into the cached system prompt"}
             :provider      {:type :ignore  :description "Tools-augmented LLM provider for this turn"}}})

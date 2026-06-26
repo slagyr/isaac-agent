@@ -127,7 +127,7 @@
                              "description: GLOBAL work\n"
                              "---\n\n"
                              "Global work prompt."))
-    (write-file! "/workspace/proj/prompts/commands/work.md"
+    (write-file! "/workspace/proj/.isaac/prompts/commands/work.md"
                  (str "---\n"
                       "type: command\n"
                       "description: PROJECT work\n"
@@ -140,7 +140,7 @@
                           [:description :name :type])))
 
   (it "finds the project root by walking up from the cwd"
-    (write-file! "/workspace/proj/prompts/commands/work.md"
+    (write-file! "/workspace/proj/.isaac/prompts/commands/work.md"
                  (str "---\n"
                       "type: command\n"
                       "description: PROJECT work\n"
