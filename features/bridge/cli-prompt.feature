@@ -242,6 +242,88 @@ Feature: Prompt single-turn command
     Then the stderr contains "mutually exclusive"
     And the exit code is 1
 
+  # --prefer: the multi-match tiebreak for :reach :one (isaac-4e4b). Replaces the
+  # confusingly-named --resume; --session stays the exact selector.
+
+  @wip
+  Scenario: --prefer oldest picks the oldest of multiple matching sessions
+    Given the isaac EDN file "config/crew/ketch.edn" exists with:
+      | path | value |
+      | model | grover |
+      | soul | You are a pirate. |
+    And the following sessions exist:
+      | name   | crew  | updated-at          |
+      | older  | ketch | 2026-04-10T10:00:00 |
+      | recent | ketch | 2026-04-12T15:00:00 |
+    And session "older" has transcript:
+      | type    | message.role | message.content |
+      | message | user         | Earlier         |
+      | message | assistant    | Aye             |
+    And the following model responses are queued:
+      | type | content | model |
+      | text | On it.  | echo  |
+    When isaac is run with "prompt --crew ketch --prefer oldest -m 'Status?'"
+    Then session "older" has transcript matching:
+      | type    | message.role | message.content |
+      | message | user         | Earlier         |
+      | message | assistant    | Aye             |
+      | message | user         | Status?         |
+      | message | assistant    | On it.          |
+    And the exit code is 0
+
+  @wip
+  Scenario: --prefer recent picks the most recent of multiple matching sessions
+    Given the isaac EDN file "config/crew/ketch.edn" exists with:
+      | path | value |
+      | model | grover |
+      | soul | You are a pirate. |
+    And the following sessions exist:
+      | name   | crew  | updated-at          |
+      | older  | ketch | 2026-04-10T10:00:00 |
+      | recent | ketch | 2026-04-12T15:00:00 |
+    And session "recent" has transcript:
+      | type    | message.role | message.content |
+      | message | user         | Earlier         |
+      | message | assistant    | Aye             |
+    And the following model responses are queued:
+      | type | content | model |
+      | text | On it.  | echo  |
+    When isaac is run with "prompt --crew ketch --prefer recent -m 'Status?'"
+    Then session "recent" has transcript matching:
+      | type    | message.role | message.content |
+      | message | user         | Earlier         |
+      | message | assistant    | Aye             |
+      | message | user         | Status?         |
+      | message | assistant    | On it.          |
+    And the exit code is 0
+
+  @wip
+  Scenario: --prefer is a no-op when the match is unambiguous
+    Given the following sessions exist:
+      | name |
+      | foo  |
+    And session "foo" has transcript:
+      | type    | message.role | message.content |
+      | message | user         | Earlier         |
+      | message | assistant    | Aye             |
+    And the following model responses are queued:
+      | type | content | model |
+      | text | On it.  | echo  |
+    When isaac is run with "prompt --session foo --prefer oldest -m 'Status?'"
+    Then session "foo" has transcript matching:
+      | type    | message.role | message.content |
+      | message | user         | Earlier         |
+      | message | assistant    | Aye             |
+      | message | user         | Status?         |
+      | message | assistant    | On it.          |
+    And the exit code is 0
+
+  @wip
+  Scenario: --prefer with an unknown value errors clearly
+    When isaac is run with "prompt --crew ketch --prefer sideways -m 'Hi'"
+    Then the stderr contains "--prefer must be recent or oldest"
+    And the exit code is 1
+
   Scenario: prompt sets cwd on the created session
     Given the following model responses are queued:
       | type | content | model |
