@@ -89,7 +89,7 @@ Feature: Prompt single-turn command
       | type    | message.model | message.crew |
       | message | echo-alt      | ketch        |
 
-  Scenario: --crew targets the crew's existing session
+  Scenario: --crew targets the crew's existing session and resumes its history
     Given the isaac EDN file "config/crew/ketch.edn" exists with:
       | path | value |
       | model | grover |
@@ -97,16 +97,22 @@ Feature: Prompt single-turn command
     And the following sessions exist:
       | name          | crew  |
       | ketch-session | ketch |
+    And session "ketch-session" has transcript:
+      | type    | message.role | message.content |
+      | message | user         | Earlier         |
+      | message | assistant    | Aye             |
     And the following model responses are queued:
-      | type | content | model |
-      | text | Hello   | echo  |
-    When isaac is run with "prompt --crew ketch -m 'Hi'"
+      | type | content  | model |
+      | text | On deck. | echo  |
+    When isaac is run with "prompt --crew ketch -m 'Status?'"
     Then session "ketch-session" has transcript matching:
       | type    | message.role | message.content |
-      | message | user         | Hi              |
-      | message | assistant    | Hello           |
+      | message | user         | Earlier         |
+      | message | assistant    | Aye             |
+      | message | user         | Status?         |
+      | message | assistant    | On deck.        |
 
-  Scenario: --crew with no match creates one
+  Scenario: --crew with no match creates one (no silent fallback to prompt-default)
     Given the isaac EDN file "config/crew/ketch.edn" exists with:
       | path | value |
       | model | grover |
@@ -116,9 +122,11 @@ Feature: Prompt single-turn command
       | text | Hello   | echo  |
     When isaac is run with "prompt --crew ketch -m 'Hi'"
     Then the exit code is 0
+    And the stdout contains "Hello"
     And the following sessions match:
       | crew  |
       | ketch |
+    And session "prompt-default" does not exist
 
   Scenario: --crew with multiple matches resumes the most recent
     Given the isaac EDN file "config/crew/ketch.edn" exists with:
@@ -144,16 +152,23 @@ Feature: Prompt single-turn command
       | message | user         | Next            |
       | message | assistant    | Continued       |
 
-  Scenario: --session-tag selects by tag
+  Scenario: --session-tag selects by tag and ignores differently-tagged sessions
     Given the following sessions exist:
-      | name   | tags               |
-      | tagged | #{:project/chess}  |
+      | name   | tags              |
+      | tagged | #{:project/chess} |
+      | other  | #{:project/nav}   |
+    And session "tagged" has transcript:
+      | type    | message.role | message.content |
+      | message | user         | Earlier         |
+      | message | assistant    | Aye             |
     And the following model responses are queued:
       | type | content | model |
       | text | Hello   | echo  |
     When isaac is run with "prompt --session-tag project/chess -m 'Hi'"
     Then session "tagged" has transcript matching:
       | type    | message.role | message.content |
+      | message | user         | Earlier         |
+      | message | assistant    | Aye             |
       | message | user         | Hi              |
       | message | assistant    | Hello           |
 
@@ -176,7 +191,7 @@ Feature: Prompt single-turn command
     Then the stderr contains "no session"
     And the exit code is 1
 
-  Scenario: --create always starts a fresh session even when one matches
+  Scenario: --create always starts a fresh session and leaves the matching one untouched
     Given the isaac EDN file "config/crew/ketch.edn" exists with:
       | path | value |
       | model | grover |
@@ -184,33 +199,43 @@ Feature: Prompt single-turn command
     And the following sessions exist:
       | name          | crew  |
       | ketch-session | ketch |
+    And session "ketch-session" has transcript:
+      | type    | message.role | message.content |
+      | message | user         | Earlier         |
+      | message | assistant    | Aye             |
     And the following model responses are queued:
       | type | content | model |
       | text | Hello   | echo  |
     When isaac is run with "prompt --crew ketch --create always -m 'Hi'"
     Then the exit code is 0
-    And the following sessions match:
-      | crew  |
-      | ketch |
+    And the stdout contains "Hello"
     And the session count is 2
+    And session "ketch-session" has transcript matching:
+      | type    | message.role | message.content |
+      | message | user         | Earlier         |
+      | message | assistant    | Aye             |
 
-  Scenario: --with-model overrides the model for the turn
+  Scenario: --with-model overrides the model while --crew selects (orthogonal axes)
     Given the isaac EDN file "config/models/grover2.edn" exists with:
       | path | value |
       | model | echo-alt |
       | provider | grover |
       | context-window | 16384 |
+    And the isaac EDN file "config/crew/ketch.edn" exists with:
+      | path | value |
+      | model | grover |
+      | soul | You are a pirate. |
     And the following sessions exist:
-      | name           | crew |
-      | prompt-default | main |
+      | name          | crew  |
+      | ketch-session | ketch |
     And the following model responses are queued:
       | model    | type | content |
-      | echo-alt | text | Alt     |
-    When isaac is run with "prompt --session prompt-default --with-model grover2 -m 'hello'"
+      | echo-alt | text | Ahoy    |
+    When isaac is run with "prompt --crew ketch --with-model grover2 -m 'hello'"
     Then the exit code is 0
-    And session "prompt-default" has transcript matching:
-      | type    | message.model |
-      | message | echo-alt      |
+    And session "ketch-session" has transcript matching:
+      | type    | message.model | message.crew |
+      | message | echo-alt      | ketch        |
 
   Scenario: --session with selection flags errors clearly
     When isaac is run with "prompt --session bridge --crew main -m 'Hi'"
