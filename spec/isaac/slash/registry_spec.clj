@@ -44,7 +44,7 @@
                 {:name "zecho" :description "ZEcho"}]
                (filterv #(contains? #{"echo" "zecho"} (:name %)) commands))))
 
-  (it "does not log when a new command is registered (berth pass logs :berth/registered)"
+  (it "does not log when a new command is registered (berth pass logs :berth/registration)"
     (log/capture-logs
       (sut/register! {:name "echo" :description "Echo" :handler identity})
       (should= []

@@ -28,7 +28,7 @@ Feature: Slash command extension
     When manifest berths are processed for the loaded config
     Then the log has entries matching:
       | level | event             | berth                       | entry | module           |
-      | :info | :berth/registered | :isaac.agent/slash-commands | echo  | isaac.slash.echo |
+      | :info | :berth/registration | :isaac.agent/slash-commands | echo  | isaac.slash.echo |
 
   Scenario: Module-declared slash commands appear alongside built-ins after activation
     Given an empty Isaac root at "/tmp/isaac"
