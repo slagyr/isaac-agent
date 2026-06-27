@@ -14,8 +14,8 @@
     [isaac.fs :as fs]
     [isaac.drive.turn :as single-turn]
     [isaac.session.context :as session-ctx]
-    [isaac.session.selector :as session-selector]
-    [isaac.session.selector-cli :as selector-cli]
+    [isaac.session.frequencies :as session-frequencies]
+    [isaac.session.frequencies-cli :as frequencies-cli]
     [isaac.session.store.spi :as store]
     [isaac.tool.builtin :as builtin]))
 
@@ -89,7 +89,7 @@
       false)))
 
 (defn- resolve-target [opts session-store]
-  (session-selector/resolve-session-targets (selector-cli/build-select opts) session-store))
+  (session-frequencies/resolve-session-targets (frequencies-cli/build-frequencies opts) session-store))
 
 (defn- ensure-session! [target override opts cfg session-store]
   (if (:create? target)
@@ -99,7 +99,7 @@
                               :origin        {:kind :cli}
                               :session-store session-store}
                              identity
-                             (select-keys override [:model :crew :effort :context-mode]))
+                             (session-frequencies/behavioral-override override))
           entry       (session-ctx/create-with-resolved-behavior!
                         (:session-key target) create-opts)]
       (:id entry))
@@ -109,7 +109,7 @@
   (if-not (:message opts)
     (do (println "Error: -m/--message is required")
         1)
-    (let [validation-errors (selector-cli/validate-select-options opts)]
+    (let [validation-errors (frequencies-cli/validate-frequencies-options opts)]
       (if (seq validation-errors)
         (do (doseq [error validation-errors] (print-error! error)) 1)
         (if (= false (ensure-local-config! opts))
@@ -118,7 +118,7 @@
                 cfg           (loader/load-config! root (fs/instance) "prompt-cli")
                 _             (runtime/install! {:config cfg})
                 session-store (store/registered-store)
-                override      (selector-cli/build-override opts)
+                override      (frequencies-cli/build-override opts)
                 target        (resolve-target opts session-store)]
             (if (:error target)
               (do (print-error! (:message target)) 1)
@@ -130,8 +130,8 @@
                                (charge/build {:session-key    session-key
                                               :input          (:message opts)
                                               :config         cfg
-                                              :crew           (or (:crew override) (:crew session))
-                                              :model-override (or (:model override) (:model opts))
+                                              :crew           (or (:with-crew override) (:crew session))
+                                              :model-override (or (:with-model override) (:model opts))
                                               :origin         {:kind :cli}
                                               :comm           comm}))]
                   (if (or (:error result) (get-in result [:response :error]))
@@ -151,8 +151,8 @@
     [["-m" "--message TEXT" "Message to send (required)"]
      ["-j" "--json" "Output result as JSON"]
      ["-h" "--help" "Show help"]]
-    selector-cli/select-option-spec
-    selector-cli/override-option-spec))
+    frequencies-cli/frequencies-option-spec
+    frequencies-cli/override-option-spec))
 
 (defn- parse-option-map [raw-args]
   (let [{:keys [arguments options errors]} (tools-cli/parse-opts raw-args option-spec)
@@ -160,7 +160,7 @@
                         (and (nil? (:message options)) (seq arguments))
                         (assoc :message (str/join " " arguments))
                         (:create options)
-                        (update :create selector-cli/parse-create))]
+                        (update :create frequencies-cli/parse-create))]
     {:options   (->> options
                      (remove (comp nil? val))
                      (into {}))

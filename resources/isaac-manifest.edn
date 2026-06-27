@@ -467,6 +467,48 @@
    {:type :seq,
     :description "Extra typed roots to scan for prepared commands",
     :spec {:type :string}}},
+  :frequencies
+  {:schema
+   {:name :frequencies,
+    :type :map,
+    :description
+    "Session frequencies map (selection + override); shared by CLI, hail, cron, and config consumers",
+    :schema
+    {:session
+     {:type :seq,
+      :description "Explicit session id(s)",
+      :spec {:type :string}},
+     :session-tags
+     {:type :seq,
+      :description "Tags sessions must carry (AND)",
+      :spec {:type :keyword}},
+     :crew
+     {:type :string,
+      :description "Sessions whose :crew matches this id"},
+     :reach
+     {:type :keyword,
+      :description "How many sessions to target",
+      :validations [[:one-of? :one :all]]},
+     :prefer
+     {:type :keyword,
+      :description "Multi-match tiebreak when :reach is :one",
+      :validations [[:one-of? :recent :oldest]]},
+     :create
+     {:type :keyword,
+      :description "Create policy: :never, :if-missing, or :always",
+      :validations [[:one-of? :never :if-missing :always]]},
+     :with-crew
+     {:type :string,
+      :description "Override crew for this turn"},
+     :with-model
+     {:type :string,
+      :description "Override model for this turn"},
+     :with-effort
+     {:type :int,
+      :description "Override effort for this turn"},
+     :with-context-mode
+     {:type :keyword,
+      :description "Override context mode for this turn"}}}}
   :sessions
   {:schema
    {:name :sessions,

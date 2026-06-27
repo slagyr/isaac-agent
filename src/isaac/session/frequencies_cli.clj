@@ -1,23 +1,20 @@
-(ns isaac.session.selector-cli
-  "Shared CLI parsing and validation for session selection and override flags."
+(ns isaac.session.frequencies-cli
+  "Shared CLI parsing and validation for session frequencies and override flags."
   (:require
-    [clojure.string :as str]))
-
-(def create-modes #{:never :if-missing :always})
-
-(def prefer-modes #{:recent :oldest})
+    [clojure.string :as str]
+    [isaac.session.frequencies :as frequencies]))
 
 (defn parse-create
   [value]
   (when value
     (let [kw (keyword (str/lower-case (str value)))]
-      (when (contains? create-modes kw) kw))))
+      (when (contains? frequencies/create-modes kw) kw))))
 
 (defn parse-prefer
   [value]
   (when value
     (let [kw (keyword (str/lower-case (str value)))]
-      (when (contains? prefer-modes kw) kw))))
+      (when (contains? frequencies/prefer-modes kw) kw))))
 
 (defn- keyword-set [values]
   (when (seq values)
@@ -29,8 +26,8 @@
 (defn- session-tags-from [opts]
   (keyword-set (or (:session-tag opts) (:tag opts))))
 
-(defn build-select
-  "Build a :select map from parsed CLI options and per-tool defaults."
+(defn build-frequencies
+  "Build a frequencies map from parsed CLI options and per-tool defaults."
   [opts & {:keys [default-session-key default-create]
            :or   {default-session-key "prompt-default"
                   default-create        :if-missing}}]
@@ -44,22 +41,22 @@
     (:prefer opts) (assoc :prefer (parse-prefer (:prefer opts)))))
 
 (defn build-override
-  "Map --with-* (and legacy aliases) to behavioral override keys."
+  "Map --with-* (and legacy aliases) to :with-* keys on the frequencies map."
   [opts]
   (cond-> {}
     (or (:with-model opts) (:model opts))
-    (assoc :model (or (:with-model opts) (:model opts)))
+    (assoc :with-model (or (:with-model opts) (:model opts)))
 
     (:with-crew opts)
-    (assoc :crew (:with-crew opts))
+    (assoc :with-crew (:with-crew opts))
 
     (:with-effort opts)
-    (assoc :effort (:with-effort opts))
+    (assoc :with-effort (:with-effort opts))
 
     (:with-context-mode opts)
-    (assoc :context-mode (keyword (str (:with-context-mode opts))))))
+    (assoc :with-context-mode (keyword (str (:with-context-mode opts))))))
 
-(defn validate-select-options
+(defn validate-frequencies-options
   "Return a seq of usage error strings for illegal flag combinations."
   [opts]
   (cond-> []
@@ -72,15 +69,15 @@
     (conj "--resume is mutually exclusive with session selection flags")
 
     (and (contains? opts :create)
-         (not (contains? create-modes (:create opts))))
+         (not (contains? frequencies/create-modes (:create opts))))
     (conj "--create must be one of: never, if-missing, always")
 
     (and (:prefer opts)
          (not (parse-prefer (:prefer opts))))
     (conj "--prefer must be recent or oldest")))
 
-(def select-option-spec
-  "Shared session selection flags for sync CLI tools."
+(def frequencies-option-spec
+  "Shared session frequencies flags for sync CLI tools."
   [["-s" "--session KEY" "Exact session id"]
    ["-R" "--resume" "Resume the most recent session"]
    ["-c" "--crew ID" "Select sessions whose crew matches"]
