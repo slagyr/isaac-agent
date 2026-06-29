@@ -163,7 +163,6 @@ Feature: Sessions Command
       | chatty\s+\S+\s+5,000\s+32,768\s+\d+% |
     And the stdout does not contain "1,000,000"
 
-  @wip
   Scenario: sessions output marks in-flight sessions with ✈️
     Given the following sessions exist:
       | name        | total-tokens | updated-at          |
@@ -180,7 +179,6 @@ Feature: Sessions Command
     And the stdout does not contain "pirate-chat ✈️"
     When the turn ends on session "design-chat"
 
-  @wip
   Scenario: sessions --in-flight filters to in-flight sessions only
     Given the following sessions exist:
       | name        | total-tokens | updated-at          |
@@ -195,7 +193,6 @@ Feature: Sessions Command
     And the stdout does not contain "pirate-chat"
     When the turn ends on session "design-chat"
 
-  @wip
   Scenario: sessions --not-in-flight filters to idle sessions only
     Given the following sessions exist:
       | name        | total-tokens | updated-at          |
@@ -210,7 +207,6 @@ Feature: Sessions Command
     And the stdout does not contain "design-chat"
     When the turn ends on session "design-chat"
 
-  @wip
   Scenario: sessions --in-flight with --not-in-flight is an error
     When isaac is run with "sessions list --in-flight --not-in-flight"
     Then the exit code is 1
