@@ -104,6 +104,7 @@
     (let [err (binding [*err* (java.io.StringWriter.)]
                 (should= 1 (sut/run-fn {:home "/test" :_raw-args ["set" "joe.bogus" "value"]}))
                 (str *err*))]
+      (should-contain "no such field" err)
       (should-contain "bogus" err)))
 
   (it "bumps updated-at on successful mutation"

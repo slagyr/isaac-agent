@@ -264,6 +264,11 @@
     (:system-managed? spec) (str "system-managed field: " path-str)
     :else                   (str "immutable field: " path-str)))
 
+(defn- path-error [{:keys [error segment]}]
+  (if (and segment (str/starts-with? error "unknown path:"))
+    (str "no such field: " segment)
+    error))
+
 (defn- path-message [path-str result value]
   (let [segments (mapv keyword (str/split path-str #"\."))
         top-key  (first segments)
@@ -291,7 +296,7 @@
           (let [path-result (nav/path->spec session-schema/Session path-str)]
             (cond
               (not (:ok? path-result))
-              (print-mutation-error! (:error path-result))
+              (print-mutation-error! (path-error path-result))
 
               (not (:mutable? (:spec path-result)))
               (print-mutation-error! (mutable-error path-str (:spec path-result)))
@@ -307,7 +312,7 @@
                                                              (parse-set-value (:spec path-result) raw-value)))
                                      :unset (nav/unset-value session-schema/Session session path-str))]
                     (if-not (:ok? nav-result)
-                      (print-mutation-error! (:error nav-result))
+                      (print-mutation-error! (path-error nav-result))
                       (let [top-key       (keyword (first (str/split path-str #"\.")))
                             updated-value (get-in (:config nav-result) [top-key])
                             current-value (get-in session [top-key])]

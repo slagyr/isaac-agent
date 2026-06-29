@@ -94,7 +94,8 @@ Feature: Session mutation
       | name | crew |
       | joe  | main |
     When isaac is run with "sessions set joe.bogus value"
-    Then the stderr contains "bogus"
+    Then the stderr contains "no such field"
+    And the stderr contains "bogus"
     And the exit code is 1
 
   Scenario: isaac sessions set is idempotent when the value is already present
