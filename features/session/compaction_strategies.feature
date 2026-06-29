@@ -20,6 +20,36 @@ Feature: Compaction Strategies
       | 272000        | 0.8       | 0.3  |
       | 1048576       | 0.8       | 0.3  |
 
+  # Added for isaac-89tm: default always applies even without explicit crew/session config
+  @wip
+  Scenario: default compaction is used when no compaction key in crew or session config
+    Given the isaac EDN file "config/models/local.edn" exists with:
+      | path | value |
+      | model | test-model |
+      | provider | grover |
+      | context-window | 100 |
+    And the isaac EDN file "config/crew/main.edn" exists with:
+      | path | value |
+      | model | local |
+      | soul | You are default tester. |
+    # deliberately no :compaction in crew
+    And the following sessions exist:
+      | name           | total-tokens |
+      | no-config-test | 85           |
+    And session "no-config-test" has transcript:
+      | type    | message.role | message.content       |
+      | message | user         | first old message     |
+      | message | assistant    | first old response    |
+      | message | user         | second old message    |
+      | message | assistant    | second old response   |
+    And the following model responses are queued:
+      | type | content          | model      |
+      | text | compacted summary | test-model |
+      | text | fresh reply      | test-model |
+    When the user sends "new input" on session "no-config-test"
+    Then session "no-config-test" has compaction
+    And session "no-config-test" has 3 active transcript entries
+
   Scenario: rubberband compacts entire transcript when threshold exceeded
     Given the isaac EDN file "config/models/local.edn" exists with:
       | path | value |
@@ -91,3 +121,36 @@ Feature: Compaction Strategies
       | message    | assistant    | recent reply    |              |
       | message    | user         | hello           |              |
       | message    | assistant    | Fresh response  |              |
+
+  Scenario: default compaction applies even when no compaction config in crew or session
+    Given the isaac EDN file "config/models/local.edn" exists with:
+      | path | value |
+      | model | test-model |
+      | provider | grover |
+      | context-window | 100 |
+    And the isaac EDN file "config/crew/main.edn" exists with:
+      | path | value |
+      | model | local |
+      | soul | You are Atticus. |
+    # no :compaction key at all
+    And the following sessions exist:
+      | name         | total-tokens |
+      | default-test | 85           |
+    And session "default-test" has transcript:
+      | type    | message.role | message.content     |
+      | message | user         | old message one     |
+      | message | assistant    | old response one    |
+      | message | user         | old message two     |
+      | message | assistant    | old response two    |
+    And the following model responses are queued:
+      | type | content               | model      |
+      | text | Full summary of prior | test-model |
+      | text | New response          | test-model |
+    When the user sends "hello" on session "default-test"
+    Then session "default-test" has compaction
+    And session "default-test" has 3 active transcript entries
+    And session "default-test" has transcript matching:
+      | type       | message.role | message.content | summary                |
+      | compaction |              |                 | Full summary of prior |
+      | message    | user         | hello           |                       |
+      | message    | assistant    | New response    |                       |

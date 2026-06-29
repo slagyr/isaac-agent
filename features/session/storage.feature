@@ -208,10 +208,8 @@ Feature: Session Storage
       | name   |
       | chat-1 |
       | chat-2 |
-    Then the session sidecars exist for:
-      | id     |
-      | chat-1 |
-      | chat-2 |
+    Then the file "sessions/chat-1.edn" exists
+    And the file "sessions/chat-2.edn" exists
 
   Scenario: Message content stored as block arrays
     Given the following sessions exist:
