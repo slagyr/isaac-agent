@@ -145,7 +145,8 @@
       (should= crew-name (:crew session))
       (should= (str "/test/session-context/.isaac/crew/" crew-name) (:cwd session))
       (should= :prune (:history-retention session))
-      (should= 9 (:effort session)))
+      (should= 9 (:effort session))
+      (should= {:async? false :strategy :rubberband :head 0.3 :threshold 0.8} (:compaction session)))
     (config/dangerously-install-config! nil "spec"))
 
   (it "falls back to main when defaults.crew is absent"
@@ -188,6 +189,28 @@
       (should (:nonce session-2))
       (should= (:nonce session-1) (:nonce (sut/resolve-behavior "s1")))
       (should (not= (:nonce session-1) (:nonce session-2))))
+    (config/dangerously-install-config! nil "spec"))
+
+  (it "resolves default compaction when crew and session omit compaction policy"
+    (config/dangerously-install-config! {:defaults  {:crew crew-name :model "spark"}
+                           :crew      {crew-name {:model "spark" :soul crew-soul}}
+                           :models    {"spark" {:model "echo" :provider "grover" :context-window 160}}
+                           :providers {"grover" {:api "grover"}}} "spec")
+    (helper/create-session! test-root "no-config" {:crew crew-name})
+    (should= {:async? false :strategy :rubberband :head 0.3 :threshold 0.8}
+             (:compaction (sut/resolve-behavior "no-config")))
+    (config/dangerously-install-config! nil "spec"))
+
+  (it "keeps crew compaction policy when session only tracks consecutive failures"
+    (config/dangerously-install-config! {:defaults  {:crew crew-name :model "spark"}
+                           :crew      {crew-name {:model "spark" :soul crew-soul
+                                                  :compaction {:strategy :slinky :threshold 0.8 :head 0.4}}}
+                           :models    {"spark" {:model "echo" :provider "grover" :context-window 200}}
+                           :providers {"grover" {:api "grover"}}} "spec")
+    (helper/create-session! test-root "tracked" {:crew crew-name})
+    (store/update-session! (store/registered-store) "tracked" {:compaction {:consecutive-failures 2}})
+    (should= {:async? false :strategy :slinky :head 0.4 :threshold 0.8}
+             (:compaction (sut/resolve-behavior "tracked")))
     (config/dangerously-install-config! nil "spec"))
 
   (it "backfills a missing nonce for an existing session"

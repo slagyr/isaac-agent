@@ -53,6 +53,20 @@
 
 (defn default-head [_window] 0.3)
 
+(def ^:private compaction-policy-keys
+  #{:strategy :threshold :head :async?})
+
+(defn- compaction-policy [m]
+  (select-keys m compaction-policy-keys))
+
+(defn default-compaction-policy
+  "Static compaction defaults for config :defaults and code fallbacks."
+  []
+  {:async?    false
+   :strategy  :rubberband
+   :head      0.3
+   :threshold 0.8})
+
 (defn- session-store [explicit-store]
   (or explicit-store
       (nexus/get-in [:sessions :store])))
@@ -127,18 +141,20 @@
   [cfg session-entry ctx context-window]
   (let [provider-id  (or (get-in ctx [:model-cfg :provider])
                          (get-in session-entry [:provider]))
-        provider-cfg (or (resolve/resolve-provider cfg provider-id) {})
-        defaults     {:async?    false
-                      :strategy  :rubberband
-                      :head      (default-head context-window)
-                      :threshold (default-threshold context-window)}
-        override     (or (:compaction session-entry)
-                         (get-in ctx [:crew-cfg :compaction])
-                         (get-in ctx [:model-cfg :compaction])
-                         (:compaction provider-cfg)
-                         (get-in cfg [:defaults :compaction])
-                         {})
-        raw          (merge defaults override)]
+        provider-cfg (if provider-id
+                       (or (resolve/resolve-provider cfg provider-id) {})
+                       {})
+        code-defaults {:async?    false
+                       :strategy  :rubberband
+                       :head      (default-head context-window)
+                       :threshold (default-threshold context-window)}
+        layered      (merge {}
+                            (compaction-policy (get-in cfg [:defaults :compaction]))
+                            (compaction-policy provider-cfg)
+                            (compaction-policy (get-in ctx [:model-cfg :compaction]))
+                            (compaction-policy (get-in ctx [:crew-cfg :compaction]))
+                            (compaction-policy (:compaction session-entry)))
+        raw          (merge code-defaults layered)]
     (schema/coerce! compaction-schema/config-schema raw)))
 
 (defn resolve-behavior
@@ -179,7 +195,8 @@
                                                             :history-retention (:history-retention behavior)
                                                             :config            cfg
                                                             :origin            (:origin opts)})
-          updates   (cond-> {}
+          resolved-compaction (:compaction behavior)
+          updates   (cond-> {:compaction resolved-compaction}
                       (contains? opts :compaction)   (assoc :compaction (:compaction opts))
                       (contains? opts :context-mode) (assoc :context-mode (:context-mode opts))
                       (contains? opts :effort)       (assoc :effort (:effort opts))

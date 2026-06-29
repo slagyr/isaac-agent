@@ -1149,6 +1149,13 @@
                                  (transcript-match-result table transcript))]
     (g/should-not (empty? (:failures result)))))
 
+(defn session-has-compaction [key-str]
+  (await-turn!)
+  (let [entry      (with-feature-fs #(get-session key-str))
+        transcript (with-feature-fs #(get-transcript key-str))]
+    (g/should (or (pos? (or (:compaction-count entry) 0))
+                  (some #(= "compaction" (:type %)) transcript)))))
+
 (defn compaction-defaults [table]
   (let [rows (map #(zipmap (:headers table) %) (:rows table))]
     (doseq [row rows]
@@ -1470,6 +1477,8 @@
 (defthen #"session \"([^\"]+)\" has (\d+) transcript entr(?:y|ies)" isaac.session.session-steps/session-transcript-count)
 
 (defthen #"session \"([^\"]+)\" has (\d+) active transcript entr(?:y|ies)" isaac.session.session-steps/session-active-transcript-count)
+
+(defthen #"session \"([^\"]+)\" has compaction" isaac.session.session-steps/session-has-compaction)
 
 (defthen #"an async compaction for session \"([^\"]+)\" is in flight" isaac.session.session-steps/async-compaction-in-flight)
 
