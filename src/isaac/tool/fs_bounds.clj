@@ -6,7 +6,6 @@
     [isaac.config.loader :as loader]
     [isaac.fs :as fs]
     [isaac.session.store.spi :as store]
-    [isaac.session.store.sidecar :as sidecar-store]
     [isaac.nexus :as nexus])
   (:import
     [java.io File]))
@@ -46,7 +45,7 @@
     (or (get args "session_store")
         (nexus/get-in [:sessions :store])
         (when root
-          (sidecar-store/create-store root (filesystem args))))))
+          (store/create root)))))
 
 (defn arg-bool [args k default]
   (let [value (get args k)]

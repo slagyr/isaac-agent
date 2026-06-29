@@ -281,7 +281,8 @@
     (if-let [error (:error target)]
       (print-mutation-error! error)
       (let [{:keys [session-id path-str]} target
-            session (store/get-session session-store session-id)]
+            session (or (store/get-session session-store session-id)
+                        (store/open-session! session-store session-id {}))]
         (cond
           (nil? session)
           (print-mutation-error! (str "session not found: " session-id))

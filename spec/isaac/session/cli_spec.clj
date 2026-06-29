@@ -56,6 +56,11 @@
       (should-contain "sue" output)
       (should-not-contain "joe" output)))
 
+  (it "activates a missing session when sessions set targets it"
+    (should= 0 (sut/run-fn {:home "/test" :_raw-args ["set" "relay.tags.role/engineer"]}))
+    (should= #{:role/engineer}
+             (:tags (helper/get-session "/test/sessions" "relay"))))
+
   (it "adds a tag with sessions set"
     (helper/create-session! "/test/sessions" "joe" {:crew "main" :tags #{:project/x}})
     (should= 0 (sut/run-fn {:home "/test" :_raw-args ["set" "joe.tags.wip"]}))

@@ -9,6 +9,16 @@ Feature: Session mutation
   Background:
     Given an Isaac root at "target/test-state"
 
+  Scenario: isaac sessions set activates a missing session before mutating
+    Given default Grover setup
+    When isaac is run with "sessions set relay.tags.role/engineer"
+    Then the exit code is 0
+    When isaac is run with "sessions show relay --json"
+    Then the stdout JSON contains:
+      | path | value            |
+      | tags | ["role/engineer"] |
+    And the exit code is 0
+
   Scenario: isaac sessions set <id>.tags.<keyword> adds a tag
     Given default Grover setup
     And the following sessions exist:
