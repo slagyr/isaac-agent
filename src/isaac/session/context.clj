@@ -137,6 +137,15 @@
      :provider-cfg      (or (resolve/resolve-provider cfg (get-in ctx [:model-cfg :provider])) {})
      :soul              (:soul ctx)}))
 
+(defn- compaction-layer-present? [m]
+  (seq (compaction-policy m)))
+
+(defn- higher-compaction-layers? [session-entry ctx provider-cfg]
+  (or (compaction-layer-present? (:compaction session-entry))
+      (compaction-layer-present? (get-in ctx [:crew-cfg :compaction]))
+      (compaction-layer-present? (get-in ctx [:model-cfg :compaction]))
+      (compaction-layer-present? (:compaction provider-cfg))))
+
 (defn resolve-compaction-config
   [cfg session-entry ctx context-window]
   (let [provider-id  (or (get-in ctx [:model-cfg :provider])
@@ -149,8 +158,9 @@
                        :head      (default-head context-window)
                        :threshold (default-threshold context-window)}
         layered      (merge {}
-                            (compaction-policy (get-in cfg [:defaults :compaction]))
-                            (compaction-policy provider-cfg)
+                            (when-not (higher-compaction-layers? session-entry ctx provider-cfg)
+                              (compaction-policy (get-in cfg [:defaults :compaction])))
+                            (compaction-policy (:compaction provider-cfg))
                             (compaction-policy (get-in ctx [:model-cfg :compaction]))
                             (compaction-policy (get-in ctx [:crew-cfg :compaction]))
                             (compaction-policy (:compaction session-entry)))
@@ -195,8 +205,7 @@
                                                             :history-retention (:history-retention behavior)
                                                             :config            cfg
                                                             :origin            (:origin opts)})
-          resolved-compaction (:compaction behavior)
-          updates   (cond-> {:compaction resolved-compaction}
+          updates   (cond-> {}
                       (contains? opts :compaction)   (assoc :compaction (:compaction opts))
                       (contains? opts :context-mode) (assoc :context-mode (:context-mode opts))
                       (contains? opts :effort)       (assoc :effort (:effort opts))

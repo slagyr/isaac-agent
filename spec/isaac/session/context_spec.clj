@@ -146,7 +146,8 @@
       (should= (str "/test/session-context/.isaac/crew/" crew-name) (:cwd session))
       (should= :prune (:history-retention session))
       (should= 9 (:effort session))
-      (should= {:async? false :strategy :rubberband :head 0.3 :threshold 0.8} (:compaction session)))
+      (should= {:async? false :strategy :rubberband :head 0.3 :threshold 0.8}
+               (:compaction (sut/resolve-behavior "s"))))
     (config/dangerously-install-config! nil "spec"))
 
   (it "falls back to main when defaults.crew is absent"
