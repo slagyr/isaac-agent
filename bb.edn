@@ -4,7 +4,10 @@
         io.github.slagyr/gherclj    {:git/tag "v1.3.0" :git/sha "9c3bb1d"}}
 
  :tasks
- {spec     {:doc      "Run speclj specs (pass file/dir to narrow)"
+ {config-bypass-lint {:doc "Fail on raw config slurp/read outside isaac.config.*"
+                      :task (shell "bb" "config_bypass_lint.bb" "src")}
+
+  spec     {:doc      "Run speclj specs (pass file/dir to narrow)"
             :requires ([clojure.java.shell :as sh])
             :task     (let [{:keys [exit out err]}
                             (apply sh/sh "clojure" "-M:spec" *command-line-args*)]
@@ -19,6 +22,7 @@
                                 (when (seq out) (print out))
                                 (when (seq err) (binding [*out* *err*] (print err)))
                                 (when (pos? exit) (System/exit exit))))]
+                        (run! "bb" "config-bypass-lint")
                         (run! "clojure" "-M:spec")
                         (run! "clojure" "-M:features"))}
 
@@ -29,6 +33,7 @@
                                 (when (seq out) (print out))
                                 (when (seq err) (binding [*out* *err*] (print err)))
                                 (when (pos? exit) (System/exit exit))))]
+                        (run! "bb" "config-bypass-lint")
                         (run! "clojure" "-M:spec")
                         (run! "clojure" "-M:features"))}
 
