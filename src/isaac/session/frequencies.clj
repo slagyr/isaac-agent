@@ -34,12 +34,12 @@
 
    :reach
    {:type        :keyword
-    :description "How many sessions to target (:one for sync tools)"
+    :description "How many sessions to target (:one or :all)"
     :validations [[:one-of? :one :all]]}
 
    :prefer
    {:type        :keyword
-    :description "Multi-match tiebreak when :reach is :one"
+    :description "Multi-match tiebreak when :reach is :one (:recent or :oldest)"
     :validations [[:one-of? :recent :oldest]]}
 
    :create
