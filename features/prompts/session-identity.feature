@@ -1,4 +1,3 @@
-@wip
 Feature: Session identity in the cached system prompt
   Every turn's system prompt carries the session's identity — Session and
   Crew — alongside soul, boot files, and rules. Identity is ambient (system

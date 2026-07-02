@@ -493,6 +493,7 @@
             captured (atom nil)
             ctx      (base-execution-ctx provider {:model        "test-model"
                                                    :soul         "You are Brain."
+                                                   :crew         "main"
                                                    :context-mode nil
                                                    :comm         null-comm/channel})]
         (with-redefs [tool-loop/run (fn [_ _ request _ _]
@@ -503,7 +504,7 @@
                                        :tool-calls []})
                       sut/process-response! (fn [& _] nil)]
           (#'sut/execute-llm-turn! "full-history" "Are the blueprints ready?" ctx))
-        (should= [{:role "system" :content "You are Brain."}
+        (should= [{:role "system" :content "You are Brain.\n\nSession: full-history\nCrew: main"}
                   {:role "user" :content "What are we doing tonight?"}
                   {:role "assistant" :content "The same thing we do every night."}
                   {:role "user" :content "Are the blueprints ready?"}]
@@ -517,6 +518,7 @@
             captured (atom nil)
             ctx      (base-execution-ctx provider {:model        "test-model"
                                                    :soul         "You are Pinky."
+                                                   :crew         "pinky"
                                                    :context-mode :reset
                                                    :comm         null-comm/channel})]
         (with-redefs [tool-loop/run (fn [_ _ request _ _]
@@ -527,7 +529,7 @@
                                        :tool-calls []})
                       sut/process-response! (fn [& _] nil)]
           (#'sut/execute-llm-turn! "reset-history" "Brain escaped the cage." ctx))
-        (should= [{:role "system" :content "You are Pinky."}
+        (should= [{:role "system" :content "You are Pinky.\n\nSession: reset-history\nCrew: pinky"}
                   {:role "user" :content "Brain escaped the cage."}]
                  (:messages @captured))))
 

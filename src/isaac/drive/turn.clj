@@ -577,13 +577,15 @@
 (defn- merge-allowed-tools [crew-tools auto-tools]
   (not-empty (into (set (or crew-tools [])) auto-tools)))
 
-(defn build-chat-request [p {:keys [boot-files effort guidance model nonce origin rules-text skill-menu-text soul transcript tools]}]
+(defn build-chat-request [p {:keys [boot-files crew effort guidance model nonce origin rules-text session-name skill-menu-text soul transcript tools]}]
   (let [prompt-out (api/build-prompt p {:boot-files boot-files
+                                        :crew       crew
                                         :guidance   guidance
                                         :model      model
                                         :nonce      nonce
                                         :origin     origin
                                         :rules-text rules-text
+                                        :session-name session-name
                                         :skill-menu-text skill-menu-text
                                         :soul       soul
                                         :transcript transcript
@@ -700,7 +702,7 @@
    final assistant response. Returns the final result map."
   [session-key input ctx]
   (let [{:keys [provider allowed-tools effort boot-files rules-text skill-menu-text]} ctx
-        {:keys [guidance model module-index nonce origin soul context-mode comm config]} (:charge ctx)
+        {:keys [crew guidance model module-index nonce origin soul context-mode comm config]} (:charge ctx)
         caps {:max-lines (get-in config [:tools :defaults :max-lines])
               :max-bytes (get-in config [:tools :defaults :max-bytes])}
         ch (or comm cli-comm/channel)
@@ -716,12 +718,14 @@
                             (empty? tools)                  :no-registered-tools
                             :else                           nil)
           request         (build-chat-request p {:boot-files boot-files
+                                                 :crew       crew
                                                  :effort     effort
                                                  :guidance   guidance
                                                  :model      model
                                                  :nonce      nonce
                                                  :origin     origin
                                                  :rules-text rules-text
+                                                 :session-name session-key
                                                  :skill-menu-text skill-menu-text
                                                  :soul       soul
                                                  :transcript transcript

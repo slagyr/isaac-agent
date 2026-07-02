@@ -409,6 +409,11 @@
     (g/assoc! :dispatch-result result)
     (g/assoc! :llm-result result)
     (g/assoc! :llm-request request)
+    ;; accumulate each completed turn's chat request per session so
+    ;; cache-stability assertions can compare system text across turns
+    (when-let [k (g/get :current-key)]
+      (g/update! :chat-requests-by-session
+                 (fn [m] (update (or m {}) k (fnil conj []) request))))
     (g/assoc! :provider-request (or (last outbound-requests)
                                     (grover/last-provider-request)
                                     grover-request))
@@ -1186,12 +1191,14 @@
                           :skill-menu-text (:menu-text skill-disclosure))]
     (builder {:boot-files     (:boot-files ctx)
               :context-window (:context-window model-cfg)
+              :crew           agent-id
               :filter-fn      (when openai? prompt/filter-messages-openai)
               :guidance       guidance
               :model          (:model model-cfg)
               :nonce          (:nonce session)
               :origin         origin
               :rules-text     (:rules-text ctx)
+              :session-name   key-str
               :skill-menu-text (:skill-menu-text ctx)
               :soul           (:soul ctx)
               :tools          tools
@@ -1211,6 +1218,28 @@
       (let [origin (edn/read-string origin-edn)
             result (match/match-object table (build-session-prompt content key-str :guidance guidance :origin origin))]
         (g/should= [] (:failures result))))))
+
+(defn- request-system-text
+  "Extract the system prompt text from a captured chat request, tolerant of both
+   the Anthropic :system block-array shape and the messages[0] system-role shape."
+  [request]
+  (let [sys (:system request)]
+    (cond
+      (string? sys)                              sys
+      (and (sequential? sys) (map? (first sys)))  (:text (first sys))
+      :else (some (fn [m] (when (= "system" (:role m)) (:content m)))
+                  (:messages request)))))
+
+(defn last-n-chat-requests-system-text-identical [n-str key-str]
+  (await-turn!)
+  (await-acp-turn!)
+  (let [n     (parse-long n-str)
+        reqs  (get (g/get :chat-requests-by-session) key-str [])
+        lastn (vec (take-last n reqs))
+        texts (mapv request-system-text lastn)]
+    (g/should= n (count lastn))
+    (g/should (every? seq texts))
+    (g/should (apply = texts))))
 
 (defn session-sidecars-exist-for [table]
   (let [sidecars  (with-feature-fs #(or (fs/children (mem-fs) (str (root-dir) "/sessions")) []))
@@ -1512,6 +1541,12 @@
 
 (defthen #"the prompt \"([^\"]+)\" on session \"([^\"]+)\" with origin (.+) and guidance \"([^\"]+)\" matches:"
   isaac.session.session-steps/prompt-on-session-with-framing-matches)
+
+(defthen #"the system text of the last (\d+) chat requests on session \"([^\"]+)\" is identical"
+  isaac.session.session-steps/last-n-chat-requests-system-text-identical
+  "Asserts the last N completed turns on the session produced byte-identical
+   system prompt text — i.e. session identity and the rest of the cached prefix
+   stay stable across turns (isaac-s0ho). Requires N real 'the user sends' turns.")
 
 (defthen "the session sidecars exist for:" isaac.session.session-steps/session-sidecars-exist-for)
 
