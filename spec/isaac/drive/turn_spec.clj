@@ -130,6 +130,40 @@
         (should= "count" (:model assistant))
         (should= "grover:grok" (:provider assistant)))))
 
+  (describe "process-response! multi-request token persistence"
+    #_{:clj-kondo/ignore [:unresolved-symbol]}
+    (around [example]
+      (nexus/-with-nexus {:root test-dir :fs (fs/mem-fs)}
+        (helper/with-memory-store
+          (example))))
+
+    (it "stores final-request input tokens separately from whole-turn input tokens"
+      (helper/create-session! test-dir "tool-loop-usage")
+      (sut/process-response! "tool-loop-usage"
+                             {:content      "Done"
+                              :token-counts {:input-tokens 220 :output-tokens 7 :cache-read 2 :cache-write 1}
+                              :response     {:message {:role "assistant" :content "Done"}
+                                             :usage   {:input_tokens 120
+                                                       :output_tokens 7
+                                                       :cache_creation_input_tokens 1
+                                                       :input_tokens_details {:cached_tokens 2}}}}
+                             {:model "echo" :provider "grover:grok"})
+      (let [assistant (-> (helper/get-transcript test-dir "tool-loop-usage") last :message)
+            session   (helper/get-session test-dir "tool-loop-usage")]
+        (should= {:input-tokens  220
+                  :output-tokens 7
+                  :total-tokens  227
+                  :cache-read    2
+                  :cache-write   1}
+                 (:usage assistant))
+        (should= 220 (:input-tokens session))
+        (should= 220 (:turn-input-tokens session))
+        (should= 120 (:last-input-tokens session))
+        (should= 7 (:output-tokens session))
+        (should= 227 (:total-tokens session))
+        (should= 2 (:cache-read session))
+        (should= 1 (:cache-write session)))))
+
   (describe "empty terminal response guard"
 
     (it "retries once with a continuation nudge and accepts a non-empty follow-up"

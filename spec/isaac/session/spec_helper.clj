@@ -66,14 +66,17 @@
   (store/splice-compaction! (session-store root) session-key compaction))
 
 (defn update-tokens! [root session-key {:keys [cache-read cache-write] :as updates}]
-  (let [entry         (or (get-session root session-key) {})
-        input-tokens  (:input-tokens updates 0)
-        output-tokens (:output-tokens updates 0)]
+  (let [entry             (or (get-session root session-key) {})
+        input-tokens      (:input-tokens updates 0)
+        turn-input-tokens (or (:turn-input-tokens updates) input-tokens)
+        last-input-tokens (or (:last-input-tokens updates) input-tokens)
+        output-tokens     (:output-tokens updates 0)]
     (update-session! root session-key
                      (cond-> {:input-tokens      (+ (or (:input-tokens entry) 0) input-tokens)
-                              :last-input-tokens input-tokens
+                              :turn-input-tokens turn-input-tokens
+                              :last-input-tokens last-input-tokens
                               :output-tokens     (+ (or (:output-tokens entry) 0) output-tokens)
-                               :total-tokens      (+ (+ (or (:input-tokens entry) 0) input-tokens)
-                                                     (+ (or (:output-tokens entry) 0) output-tokens))}
+                              :total-tokens      (+ (+ (or (:input-tokens entry) 0) input-tokens)
+                                                    (+ (or (:output-tokens entry) 0) output-tokens))}
                        cache-read  (assoc :cache-read (+ (or (:cache-read entry) 0) cache-read))
                        cache-write (assoc :cache-write (+ (or (:cache-write entry) 0) cache-write))))))

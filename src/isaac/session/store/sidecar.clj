@@ -113,13 +113,16 @@
   ([root identifier updates]
    (update-tokens! root identifier updates (runtime-fs!)))
   ([root identifier {:keys [cache-read cache-write] :as updates} fs]
-   (let [input-tokens  (:input-tokens updates)
-         output-tokens (:output-tokens updates)]
+   (let [input-tokens      (:input-tokens updates)
+         turn-input-tokens (or (:turn-input-tokens updates) input-tokens)
+         last-input-tokens (or (:last-input-tokens updates) input-tokens)
+         output-tokens     (:output-tokens updates)]
      (update-sidecar-entry! root identifier
                             (fn [entry]
                               (cond-> (-> entry
                                           (update :input-tokens + (or input-tokens 0))
-                                          (assoc :last-input-tokens (or input-tokens 0))
+                                          (assoc :turn-input-tokens (or turn-input-tokens 0))
+                                          (assoc :last-input-tokens (or last-input-tokens 0))
                                           (update :output-tokens + (or output-tokens 0))
                                           (assoc :total-tokens (+ (+ (:input-tokens entry) (or input-tokens 0))
                                                                   (+ (:output-tokens entry) (or output-tokens 0)))))

@@ -616,7 +616,10 @@
         (let [updates (cond-> updates
                         (and (contains? updates :total-tokens)
                              (not (contains? updates :last-input-tokens)))
-                        (assoc :last-input-tokens (:total-tokens updates)))]
+                        (assoc :last-input-tokens (:total-tokens updates))
+                        (and (contains? updates :input-tokens)
+                             (not (contains? updates :turn-input-tokens)))
+                        (assoc :turn-input-tokens (:input-tokens updates)))]
          (when (seq updates)
            (update-session! (:id entry) updates))
          (g/assoc! :current-key (:id entry))

@@ -663,6 +663,7 @@
       (sut/update-tokens! test-dir test-key {:input-tokens 20 :output-tokens 15})
       (let [entry (first (store/list-sessions-by-agent (s) "main"))]
         (should= 30 (:input-tokens entry))
+        (should= 20 (:turn-input-tokens entry))
         (should= 20 (:output-tokens entry))
         (should= 50 (:total-tokens entry))
         (should= 20 (:last-input-tokens entry))))

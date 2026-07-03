@@ -69,13 +69,21 @@
              {})
          (or (:usage result) {})))
 
+(defn- usage->tokens [usage resp]
+  {:input-tokens  (or (usage-input-tokens usage) (:prompt_eval_count resp) 0)
+   :output-tokens (or (usage-output-tokens usage) (:eval_count resp) 0)
+   :cache-read    (usage-cache-read usage)
+   :cache-write   (usage-cache-write usage)})
+
+(defn- response-tokens [result]
+  (let [resp  (:response result)
+        usage (response-usage result)]
+    (usage->tokens usage resp)))
+
 (defn extract-tokens [result]
   (let [resp  (:response result)
         usage (or (:token-counts result) (response-usage result))]
-    {:input-tokens  (or (usage-input-tokens usage) (:prompt_eval_count resp) 0)
-     :output-tokens (or (usage-output-tokens usage) (:eval_count resp) 0)
-     :cache-read    (usage-cache-read usage)
-     :cache-write   (usage-cache-write usage)}))
+    (usage->tokens usage resp)))
 
 (defn normalize-usage [result]
   (let [tokens           (extract-tokens result)
@@ -186,42 +194,45 @@
   (or (get-in result [:response :model]) model))
 
 (defn- store-response! [ctx session-key result {:keys [model provider]}]
-  (let [ss             (or (:session-store ctx) (nexus/get-in [:sessions :store]))
-        tokens         (extract-tokens result)
-        usage          (normalize-usage result)
-        total-tokens   (+ (:input-tokens tokens 0) (:output-tokens tokens 0))
-        resolved-model (response-model result model)
-        reasoning      (or (get-in result [:response :reasoning])
-                           (get-in result [:response :response :reasoning]))
-        stop-reason    (or (get-in result [:response :stop_reason])
-                           (get-in result [:response :done_reason]))
-        session-entry  (or (store/get-session ss session-key) {})
-        input-tokens   (:input-tokens tokens 0)
-        output-tokens  (:output-tokens tokens 0)
-        cache-read     (:cache-read tokens)
-        cache-write    (:cache-write tokens)]
+  (let [ss                (or (:session-store ctx) (nexus/get-in [:sessions :store]))
+        turn-tokens       (extract-tokens result)
+        final-tokens      (response-tokens result)
+        usage             (normalize-usage result)
+        total-tokens      (+ (:input-tokens turn-tokens 0) (:output-tokens turn-tokens 0))
+        resolved-model    (response-model result model)
+        reasoning         (or (get-in result [:response :reasoning])
+                              (get-in result [:response :response :reasoning]))
+        stop-reason       (or (get-in result [:response :stop_reason])
+                              (get-in result [:response :done_reason]))
+        session-entry     (or (store/get-session ss session-key) {})
+        turn-input-tokens (:input-tokens turn-tokens 0)
+        input-tokens      (:input-tokens final-tokens 0)
+        output-tokens     (:output-tokens turn-tokens 0)
+        cache-read        (:cache-read turn-tokens)
+        cache-write       (:cache-write turn-tokens)]
     (log/debug :session/message-stored
                :session session-key
                :model resolved-model
-               :tokens (select-keys tokens [:input-tokens :output-tokens]))
+               :tokens (select-keys turn-tokens [:input-tokens :output-tokens]))
     (append-message! ctx session-key
-                      (cond-> {:role     "assistant"
-                               :content  (or (:content result)
-                                             (get-in result [:response :message :content]))
+                     (cond-> {:role     "assistant"
+                              :content  (or (:content result)
+                                            (get-in result [:response :message :content]))
                               :model    resolved-model
                               :provider provider
                               :tokens   total-tokens}
-                             usage (assoc :usage usage)
-                             stop-reason (assoc :stopReason stop-reason)
-                             reasoning (assoc :reasoning reasoning)))
+                       usage (assoc :usage usage)
+                       stop-reason (assoc :stopReason stop-reason)
+                       reasoning (assoc :reasoning reasoning)))
     (store/update-session! ss session-key
-                           (cond-> {:input-tokens      (+ (or (:input-tokens session-entry) 0) input-tokens)
+                           (cond-> {:input-tokens      (+ (or (:input-tokens session-entry) 0) turn-input-tokens)
+                                    :turn-input-tokens turn-input-tokens
                                     :last-input-tokens input-tokens
                                     :output-tokens     (+ (or (:output-tokens session-entry) 0) output-tokens)
-                                    :total-tokens      (+ (+ (or (:input-tokens session-entry) 0) input-tokens)
+                                    :total-tokens      (+ (+ (or (:input-tokens session-entry) 0) turn-input-tokens)
                                                           (+ (or (:output-tokens session-entry) 0) output-tokens))}
-                                   cache-read (assoc :cache-read (+ (or (:cache-read session-entry) 0) cache-read))
-                                   cache-write (assoc :cache-write (+ (or (:cache-write session-entry) 0) cache-write))))
+                             cache-read (assoc :cache-read (+ (or (:cache-read session-entry) 0) cache-read))
+                             cache-write (assoc :cache-write (+ (or (:cache-write session-entry) 0) cache-write))))
     nil))
 
 (defn- process-response* [ctx session-key result {:keys [model provider]}]

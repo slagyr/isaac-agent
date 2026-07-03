@@ -90,6 +90,7 @@
                             :history-retention retention
                             :compaction-count  0
                             :input-tokens      0
+                            :turn-input-tokens 0
                             :last-input-tokens 0
                             :output-tokens     0
                             :total-tokens      0}]

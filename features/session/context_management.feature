@@ -134,7 +134,6 @@ Feature: Context Management
 
   # --- Per-Turn Token Updates ---
 
-  @wip
   Scenario: a multi-request tool-loop turn stores the final request's input tokens, not the turn sum
     A tool-loop turn makes several LLM requests. last-input-tokens must be the
     FINAL request's prompt size (what the model currently sees); the whole-turn

@@ -227,6 +227,7 @@
           (update :compaction-disabled #(if (nil? %) false %))
           (update :compaction-count #(or % 0))
           (update :input-tokens #(or % 0))
+          (update :turn-input-tokens #(or % 0))
           (update :last-input-tokens #(or % 0))
           (update :output-tokens #(or % 0))
           (update :total-tokens #(or % 0))))))
@@ -326,6 +327,7 @@
                              :chat-type         (or (:chat-type opts) (:chatType opts))
                              :compaction-count  0
                              :input-tokens      0
+                             :turn-input-tokens 0
                              :last-input-tokens 0
                              :output-tokens     0
                              :total-tokens      0})]

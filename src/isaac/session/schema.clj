@@ -81,6 +81,7 @@
             :history-retention   (mutable {:type :keyword})
             :effective-history-offset (system-managed {:type :long})
             :input-tokens        (system-managed {:type :int})
+            :turn-input-tokens   (system-managed {:type :int})
             :output-tokens       (system-managed {:type :int})
             :total-tokens        (system-managed {:type :int})
             :last-input-tokens   (system-managed {:type :int})
