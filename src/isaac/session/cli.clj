@@ -19,7 +19,8 @@
     [isaac.session.schema :as session-schema]
     [isaac.session.store.spi :as store]
     [isaac.nexus :as nexus]
-    [isaac.tool.memory :as memory])
+    [isaac.tool.memory :as memory]
+    [isaac.tool.registry :as tool-registry])
   (:import
     (java.time.format DateTimeFormatter)
     (java.time ZoneOffset)))
@@ -212,7 +213,7 @@
 (defn- run-show [opts session-id]
   (if (str/blank? session-id)
     (do (println "Usage: isaac sessions show <session-id>") 1)
-    (let [{:keys [root store]} (install-cli! opts)
+    (let [{:keys [root store config]} (install-cli! opts)
           session     (store/get-session store session-id)]
       (if (nil? session)
         (do (println (str "session not found: " session-id)) 1)
@@ -221,10 +222,16 @@
             (print-session-data (session->payload session) opts)
             0)
           (try
-            (let [ctx    (assoc (session-ctx/resolve-behavior session-id {})
-                                :boot-files (session-ctx/read-boot-files (:cwd session))
-                                :root root)
-                  status (bridge/status-data session-id ctx)]
+            (let [ctx     (assoc (session-ctx/resolve-behavior session-id {})
+                                 :boot-files (session-ctx/read-boot-files (:cwd session))
+                                 :root root)
+                  allowed (bridge/session-allowed-tools ctx)
+                  ;; the CLI path never boots modules, so activate just this
+                  ;; crew's allow-listed tools into the registry so the count
+                  ;; reflects what the live session would have (isaac-wczf)
+                  _       (when (seq allowed)
+                            (tool-registry/tool-definitions allowed (:module-index config)))
+                  status  (bridge/status-data session-id (assoc ctx :allowed-tools allowed))]
               (println (bridge/format-status status))
               0)
             (finally

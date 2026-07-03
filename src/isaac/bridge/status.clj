@@ -55,6 +55,33 @@
       :else
       (store/create ctx-or-root))))
 
+(defn- ->tool-name [t]
+  (if (keyword? t) (name t) (str t)))
+
+(defn session-allowed-tools
+  "The tool allow-list for the session's crew, as a set of tool names, or nil
+   when the crew declares none. Prefers an explicit :allowed-tools already
+   resolved by a caller (the sessions CLI path), else reads the crew's
+   :tools :allow from the resolved crew-cfg or the crew-members map."
+  [ctx]
+  (or (some->> (:allowed-tools ctx) (map ->tool-name) set)
+      (let [crew (or (:crew-cfg ctx)
+                     (get (:crew-members ctx) (:crew ctx)))]
+        (when (contains? crew :tools)
+          (->> (get-in crew [:tools :allow]) (map ->tool-name) set)))))
+
+(defn- session-tool-count
+  "Count the tools the session's crew can actually use: the process registry
+   filtered by the crew's allow-list — the same view the turn/prompt code uses
+   for that crew. Falls back to the whole registry when the crew declares no
+   allow-list. In lightweight CLI paths the caller must first activate the
+   allow-listed tools (see session/cli run-show) so they are in the registry
+   (isaac-wczf)."
+  [ctx]
+  (if-let [allowed (session-allowed-tools ctx)]
+    (count (tool-registry/all-tools allowed))
+    (count (tool-registry/all-tools))))
+
 (defn- status-data* [session-store session-key ctx]
   (let [entry          (store/get-session session-store session-key)
         transcript     (or (store/get-transcript session-store session-key) [])
@@ -78,7 +105,7 @@
      :tokens         tokens
      :context-window context-window
      :context-pct    context-pct
-     :tool-count     (count (tool-registry/all-tools))
+     :tool-count     (session-tool-count ctx)
      :cwd            (or (:cwd entry) (System/getProperty "user.dir"))}))
 
 (defn status-data

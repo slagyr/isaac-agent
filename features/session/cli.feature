@@ -121,6 +121,25 @@ Feature: Sessions Command
       | Context .* 5,000 / 32,768 |
     And the stdout does not contain "Hello there"
 
+  # isaac-wczf: the CLI path never boots modules, so the Tools count used to
+  # read 0. run-show now activates the session crew's allow-listed tools and
+  # reports the filtered count.
+  Scenario: sessions show reports the session crew's allowed tool count
+    Given the isaac EDN file "config/crew/toolsmith.edn" exists with:
+      | path        | value           |
+      | model       | grover          |
+      | soul        | You fix things. |
+      | tools.allow | read,write      |
+    And the following sessions exist:
+      | name      | crew      |
+      | workbench | toolsmith |
+    When isaac is run with "sessions show workbench"
+    Then the exit code is 0
+    And the stdout matches:
+      | pattern           |
+      | Crew .* toolsmith |
+      | Tools .* 2        |
+
   Scenario: sessions delete removes a session and its transcript
     Given the following sessions exist:
       | name        |

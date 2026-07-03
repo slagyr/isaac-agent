@@ -125,6 +125,45 @@
           (let [ctx {:agent "main" :model "echo" :provider "grover" :context-window 32768}
                 data (bridge-status/status-data "testuser" ctx)]
             (should= 1 (:tool-count data))))))
+
+    (it "counts only the crew's allow-listed tools among registered tools (crew-cfg)"
+      (nexus/-with-nexus {:root *root*}
+        (helper/with-memory-store
+          (tool-registry/clear!)
+          (tool-registry/register! {:name "read"  :description "Read"  :handler identity})
+          (tool-registry/register! {:name "write" :description "Write" :handler identity})
+          (tool-registry/register! {:name "bash"  :description "Bash"  :handler identity})
+          (let [ctx {:crew     "main"
+                     :crew-cfg {:model "echo" :tools {:allow [:read :write]}}
+                     :model    "echo" :provider "grover" :context-window 32768}
+                data (bridge-status/status-data "testuser" ctx)]
+            ;; 3 registered, crew allows 2 -> filtered count is 2, not the whole registry
+            (should= 2 (:tool-count data))))))
+
+    (it "counts crew tools from crew-members when crew-cfg is absent (live charge)"
+      (nexus/-with-nexus {:root *root*}
+        (helper/with-memory-store
+          (tool-registry/clear!)
+          (tool-registry/register! {:name "read"    :description "Read" :handler identity})
+          (tool-registry/register! {:name "sextant" :description "Nav"  :handler identity})
+          (tool-registry/register! {:name "bash"    :description "Bash" :handler identity})
+          (let [ctx {:crew         "navigator"
+                     :crew-members {"navigator" {:tools {:allow ["read" "sextant"]}}}
+                     :model        "echo" :provider "grover" :context-window 32768}
+                data (bridge-status/status-data "testuser" ctx)]
+            (should= 2 (:tool-count data))))))
+
+    (it "counts via explicit :allowed-tools supplied by the sessions CLI path"
+      (nexus/-with-nexus {:root *root*}
+        (helper/with-memory-store
+          (tool-registry/clear!)
+          (tool-registry/register! {:name "read"    :description "Read" :handler identity})
+          (tool-registry/register! {:name "sextant" :description "Nav"  :handler identity})
+          (let [ctx {:crew          "navigator"
+                     :allowed-tools ["read" "sextant"]
+                     :model         "echo" :provider "grover" :context-window 32768}
+                data (bridge-status/status-data "testuser" ctx)]
+            (should= 2 (:tool-count data))))))
     )
 
   (context "format-status"
