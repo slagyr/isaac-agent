@@ -134,6 +134,30 @@ Feature: Context Management
 
   # --- Per-Turn Token Updates ---
 
+  @wip
+  Scenario: a multi-request tool-loop turn stores the final request's input tokens, not the turn sum
+    A tool-loop turn makes several LLM requests. last-input-tokens must be the
+    FINAL request's prompt size (what the model currently sees); the whole-turn
+    sum is stored separately as turn-input-tokens. Storing the sum in
+    last-input-tokens made sessions list report 800% of window and operators
+    conclude compaction was broken (isaac-n5r2).
+    Given the following sessions exist:
+      | name             | last-input-tokens |
+      | context-progress | 10                |
+    And the isaac file "target/test-state/hello.txt" exists with:
+      """
+      hi
+      """
+    And the following model responses are queued:
+      | model | tool_call | arguments                                     | usage.input_tokens |
+      | echo  | read      | {"file_path": "target/test-state/hello.txt"} | 100                |
+      | model | type      | content | usage.input_tokens |
+      | echo  | text      | done    | 120                |
+    When the user sends "read hello.txt" on session "context-progress"
+    Then the following sessions match:
+      | id               | last-input-tokens | turn-input-tokens | input-tokens |
+      | context-progress | 120               | 220               | 220          |
+
   Scenario: last-input-tokens is updated from response usage on every turn
     Each LLM response reports usage.input_tokens — the size of the prompt
     the model just saw. The session's last-input-tokens must be replaced
