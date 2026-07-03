@@ -44,7 +44,6 @@ Feature: Session tags
       | joe .* :wip           |
     And the exit code is 0
 
-  @wip
   Scenario: isaac sessions list shows transcript size when tags are present
     Given default Grover setup
     And the following sessions exist:

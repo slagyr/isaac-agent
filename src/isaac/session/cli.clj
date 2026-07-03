@@ -18,6 +18,7 @@
     [isaac.session.context :as session-ctx]
     [isaac.session.schema :as session-schema]
     [isaac.session.store.spi :as store]
+    [isaac.session.store.impl-common :as store-common]
     [isaac.nexus :as nexus]
     [isaac.tool.memory :as memory]
     [isaac.tool.registry :as tool-registry])
@@ -84,18 +85,33 @@
                  0)]
     (str (format "%,d" tokens) " / " (format "%,d" context-window) " (" pct "%)")))
 
+(defn- format-size [bytes]
+  (let [n (long (or bytes 0))]
+    (cond
+      (< n 1024) (str n "B")
+      (< n 1048576) (let [kb (/ n 1024.0)]
+                      (if (>= kb 10)
+                        (str (long (Math/floor kb)) "K")
+                        (format "%.1fK" kb)))
+      :else (let [mb (/ n 1048576.0)]
+              (if (>= mb 10)
+                (str (long (Math/floor mb)) "M")
+                (format "%.1fM" mb))))))
+
 (def ^:private session-columns
   [{:key :name   :header "SESSION" :align :left}
    {:key :age    :header "AGE"     :align :right}
+   {:key :size   :header "SIZE"    :align :right
+    :format format-size}
    {:key :used   :header "USED"    :align :right
     :format #(format "%,d" (or % 0))}
    {:key :window :header "WINDOW"  :align :right
     :format #(format "%,d" (or % 0))}
    {:key :pct    :header "PCT"     :align :right
-     :format #(str (or % 0) "%")
-     :color-fn (fn [p]
-                 (let [p (or p 0)]
-                   (cond (> p 100) :red (>= p 80) :yellow :else nil)))}])
+    :format #(str (or % 0) "%")
+    :color-fn (fn [p]
+                (let [p (or p 0)]
+                  (cond (> p 100) :red (>= p 80) :yellow :else nil)))}])
 
 (def ^:private default-session-columns
   (conj session-columns
@@ -104,6 +120,8 @@
 (def ^:private tagged-session-columns
   [{:key :name   :header "Name"    :align :left}
    {:key :age    :header "AGE"     :align :right}
+   {:key :size   :header "Size"    :align :right
+    :format format-size}
    {:key :used   :header "USED"    :align :right
     :format #(format "%,d" (or % 0))}
    {:key :window :header "WINDOW"  :align :right
@@ -116,18 +134,23 @@
    {:key :crew   :header "Crew"    :align :left}
    {:key :tags   :header "Tags"    :align :left}])
 
+(defn- transcript-size-bytes [entry session-store]
+  (let [transcript (store/get-transcript session-store (:id entry))]
+    (store-common/transcript-byte-offset transcript)))
+
 (defn- session->row [entry context-window session-store]
   (let [tokens (or (:last-input-tokens entry) 0)
         pct    (if (pos? context-window)
-                  (int (Math/round (* 100.0 (/ tokens context-window)))) 0)
+                   (int (Math/round (* 100.0 (/ tokens context-window)))) 0)
         name   (or (:key entry) (:id entry))]
     {:name   (str name (when (store/in-flight? session-store (:id entry)) " ✈️"))
-      :age    (if-let [ms (age-ms (:updated-at entry))] (format-age ms) "-")
-      :used   tokens
-      :window context-window
-      :pct    pct
-      :crew   (or (:crew entry) "main")
-      :tags   (text-tags (:tags entry))}))
+     :age    (if-let [ms (age-ms (:updated-at entry))] (format-age ms) "-")
+     :size   (transcript-size-bytes entry session-store)
+     :used   tokens
+     :window context-window
+     :pct    pct
+     :crew   (or (:crew entry) "main")
+     :tags   (text-tags (:tags entry))}))
 
 (defn- effective-color? [options]
   (cond
