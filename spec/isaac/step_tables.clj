@@ -5,7 +5,7 @@
 ;; region ----- Path Parsing -----
 
 (defn- parse-segment [s]
-  (let [parts (re-seq #"([\w-]+)|\[(\d+)\]" s)]
+  (let [parts (re-seq #"([\w-]+)|\[(-?\d+)\]" s)]
     (mapv (fn [[_ key idx]]
             (if key
               [:key key]
@@ -15,12 +15,22 @@
 (defn parse-path [path]
   (mapcat parse-segment (str/split path #"\.")))
 
+(defn- resolve-index [idx entries-count]
+  (let [resolved (if (neg? idx)
+                   (+ entries-count idx)
+                   idx)]
+    (when (<= 0 resolved (dec entries-count))
+      resolved)))
+
 (defn get-path [entity path-str]
   (reduce
     (fn [obj [tag v]]
       (case tag
         :key (get obj (keyword v))
-        :idx (nth obj v nil)))
+        :idx (if (vector? obj)
+               (when-let [i (resolve-index v (count obj))]
+                 (nth obj i nil))
+               (nth obj v nil))))
     entity
     (parse-path path-str)))
 
@@ -121,13 +131,6 @@
           best)))
      (match-row headers values (first entries) captures)
      (rest entries)))
-
-(defn- resolve-index [idx entries-count]
-  (let [resolved (if (neg? idx)
-                   (+ entries-count idx)
-                   idx)]
-    (when (<= 0 resolved (dec entries-count))
-      resolved)))
 
 ;; endregion ^^^^^ Row Matching ^^^^^
 

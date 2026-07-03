@@ -130,6 +130,30 @@
         (should= "count" (:model assistant))
         (should= "grover:grok" (:provider assistant)))))
 
+  (describe "empty terminal response guard"
+
+    (it "retries once with a continuation nudge and accepts a non-empty follow-up"
+      (let [requests (atom [])
+            chat-fn  (fn [req]
+                       (swap! requests conj req)
+                       {:message {:role "assistant" :content "done."} :model "test" :usage {}})
+            result   (#'sut/guard-empty-terminal-response
+                       {:response {:message {:role "assistant" :content ""}}}
+                       chat-fn
+                       {:messages [{:role "user" :content "status?"}]})]
+        (should= "done." (#'sut/terminal-response-content result))
+        (should= 1 (count @requests))
+        (should (re-find #"continue" (:content (last (:messages (last @requests))))))))
+
+    (it "fails explicitly when the continuation retry is also empty"
+      (let [chat-fn (fn [_] {:message {:role "assistant" :content ""} :model "test" :usage {}})
+            result  (#'sut/guard-empty-terminal-response
+                      {:response {:message {:role "assistant" :content ""}}}
+                      chat-fn
+                      {:messages [{:role "user" :content "status?"}]})]
+        (should= :empty-terminal-response (:error result))
+        (should (re-find #"empty-terminal-response" (:message result))))))
+
   (describe "streaming helpers"
 
     (it "reads content from supported chunk shapes"

@@ -72,6 +72,12 @@
       (assoc base :reasoning {:effort level :summary "auto"})
       base)))
 
+(defn- incomplete-responses-stream? [{:keys [content model response tool-calls]}]
+  (and (str/blank? content)
+       (nil? model)
+       (nil? response)
+       (empty? tool-calls)))
+
 (defn- process-responses-sse-event [data accumulated]
   (case (:type data)
     "response.output_text.delta"
@@ -127,8 +133,15 @@
                                       (when (= "response.output_text.delta" (:type chunk))
                                         (on-delta {:delta {:text (:delta chunk)}})))
                                     process-responses-sse-event initial (shared/llm-http-opts config))]
-    (if (:error result)
+    (cond
+      (:error result)
       result
+
+      (incomplete-responses-stream? result)
+      {:error :llm-error
+       :message "responses stream ended without response.completed"}
+
+      :else
       (let [tool-calls (:tool-calls result)
             response   (:response result)]
         (log/debug :responses/reasoning

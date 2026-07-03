@@ -54,7 +54,6 @@ Feature: Error Entry Handling
     When the prompt for session "error-test" is built for provider "openai"
     Then the prompt messages do not contain role "error"
 
-  @wip
   Scenario: an empty terminal response gets one continuation nudge and recovers (isaac-k4mf)
     A terminal model response with empty content and no error is a suspicious
     shape for any turn. The runtime retries exactly once with a continuation
@@ -74,7 +73,6 @@ Feature: Error Entry Handling
       | key                  | value               |
       | messages[-1].content | #"(?s).*continue.*" |
 
-  @wip
   Scenario: two empty responses fail the turn explicitly (isaac-k4mf)
     Retry budget is exactly one. A second empty response fails the turn with
     an explicit error entry — never a silent normal completion. Boundedness
@@ -91,7 +89,6 @@ Feature: Error Entry Handling
       | type  | content                        |
       | error | #".*empty-terminal-response.*" |
 
-  @wip
   Scenario: empty terminal response after tool execution fails the same way (isaac-k4mf)
     The observed zanebot shape: tools ran, then the model went silent. Same
     guard, same explicit failure.

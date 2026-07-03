@@ -396,6 +396,14 @@
         (should= "gpt-5.4" (:model result))
         (should= {:input_tokens 10 :output_tokens 5} (:usage result)))))
 
+    (it "detects a stream that ends without response.completed"
+      (should= true
+               (@#'sut/incomplete-responses-stream?
+                 {:content "" :model nil :response nil :tool-calls []}))
+      (should= false
+               (@#'sut/incomplete-responses-stream?
+                 {:content "ok" :model nil :response nil :tool-calls []})))
+
   (describe "chat-stream"
 
     (it "streams codex responses output for oauth-device"

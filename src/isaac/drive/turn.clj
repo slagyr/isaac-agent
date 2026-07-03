@@ -373,6 +373,58 @@
               (assoc :response summary-response)
               (assoc :token-counts (merge-response-tokens (:token-counts result) summary-response))))))))
 
+(def ^:private empty-terminal-continuation-nudge
+  "Your previous response was empty. Please continue and provide your reply.")
+
+(defn- terminal-response-content [result]
+  (or (:content result)
+      (get-in result [:response :message :content])
+      (get-in result [:message :content])
+      (get-in result [:response :content])))
+
+(defn- empty-terminal-response? [result]
+  (and (not (:error result))
+       (str/blank? (terminal-response-content result))))
+
+(defn- continuation-nudge-request [request response]
+  (let [assistant-msg (or (:message response)
+                          {:role    "assistant"
+                           :content (or (get-in response [:message :content]) "")})]
+    (-> request
+        (assoc :messages (conj (vec (:messages request))
+                               assistant-msg
+                               {:role "user" :content empty-terminal-continuation-nudge})))))
+
+(defn- guard-empty-terminal-response
+  ([result chat-fn current-request]
+   (guard-empty-terminal-response result chat-fn current-request false))
+  ([result chat-fn current-request retried?]
+   (cond
+     (:error result)
+     result
+
+     (not (empty-terminal-response? result))
+     result
+
+     retried?
+     {:error   :empty-terminal-response
+      :message "empty-terminal-response: model returned no content after continuation retry"}
+
+     :else
+     (let [response   (:response result)
+           nudge-req  (continuation-nudge-request current-request response)
+           retry-resp (chat-fn nudge-req)]
+       (if (:error retry-resp)
+         retry-resp
+         (guard-empty-terminal-response
+           (-> result
+               (assoc :response retry-resp)
+               (assoc :content (get-in retry-resp [:message :content]))
+               (assoc :token-counts (merge-response-tokens (:token-counts result) retry-resp)))
+           chat-fn
+           nudge-req
+           true))))))
+
 ;; endregion ^^^^^ Streaming ^^^^^
 
 ;; region ----- Context Compaction -----
@@ -759,7 +811,8 @@
             result      (-> (tool-loop/run chat-fn followup-fn request tool-fn
                                            {:cancelled? #(bridge/cancelled? session-key)})
                             (final-loop-summary chat-fn @current-request)
-                            canned-loop-exhausted-message)]
+                            canned-loop-exhausted-message
+                            (guard-empty-terminal-response chat-fn @current-request))]
         (log/debug :turn/model-response-summary
                    :session session-key
                    :provider (api/display-name p)
