@@ -5,6 +5,7 @@
     [clojure.string :as str]
     [isaac.config.loader :as loader]
     [isaac.fs :as fs]
+    [isaac.logger :as log]
     [isaac.tool.memory :as memory])
   (:import
     (java.util UUID)))
@@ -59,6 +60,10 @@
         path   (pending-path (:id record))]
     (fs/mkdirs fs* (fs/parent path))
     (fs/spit fs* path (write-edn record))
+    (log/info :comm.delivery/queued
+              :id (:id record)
+              :comm (:comm record)
+              :target (:target record))
     record))
 
 (defn update-pending! [id attrs]

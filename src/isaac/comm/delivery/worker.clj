@@ -22,6 +22,18 @@
 (defn- backoff-ms [attempts]
   (get delays-ms attempts))
 
+(defn- audit-fields [record]
+  {:id     (:id record)
+   :comm   (:comm record)
+   :target (:target record)})
+
+(defn- dead-letter! [record attempts reason]
+  (queue/move-to-failed! (:id record) {:attempts attempts})
+  (log/error :comm.delivery/dead-lettered
+             (assoc (audit-fields record)
+                    :attempts attempts
+                    :reason   reason)))
+
 (defn send! [record]
   (if-let [comm-inst (comm-registry/comm-for (:comm record))]
     (comm/send! comm-inst record)
@@ -36,14 +48,13 @@
   (let [attempts (inc (:attempts record 0))]
     (if-let [delay-ms (backoff-ms attempts)]
       (if (= attempts 5)
+        (dead-letter! record attempts :exhausted)
         (do
-          (queue/move-to-failed! (:id record) {:attempts attempts})
-          (log/error :delivery/dead-lettered :id (:id record) :reason :exhausted))
-        (queue/update-pending! (:id record) {:attempts        attempts
-                                             :next-attempt-at (str (.plusMillis now delay-ms))}))
-      (do
-        (queue/move-to-failed! (:id record) {:attempts attempts})
-        (log/error :delivery/dead-lettered :id (:id record) :reason :exhausted)))))
+          (log/info :comm.delivery/attempt-failed
+                    (assoc (audit-fields record) :attempts attempts))
+          (queue/update-pending! (:id record) {:attempts        attempts
+                                               :next-attempt-at (str (.plusMillis now delay-ms))})))
+      (dead-letter! record attempts :exhausted))))
 
 (defn- process-record! [now record]
   (when (due? record now)
@@ -53,12 +64,13 @@
                      {:error (.getMessage e) :ok false :transient? true}))]
       (cond
         (:ok result)
-        (queue/delete-pending! (:id record))
+        (do
+          (log/info :comm.delivery/delivered
+                    (assoc (audit-fields record) :attempts (:attempts record 0)))
+          (queue/delete-pending! (:id record)))
 
         (false? (:transient? result))
-        (do
-          (queue/move-to-failed! (:id record) {:attempts (:attempts record 0)})
-          (log/error :delivery/dead-lettered :id (:id record) :reason :permanent))
+        (dead-letter! record (:attempts record 0) :permanent)
 
         :else
         (reschedule! now record)))))

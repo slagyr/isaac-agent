@@ -64,7 +64,7 @@ Feature: Delivery queue
       | id       | 7f3a  |                                         |
     And the log has entries matching:
       | level | event                   | id   | reason    |
-      | error | :delivery/dead-lettered | 7f3a | :exhausted |
+      | error | :comm.delivery/dead-lettered | 7f3a | :exhausted |
 
   Scenario: a permanent failure dead-letters immediately without retrying
     Given the comm "stub" returns:
@@ -84,7 +84,7 @@ Feature: Delivery queue
       | id       | 7f3a  |                                    |
     And the log has entries matching:
       | level | event                   | id   | reason    |
-      | error | :delivery/dead-lettered | 7f3a | :permanent |
+      | error | :comm.delivery/dead-lettered | 7f3a | :permanent |
 
   Scenario: delivery worker tick is registered with the shared scheduler
     When the comm delivery system is started
@@ -92,7 +92,6 @@ Feature: Delivery queue
       | id            | trigger.kind | trigger.ms |
       | delivery/tick | interval     | 10000      |
 
-  @wip
   Scenario: a successful delivery logs the transition (isaac-ic4g)
     Every delivery state transition logs an INFO :comm.delivery/* event —
     grep :comm.delivery/ reconstructs any notification's journey. File state
@@ -111,7 +110,6 @@ Feature: Delivery queue
       | level | event                    | id   |
       | info  | :comm.delivery/delivered | 7f3a |
 
-  @wip
   Scenario: a transient failure logs the attempt count (isaac-ic4g)
     Given the comm "stub" returns:
       | ok    | transient? |

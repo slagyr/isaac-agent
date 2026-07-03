@@ -2,11 +2,15 @@
   (:require
     [isaac.comm.delivery.queue :as sut]
     [isaac.fs :as fs]
+    [isaac.logger :as log]
     [isaac.marigold :as marigold]
     [isaac.nexus :as nexus]
+    [isaac.spec-helper :as helper]
     [speclj.core :refer :all]))
 
 (describe "comm.delivery.queue"
+
+  (helper/with-captured-logs)
 
   #_{:clj-kondo/ignore [:unresolved-symbol]}
   (around [example]
@@ -28,6 +32,17 @@
   (it "stores the pending file at comm/delivery/pending/<id>.edn"
     (sut/enqueue! {:id "7f3a" :comm (keyword marigold/longwave) :target "C999" :content "Hi"})
     (should (fs/exists? (nexus/get :fs) "/test/isaac/comm/delivery/pending/7f3a.edn")))
+
+  (it "logs :comm.delivery/queued when a delivery is enqueued"
+    (sut/enqueue! {:id      "7f3a"
+                   :comm    (keyword marigold/longwave)
+                   :target  "C999"
+                   :content "Hello"})
+    (should= {:event  :comm.delivery/queued
+              :id     "7f3a"
+              :comm   (keyword marigold/longwave)
+              :target "C999"}
+             (select-keys (last @log/captured-logs) [:event :id :comm :target])))
 
   (it "moves a pending delivery to comm/delivery/failed"
     (sut/enqueue! {:id      "7f3a"

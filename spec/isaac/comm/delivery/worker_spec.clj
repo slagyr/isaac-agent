@@ -80,7 +80,7 @@
     (sut/tick! {:now (Instant/parse "2026-04-21T10:00:00Z")})
     (should-be-nil (queue/read-pending "7f3a"))
     (should= 5 (:attempts (queue/read-failed "7f3a")))
-    (should= {:event :delivery/dead-lettered :id "7f3a" :reason :exhausted}
+    (should= {:event :comm.delivery/dead-lettered :id "7f3a" :reason :exhausted}
              (select-keys (last @log/captured-logs) [:event :id :reason])))
 
   (it "moves a delivery to failed immediately on a permanent failure"
@@ -92,7 +92,7 @@
     (sut/tick! {:now (Instant/parse "2026-04-21T10:00:00Z")})
     (should-be-nil (queue/read-pending "7f3a"))
     (should= 0 (:attempts (queue/read-failed "7f3a")))
-    (should= {:event :delivery/dead-lettered :id "7f3a" :reason :permanent}
+    (should= {:event :comm.delivery/dead-lettered :id "7f3a" :reason :permanent}
              (select-keys (last @log/captured-logs) [:event :id :reason]))))
 
   (it "registers its tick with the shared scheduler"
