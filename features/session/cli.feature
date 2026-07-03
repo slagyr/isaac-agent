@@ -56,10 +56,10 @@ Feature: Sessions Command
     When isaac is run with "sessions list"
     Then the stdout matches:
       | pattern                                           |
-      | SESSION       AGE    USED  WINDOW  PCT  CREW      |
-      | alpha-chat    \S+   5,000  32,768  \d+%  main     |
-      | bravo-chat    \S+  12,000  32,768  \d+%  ketch    |
-      | charlie-chat  \S+     778  32,768 \s+\d+%  main   |
+      | SESSION       AGE   SIZE   USED  WINDOW  PCT  CREW      |
+      | alpha-chat    \S+  \d+B   5,000  32,768  \d+%  main     |
+      | bravo-chat    \S+  \d+B  12,000  32,768  \d+%  ketch    |
+      | charlie-chat  \S+  \d+B     778  32,768 \s+\d+%  main   |
     And the stdout does not contain "crew: main"
     And the stdout does not contain "crew: ketch"
     And the exit code is 0
@@ -96,10 +96,10 @@ Feature: Sessions Command
     When isaac is run with "sessions list --crew main"
     Then the stdout matches:
       | pattern                                              |
-      | SESSION      AGE    USED  WINDOW  PCT                |
-      | design-chat  \S+   5,000  32,768  \d+%               |
-      | review-chat  \S+     778  32,768   \d+%              |
-      | pirate-chat  \S+  12,000  32,768  \d+%               |
+      | SESSION      AGE   SIZE   USED  WINDOW  PCT         |
+      | design-chat  \S+  \d+B   5,000  32,768  \d+%      |
+      | review-chat  \S+  \d+B     778  32,768   \d+%     |
+      | pirate-chat  \S+  \d+B  12,000  32,768  \d+%      |
 
   Scenario: sessions show prints metadata for one session
     Given the following sessions exist:
@@ -160,10 +160,9 @@ Feature: Sessions Command
     When isaac is run with "sessions list"
     Then the stdout matches:
       | pattern                              |
-      | chatty\s+\S+\s+5,000\s+32,768\s+\d+% |
+      | chatty\s+\S+\s+\d+B\s+5,000\s+32,768\s+\d+% |
     And the stdout does not contain "1,000,000"
 
-  @wip
   Scenario: sessions list SIZE comes from transcript bytes, not token usage
     Given the following sessions exist:
       | name         | total-tokens | last-input-tokens | updated-at          |
@@ -195,8 +194,8 @@ Feature: Sessions Command
     Then the stdout matches:
       | pattern                                                            |
       | SESSION .* AGE .* SIZE .* USED .* WINDOW .* PCT .* CREW            |
-      | compact-chat\s+\S+\s+\d+B\s+5,000\s+32,768\s+\d+%\s+main           |
-      | roomy-chat\s+\S+\s+\d+(\.\d)?K\s+5,000\s+32,768\s+\d+%\s+main      |
+      | compact-chat\s+\S+\s+\d+B\s+0\s+32,768\s+\d+%\s+main           |
+      | roomy-chat\s+\S+\s+\d+(\.\d)?K\s+0\s+32,768\s+\d+%\s+main      |
     And the stdout does not contain "1,000,000"
 
   Scenario: sessions output marks in-flight sessions with ✈️

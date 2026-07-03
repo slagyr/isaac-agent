@@ -32,6 +32,20 @@
       (should= "main" (:crew joe))
       (should= ["project/chess" "role/worker"] (:tags joe))))
 
+  (it "renders transcript size from bytes on disk, not token totals"
+    (helper/create-session! "/test/sessions" "compact-chat" {:crew "main" :total-tokens 1000000 :last-input-tokens 5000})
+    (helper/create-session! "/test/sessions" "roomy-chat" {:crew "main" :total-tokens 1000000 :last-input-tokens 5000})
+    (helper/append-message! "/test/sessions" "compact-chat" {:role "user" :content "hi"})
+    (helper/append-message! "/test/sessions" "compact-chat" {:role "assistant" :content "ok"})
+    (doseq [_ (range 8)]
+      (helper/append-message! "/test/sessions" "roomy-chat" {:role "user" :content "Please inspect the session transcript footprint carefully."})
+      (helper/append-message! "/test/sessions" "roomy-chat" {:role "assistant" :content "I am measuring transcript size separately from tokens."}))
+    (let [output (with-out-str (should= 0 (sut/run-fn {:home "/test" :_raw-args ["list"]})))]
+      (should (re-find #"SESSION\s+AGE\s+SIZE\s+USED\s+WINDOW\s+PCT\s+CREW" output))
+      (should (re-find #"compact-chat\s+\S+\s+\d+B\s+0\s+32,768\s+\d+%\s+main" output))
+      (should (re-find #"roomy-chat\s+\S+\s+\d+(\.\d)?K\s+0\s+32,768\s+\d+%\s+main" output))
+      (should-not-contain "1,000,000" output)))
+
   (it "renders show output as JSON"
     (helper/create-session! "/test/sessions" "joe" {:crew "main" :tags #{:project/x}})
     (helper/update-session! "/test/sessions" "joe" {:crew "alice" :tags #{:project/x}})
