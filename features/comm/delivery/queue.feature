@@ -91,3 +91,38 @@ Feature: Delivery queue
     Then the delivery scheduled tasks include:
       | id            | trigger.kind | trigger.ms |
       | delivery/tick | interval     | 10000      |
+
+  @wip
+  Scenario: a successful delivery logs the transition (isaac-ic4g)
+    Every delivery state transition logs an INFO :comm.delivery/* event —
+    grep :comm.delivery/ reconstructs any notification's journey. File state
+    stays the durable ledger; the log is the chronological audit trail.
+    Given the comm "stub" returns:
+      | ok   |
+      | true |
+    And the isaac EDN file comm/delivery/pending/7f3a.edn exists with:
+      | path    | value                                |
+      | id      | 7f3a                                 |
+      | comm    | stub                                 |
+      | target  | https://stub.test/channels/C999/post |
+      | content | Hello from the delivery worker.      |
+    When the delivery worker ticks
+    Then the log has entries matching:
+      | level | event                    | id   |
+      | info  | :comm.delivery/delivered | 7f3a |
+
+  @wip
+  Scenario: a transient failure logs the attempt count (isaac-ic4g)
+    Given the comm "stub" returns:
+      | ok    | transient? |
+      | false | true       |
+    And the isaac EDN file comm/delivery/pending/7f3a.edn exists with:
+      | path    | value                                |
+      | id      | 7f3a                                 |
+      | comm    | stub                                 |
+      | target  | https://stub.test/channels/C999/post |
+      | content | Trying once more.                    |
+    When the delivery worker ticks
+    Then the log has entries matching:
+      | level | event                         | attempts |
+      | info  | :comm.delivery/attempt-failed | 1        |
