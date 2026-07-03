@@ -163,6 +163,42 @@ Feature: Sessions Command
       | chatty\s+\S+\s+5,000\s+32,768\s+\d+% |
     And the stdout does not contain "1,000,000"
 
+  @wip
+  Scenario: sessions list SIZE comes from transcript bytes, not token usage
+    Given the following sessions exist:
+      | name         | total-tokens | last-input-tokens | updated-at          |
+      | compact-chat | 1000000      | 5000              | 2026-04-12T15:00:00 |
+      | roomy-chat   | 1000000      | 5000              | 2026-04-12T15:00:00 |
+    And session "compact-chat" has transcript:
+      | type    | message.role | message.content |
+      | message | user         | hi              |
+      | message | assistant    | ok              |
+    And session "roomy-chat" has transcript:
+      | type    | message.role | message.content                                            |
+      | message | user         | Please inspect the session transcript footprint carefully. |
+      | message | assistant    | I am measuring transcript size separately from tokens.     |
+      | message | user         | Please inspect the session transcript footprint carefully. |
+      | message | assistant    | I am measuring transcript size separately from tokens.     |
+      | message | user         | Please inspect the session transcript footprint carefully. |
+      | message | assistant    | I am measuring transcript size separately from tokens.     |
+      | message | user         | Please inspect the session transcript footprint carefully. |
+      | message | assistant    | I am measuring transcript size separately from tokens.     |
+      | message | user         | Please inspect the session transcript footprint carefully. |
+      | message | assistant    | I am measuring transcript size separately from tokens.     |
+      | message | user         | Please inspect the session transcript footprint carefully. |
+      | message | assistant    | I am measuring transcript size separately from tokens.     |
+      | message | user         | Please inspect the session transcript footprint carefully. |
+      | message | assistant    | I am measuring transcript size separately from tokens.     |
+      | message | user         | Please inspect the session transcript footprint carefully. |
+      | message | assistant    | I am measuring transcript size separately from tokens.     |
+    When isaac is run with "sessions list"
+    Then the stdout matches:
+      | pattern                                                            |
+      | SESSION .* AGE .* SIZE .* USED .* WINDOW .* PCT .* CREW            |
+      | compact-chat\s+\S+\s+\d+B\s+5,000\s+32,768\s+\d+%\s+main           |
+      | roomy-chat\s+\S+\s+\d+(\.\d)?K\s+5,000\s+32,768\s+\d+%\s+main      |
+    And the stdout does not contain "1,000,000"
+
   Scenario: sessions output marks in-flight sessions with ✈️
     Given the following sessions exist:
       | name        | total-tokens | updated-at          |

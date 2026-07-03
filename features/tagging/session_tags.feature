@@ -44,6 +44,24 @@ Feature: Session tags
       | joe .* :wip           |
     And the exit code is 0
 
+  @wip
+  Scenario: isaac sessions list shows a Size column when tags are present
+    Given default Grover setup
+    And the following sessions exist:
+      | name | crew | tags                   |
+      | joe  | main | #{:project/chess :wip} |
+    And session "joe" has transcript:
+      | type    | message.role | message.content |
+      | message | user         | hi              |
+      | message | assistant    | ok              |
+    When isaac is run with "sessions list"
+    Then the stdout matches:
+      | pattern                    |
+      | Name .* Size .* Crew .* Tags |
+      | joe .* \d+B .* :project/chess |
+      | joe .* \d+B .* :wip          |
+    And the exit code is 0
+
   Scenario: isaac sessions list --json includes tags on each record
     Given default Grover setup
     And the following sessions exist:
