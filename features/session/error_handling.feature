@@ -53,3 +53,63 @@ Feature: Error Entry Handling
       | text | I recovered | echo  |
     When the prompt for session "error-test" is built for provider "openai"
     Then the prompt messages do not contain role "error"
+
+  @wip
+  Scenario: an empty terminal response gets one continuation nudge and recovers (isaac-k4mf)
+    A terminal model response with empty content and no error is a suspicious
+    shape for any turn. The runtime retries exactly once with a continuation
+    nudge; a non-empty retry completes the turn normally.
+    Given the following sessions exist:
+      | name       |
+      | quiet-turn |
+    And the following model responses are queued:
+      | type | content | model |
+      | text |         | echo  |
+      | text | done.   | echo  |
+    When the user sends "status?" on session "quiet-turn"
+    Then session "quiet-turn" has transcript matching:
+      | message.role | message.content |
+      | assistant    | done.           |
+    And the last LLM request matches:
+      | key                  | value               |
+      | messages[-1].content | #"(?s).*continue.*" |
+
+  @wip
+  Scenario: two empty responses fail the turn explicitly (isaac-k4mf)
+    Retry budget is exactly one. A second empty response fails the turn with
+    an explicit error entry — never a silent normal completion. Boundedness
+    is enforced by the queue: a third request would exhaust it loudly.
+    Given the following sessions exist:
+      | name      |
+      | dead-turn |
+    And the following model responses are queued:
+      | type | content | model |
+      | text |         | echo  |
+      | text |         | echo  |
+    When the user sends "status?" on session "dead-turn"
+    Then session "dead-turn" has transcript matching:
+      | type  | content                        |
+      | error | #".*empty-terminal-response.*" |
+
+  @wip
+  Scenario: empty terminal response after tool execution fails the same way (isaac-k4mf)
+    The observed zanebot shape: tools ran, then the model went silent. Same
+    guard, same explicit failure.
+    Given the following sessions exist:
+      | name      |
+      | dead-tool |
+    And the isaac file "target/test-state/hello.txt" exists with:
+      """
+      hi
+      """
+    And the following model responses are queued:
+      | model | tool_call | arguments                                     |
+      | echo  | read      | {"file_path": "target/test-state/hello.txt"} |
+      | model | type      | content |
+      | echo  | text      |         |
+      | model | type      | content |
+      | echo  | text      |         |
+    When the user sends "read it" on session "dead-tool"
+    Then session "dead-tool" has transcript matching:
+      | type  | content                        |
+      | error | #".*empty-terminal-response.*" |
