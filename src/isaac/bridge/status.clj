@@ -90,28 +90,26 @@
    (status-data* (session-store root) session-key ctx)))
 
 (defn format-status
-  "Format status data as human-readable markdown-style status lines."
+  "Format status data as plain aligned text (no markdown fences)."
   [data]
   (let [label-width 12
         line        (fn [label value]
                       (format (str "%-" label-width "s %s") label value))]
-    (str "```text\n"
-         (str/join "\n"
-                   ["Session Status"
-                    (apply str (repeat 22 "─"))
-                    (line "Crew"        (:crew data))
-                     (line "Model"       (str (:model data) " (" (:provider data) ")"))
-                     (line "Session"     (:session-key data))
-                     (line "Tags"        (pr-str (:tags data)))
-                     (line "File"        (:session-file data))
-                    (line "Turns"       (:turns data))
-                    (line "Compactions" (:compactions data))
-                    (line "Context"     (str (format "%,d" (:tokens data)) " / "
-                                              (format "%,d" (:context-window data)) " ("
-                                              (:context-pct data) "%)"))
-                    (line "Soul"        (str "\"" (summarize-soul data) "\""))
-                    (line "Tools"       (:tool-count data))
-                    (line "CWD"         (:cwd data))])
-         "\n```")))
+    (str/join "\n"
+              ["Session Status"
+               (apply str (repeat 22 "─"))
+               (line "Crew"        (:crew data))
+               (line "Model"       (str (:model data) " (" (:provider data) ")"))
+               (line "Session"     (:session-key data))
+               (line "Tags"        (pr-str (:tags data)))
+               (line "File"        (:session-file data))
+               (line "Turns"       (:turns data))
+               (line "Compactions" (:compactions data))
+               (line "Context"     (str (format "%,d" (:tokens data)) " / "
+                                         (format "%,d" (:context-window data)) " ("
+                                         (:context-pct data) "%)"))
+               (line "Soul"        (str "\"" (summarize-soul data) "\""))
+               (line "Tools"       (:tool-count data))
+               (line "CWD"         (:cwd data))])))
 
 ;; endregion ^^^^^ Public API ^^^^^

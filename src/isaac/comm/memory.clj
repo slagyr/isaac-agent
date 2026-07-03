@@ -1,6 +1,7 @@
 (ns isaac.comm.memory
   (:require
-    [isaac.comm.protocol :as comm]))
+    [isaac.comm.protocol :as comm]
+    [isaac.comm.render :as render]))
 
 (defn- append! [events event]
   (swap! events conj event))
@@ -10,9 +11,10 @@
   (on-turn-start [_ session-key input]
     (append! events {:event "turn-start" :session session-key :input input}))
   (on-text-chunk [_ session-key text]
-    (let [text (some-> text str)]
-      (when (seq text)
-        (append! events {:event "text-chunk" :session session-key :text text}))))
+    (let [plain (render/chunk-text text)]
+      (when (seq plain)
+        (append! events (cond-> {:event "text-chunk" :session session-key :text plain}
+                          (render/preformatted? text) (assoc :format render/preformatted))))))
   (on-tool-call [_ session-key tool-call]
     (append! events {:event "tool-call" :session session-key :tool {:name (:name tool-call)}}))
   (on-tool-cancel [_ session-key tool-call]

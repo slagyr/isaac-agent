@@ -1,7 +1,14 @@
 (ns isaac.bridge.core
+  "Bridge dispatches charges and slash commands.
+
+  Reply layering: core formatters and slash :message strings are plain text at
+  ground level. Fixed-width slash output (e.g. /status) is tagged as
+  :preformatted in on-text-chunk so markdown comms can fence it; CLI and LLM
+  paths stay raw. See isaac.comm.render."
   (:require
     [clojure.string :as str]
     [isaac.bridge.status :as status]
+    [isaac.comm.render :as render]
     [isaac.charge :as charge]
     [isaac.comm.protocol :as comm]
     [isaac.config.loader :as loader]
@@ -44,14 +51,20 @@
   (log/warn :dispatch/refused :reason :session-in-flight :session session-key)
   {:dispatched? false :reason :session-in-flight})
 
+(defn- reply-chunk [result]
+  (if (contains? result :data)
+    (render/preformatted-chunk (status/format-status (:data result)))
+    (:message result)))
+
 (defn- reply-result [session-key ch result]
-  (let [output (if (contains? result :data)
-                 (status/format-status (:data result))
-                 (:message result))]
+  (let [chunk  (reply-chunk result)
+        output (render/chunk-text chunk)]
     (when ch
-      (comm/on-text-chunk ch session-key output)
-      (comm/on-turn-end ch session-key (assoc result :content output)))
-    result))
+      (comm/on-text-chunk ch session-key chunk)
+      (comm/on-turn-end ch session-key (assoc result
+                                              :content output
+                                              :format  (render/chunk-format chunk))))
+    (assoc result :content output :format (render/chunk-format chunk))))
 
 (defn- autonomous-origin? [origin]
   (contains? #{:hail :cron} (:kind origin)))

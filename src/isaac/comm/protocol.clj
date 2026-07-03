@@ -23,8 +23,11 @@
   (on-text-chunk [comm session-key text]
     "Fired for every streaming text fragment emitted during the turn —
      LLM tokens as they arrive, slash-command output, error text the
-     drive wants to surface. Comm impls typically append `text` to
-     their current output stream.")
+     drive wants to surface. `text` is usually a string; fixed-width slash
+     blocks (e.g. /status) may be a tagged map
+     {:isaac.comm/text ... :isaac.comm/format :preformatted}. Use
+     isaac.comm.render/chunk-text for raw output; markdown clients may
+     use present-for-markdown to fence preformatted blocks.")
 
   (on-tool-call [comm session-key tool-call]
     "Fired when the LLM requests a tool invocation. `tool-call` is a

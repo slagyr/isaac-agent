@@ -1,12 +1,13 @@
 (ns isaac.comm.cli
   (:require
-    [isaac.comm.protocol :as comm]))
+    [isaac.comm.protocol :as comm]
+    [isaac.comm.render :as render]))
 
 (deftype CliComm []
   comm/Comm
   (on-turn-start [_ _ _] nil)
   (on-text-chunk [_ _ text]
-    (print text)
+    (print (render/chunk-text text))
     (flush))
   (on-tool-call [_ _ tool-call]
     (println (str "  [tool call: " (:name tool-call) "]")))

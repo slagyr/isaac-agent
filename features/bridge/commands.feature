@@ -16,7 +16,7 @@ Feature: Bridge Commands
       | message | assistant    | fine            |
     And the built-in tools are registered
 
-  Scenario: /status prints session information as markdown table
+  Scenario: /status prints session information as plain text
     When the user sends "/status" on session "bridge-status"
     Then the reply matches:
       | pattern                                      |
