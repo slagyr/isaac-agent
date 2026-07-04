@@ -10,7 +10,6 @@ Feature: Crew model hot-reload
   Background:
     Given default Grover setup
 
-  @wip
   Scenario: a crew model change applies to the next turn of an already-active session
     Given the isaac EDN file "config/models/alpha.edn" exists with:
       | path     | value   |
@@ -53,9 +52,7 @@ Feature: Crew model hot-reload
     And the isaac EDN file "config/crew/flipper.edn" exists with:
       | path  | value  |
       | model | :alpha |
-    And the following sessions exist:
-      | name   | crew    | model  |
-      | pinned | flipper | :beta  |
+    And a session "pinned" is created with explicit model ":beta"
     And the following model responses are queued:
       | type | content | model  |
       | text | one     | beta-1 |

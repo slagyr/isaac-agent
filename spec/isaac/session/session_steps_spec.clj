@@ -1,12 +1,12 @@
 (ns isaac.session.session-steps-spec
   (:require
-    [isaac.config.loader :as loader]
     [gherclj.core :as g]
+    [isaac.config.loader :as loader]
     [isaac.foundation.fs-steps :as ffs]
     [isaac.fs :as fs]
     [isaac.llm.api.grover :as grover]
-    [isaac.session.session-steps :as sut]
     [isaac.nexus :as nexus]
+    [isaac.session.session-steps :as sut]
     [speclj.core :refer [around describe it should should=]]))
 
 (describe "session feature steps"

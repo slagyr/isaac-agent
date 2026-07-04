@@ -150,6 +150,7 @@
                (:compaction (sut/resolve-behavior "s"))))
     (config/dangerously-install-config! nil "spec"))
 
+
   (it "falls back to main when defaults.crew is absent"
     (config/dangerously-install-config! {:defaults  {:model "spark" :history-retention :prune}
                            :crew      {"main" {:model "spark" :soul crew-soul}}

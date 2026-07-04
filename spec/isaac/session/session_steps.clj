@@ -1244,6 +1244,14 @@
     (g/should (every? seq texts))
     (g/should (apply = texts))))
 
+(defn last-chat-request-on-session-used-model [key-str expected-model]
+  (await-turn!)
+  (await-acp-turn!)
+  (let [request (-> (get (g/get :chat-requests-by-session) key-str []) last)
+        actual  (:model request)]
+    (g/should-not-be-nil request)
+    (g/should= expected-model actual)))
+
 (defn session-sidecars-exist-for [table]
   (let [sidecars  (with-feature-fs #(or (fs/children (mem-fs) (str (root-dir) "/sessions")) []))
         actual    (->> sidecars
@@ -1550,6 +1558,12 @@
   "Asserts the last N completed turns on the session produced byte-identical
    system prompt text — i.e. session identity and the rest of the cached prefix
    stay stable across turns (isaac-s0ho). Requires N real 'the user sends' turns.")
+
+(defthen #"the last chat request on session \"([^\"]+)\" used model \"([^\"]+)\""
+  isaac.session.session-steps/last-chat-request-on-session-used-model
+  "Reads the most recent completed request captured for the named session and
+   asserts its resolved :model. Use after real 'the user sends' turns when a
+   scenario needs to prove config hot-reload changed the next-turn model.")
 
 (defthen "the session sidecars exist for:" isaac.session.session-steps/session-sidecars-exist-for)
 
