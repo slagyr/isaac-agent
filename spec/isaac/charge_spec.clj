@@ -1,10 +1,12 @@
 (ns isaac.charge-spec
   (:require
     [isaac.charge :as sut]
+    [isaac.config.api :as config]
     [isaac.config.loader :as loader]
     [isaac.marigold :as marigold]
     [isaac.nexus :as nexus]
     [isaac.session.context :as session-ctx]
+    [isaac.session.spec-helper :as helper]
     [isaac.session.store.spi :as store]
     [speclj.core :refer :all]))
 
@@ -151,7 +153,7 @@
         (let [charge (sut/build {:session-key "s1" :input "hi" :soul-prepend "Addendum."})]
           (should= "Base.\n\nAddendum." (:soul charge)))))
 
-    (it "forwards crew and model overrides to resolve-behavior"
+    (it "forwards crew and explicit model overrides to resolve-behavior without pinning config"
       (let [seen (atom nil)]
         (with-redefs [loader/snapshot             (fn [_] {:defaults  {:crew "main"}
                                                          :crew      {"main" (crew-cfg marigold/captain test-model-id "Base.")}
@@ -160,13 +162,33 @@
                       session-ctx/resolve-behavior (fn [_ opts]
                                                      (reset! seen opts)
                                                      (stub-behavior "main" "Base." test-model-id 4096))]
-          (let [charge (sut/build {:session-key "s1"
-                                   :input       "hi"})]
+          (let [charge (sut/build {:session-key    "s1"
+                                   :input          "hi"
+                                   :model-override "beta"})]
             (should= "/tmp/isaac/.isaac" (get-in charge [:config :root]))
             (should= "main" (:crew @seen))
-            (should= nil (:model @seen))
-            ;; build now threads the resolved config to resolve-behavior as a value
-            (should= "/tmp/isaac/.isaac" (get-in @seen [:config :root]))))))
+            (should= "beta" (:model @seen))
+            (should-be-nil (:config @seen))))))
+
+    (it "re-resolves crew model from live config when the caller passes a stale config snapshot"
+      (let [test-root "/test/charge-reload"
+            alpha-cfg {:defaults {:crew "flipper"}
+                         :crew     {"flipper" {:model "alpha" :soul "flip"}}
+                         :models   {"alpha" {:model "alpha-1" :provider "grover"}
+                                    "beta"  {:model "beta-1" :provider "grover"}}
+                         :providers {"grover" {:api "grover"}}}
+            beta-cfg  (assoc-in alpha-cfg [:crew "flipper" :model] "beta")
+            stale-cfg alpha-cfg]
+        (helper/with-memory-store
+          (nexus/-with-nested-nexus {:root test-root}
+            (config/dangerously-install-config! beta-cfg "spec")
+            (helper/create-session! test-root "flip-sess" {:crew "flipper"})
+            (let [charge (sut/build {:session-key "flip-sess"
+                                     :input       "second"
+                                     :config      stale-cfg
+                                     :crew        "flipper"})]
+              (should= "beta-1" (:model charge)))
+            (config/dangerously-install-config! nil "spec")))))
 
     (it "returns an unresolved charge with :no-model when no model is configured"
       (with-redefs [loader/snapshot             (fn [_] {:defaults {:crew "main"}

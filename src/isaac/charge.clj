@@ -100,6 +100,17 @@
     :charge/unresolved true
     :charge/reason reason))
 
+(defn- behavior-opts
+  "Opts for resolve-behavior: crew plus explicit model overrides only.
+   Resolved provider model ids from the request's :model are omitted so a
+   stale dispatch-time model cannot pin behavior across config reload."
+  [crew-id {:keys [model-override model-ref]} session-entry]
+  (cond-> {:crew crew-id}
+    model-override (assoc :model model-override)
+    model-ref (assoc :model model-ref)
+    (and (nil? model-override) (nil? model-ref) (:model session-entry))
+    (assoc :model (:model session-entry))))
+
 (defn build
   "Build a charge from a request map.
 
@@ -115,14 +126,17 @@
         session-entry   (when (and ss* session-key (satisfies? store/SessionStore ss*))
                           (store/get-session ss* session-key))
         crew-id         (or crew (:crew session-entry) (get-in config* [:defaults :crew]) "main")
-        model-ref*      (or model-override model-ref model (:model session-entry))
         known-crews     (or (:crew config*) {})
         default-crew    (get-in config* [:defaults :crew])
         unknown?        (and (seq known-crews)
                              (not (or (= crew-id "main")
                                       (contains? known-crews crew-id)
                                       (= crew-id default-crew))))
-        session-context (delay (session-ctx/resolve-behavior session-key {:crew crew-id :model model-ref* :config config*}))
+        session-context (delay (session-ctx/resolve-behavior session-key
+                                                             (behavior-opts crew-id
+                                                                            {:model-override model-override
+                                                                             :model-ref      model-ref}
+                                                                            session-entry)))
         model*          (delay (or model (get-in @session-context [:model-cfg :model]) (:model @session-context)))
         base            {:session-key   session-key
                          :input         input
