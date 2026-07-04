@@ -128,7 +128,7 @@
                                      "session_key" session-key})]
           (should= "1: hi there" (:result result)))))
 
-    (it "rejects reading the session cwd without :cwd opt in"
+    (it "allows reading the session role workspace without explicit :cwd opt in"
       (let [root   support/test-dir
             session-key default-session-key
             cwd         (str support/test-dir "/project")]
@@ -138,8 +138,8 @@
         (let [result (helper/with-config {:defaults {} :crew {crew-name {:tools {:allow ["read"]}}} :models {} :providers {}}
                        (sut/read-tool {"file_path"   (str cwd "/hello.txt")
                                         "session_key" session-key}))]
-          (should (:isError result))
-          (should (re-find #"path outside allowed directories" (:error result))))))
+          (should-be-nil (:isError result))
+          (should= "1: hi there" (:result result)))))
 
     (it "rejects path traversal that escapes the quarters"
       (let [root   support/test-dir

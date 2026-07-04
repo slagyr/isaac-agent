@@ -278,7 +278,7 @@
         :directories
         {:type :seq,
          :description
-         "Allowed directories; :cwd expands to session cwd, strings are absolute paths",
+         "Extra allowed directories beyond crew quarters and the session role workspace; :role and :cwd expand to session cwd, strings are absolute paths",
          :spec {:type :ignore, :validations [:cwd-or-path?]}}}},
       :cwd
       {:type :string,
@@ -534,6 +534,8 @@
  :isaac.config/check
  {:comm-reserved-schema
   {:fn isaac.config.checks/check-comm-reserved-schema},
+  :crew-broad-directories
+  {:fn isaac.config.checks/check-crew-broad-directories},
   :manifest-refs {:fn isaac.config.checks/check-manifest-refs},
   :resolved-providers
   {:fn isaac.config.checks/check-resolved-providers}}}

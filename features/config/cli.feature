@@ -282,6 +282,23 @@ Feature: Config Command
     And the stdout contains "OK"
     And the exit code is 0
 
+  Scenario: validate warns when a crew directory includes the Isaac state root (isaac-dwjy)
+    Given config file "isaac.edn" containing:
+      """
+      {:defaults  {:crew :scrapper :model :llama}
+       :crew      {:scrapper {:tools {:directories ["/isaac-state"]}}}
+       :models    {:llama {:model "llama3.3:1b" :provider :anthropic}}
+       :providers {:anthropic {}}}
+      """
+    When isaac is run with "config validate"
+    Then the stderr matches:
+      | pattern                                      |
+      | warning: :crew\.scrapper\.tools\.directories |
+      | Isaac state directory                        |
+      | :role                                        |
+    And the stdout contains "OK"
+    And the exit code is 0
+
   # ----- Validate overlay (--as) -----
 
   Scenario: validate reads stdin as the full config and ignores on-disk files

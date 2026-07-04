@@ -63,13 +63,12 @@
         (should= cwd @captured-workdir)
         (should= "ok" (:result result)))))
 
-  (it "prefers explicit workdir over the session cwd"
+  (it "prefers explicit workdir over the session cwd when it stays inside the role workspace"
     (let [captured-workdir (atom nil)
           session-key      "exec-session-explicit"
           cwd              (str support/test-dir "/exec-cwd")
-          explicit         (str support/test-dir "/explicit")]
+          explicit         (str cwd "/nested")]
       (helper/create-session! support/test-dir session-key {:crew "main" :cwd cwd})
-      (.mkdirs (io/file cwd))
       (.mkdirs (io/file explicit))
       (let [result (with-redefs [sut/start-process (fn [args]
                                                      (reset! captured-workdir (get args "workdir"))
@@ -83,6 +82,19 @@
                                     }))]
         (should= explicit @captured-workdir)
         (should= "ok" (:result result)))))
+
+  (it "rejects a workdir outside the role workspace"
+    (let [session-key "exec-session-outside"
+          cwd         (str support/test-dir "/exec-cwd-sandbox")
+          outside     (str support/test-dir "/outside-sandbox")]
+      (helper/create-session! support/test-dir session-key {:crew "main" :cwd cwd})
+      (.mkdirs (io/file cwd))
+      (.mkdirs (io/file outside))
+      (let [result (sut/exec-tool {"command" "pwd"
+                                   "workdir" outside
+                                   "session_key" session-key})]
+        (should (:isError result))
+        (should (re-find #"path outside allowed directories" (:error result))))))
 
   (it "ignores the session cwd when it is not a directory"
     (let [captured-workdir (atom ::unset)

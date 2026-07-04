@@ -86,9 +86,13 @@
 
   (describe "custom validation"
 
-    (it "tools directories rejects a non-cwd keyword"
+    (it "tools directories rejects a keyword other than :cwd or :role"
       (let [result (lexicon/conform sut/tools {:directories [:not-cwd]})]
         (should (schema/error? result))))
+
+    (it "tools directories accepts :role"
+      (let [result (lexicon/conform sut/tools {:directories [:role]})]
+        (should-not (schema/error? result))))
 
     (it "tools directories rejects non-keyword non-string entries"
       (let [result (lexicon/conform sut/tools {:directories [42]})]

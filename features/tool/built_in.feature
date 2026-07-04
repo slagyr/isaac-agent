@@ -202,18 +202,31 @@ Feature: Built-in Tools
       | command | ls |
     Then the tool result contains "marker.txt"
 
-  Scenario: Explicit workdir overrides the session's cwd
+  Scenario: Explicit workdir overrides the session's cwd when it stays inside the role workspace
     Given a directory "session-cwd" exists with files "session-marker.txt"
-    And a directory "explicit-dir" exists with files "explicit-marker.txt"
+    And a directory "session-cwd/nested" exists with files "nested-marker.txt"
+    And the following sessions exist:
+      | name     | crew | cwd         |
+      | exec-cwd | main | session-cwd |
+    And the current session is "exec-cwd"
+    When the tool "exec" is called with:
+      | command | ls                |
+      | workdir | session-cwd/nested |
+    Then the tool result contains "nested-marker.txt"
+    And the tool result does not contain "session-marker.txt"
+
+  Scenario: exec rejects a workdir outside the role workspace (isaac-dwjy)
+    Given a directory "session-cwd" exists with files "session-marker.txt"
+    And a directory "outside-dir" exists with files "outside-marker.txt"
     And the following sessions exist:
       | name     | crew | cwd         |
       | exec-cwd | main | session-cwd |
     And the current session is "exec-cwd"
     When the tool "exec" is called with:
       | command | ls           |
-      | workdir | explicit-dir |
-    Then the tool result contains "explicit-marker.txt"
-    And the tool result does not contain "session-marker.txt"
+      | workdir | outside-dir  |
+    Then the tool result is an error
+    And the tool result contains "path outside allowed directories"
 
   Scenario: Execute with timeout exceeded
     Given the exec timeout is set to 25 milliseconds

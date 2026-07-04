@@ -102,7 +102,7 @@ Feature: Per-crew filesystem boundaries
       | type    | message.role | message.isError |
       | message | toolResult   |                 |
 
-  Scenario: crew without :cwd opt-in cannot access session cwd
+  Scenario: crew can access the session role workspace without explicit :directories opt-in (isaac-dwjy)
     Given config file "crew/main.edn" containing:
       """
       {:tools {:allow [:read]}}
@@ -114,8 +114,25 @@ Feature: Per-crew filesystem boundaries
     And the following model responses are queued:
       | type      | tool | arguments                               |
       | tool_call | read | {"file_path": "/work/project/hello.txt"} |
-      | text      |      | Sorry                                   |
+      | text      |      | Got it                                  |
     When the user sends "read hello" on session "fence-test"
+    Then session "fence-test" has transcript matching:
+      | type    | message.role | message.isError |
+      | message | toolResult   |                 |
+
+  Scenario: a crew scoped to its role workspace cannot write outside it (isaac-dwjy)
+    Given config file "crew/main.edn" containing:
+      """
+      {:tools {:allow [:write]}}
+      """
+    And the following sessions exist:
+      | name       | cwd           |
+      | fence-test | /work/project |
+    And the following model responses are queued:
+      | type      | tool  | arguments                                          |
+      | tool_call | write | {"file_path": "/tmp/evil.txt", "content": "gotcha"} |
+      | text      |       | Sorry                                              |
+    When the user sends "write evil" on session "fence-test"
     Then session "fence-test" has transcript matching:
       | type    | message.role | message.isError | message.content                  |
       | message | toolResult   | true            | path outside allowed directories |

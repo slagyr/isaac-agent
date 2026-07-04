@@ -1,10 +1,13 @@
 (ns isaac.config.checks
   (:require
+    [clojure.java.io :as io]
     [c3kit.apron.schema :as cs]
     [isaac.config.berths :as berths]
     [isaac.config.schema-base :as schema-base]
     [isaac.config.schema-compose :as schema-compose]
-    [isaac.config.validation :as validation]))
+    [isaac.config.root :as root]
+    [isaac.config.validation :as validation]
+    [isaac.tool.fs-bounds :as fs-bounds]))
 
 (defn- ->id [value]
   (schema-base/->id value))
@@ -68,3 +71,34 @@
   [{:keys [module-index]}]
   {:errors (vec (comm-reserved-schema-errors module-index))
    :warnings []})
+
+(defn- broad-directory-warning [crew-id directory {:keys [root]}]
+  (when (string? directory)
+    (let [user-home (root/user-home)]
+      (cond
+        (and user-home (= directory user-home))
+        {:key   (str "crew." crew-id ".tools.directories")
+         :value (str "grants the entire user home (" user-home ") — use :role for the session workspace")}
+
+        (and root (fs-bounds/path-inside? root directory))
+        {:key   (str "crew." crew-id ".tools.directories")
+         :value (str "includes the Isaac state directory (" root ") — use :role for the session workspace")}
+
+        (and user-home (fs-bounds/path-inside? user-home directory)
+             (not= (fs-bounds/canonical-path user-home)
+                   (fs-bounds/canonical-path directory)))
+        {:key   (str "crew." crew-id ".tools.directories")
+         :value (str "grants a parent of the user home (" directory ") — use :role for the session workspace")}))))
+
+(defn check-crew-broad-directories
+  [{:keys [config root]}]
+  (let [isaac-root (or (:root config)
+                       (some-> root io/file .getParent .getPath))]
+    {:errors   []
+     :warnings (vec
+                 (mapcat (fn [[crew-id {:keys [tools]}]]
+                           (mapcat (fn [directory]
+                                     (when-let [warning (broad-directory-warning (->id crew-id) directory {:root isaac-root})]
+                                       [warning]))
+                                   (or (:directories tools) [])))
+                         (or (:crew config) {})))}))

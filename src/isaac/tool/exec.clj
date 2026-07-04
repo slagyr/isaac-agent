@@ -81,7 +81,9 @@
         session-key (get args "session_key")
         timeout-ms  (or (bounds/arg-int args "timeout" nil) default-timeout)
         args        (resolve-exec-args args)]
-    (try
-      (wait-for-process! (start-process args) session-key timeout-ms)
-      (catch Exception e
-        {:isError true :error (.getMessage e)}))))
+    (or (when-let [workdir (get args "workdir")]
+          (bounds/ensure-path-allowed args workdir))
+        (try
+          (wait-for-process! (start-process args) session-key timeout-ms)
+          (catch Exception e
+            {:isError true :error (.getMessage e)})))))

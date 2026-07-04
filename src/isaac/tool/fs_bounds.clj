@@ -90,6 +90,13 @@
     session-cwd                                       (.getCanonicalPath (io/file session-cwd path))
     :else                                             path))
 
+(defn- expand-directory [directory session]
+  (cond
+    (#{:cwd :role} directory) (:cwd session)
+    (#{"cwd" "role"} directory) (:cwd session)
+    (string? directory) directory
+    :else nil))
+
 (defn allowed-directories [args]
   (let [args        (string-key-map args)
         fs*         (filesystem args)
@@ -102,15 +109,14 @@
               quarters    (crew-quarters root crew-id)
               _           (fs/mkdirs fs* quarters)
               cfg         (loader/snapshot "tool fs-bounds: crew tool directories")
-              directories (or (get-in cfg [:crew crew-id :tools :directories]) [])]
-          (vec (concat [quarters]
-                       (keep (fn [directory]
-                               (cond
-                                 (= :cwd directory) (:cwd session)
-                                 (= "cwd" directory) (:cwd session)
-                                 (string? directory) directory
-                                 :else nil))
-                             directories))))))))
+              directories (or (get-in cfg [:crew crew-id :tools :directories]) [])
+              role-ws     (session-workdir args)]
+          (->> (concat [quarters]
+                       (when role-ws [role-ws])
+                       (keep #(expand-directory % session) directories))
+               (remove str/blank?)
+               distinct
+               vec))))))
 
 (defn path-outside-error [file-path]
   {:isError true :error (str "path outside allowed directories: " file-path)})
