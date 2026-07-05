@@ -142,4 +142,39 @@
         (with-redefs [device-code/refresh-tokens! (fn [_] (swap! calls* inc) {:access_token "x" :expires_in 1})]
           (let [{:keys [tokens]} (sut/refresh-oauth-tokens! "/auth" oauth-provider @fs)]
             (should= "at-fresh" (:access tokens))
-            (should= 0 @calls*)))))))
+            (should= 0 @calls*)))))
+
+    (it "exposes the refreshed token on both disk and the next read (no stale copy)"
+      (sut/save-tokens! "/auth" oauth-provider {:access_token  "at-old"
+                                                :refresh_token "rt-stored"
+                                                :expires_in    -60} @fs)
+      (with-redefs [device-code/refresh-tokens! (fn [_] {:access_token "at-new" :expires_in 3600})]
+        (sut/refresh-oauth-tokens! "/auth" oauth-provider @fs)
+        (should= "at-new"
+                 (get-in (json/parse-string (fs/slurp @fs "/auth/auth.json") true)
+                         [(keyword oauth-provider) :access]))
+        (should= "at-new" (:access (sut/load-tokens "/auth" oauth-provider @fs)))))
+
+    (it "refreshes exactly once when two callers race (single-flight)"
+      (sut/save-tokens! "/auth" oauth-provider {:access_token  "at-old"
+                                                :refresh_token "rt-stored"
+                                                :expires_in    -60} @fs)
+      (let [calls*    (atom 0)
+            in-flight (promise)
+            release   (promise)
+            fs-val    @fs]
+        (with-redefs [device-code/refresh-tokens! (fn [_]
+                                                    (swap! calls* inc)
+                                                    (deliver in-flight true)
+                                                    @release
+                                                    {:access_token "at-new" :expires_in 3600})]
+          (let [f1 (future (sut/refresh-oauth-tokens! "/auth" oauth-provider fs-val))]
+            @in-flight                                    ; f1 is inside the refresh, holding the lock
+            (let [f2 (future (sut/refresh-oauth-tokens! "/auth" oauth-provider fs-val))]
+              ;; f2 must block on the single-flight lock — it cannot start a second POST
+              (should= ::pending (deref f2 300 ::pending))
+              (should= 1 @calls*)
+              (deliver release true)                      ; let f1 finish and release the lock
+              @f1
+              (should= "at-new" (:access (:tokens @f2)))  ; f2 gets the token f1 fetched
+              (should= 1 @calls*))))))))
