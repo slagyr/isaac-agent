@@ -1,7 +1,18 @@
 (ns isaac.llm.auth.store
   (:require
     [cheshire.core :as json]
-    [isaac.fs :as fs]))
+    [clojure.string :as str]
+    [isaac.fs :as fs]
+    [isaac.llm.auth.device-code :as device-code]))
+
+(def ^:private refresh-lead-time-ms (* 5 60 1000))
+
+(defonce ^:private refresh-locks* (atom {}))
+
+(defn- refresh-lock [auth-dir provider-name]
+  (get-in (swap! refresh-locks* update-in [auth-dir provider-name]
+                   (fn [v] (or v (Object.))))
+          [auth-dir provider-name]))
 
 (defn- auth-path [auth-dir]
   (str auth-dir "/auth.json"))
@@ -49,3 +60,47 @@
   (let [expires (:expires tokens)]
     (or (nil? expires)
         (<= expires (System/currentTimeMillis)))))
+
+(defn token-needs-refresh?
+  "True when the access token is expired or within the proactive refresh window."
+  ([tokens]
+   (token-needs-refresh? tokens (System/currentTimeMillis)))
+  ([tokens now-ms]
+   (let [expires (:expires tokens)]
+     (or (nil? expires)
+         (<= expires (+ now-ms refresh-lead-time-ms))))))
+
+(defn- refresh-failure [provider-name]
+  {:error :refresh-failed
+   :message (str "Missing OpenAI ChatGPT login. Run `isaac auth login --provider " provider-name "` first.")})
+
+(defn refresh-oauth-tokens!
+  "Refresh OAuth tokens for provider-name when :refresh is present.
+   Returns {:tokens ...} on success or {:error ... :message ...} on failure.
+   Single-flight per auth-dir + provider via locking."
+  ([auth-dir provider-name fs*]
+   (refresh-oauth-tokens! auth-dir provider-name fs* {}))
+  ([auth-dir provider-name fs* {:keys [force?]}]
+   (locking (refresh-lock auth-dir provider-name)
+     (let [tokens (load-tokens auth-dir provider-name fs*)]
+       (cond
+         (or (nil? tokens) (not= "oauth" (:type tokens)))
+         (refresh-failure provider-name)
+
+         (and (not force?) (not (token-needs-refresh? tokens)))
+         {:tokens tokens}
+
+         (str/blank? (:refresh tokens))
+         (refresh-failure provider-name)
+
+         :else
+         (let [response (device-code/refresh-tokens! (:refresh tokens))]
+           (if (or (:error response) (not (:access_token response)))
+             (refresh-failure provider-name)
+             (do
+               (save-tokens! auth-dir provider-name
+                             (cond-> response
+                               (not (:refresh_token response))
+                               (assoc :refresh_token (:refresh tokens)))
+                             fs*)
+               {:tokens (load-tokens auth-dir provider-name fs*)}))))))))

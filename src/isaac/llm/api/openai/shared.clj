@@ -46,12 +46,35 @@
 (defn- oauth-device-auth? [auth]
   (= "oauth-device" (auth-mode auth)))
 
+(defn- oauth-auth-root [{:keys [auth-dir root]}]
+  (when (or auth-dir root)
+    (or auth-dir root)))
+
 (defn resolve-oauth-tokens [provider-name {:keys [auth] :as config}]
   (when (oauth-device-auth? auth)
-    (when-let [root (or (:auth-dir config) (:root config))]
-      (let [tokens (auth-store/load-tokens root provider-name (fs/instance))]
-        (when (and tokens (not (auth-store/token-expired? tokens)))
-          tokens)))))
+    (when-let [root (oauth-auth-root config)]
+      (let [fs*    (fs/instance)
+            tokens (auth-store/load-tokens root provider-name fs*)]
+        (cond
+          (nil? tokens) nil
+
+          (auth-store/token-needs-refresh? tokens)
+          (:tokens (auth-store/refresh-oauth-tokens! root provider-name fs*))
+
+          :else tokens)))))
+
+(defn with-oauth-refresh-retry
+  "On :auth-failed, force-refresh oauth tokens once and retry f."
+  [provider-name config f]
+  (let [result (f)]
+    (if (and (= :auth-failed (:error result))
+             (oauth-device-auth? (:auth config))
+             (oauth-auth-root config))
+      (let [root (oauth-auth-root config)
+            fs*  (fs/instance)]
+        (when (:tokens (auth-store/refresh-oauth-tokens! root provider-name fs* {:force? true}))
+          (f)))
+      result)))
 
 (defn provider-env-var
   "Conventional environment-variable name for a provider's API key

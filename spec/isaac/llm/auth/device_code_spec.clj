@@ -186,6 +186,35 @@
         (let [result (sut/exchange-tokens! "bad-code" "bad-verifier")]
           (should= :api-error (:error result))))))
 
+  (describe "refresh-tokens!"
+
+    (it "returns tokens on success"
+      (with-redefs [sut/-post-form! (fn [_url _body]
+                                      {:access_token  "at-refreshed"
+                                       :refresh_token "rt-rotated"
+                                       :expires_in    3600})]
+        (let [result (sut/refresh-tokens! "rt-stored")]
+          (should= "at-refreshed" (:access_token result))
+          (should= "rt-rotated" (:refresh_token result)))))
+
+    (it "passes correct URL and form params"
+      (let [captured (atom nil)]
+        (with-redefs [sut/-post-form! (fn [url body]
+                                        (reset! captured {:url url :body body})
+                                        {:access_token "x" :expires_in 1})]
+          (sut/refresh-tokens! "my-refresh")
+          (should= "https://auth.openai.com/oauth/token" (:url @captured))
+          (let [body (:body @captured)]
+            (should= "refresh_token" (get body "grant_type"))
+            (should= "app_EMoamEEZ73f0CkXaXp7hrann" (get body "client_id"))
+            (should= "my-refresh" (get body "refresh_token"))))))
+
+    (it "returns error on failure"
+      (with-redefs [sut/-post-form! (fn [_url _body]
+                                      {:error :api-error :status 400})]
+        (let [result (sut/refresh-tokens! "bad-refresh")]
+          (should= :api-error (:error result))))))
+
   (describe "exchange-api-key!"
 
     (it "exchanges id_token for an api-style access token"

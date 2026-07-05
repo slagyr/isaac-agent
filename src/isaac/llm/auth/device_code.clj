@@ -117,6 +117,14 @@
                 "code_verifier" code-verifier
                 "redirect_uri"  (str base-url "/deviceauth/callback")}))
 
+(defn refresh-tokens!
+  "Exchange a refresh token for a new access token (and optional refresh)."
+  [refresh-token]
+  (-post-form! (str base-url "/oauth/token")
+               {"grant_type"    "refresh_token"
+                "client_id"     client-id
+                "refresh_token" refresh-token}))
+
 (defn exchange-api-key!
   "Step 4: Exchange the id_token for an OpenAI API-style bearer token."
   [id-token]

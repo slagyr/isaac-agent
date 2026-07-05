@@ -2,6 +2,7 @@
   (:require
     [cheshire.core :as json]
     [isaac.fs :as fs]
+    [isaac.llm.auth.device-code :as device-code]
     [isaac.llm.auth.store :as sut]
     [isaac.marigold :as marigold]
     [speclj.core :refer :all]))
@@ -96,4 +97,49 @@
       (should-not (sut/token-expired? {:expires (+ (System/currentTimeMillis) 60000)})))
 
     (it "returns true when no expires field"
-      (should (sut/token-expired? {})))))
+      (should (sut/token-expired? {}))))
+
+  (describe "token-needs-refresh?"
+
+    (it "returns true when expired"
+      (should (sut/token-needs-refresh? {:expires (- (System/currentTimeMillis) 1000)})))
+
+    (it "returns true within the proactive lead window"
+      (should (sut/token-needs-refresh? {:expires (+ (System/currentTimeMillis) 60000)})))
+
+    (it "returns false when expiry is comfortably in the future"
+      (should-not (sut/token-needs-refresh? {:expires (+ (System/currentTimeMillis) (* 10 60 1000))}))))
+
+  (describe "refresh-oauth-tokens!"
+
+    (it "refreshes expired tokens and persists a future expiry"
+      (sut/save-tokens! "/auth" oauth-provider {:access_token  "at-old"
+                                                 :refresh_token "rt-stored"
+                                                 :expires_in    -3600} @fs)
+      (with-redefs [device-code/refresh-tokens! (fn [rt]
+                                                  (should= "rt-stored" rt)
+                                                  {:access_token "at-new" :expires_in 3600})]
+        (let [{:keys [tokens]} (sut/refresh-oauth-tokens! "/auth" oauth-provider @fs)]
+          (should= "at-new" (:access tokens))
+          (should-not (sut/token-expired? tokens))
+          (let [saved (json/parse-string (fs/slurp @fs "/auth/auth.json") true)]
+            (should= "at-new" (get-in saved [(keyword oauth-provider) :access]))))))
+
+    (it "returns login guidance when refresh fails"
+      (sut/save-tokens! "/auth" oauth-provider {:access_token  "at-old"
+                                                 :refresh_token "rt-bad"
+                                                 :expires_in    -60} @fs)
+      (with-redefs [device-code/refresh-tokens! (fn [_] {:error :api-error})]
+        (let [result (sut/refresh-oauth-tokens! "/auth" oauth-provider @fs)]
+          (should= :refresh-failed (:error result))
+          (should (re-find #"isaac auth login" (:message result))))))
+
+    (it "returns existing tokens when not yet due for refresh"
+      (sut/save-tokens! "/auth" oauth-provider {:access_token  "at-fresh"
+                                                 :refresh_token "rt-stored"
+                                                 :expires_in    3600} @fs)
+      (let [calls* (atom 0)]
+        (with-redefs [device-code/refresh-tokens! (fn [_] (swap! calls* inc) {:access_token "x" :expires_in 1})]
+          (let [{:keys [tokens]} (sut/refresh-oauth-tokens! "/auth" oauth-provider @fs)]
+            (should= "at-fresh" (:access tokens))
+            (should= 0 @calls*)))))))

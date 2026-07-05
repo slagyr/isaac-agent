@@ -46,7 +46,7 @@
                                                       {:type     "response.completed"
                                                        :response {:model "gpt-5.4"
                                                                   :usage {:input_tokens 10 :output_tokens 5}}}]))
-                       auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) 60000)})
+                       auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) (* 30 60 1000))})
                        auth-store/token-expired? (fn [_] false)]
           (let [result (sut/chat {:model "gpt-5.4" :messages [{:role "user" :content "hi"}]}
                                  "chatgpt" oauth-device-config)]
@@ -63,7 +63,7 @@
                                                                    :response {:model "gpt-5.4"
                                                                               :usage {:input_tokens 10 :output_tokens 5}}}
                                                                   initial))
-                       auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) 60000)})
+                       auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) (* 30 60 1000))})
                        auth-store/token-expired? (fn [_] false)]
           (sut/chat {:model "test" :messages [{:role "user" :content "hi"}]} "chatgpt" oauth-device-config)
           (should= (str "Bearer " token)
@@ -78,7 +78,7 @@
                                                    (reset! captured-body body)
                                                    (process-event {:type "response.output_text.delta" :delta "Hello from Codex"}
                                                                   initial))
-                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) 60000)})
+                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) (* 30 60 1000))})
                       auth-store/token-expired? (fn [_] false)]
           (let [result (sut/chat {:model   "gpt-5.4"
                                   :system  "You are Codex."
@@ -98,7 +98,7 @@
                                                                    :response {:model "gpt-5.4"
                                                                               :usage {:input_tokens 10 :output_tokens 5}}}
                                                                   initial))
-                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) 60000)})
+                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) (* 30 60 1000))})
                       auth-store/token-expired? (fn [_] false)]
           (sut/chat {:model    "gpt-5.4"
                      :system   "You are Codex."
@@ -119,7 +119,7 @@
                                                                    :response {:model "gpt-5.4"
                                                                               :usage {:input_tokens 10 :output_tokens 5}}}
                                                                   initial))
-                      auth-store/load-tokens   (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) 60000)})
+                      auth-store/load-tokens   (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) (* 30 60 1000))})
                       auth-store/token-expired? (fn [_] false)]
           (sut/chat {:model "gpt-5.4" :messages [{:role "user" :content "hi"}]} "chatgpt" oauth-device-config)
           (should= "acct-123" (get @captured-headers "ChatGPT-Account-Id"))
@@ -135,6 +135,29 @@
                                 :root "/tmp/isaac-home/.isaac"})]
           (should= :auth-missing (:error result))
           (should-contain "isaac auth login --provider chatgpt" (:message result)))))
+
+    (it "refreshes expired oauth tokens before a codex request"
+      (let [token "refreshed-token"
+            root  "/tmp/isaac-home/.isaac"
+            captured-headers (atom nil)]
+        (with-redefs [llm-http/post-sse!         (fn [_ headers _ _ process-event initial & _]
+                                                   (reset! captured-headers headers)
+                                                   (process-event {:type "response.completed"
+                                                                   :response {:model "gpt-5.4"
+                                                                              :usage {:input_tokens 1 :output_tokens 1}}}
+                                                                  initial))
+                      auth-store/load-tokens    (fn [_ _ _]
+                                                  {:type "oauth" :access "stale" :refresh "rt-ok"
+                                                   :expires (- (System/currentTimeMillis) 1000)})
+                      auth-store/token-needs-refresh? auth-store/token-needs-refresh?
+                      auth-store/refresh-oauth-tokens! (fn [_ _ _]
+                                                         {:tokens {:type "oauth" :access token
+                                                                   :expires (+ (System/currentTimeMillis) (* 30 60 1000))}})]
+          (let [result (sut/chat {:model "gpt-5.4" :messages [{:role "user" :content "hi"}]}
+                                 "chatgpt"
+                                 (assoc oauth-device-config :root root))]
+            (should-not (:error result))
+            (should= (str "Bearer " token) (get @captured-headers "Authorization"))))))
 
     (it "treats keyword :oauth-device auth like the string form"
       (with-redefs [auth-store/load-tokens (fn [_ _ _] nil)]
@@ -174,7 +197,7 @@
                                                                   initial))
                       auth-store/load-tokens    (fn [auth-dir _ _]
                                                   (reset! captured-auth-dir auth-dir)
-                                                  {:type "oauth" :access "token" :expires (+ (System/currentTimeMillis) 60000)})
+                                                  {:type "oauth" :access "token" :expires (+ (System/currentTimeMillis) (* 30 60 1000))})
                       auth-store/token-expired? (fn [_] false)]
           (sut/chat {:model "gpt-5.4" :messages [{:role "user" :content "hi"}]}
                     "chatgpt"
@@ -195,7 +218,7 @@
                                                             {:type "response.completed"
                                                              :response {:model "gpt-5.4"
                                                                         :usage {:input_tokens 1 :output_tokens 1}}}]))
-                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) 60000)})
+                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) (* 30 60 1000))})
                       auth-store/token-expired? (fn [_] false)]
           (sut/chat {:model    "gpt-5.4"
                      :messages [{:role "user" :content "what's under the lid?"}
@@ -284,7 +307,7 @@
                                                                    :response {:model "gpt-5.4"
                                                                               :usage {:input_tokens 10 :output_tokens 5}}}
                                                                   initial))
-                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) 60000)})
+                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) (* 30 60 1000))})
                       auth-store/token-expired? (fn [_] false)]
           (sut/chat {:model "gpt-5.4" :effort 7 :messages [{:role "user" :content "hi"}]}
                     "chatgpt" oauth-device-config)
@@ -299,7 +322,7 @@
                                                                    :response {:model "snuffy-codex"
                                                                               :usage {:input_tokens 10 :output_tokens 5}}}
                                                                   initial))
-                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) 60000)})
+                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) (* 30 60 1000))})
                       auth-store/token-expired? (fn [_] false)]
           (sut/chat {:model "snuffy-codex" :effort 3 :messages [{:role "user" :content "hi"}]}
                     "chatgpt" oauth-device-config)
@@ -314,7 +337,7 @@
                                                                    :response {:model "gpt-5.4"
                                                                               :usage {:input_tokens 10 :output_tokens 5}}}
                                                                   initial))
-                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) 60000)})
+                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) (* 30 60 1000))})
                       auth-store/token-expired? (fn [_] false)]
           (sut/chat {:model "gpt-5.4" :messages [{:role "user" :content "hi"}]}
                     "chatgpt" oauth-device-config)
@@ -330,7 +353,7 @@
                                                                                           :output_tokens_details {:reasoning_tokens 32}}
                                                                               :reasoning {:effort "high" :summary "Step by step."}}}
                                                                   initial))
-                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) 60000)})
+                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) (* 30 60 1000))})
                       auth-store/token-expired? (fn [_] false)]
           (let [result (sut/chat {:model "gpt-5.4" :messages [{:role "user" :content "hi"}]}
                                  "chatgpt" oauth-device-config)]
@@ -349,7 +372,7 @@
                                                                                           :input_tokens_details  {:cached_tokens 7}}
                                                                               :reasoning {:effort "high" :summary "Step by step."}}}
                                                                   initial))
-                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) 60000)})
+                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) (* 30 60 1000))})
                       auth-store/token-expired? (fn [_] false)]
           (log/capture-logs
             (sut/chat {:model "gpt-5.4" :messages [{:role "user" :content "hi"}]}
@@ -421,7 +444,7 @@
                                                                               :usage {:input_tokens 10 :output_tokens 5}}}]]
                                                     (reduce (fn [acc evt] (on-chunk evt) (process-event evt acc))
                                                             initial events)))
-                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) 60000)})
+                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) (* 30 60 1000))})
                       auth-store/token-expired? (fn [_] false)]
           (let [result (sut/chat-stream {:model "gpt-5.4" :messages [{:role "user" :content "hi"}]}
                                         (fn [c] (swap! chunks conj c))
@@ -446,7 +469,7 @@
                                                             {:type "response.completed"
                                                              :response {:model "gpt-5.4"
                                                                         :usage {:input_tokens 10 :output_tokens 5}}}]))
-                       auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) 60000)})
+                       auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) (* 30 60 1000))})
                        auth-store/token-expired? (fn [_] false)]
           (let [result (sut/chat {:model    "gpt-5.4"
                                   :messages [{:role "user" :content "what's under the lid?"}]
@@ -458,7 +481,7 @@
     (it "returns streaming errors for oauth-device"
       (let [token (jwt-with-account-id "acct-123")]
         (with-redefs [llm-http/post-sse!         (fn [& _] {:error :api-error})
-                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) 60000)})
+                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) (* 30 60 1000))})
                       auth-store/token-expired? (fn [_] false)]
           (let [result (sut/chat-stream {:model "gpt-5.4" :messages [{:role "user" :content "hi"}]}
                                         identity
@@ -476,7 +499,7 @@
                                                             {:type "response.completed"
                                                              :response {:model "gpt-5.4"
                                                                         :usage {:input_tokens 1 :output_tokens 1}}}]))
-                       auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) 60000)})
+                       auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) (* 30 60 1000))})
                        auth-store/token-expired? (fn [_] false)]
           (let [result (sut/chat {:model "gpt-5.4" :messages [{:role "user" :content "hi"}]}
                                  "chatgpt" oauth-device-config)]

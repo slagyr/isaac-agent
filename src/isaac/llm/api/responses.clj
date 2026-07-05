@@ -124,15 +124,17 @@
 
     accumulated))
 
-(defn- chat-stream-with-responses-api [config base-url headers request on-delta]
-  (let [url  (str base-url "/responses")
-        body (assoc (->codex-responses-request request) :stream true)
+(defn- chat-stream-with-responses-api [provider-name config base-url _headers request on-delta]
+  (let [url     (str base-url "/responses")
+        body    (assoc (->codex-responses-request request) :stream true)
         initial {:role "assistant" :content "" :model nil :usage {} :response nil :tool-calls []}
-        result  (llm-http/post-sse! url headers body
-                                    (fn [chunk]
-                                      (when (= "response.output_text.delta" (:type chunk))
-                                        (on-delta {:delta {:text (:delta chunk)}})))
-                                    process-responses-sse-event initial (shared/llm-http-opts config))]
+        send!   (fn []
+                  (llm-http/post-sse! url (shared/auth-headers provider-name config) body
+                                      (fn [chunk]
+                                        (when (= "response.output_text.delta" (:type chunk))
+                                          (on-delta {:delta {:text (:delta chunk)}})))
+                                      process-responses-sse-event initial (shared/llm-http-opts config)))
+        result  (shared/with-oauth-refresh-retry provider-name config send!)]
     (cond
       (:error result)
       result
@@ -161,7 +163,7 @@
          :response   response
          :tool-calls tool-calls
          :usage      (shared/parse-usage (:usage result))
-         :_headers   headers}))))
+         :_headers   (shared/auth-headers provider-name config)}))))
 
 (defn chat
   "Send a Responses API request (streams internally; returns accumulated response)."
@@ -170,7 +172,7 @@
         auth-err (shared/missing-auth-error provider-name cfg)]
     (if auth-err
       auth-err
-      (chat-stream-with-responses-api cfg base-url (shared/auth-headers provider-name cfg) request (fn [_] nil)))))
+      (chat-stream-with-responses-api provider-name cfg base-url (shared/auth-headers provider-name cfg) request (fn [_] nil)))))
 
 (defn chat-stream
   "Send a streaming Responses API request via SSE."
@@ -179,7 +181,7 @@
         auth-err (shared/missing-auth-error provider-name cfg)]
     (if auth-err
       auth-err
-      (chat-stream-with-responses-api cfg base-url (shared/auth-headers provider-name cfg) request on-chunk))))
+      (chat-stream-with-responses-api provider-name cfg base-url (shared/auth-headers provider-name cfg) request on-chunk))))
 
 (deftype ResponsesAPI [provider-name cfg]
   api/Api
