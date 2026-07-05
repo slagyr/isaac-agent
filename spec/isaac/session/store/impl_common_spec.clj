@@ -40,3 +40,35 @@
   (it "clamps an offset past EOF to empty"
     (should= []
              (sut/read-transcript-from-offset test-dir session-file 1000000 (fs*)))))
+
+(describe "impl-common orphan tool-result read path (isaac-0h7b)"
+
+  #_{:clj-kondo/ignore [:unresolved-symbol]}
+  (around [example]
+    (nexus/-with-nexus {:fs (fs/mem-fs)}
+      (example)))
+
+  (it "drops a toolResult whose toolCall precedes the offset boundary"
+    (let [entries [{:type "message" :id "call"
+                    :message {:role "assistant"
+                               :content [{:type "toolCall" :id "tc-1" :name "read" :arguments {}}]}}
+                   {:type "message" :id "result"
+                    :message {:role "toolResult" :toolCallId "tc-1" :content "ok"}}
+                   {:type "message" :id "reply"
+                    :message {:role "assistant" :content "done"}}]
+          _       (sut/write-transcript! test-dir session-file entries (fs*))
+          offset  (sut/transcript-byte-offset (take 1 entries))]
+      (should= [(nth entries 2)]
+               (sut/read-transcript-from-offset test-dir session-file offset (fs*)))))
+
+  (it "preserves a paired toolCall and toolResult in the active head"
+    (let [entries [{:type "message" :id "call"
+                    :message {:role "assistant"
+                               :content [{:type "toolCall" :id "tc-1" :name "read" :arguments {}}]}}
+                   {:type "message" :id "result"
+                    :message {:role "toolResult" :toolCallId "tc-1" :content "ok"}}
+                   {:type "message" :id "reply"
+                    :message {:role "assistant" :content "done"}}]
+          _       (sut/write-transcript! test-dir session-file entries (fs*))]
+      (should= entries
+               (sut/read-transcript-from-offset test-dir session-file 0 (fs*))))))

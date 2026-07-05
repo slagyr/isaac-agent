@@ -164,6 +164,8 @@
        (map #(.getBytes ^String % StandardCharsets/UTF_8))
        (reduce (fn [total bytes] (+ total (alength bytes))) 0)))
 
+(declare drop-orphan-toolresults)
+
 (defn- snap-to-line-start
   "Snap a raw byte offset back to the start of the transcript line it lands in —
    the byte after the preceding newline, or 0. A stored effective-history-offset
@@ -186,7 +188,8 @@
             text   (String. bytes offset (- (alength bytes) offset) StandardCharsets/UTF_8)]
         (->> (str/split-lines text)
              (remove str/blank?)
-             (mapv read-json)))
+             (mapv read-json)
+             drop-orphan-toolresults))
       [])))
 
 (defn append-entry! [root session-file entry fs]
@@ -397,6 +400,27 @@
 
       :else
       nil)))
+
+(defn- tool-result-call-id [entry]
+  (when (= "toolResult" (get-in entry [:message :role]))
+    (or (get-in entry [:message :toolCallId])
+        (get-in entry [:message :id])
+        (:id entry))))
+
+(defn drop-orphan-toolresults
+  "Drop toolResult entries whose matching toolCall is not in this transcript
+   slice. An effective-history-offset can begin after a toolResult while its
+   originating toolCall sits before the boundary — codex Responses rejects the
+   dangling function_call_output (isaac-0h7b / isaac-63f3)."
+  [transcript]
+  (let [tool-call-ids (->> transcript
+                           (filter #(= "message" (:type %)))
+                           (mapcat entry-toolcall-ids)
+                           set)]
+    (vec (remove (fn [entry]
+                   (when-let [call-id (tool-result-call-id entry)]
+                     (not (contains? tool-call-ids call-id))))
+                 transcript))))
 
 (defn drop-orphan-toolcalls [transcript]
   (let [tool-call-ids   (->> transcript

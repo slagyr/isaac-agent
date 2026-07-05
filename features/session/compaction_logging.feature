@@ -368,6 +368,42 @@ Feature: Context Compaction Logging
       | 2      | message    |                   | user         | And the freezer?        | new turn input                          |
       | 3      | message    |                   | assistant    | next answer             | new turn reply                          |
 
+  Scenario: Active head drops orphaned toolResult when effective offset splits the tool pair
+    Given the session store uses the file implementation
+    And the following sessions exist:
+      | name              |
+      | offset-tool-split |
+    And session "offset-tool-split" has transcript:
+      | type       | message.role | message.content         | id       | name | arguments                    |
+      | message    | user         | What's in fridge?       |          |      |                              |
+      | toolCall   |              |                         | call_old | read | {"filePath":"fridge.txt"}    |
+      | toolResult |              | one sad lemon           | call_old |      |                              |
+      | message    | assistant    | The fridge has a lemon. |          |      |                              |
+    When session "offset-tool-split" effective history starts after transcript entry index 2
+    Then session "offset-tool-split" has active transcript matching:
+      | message.role | message.content         |
+      | assistant    | The fridge has a lemon. |
+
+  Scenario: Active head preserves a paired toolCall and toolResult
+    Given the session store uses the file implementation
+    And the following sessions exist:
+      | name               |
+      | offset-tool-paired |
+    And session "offset-tool-paired" has transcript:
+      | type       | message.role | message.content         | id       | name | arguments                    |
+      | message    | user         | What's in fridge?       |          |      |                              |
+      | toolCall   |              |                         | call_old | read | {"filePath":"fridge.txt"}    |
+      | toolResult |              | one sad lemon           | call_old |      |                              |
+      | message    | assistant    | The fridge has a lemon. |          |      |                              |
+    When session "offset-tool-paired" effective history starts after transcript entry index 1
+    Then session "offset-tool-paired" has active transcript matching:
+      | #index | message.role | message.content[0].type | message.content[0].id |
+      | 0      | assistant    | toolCall                | call_old              |
+    And session "offset-tool-paired" has active transcript matching:
+      | #index | message.role | message.toolCallId | message.content |
+      | 1      | toolResult   | call_old           | one sad lemon   |
+      | 2      | assistant    |                    | The fridge has a lemon. |
+
   Scenario: Crew compaction config with unknown :strategy is rejected
     Given an empty Isaac root at "/tmp/isaac"
     And the isaac file "isaac.edn" exists with:

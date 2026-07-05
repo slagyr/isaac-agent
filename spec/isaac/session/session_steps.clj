@@ -35,6 +35,7 @@
     [isaac.session.store.spi :as store]
     [isaac.session.store.sidecar :as sidecar-store]
     [isaac.session.store.memory :as memory-store]
+    [isaac.session.store.impl-common :as session-impl-common]
     [isaac.module.loader :as module-loader]
     [isaac.nexus :as nexus]
     [isaac.tool.memory :as memory]
@@ -815,6 +816,15 @@
     (let [row-map (zipmap (:headers table) row)]
       (append-transcript-entry! key-str row-map))))
 
+(defn effective-history-starts-after-transcript-entry-index [key-str idx]
+  (with-feature-fs
+    (fn []
+      (let [idx     (long idx)
+            session (get-session key-str)
+            entries (vec (get-transcript key-str))
+            offset  (session-impl-common/transcript-byte-offset (take (inc idx) entries))]
+        (update-session! (:id session) {:effective-history-offset offset})))))
+
 (defn compaction-spliced-into-session [key-str table]
   (g/assoc! :current-key key-str)
   (let [row-map         (into {}
@@ -1470,6 +1480,11 @@
   "Calls the file-backed SessionStore splice directly using transcript indexes from the
    current session. Use in storage-level scenarios that need to exercise the
    exact splice path without running a full turn.")
+
+(defwhen "session {key:string} effective history starts after transcript entry index {n:int}"
+  isaac.session.session-steps/effective-history-starts-after-transcript-entry-index
+  "Sets :effective-history-offset to the byte position after the indexed transcript
+   line (0 = session header). Exercises read-transcript-from-offset without a turn.")
 
 (defwhen #"the user sends \"(.+)\" on session \"([^\"]+)\"$" isaac.session.session-steps/user-sends-on-session
   "Drives a full turn via single-turn/run-turn! (in-memory,
