@@ -164,11 +164,25 @@
        (map #(.getBytes ^String % StandardCharsets/UTF_8))
        (reduce (fn [total bytes] (+ total (alength bytes))) 0)))
 
+(defn- snap-to-line-start
+  "Snap a raw byte offset back to the start of the transcript line it lands in —
+   the byte after the preceding newline, or 0. A stored effective-history-offset
+   can drift a few bytes mid-entry; reading from a mid-line byte would parse a
+   partial JSON fragment and throw (JsonParseException), permanently bricking the
+   session (isaac-63f3). Snapping back keeps the whole line and never parses a
+   partial one."
+  [^bytes bytes offset]
+  (let [offset (min (max 0 (long offset)) (alength bytes))]
+    (loop [i offset]
+      (if (or (zero? i) (= (aget bytes (dec i)) (byte 10)))
+        i
+        (recur (dec i))))))
+
 (defn read-transcript-from-offset [root session-file offset fs]
   (let [path (transcript-path root session-file)]
     (if (exists?* fs path)
       (let [bytes  (.getBytes ^String (slurp* fs path) StandardCharsets/UTF_8)
-            offset (min (max 0 (long offset)) (alength bytes))
+            offset (snap-to-line-start bytes offset)
             text   (String. bytes offset (- (alength bytes) offset) StandardCharsets/UTF_8)]
         (->> (str/split-lines text)
              (remove str/blank?)
@@ -613,7 +627,13 @@
                            (assoc :updated-at now)
                            ((fn [entry]
                               (if (= :retain retention)
-                                (assoc entry :effective-history-offset (transcript-byte-offset before))
+                                ;; Measure the offset over the ACTUAL written prefix (up to the
+                                ;; compaction entry), not the raw `before`: drop-orphan-toolcalls
+                                ;; and parentId rewrites change what lands on disk, so re-serializing
+                                ;; `before` drifts off the real byte boundary (isaac-63f3).
+                                (assoc entry :effective-history-offset
+                                       (transcript-byte-offset
+                                         (take-while #(not= (:id %) compaction-id) new-transcript)))
                                 (dissoc entry :effective-history-offset))))
                            (update :compaction-count inc)))
                      fs)

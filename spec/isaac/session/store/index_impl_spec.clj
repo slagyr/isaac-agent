@@ -258,7 +258,31 @@
               session    (store/get-session (s) test-key)]
           (should= ["session" "message" "message" "compaction" "message"] (mapv :type transcript))
           (should= ["compaction" "message"] (mapv :type active))
-          (should (integer? (:effective-history-offset session)))))))
+          (should (integer? (:effective-history-offset session)))))
+
+    (it "stores an effective-history-offset that lands exactly on the compaction entry boundary (isaac-63f3)"
+      ;; The offset is measured over what actually lands on disk (the written
+      ;; prefix up to the compaction entry), so it sits on a real line boundary
+      ;; and a read from it never hits a partial line.
+      (let [{:keys [session entries]} (seed-transcript! {:history-retention :retain}
+                                                        [{:role "user" :content "First"}
+                                                         {:role "assistant" :content "Second"}
+                                                         {:role "user" :content "Third"}])
+            [first-msg second-msg third-msg] entries
+            session-file (:session-file session)
+            fs*          (nexus/get :fs)]
+        (store/splice-compaction! (s) test-key
+                                  {:summary           "Summary"
+                                   :firstKeptEntryId  (:id third-msg)
+                                   :tokensBefore      20
+                                   :compactedEntryIds [(:id first-msg) (:id second-msg)]})
+        (let [offset (:effective-history-offset (store/get-session (s) test-key))
+              bytes  (.getBytes ^String (fs/slurp fs* (c/transcript-path test-dir session-file)) "UTF-8")]
+          ;; offset sits right after a newline — a real entry boundary — ...
+          (should (or (zero? offset) (= \newline (char (aget bytes (dec offset))))))
+          ;; ... and the round-trip read parses cleanly, compaction entry first.
+          (should= "compaction"
+                   (:type (first (c/read-transcript-from-offset test-dir session-file offset fs*)))))))))
 
   ;; endregion ^^^^^ splice-compaction! ^^^^^
 
