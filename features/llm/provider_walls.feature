@@ -12,7 +12,6 @@ Feature: Provider wall classification
   Background:
     Given an Isaac root at "target/test-state"
 
-  @wip
   Scenario: a provider 429 with Retry-After classifies the turn as unavailable
     Given the isaac EDN file "config/models/snuffy.edn" exists with:
       | path           | value          |
@@ -34,7 +33,6 @@ Feature: Provider wall classification
       | level | event                 | provider | status |
       | :warn | :chat/provider-walled | chatgpt  | 429    |
 
-  @wip
   Scenario: a usage-limit error without Retry-After uses the configured default
     Given the isaac EDN file "config/models/snuffy.edn" exists with:
       | path           | value          |

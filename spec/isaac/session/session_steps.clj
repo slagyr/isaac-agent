@@ -45,6 +45,11 @@
 
 (helper! isaac.session.session-steps)
 
+(g/before-scenario
+  (fn []
+    (when-let [turn-future (g/get :turn-future)]
+      (when-not (realized? turn-future)
+        (deref turn-future 30000 nil)))))
 (g/before-scenario g/reset!)
 (g/before-scenario #(config/dangerously-install-config! nil "spec"))
 (g/before-scenario module-loader/clear-activations!)
@@ -322,6 +327,10 @@
      "tool_call"
      "arguments"
      "wait"
+     "status"
+     "retry-after"
+     "retry-after-ms"
+     "message"
      "usage.input_tokens"
      "usage.output_tokens"
      "usage.cache_creation_input_tokens"
@@ -345,10 +354,25 @@
          cached-tokens     (some-> (get m "usage.input_tokens_details.cached_tokens") not-empty parse-long)
          reasoning-effort  (some-> (get m "reasoning.effort") not-empty)
          reasoning-summary (some-> (get m "reasoning.summary") not-empty)
-         wait?             (= "true" (some-> (get m "wait") not-empty str/lower-case))]
+         wait?             (= "true" (some-> (get m "wait") not-empty str/lower-case))
+         status            (some-> (get m "status") not-empty parse-long)
+         retry-after       (some-> (get m "retry-after") not-empty parse-long)
+         retry-after-ms    (some-> (get m "retry-after-ms") not-empty parse-long)]
     (cond-> {}
       (some? (get m "type"))
       (assoc :type (get m "type"))
+
+      (some? (get m "message"))
+      (assoc :message (get m "message"))
+
+      status
+      (assoc :status status)
+
+      retry-after
+      (assoc :retry-after retry-after)
+
+      retry-after-ms
+      (assoc :retry-after-ms retry-after-ms)
 
       (or (some? (get m "content"))
           (and (not (str/blank? arguments)) (str/blank? tool-name)))
@@ -1328,6 +1352,12 @@
              (or (:stopReason (g/get :llm-result))
                  (some-> (g/get :llm-result) :error name))))
 
+(defn turn-result-is-unavailable-with-retry-after-ms [ms-str]
+  (when (g/get :turn-future) (await-turn!))
+  (let [result (g/get :llm-result)]
+    (g/should (:unavailable? result))
+    (g/should= (parse-long ms-str) (:retry-after-ms result))))
+
 (defn session-has-no-role [key-str role]
   (let [entries (with-feature-fs #(get-transcript key-str))
         role    (unquote-string role)]
@@ -1670,6 +1700,9 @@
 (defthen #"the system prompt does not contain \"([^\"]+)\"" isaac.session.session-steps/system-prompt-not-contains)
 
 (defthen "the turn result is {string}" isaac.session.session-steps/turn-result-is)
+
+(defthen #"the turn result is unavailable with retry-after-ms (\d+)"
+  isaac.session.session-steps/turn-result-is-unavailable-with-retry-after-ms)
 
 (defthen #"session \"([^\"]+)\" has no transcript entries with role \"([^\"]+)\"" isaac.session.session-steps/session-has-no-role)
 

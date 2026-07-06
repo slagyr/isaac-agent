@@ -386,7 +386,12 @@
      {:type :id,
       :default "llama",
       :description "Default model alias",
-      :validations [:model-exists?]}}}},
+      :validations [:model-exists?]},
+     :provider-retry-after-ms
+     {:type :int,
+      :default 1800000,
+      :description
+      "Default retry-after (ms) when a provider wall has no Retry-After header"}}}},
   :skill-paths
   {:schema
    {:type :seq,

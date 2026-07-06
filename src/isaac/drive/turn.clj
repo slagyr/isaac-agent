@@ -7,6 +7,7 @@
     [isaac.comm.protocol :as comm]
     [isaac.comm.cli :as cli-comm]
     [isaac.drive.dispatch :as dispatch]
+    [isaac.drive.provider-wall :as provider-wall]
     [isaac.llm.api.protocol :as api]
     [isaac.llm.provider :as llm-provider]
     [isaac.llm.tool-loop :as tool-loop]
@@ -413,6 +414,9 @@
   ([result chat-fn current-request retried?]
    (cond
      (:error result)
+     result
+
+     (:unavailable? result)
      result
 
      (not (empty-terminal-response? result))
@@ -832,23 +836,28 @@
                    :assistant-content-chars (count (or (get-in result [:message :content]) ""))
                    :tool-calls-count (count (:tool-calls result))
                    :executed-tools-count (count @executed-tools))
-        (cond
-          (or (= :cancelled (:error result))
-              (bridge/cancelled-response? result)
-              (bridge/cancelled? session-key))
-          (do
-            (when (seq @executed-tools)
-              (run-tool-calls! ctx session-key @executed-tools))
-            (suspend/interrupt-result session-key))
+        (let [provider-name (api/display-name p)
+              result        (provider-wall/normalize result config provider-name)]
+          (cond
+            (or (= :cancelled (:error result))
+                (bridge/cancelled-response? result)
+                (bridge/cancelled? session-key))
+            (do
+              (when (seq @executed-tools)
+                (run-tool-calls! ctx session-key @executed-tools))
+              (suspend/interrupt-result session-key))
 
-          :else
-          (do
-            (when-not (:error result)
-              (log/debug :chat/stream-completed :session session-key))
-            (when (seq @executed-tools)
-              (run-tool-calls! ctx session-key @executed-tools))
-            (or (process-response! ctx session-key result {:model model :provider (api/display-name p)})
-                 result)))))))
+            (:unavailable? result)
+            result
+
+            :else
+            (do
+              (when-not (:error result)
+                (log/debug :chat/stream-completed :session session-key))
+              (when (seq @executed-tools)
+                (run-tool-calls! ctx session-key @executed-tools))
+              (or (process-response! ctx session-key result {:model model :provider provider-name})
+                  result))))))))
 
 (defn- run-turn-body!
   "The successful-path pipeline. Returns the result that finish-turn! should

@@ -61,7 +61,7 @@
        :token-counts token-counts
        :cancelled?   true}
       (let [response (chat-fn req)]
-        (if (:error response)
+        (if (or (:error response) (:unavailable? response))
           response
           (let [tool-calls   (response-tool-calls response)
                 new-tokens   (merge-with + token-counts (response-tokens response))
