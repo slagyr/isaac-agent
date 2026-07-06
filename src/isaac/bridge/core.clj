@@ -170,6 +170,16 @@
       (:hail-id origin) (assoc :delivery-id (str (:hail-id origin)))
       delivery          (assoc :attempts (:attempts delivery) :delivery delivery))))
 
+(defn record-turn-marker!
+  "The bridge is the single writer of durable turn markers (isaac-7li9). Callers
+   (comm dispatch here, the hail delivery worker) hand a charge; the bridge builds
+   the resume-routing marker from it and persists it via the SessionStore."
+  [store session-key charge]
+  (store/record-turn-marker! store session-key (turn-marker charge)))
+
+(defn clear-turn-marker! [store session-key]
+  (store/clear-turn-marker! store session-key))
+
 (defn- dispatch-charge! [c]
   (let [{:keys [charge result]} (route-charge! c)]
     (if charge
@@ -177,7 +187,7 @@
         (let [session-store* (or (:session-store charge) (nexus/get-in [:sessions :store]))]
           (if (store/mark-in-flight! session-store* session-key)
             (do
-              (store/record-turn-marker! session-store* session-key (turn-marker charge))
+              (record-turn-marker! session-store* session-key charge)
               (try
                 (turn/run-turn! charge)
                 (finally
