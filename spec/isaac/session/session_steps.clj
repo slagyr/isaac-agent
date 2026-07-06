@@ -27,6 +27,7 @@
     [isaac.bridge.cancellation :as bridge-cancel]
     [isaac.bridge.core :as bridge]
     [isaac.bridge.suspend :as bridge-suspend]
+    [isaac.bridge.resume :as bridge-resume]
     [isaac.session.context :as session-ctx]
     [isaac.logger :as log]
     [isaac.comm.memory :as memory-comm]
@@ -37,6 +38,7 @@
     [isaac.session.store.sidecar :as sidecar-store]
     [isaac.session.store.memory :as memory-store]
     [isaac.session.store.impl-common :as session-impl-common]
+    [isaac.session.transcript :as transcript]
     [isaac.module.loader :as module-loader]
     [isaac.nexus :as nexus]
     [isaac.tool.memory :as memory]
@@ -978,6 +980,38 @@
 (defn in-flight-turns-suspended-with-timeout [timeout-ms]
   (in-flight-turns-suspended {:timeout-ms (parse-long timeout-ms)}))
 
+(defn- load-disk-turn-markers! [store root]
+  (when (and root store)
+    (doseq [marker (session-impl-common/turn-markers* root (mem-fs))]
+      (store/record-turn-marker! store (:session-id marker) marker))))
+
+(defn interrupted-turns-resumed [instant]
+  (with-feature-fs
+    (fn []
+      (let [store (session-store)
+            root  (root-dir)
+            cfg   (loader/normalize-config (loaded-config))]
+        (config/dangerously-install-config! cfg "feature resume")
+        (load-disk-turn-markers! store root)
+        (bridge-resume/resume-interrupted-turns!
+          {:session-store store
+           :root          root
+           :cfg           cfg
+           :now           (java.time.Instant/parse instant)})))))
+
+(defn torn-trailing-transcript-line [session-key fragment]
+  (with-feature-fs
+    (fn []
+      (let [entry      (get-session session-key)
+            fs*        (mem-fs)
+            root       (root-dir)
+            path       (str root "/sessions/" (:session-file entry))
+            transcript (get-transcript session-key)
+            json-lines (mapv session-impl-common/write-json transcript)]
+        (fs/mkdirs fs* (fs/parent path))
+        (fs/spit fs* path (str (str/join "\n" json-lines) "\n" fragment))
+        nil))))
+
 (defn turn-cancelled-after-n-tool-calls [key-str n]
   (helper/await-condition
     (fn []
@@ -1071,16 +1105,22 @@
          :crew (or (:crew entry) (:agent entry))
          :file (str "sessions/" (:session-file entry))))
 
-(defn- transcript-match-entry [entry include-compaction-message?]
-  (cond-> entry
-    (and include-compaction-message? (= "compaction" (:type entry)))
-    (assoc :message {:content (:summary entry)})
+(defn- transcript-match-entry [entry include-compaction-message? denormalize-tool-call?]
+  (let [type (if (and denormalize-tool-call?
+                      (seq (transcript/tool-calls (:message entry))))
+               "toolCall"
+               (:type entry))]
+    (cond-> entry
+      type (assoc :type type)
 
-    (= "toolResult" (get-in entry [:message :role]))
-    (update-in [:message :content]
-               #(-> (or % "")
-                    (str/replace #"^Error:\s*" "")
-                    (str/replace #"^path outside allowed directories:.*$" "path outside allowed directories")))))
+      (and include-compaction-message? (= "compaction" (:type entry)))
+      (assoc :message {:content (:summary entry)})
+
+      (= "toolResult" (get-in entry [:message :role]))
+      (update-in [:message :content]
+                 #(-> (or % "")
+                      (str/replace #"^Error:\s*" "")
+                      (str/replace #"^path outside allowed directories:.*$" "path outside allowed directories"))))))
 
 (defn- normalize-transcript-table [table]
   (let [col-rename {"role" "message.role" "content-matcher" "message.content"}
@@ -1181,10 +1221,13 @@
          explicit-idx? (some #(contains? % "#index") (map #(zipmap (:headers table) %) (:rows table)))
          wants-session? (some #(= "session" (get % "type")) (map #(zipmap (:headers table) %) (:rows table)))
          include-compaction-message? (not (some #{"summary"} (:headers table)))
+         denormalize-tool-call?      (some #(= "toolCall" (get % "type"))
+                                           (map #(zipmap (:headers table) %) (:rows table)))
          transcript (if (or explicit-idx? wants-session?)
                       transcript
                       (vec (remove #(= "session" (:type %)) transcript)))
-         transcript   (mapv #(transcript-match-entry % include-compaction-message?) transcript)
+         transcript   (mapv #(transcript-match-entry % include-compaction-message? denormalize-tool-call?)
+                            transcript)
           result     (if explicit-idx?
                        (match/match-entries table transcript)
                        (transcript-match-result table transcript))]
@@ -1204,10 +1247,13 @@
         explicit-idx?          (some #(contains? % "#index") (map #(zipmap (:headers table) %) (:rows table)))
         wants-session?         (some #(= "session" (get % "type")) (map #(zipmap (:headers table) %) (:rows table)))
         include-compaction?    (not (some #{"summary"} (:headers table)))
+        denormalize-tool-call? (some #(= "toolCall" (get % "type"))
+                                     (map #(zipmap (:headers table) %) (:rows table)))
         transcript             (if (or explicit-idx? wants-session?)
                                  transcript
                                  (vec (remove #(= "session" (:type %)) transcript)))
-        transcript             (mapv #(transcript-match-entry % include-compaction?) transcript)
+        transcript             (mapv #(transcript-match-entry % include-compaction? denormalize-tool-call?)
+                                   transcript)
         result                 (if explicit-idx?
                                  (match/match-entries table transcript)
                                  (transcript-match-result table transcript))]
@@ -1605,6 +1651,14 @@
 (defwhen #"in-flight turns are suspended with timeout (\d+)ms"
   isaac.session.session-steps/in-flight-turns-suspended-with-timeout
   "Suspends every in-flight turn, bounding the cooperative wait to N ms.")
+
+(defwhen #"interrupted turns are resumed at \"([^\"]+)\""
+  isaac.session.session-steps/interrupted-turns-resumed
+  "Runs the startup resume scan at a pinned instant (isaac-vdfc).")
+
+(defgiven #"session \"([^\"]+)\" has a torn trailing transcript line \"(.+)\"$"
+  isaac.session.session-steps/torn-trailing-transcript-line
+  "Appends raw bytes without a newline — simulates crash mid-append.")
 
 (defwhen "the turn is cancelled on session {key:string} after {n:int} tool call" isaac.session.session-steps/turn-cancelled-after-n-tool-calls
   "Waits for n tool-result events then cancels, used to test mid-loop cancellation.")

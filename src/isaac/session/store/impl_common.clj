@@ -169,7 +169,10 @@
     (if-let [children (children* fs dir)]
       (->> children
            (filter #(str/ends-with? % ".edn"))
-           (keep #(edn/read-string (slurp* fs (str dir "/" %))))
+           (keep (fn [file]
+                   (let [session-id (subs file 0 (- (count file) 4))]
+                     (some-> (edn/read-string (slurp* fs (str dir "/" file)))
+                             (assoc :session-id session-id)))))
            vec)
       [])))
 

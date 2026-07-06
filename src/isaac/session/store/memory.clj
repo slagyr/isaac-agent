@@ -313,6 +313,12 @@
 
 ;; endregion
 
+(defn replace-transcript!
+  "Test/resume helper: replace the in-memory transcript wholesale."
+  [^MemorySessionStore store session-id entries]
+  (let [id (c/session-id session-id)]
+    (swap! (.-state store) assoc-in [:transcripts id] (vec entries))))
+
 (defn create-store
   ([]
    (create-store nil))

@@ -31,7 +31,10 @@
 (defn- stamp-suspended-marker! [store session-key boundary]
   (when-let [marker (store/get-turn-marker store session-key)]
     (store/record-turn-marker! store session-key
-                               (assoc marker :suspended true :boundary boundary))))
+                               (assoc marker
+                                      :suspended true
+                                      :boundary boundary
+                                      :interrupted-at (str (java.time.Instant/now))))))
 
 (defn release-turn-marker! [store session-key]
   (if (session-suspended? session-key)

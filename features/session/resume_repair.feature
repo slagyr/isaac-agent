@@ -13,7 +13,6 @@ Feature: Resume repair and comm staleness
   Background:
     Given default Grover setup
 
-  @wip
   Scenario: a torn trailing transcript line is truncated at resume
     A hard crash mid-append leaves a partial JSONL line at EOF — unreadable
     by any future transcript read. Resume repair truncates to the last
@@ -38,13 +37,12 @@ Feature: Resume repair and comm staleness
       | type    | message.content | #comment                    |
       | message | Begin the entry |                             |
       | message | Entry started   | torn tail gone — clean read |
-      | message | #"interrupted"  | resume note (comm, fresh)   |
+      | message | #".*interrupted.*" | resume note (comm, fresh)   |
       | message | Continuing      | resumed turn completed      |
     And the log has entries matching:
       | level | event                     | session | repair     |
       | :warn | :resume/transcript-repair | logbook | :torn-line |
 
-  @wip
   Scenario: a stale comm marker is dropped, not resumed
     Nobody wants a surprise reply to a conversation they abandoned — outside
     the resume window the marker is discarded and the transcript untouched.
