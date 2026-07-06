@@ -158,16 +158,48 @@
             (should= {:help false} @captured))))
 
       (it "returns 0"
-        (with-redefs [loader/load-config! (fn [& _] {:providers {"ollama" {}}})]
+        (with-redefs [loader/load-config! (fn [& _] {:providers {"ollama" {:auth "none"}}})
+                      auth-store/load-tokens (fn [& _] nil)]
           (should= 0 (sut/run ["status"]))))
 
-      (it "reports anthropic not authenticated"
-        (with-redefs [loader/load-config! (fn [& _] {:providers {"anthropic" {}}})]
-          (should= 0 (sut/run ["status"]))))
+      (it "reports EXPIRED for an expired chatgpt oauth token, not 'no auth required' (isaac-b9rh)"
+        (with-redefs [loader/load-config! (fn [& _] {:providers {"chatgpt" {:auth "oauth-device"}} :root "/auth"})
+                      auth-store/load-tokens (fn [& _] {:type "oauth" :expires (- (System/currentTimeMillis) 1000)})]
+          (let [output (with-out-str (should= 0 (sut/run ["status"])))]
+            (should (clojure.string/includes? output "chatgpt: EXPIRED"))
+            (should-not (clojure.string/includes? output "no auth required")))))
 
-      (it "reports anthropic api-key auth"
-        (with-redefs [loader/load-config! (fn [& _] {:providers {"anthropic" {:api-key "sk-123"}}})]
-          (should= 0 (sut/run ["status"])))))
+      (it "reports anthropic api-key auth in the output"
+        (with-redefs [loader/load-config! (fn [& _] {:providers {"anthropic" {:auth "api-key" :api-key "sk-123"}} :root "/auth"})
+                      auth-store/load-tokens (fn [& _] nil)]
+          (let [output (with-out-str (should= 0 (sut/run ["status"])))]
+            (should (clojure.string/includes? output "anthropic: authenticated (API key)"))))))
+
+    (describe "provider-auth-line (isaac-b9rh)"
+
+      (it "reports EXPIRED for an expired oauth token — never 'no auth required'"
+        (let [now 1500000000000]
+          (should= "EXPIRED — run isaac auth login --provider chatgpt"
+                   (#'sut/provider-auth-line "chatgpt" {:auth "oauth-device"}
+                                             {:type "oauth" :expires (- now 1000)} now))))
+
+      (it "reports authenticated with time-to-expiry for a valid oauth token"
+        (let [now 1500000000000]
+          (should= "authenticated (expires in 2h)"
+                   (#'sut/provider-auth-line "chatgpt" {:auth "oauth-device"}
+                                             {:type "oauth" :expires (+ now (* 2 60 60 1000))} now))))
+
+      (it "reports not logged in for an oauth provider with no token"
+        (should= "not logged in"
+                 (#'sut/provider-auth-line "chatgpt" {:auth "oauth-device"} nil 1500000000000)))
+
+      (it "reports authenticated (API key) for a keyed api-key provider"
+        (should= "authenticated (API key)"
+                 (#'sut/provider-auth-line "anthropic" {:auth "api-key" :api-key "sk-1"} nil 1500000000000)))
+
+      (it "reports no auth required for a genuinely keyless provider"
+        (should= "no auth required"
+                 (#'sut/provider-auth-line "ollama" {:auth "none"} nil 1500000000000))))
 
     (describe "logout"
 

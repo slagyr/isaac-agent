@@ -110,15 +110,50 @@
 
 ;; region ----- Status -----
 
+(defn- humanize-ms [ms]
+  (let [mins (quot (max 0 ms) 60000)]
+    (if (>= mins 60)
+      (str (quot mins 60) "h")
+      (str (max 1 mins) "m"))))
+
+(defn- provider-auth-line
+  "Human-readable auth state for one provider, from its :auth requirement and the
+   stored token (isaac-b9rh). An OAuth provider reports its real token state —
+   authenticated / EXPIRED / not logged in — instead of a blanket
+   'no auth required' that hides an expired token."
+  [name p tokens now-ms]
+  (let [oauth? (or (= "oauth-device" (:auth p))
+                   (= "oauth" (:type tokens)))]
+    (cond
+      oauth?
+      (cond
+        (not= "oauth" (:type tokens))
+        "not logged in"
+
+        (<= (:expires tokens 0) now-ms)
+        (str "EXPIRED — run isaac auth login --provider " name)
+
+        :else
+        (str "authenticated (expires in " (humanize-ms (- (:expires tokens) now-ms)) ")"))
+
+      (or (:api-key p) (= "api-key" (:type tokens)))
+      "authenticated (API key)"
+
+      (= "api-key" (:auth p))
+      "not logged in"
+
+      :else
+      "no auth required")))
+
 (defn- status [_opts]
-  (let [cfg (loader/load-config! (root/current-root) (fs/instance) "auth cli: status")]
+  (let [cfg  (loader/load-config! (root/current-root) (fs/instance) "auth cli: status")
+        root (or (:root cfg) (root/current-root))
+        fs*  (fs/instance)
+        now  (System/currentTimeMillis)]
     (println "Provider status:")
     (doseq [[name p] (or (seq (:providers cfg)) [["ollama" {}]])]
-      (case name
-        "anthropic" (if (:api-key p)
-                       (println (str "  " name ": authenticated (API key)"))
-                       (println (str "  " name ": not authenticated")))
-        (println (str "  " name ": no auth required"))))
+      (let [tokens (auth-store/load-tokens root name fs*)]
+        (println (str "  " name ": " (provider-auth-line name p tokens now)))))
     0))
 
 ;; endregion ^^^^^ Status ^^^^^
