@@ -337,16 +337,20 @@
                   (let [joined (emit-response-content! channel-impl session-key result)]
                     (assoc-in result [:message :content] joined)))))))
 
-(defn- canned-loop-exhausted-message [result]
-  (let [content-blank? (str/blank? (or (:content result)
-                                       (get-in result [:response :message :content])
-                                       (get-in result [:response :content])))]
-    (if (and (:loop-request? result) content-blank?)
-      (let [message "I ran several tools but did not reach a conclusion before hitting the tool loop limit. Ask me to continue if you want me to keep digging."]
-        (-> result
-            (assoc :content message)
-            (assoc-in [:response :message :content] message)))
-      result)))
+(defn- resolve-tool-loop-max [{:keys [config crew crew-cfg]}]
+  (let [raw (or (:tool-loop-max crew-cfg)
+                (get-in config [:crew (keyword crew) :tool-loop-max])
+                (get-in config [:crew crew :tool-loop-max])
+                (get-in config [:defaults :tool-loop-max])
+                tool-loop/default-max-loops)]
+    (cond
+      (number? raw) (long raw)
+      (string? raw) (parse-long raw)
+      :else raw)))
+
+(defn- finalize-turn-result [result]
+  (cond-> result
+    (:loop-request? result) (assoc :ended-by :tool-loop-limit)))
 
 (def ^:private loop-exhausted-summary-instruction
   "You have hit the tool loop limit. Do not call any more tools. Write a concise assistant reply for the user using what you learned so far. If you still cannot fully answer, summarize the useful findings and what remains unresolved.")
@@ -369,6 +373,17 @@
                  :cache-read    (or (usage-cache-read usage) 0)
                  :cache-write   (or (usage-cache-write usage) 0)})))
 
+(defn- user-message-echo? [content messages]
+  (let [trimmed (str/trim (or content ""))]
+    (and (seq trimmed)
+         (some #(= trimmed (str/trim (or (:content %) "")))
+               (filter #(= "user" (:role %)) messages)))))
+
+(defn- loop-limit-user-echo? [content user-input request]
+  (or (and user-input (= (str/trim (or content ""))
+                         (str/trim user-input)))
+      (user-message-echo? content (:messages request))))
+
 (defn- final-loop-summary [result chat-fn current-request]
   (let [content (or (:content result)
                     (get-in result [:response :message :content])
@@ -379,7 +394,8 @@
       (let [summary-response (chat-fn (loop-summary-request current-request (:response result)))
             summary-content  (get-in summary-response [:message :content])]
         (if (or (:error summary-response)
-                (str/blank? summary-content))
+                (str/blank? summary-content)
+                (loop-limit-user-echo? summary-content nil current-request))
           result
           (-> result
               (assoc :content summary-content)
@@ -394,6 +410,20 @@
       (get-in result [:response :message :content])
       (get-in result [:message :content])
       (get-in result [:response :content])))
+
+(defn- canned-loop-exhausted-message
+  ([result] (canned-loop-exhausted-message result nil nil))
+  ([result user-input] (canned-loop-exhausted-message result user-input nil))
+  ([result user-input request]
+   (let [content (terminal-response-content result)]
+     (if (and (:loop-request? result)
+              (or (str/blank? content)
+                  (loop-limit-user-echo? content user-input request)))
+       (let [message "I ran several tools but did not reach a conclusion before hitting the tool loop limit. Ask me to continue if you want me to keep digging."]
+         (-> result
+             (assoc :content message)
+             (assoc-in [:response :message :content] message)))
+       result))))
 
 (defn- empty-terminal-response? [result]
   (and (not (:error result))
@@ -770,7 +800,9 @@
    final assistant response. Returns the final result map."
   [session-key input ctx]
   (let [{:keys [provider allowed-tools effort boot-files rules-text skill-menu-text]} ctx
-        {:keys [crew guidance model module-index nonce origin soul context-mode comm config]} (:charge ctx)
+        charge        (:charge ctx)
+        {:keys [crew guidance model module-index nonce origin soul context-mode comm config crew-cfg]} charge
+        tool-loop-max (resolve-tool-loop-max {:config config :crew crew :crew-cfg crew-cfg})
         caps {:max-lines (get-in config [:tools :defaults :max-lines])
               :max-bytes (get-in config [:tools :defaults :max-bytes])}
         ch (or comm cli-comm/channel)
@@ -825,10 +857,12 @@
                             (reset! current-request (assoc req :messages messages))
                             messages))
             result      (-> (tool-loop/run chat-fn followup-fn request tool-fn
-                                           {:cancelled? #(bridge/cancelled? session-key)})
+                                           {:max-loops  tool-loop-max
+                                            :cancelled? #(bridge/cancelled? session-key)})
                             (final-loop-summary chat-fn @current-request)
-                            canned-loop-exhausted-message
-                            (guard-empty-terminal-response chat-fn @current-request))]
+                            (#(canned-loop-exhausted-message % input @current-request))
+                            (guard-empty-terminal-response chat-fn @current-request)
+                            finalize-turn-result)]
         (log/debug :turn/model-response-summary
                    :session session-key
                    :provider (api/display-name p)

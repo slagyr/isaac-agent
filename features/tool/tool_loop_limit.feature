@@ -11,9 +11,13 @@ Feature: Tool-loop limit configuration
   Background:
     Given default Grover setup
 
-  @wip
   Scenario: a crew-level tool-loop-max caps the turn's tool cycles
-    Given the isaac EDN file "config/crew/oscar.edn" exists with:
+    Given the isaac EDN file "config/models/local.edn" exists with:
+      | path           | value      |
+      | model          | test-model |
+      | provider       | grover     |
+      | context-window | 32768      |
+    And the isaac EDN file "config/crew/oscar.edn" exists with:
       | path          | value |
       | model         | local |
       | tool-loop-max | 1     |
@@ -28,8 +32,8 @@ Feature: Tool-loop limit configuration
       | exec      | {"command": "true"} |
     When the user sends "count the cans" on session "trash-can"
     Then session "trash-can" has transcript matching:
-      | type       | message.content    | #comment                                   |
-      | message    | count the cans     |                                            |
-      | toolCall   | #*                 | cycle 1 executed                           |
-      | toolResult | #*                 |                                            |
-      | message    | #"tool loop limit" | cycle 2 never ran — summary/canned message |
+      | type     | message.role | message.content            | #comment                                   |
+      | message  | user         | count the cans             |                                            |
+      | toolCall | assistant    | #*                         | cycle 1 executed                           |
+      | message  | toolResult   | #*                         |                                            |
+      | message  | assistant    | contains "tool loop limit" | cycle 2 never ran — summary/canned message |

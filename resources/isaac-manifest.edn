@@ -330,6 +330,11 @@
        :description
        "Maximum concurrent in-flight turns for this crew member",
        :validations [:positive?]},
+      :tool-loop-max
+      {:type :int,
+       :description
+       "Tool-call cycle budget for turns on this crew (default 100)",
+       :validations [:positive?]},
       :model
       {:type :id,
        :description "ID of the model this crew member uses.",
