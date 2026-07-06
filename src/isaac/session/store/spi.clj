@@ -64,6 +64,9 @@
 (defn in-flight? [store session-id]
   (contains? (get-in @in-flight* [store :sessions] {}) session-id))
 
+(defn in-flight-sessions [store]
+  (vec (keys (get-in @in-flight* [store :sessions] {}))))
+
 (defn orphaned-turn-markers
   "Turn markers with no live in-memory in-flight entry for their session (D4):
    after a restart the atom is empty so every surviving marker is an orphan; at

@@ -8,6 +8,7 @@
   (:require
     [clojure.string :as str]
     [isaac.bridge.status :as status]
+    [isaac.bridge.suspend :as suspend]
     [isaac.comm.render :as render]
     [isaac.charge :as charge]
     [isaac.comm.protocol :as comm]
@@ -178,7 +179,7 @@
   (store/record-turn-marker! store session-key (turn-marker charge)))
 
 (defn clear-turn-marker! [store session-key]
-  (store/clear-turn-marker! store session-key))
+  (suspend/release-turn-marker! store session-key))
 
 (defn- dispatch-charge! [c]
   (let [{:keys [charge result]} (route-charge! c)]
@@ -191,7 +192,7 @@
               (try
                 (turn/run-turn! charge)
                 (finally
-                  (store/clear-turn-marker! session-store* session-key)
+                  (clear-turn-marker! session-store* session-key)
                   (store/clear-in-flight! session-store* session-key))))
             (refuse-dispatch session-key)))
         (turn/run-turn! charge))

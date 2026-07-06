@@ -4,6 +4,7 @@
     [clojure.string :as str]
     [clojure.java.io :as io]
     [isaac.bridge.cancellation :as bridge]
+    [isaac.bridge.suspend :as suspend]
     [isaac.tool.fs-bounds :as bounds])
   (:import
     [java.util.concurrent TimeUnit]))
@@ -61,7 +62,11 @@
       {:isError true :error (str "exit " exit ": " (str/trim output))})))
 
 (defn- wait-for-process! [proc session-key timeout-ms]
-  (bridge/on-cancel! session-key #(destroy-process! proc))
+  ;; During shutdown suspend the cap may expire mid-exec; do not tear down the
+  ;; process on cancel — the marker records :unclean and exit takes the tool.
+  (bridge/on-cancel! session-key
+                   #(when-not (suspend/session-suspended? session-key)
+                      (destroy-process! proc)))
   (cond
     (process-finished? proc timeout-ms)
     (if (bridge/cancelled? session-key)

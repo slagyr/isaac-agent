@@ -3,6 +3,7 @@
     [c3kit.apron.schema :as schema]
     [clojure.string :as str]
     [isaac.bridge.cancellation :as bridge]
+    [isaac.bridge.suspend :as suspend]
     [isaac.comm.protocol :as comm]
     [isaac.comm.cli :as cli-comm]
     [isaac.drive.dispatch :as dispatch]
@@ -838,7 +839,7 @@
           (do
             (when (seq @executed-tools)
               (run-tool-calls! ctx session-key @executed-tools))
-            (bridge/cancelled-result))
+            (suspend/interrupt-result session-key))
 
           :else
           (do
@@ -861,7 +862,7 @@
                 guidance nonce origin module-index]} (:charge ctx)]
     (cond
       (bridge/cancelled? session-key)
-      (bridge/cancelled-result)
+      (suspend/interrupt-result session-key)
 
       :else
       (do
@@ -883,7 +884,7 @@
                                             :module-index      module-index
                                             :allowed-tools     allowed-tools})
         (if (bridge/cancelled? session-key)
-          (bridge/cancelled-result)
+          (suspend/interrupt-result session-key)
           (execute-llm-turn! session-key input ctx))))))
 
 (defn- record-exception! [session-key e ctx]
@@ -910,11 +911,11 @@
       (finish! (run-turn-body! session-key input ctx))
       (catch ExceptionInfo e
         (if (= :cancelled (:type (ex-data e)))
-          (finish! (bridge/cancelled-result))
+          (finish! (suspend/interrupt-result session-key))
           (do (record-exception! session-key e ctx) (throw e))))
       (catch Exception e
         (if (bridge/cancelled? session-key)
-          (finish! (bridge/cancelled-result))
+          (finish! (suspend/interrupt-result session-key))
           (do (record-exception! session-key e ctx) (throw e))))
       (finally
         (bridge/end-turn! session-key turn-id)))))

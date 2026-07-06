@@ -26,6 +26,7 @@
     [isaac.session.compaction :as session-compaction]
     [isaac.bridge.cancellation :as bridge-cancel]
     [isaac.bridge.core :as bridge]
+    [isaac.bridge.suspend :as bridge-suspend]
     [isaac.session.context :as session-ctx]
     [isaac.logger :as log]
     [isaac.comm.memory :as memory-comm]
@@ -71,6 +72,7 @@
     (grover/reset-queue!)
     (drive-dispatch/clear-last-request!)
     (bridge-cancel/clear!)
+    (bridge-suspend/clear!)
     (reset! comm-registry/*registry* (comm-registry/fresh-registry))
     (when-let [ns-obj (find-ns 'isaac.comm.telly)]
       (remove-ns (ns-name ns-obj))
@@ -939,6 +941,19 @@
   (bridge-cancel/cancel! key-str)
   (await-turn!))
 
+(defn in-flight-turns-suspended
+  ([] (in-flight-turns-suspended {}))
+  ([{:keys [timeout-ms]}]
+   (let [store (session-store)]
+     (helper/await-condition
+       #(pos? (count (store/in-flight-sessions store)))
+       10000)
+     (bridge-suspend/suspend! {:timeout-ms (or timeout-ms bridge-suspend/default-timeout-ms)
+                               :session-store store}))))
+
+(defn in-flight-turns-suspended-with-timeout [timeout-ms]
+  (in-flight-turns-suspended {:timeout-ms (parse-long timeout-ms)}))
+
 (defn turn-cancelled-after-n-tool-calls [key-str n]
   (helper/await-condition
     (fn []
@@ -1069,13 +1084,15 @@
                     rows)))))
 
 (defn- transcript-match-result [table transcript]
-  (let [expected-count (count (:rows table))]
+  (let [meta-col?      (fn [h] (and (str/starts-with? h "#") (not= "#index" h)))
+        expected-count (count (:rows table))]
     (if (= 1 expected-count)
       (let [row            (first (:rows table))
             row-map        (zipmap (:headers table) row)
             explicit-pairs (->> row-map
                                 (remove (fn [[header cell]]
                                           (or (= "#index" header)
+                                              (meta-col? header)
                                               (str/blank? cell))))
                                 vec)
             role           (some-> (get row-map "message.role") not-empty)
@@ -1387,6 +1404,8 @@
       (= "#*" v)                        ::any
       (clojure.string/starts-with? v ":") (keyword (subs v 1))
       (re-matches #"-?\d+" v)            (parse-long v)
+      (= "true" (str/lower-case v))     true
+      (= "false" (str/lower-case v))    false
       :else                             v)))
 
 (defn turn-marker-matches [session-name table]
@@ -1549,6 +1568,13 @@
 
 (defwhen #"^the turn is cancelled on session \"([^\"]+)\"$" isaac.session.session-steps/turn-cancelled
   "Cancels the running turn via bridge/cancel! and awaits the turn future.")
+
+(defwhen "in-flight turns are suspended" isaac.session.session-steps/in-flight-turns-suspended
+  "Suspends every in-flight turn at the next step boundary with the default cap.")
+
+(defwhen #"in-flight turns are suspended with timeout (\d+)ms"
+  isaac.session.session-steps/in-flight-turns-suspended-with-timeout
+  "Suspends every in-flight turn, bounding the cooperative wait to N ms.")
 
 (defwhen "the turn is cancelled on session {key:string} after {n:int} tool call" isaac.session.session-steps/turn-cancelled-after-n-tool-calls
   "Waits for n tool-result events then cancels, used to test mid-loop cancellation.")

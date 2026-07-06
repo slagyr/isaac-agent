@@ -13,7 +13,6 @@ Feature: Suspend in-flight turns on shutdown
   Background:
     Given default Grover setup
 
-  @wip
   Scenario: suspend interrupts a waiting turn at the boundary and stamps its marker
     Given the following sessions exist:
       | name     |
@@ -33,7 +32,6 @@ Feature: Suspend in-flight turns on shutdown
       | type    | message.role | message.content  | #comment                                    |
       | message | user         | check the beacon | last entry — stopped before any model reply |
 
-  @wip
   Scenario: a user-cancelled turn deletes its marker — cancel is not suspend
     A user cancel means "stop, don't come back" — resuming a cancelled turn
     after a restart would be wrong. Only suspend preserves the marker.
@@ -48,7 +46,6 @@ Feature: Suspend in-flight turns on shutdown
     Then the turn result is "cancelled"
     And no turn marker exists for session "skybeam"
 
-  @wip
   Scenario: a turn that cannot reach a step boundary before the cap is stamped unclean
     Tools run to completion by the cancellation contract, so a long exec holds
     the turn mid-step past the cap. Suspend stamps :unclean and returns — it
