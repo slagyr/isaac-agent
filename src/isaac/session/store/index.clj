@@ -134,7 +134,16 @@
   (splice-compaction! [_ name compaction]
     (c/splice-compaction! get-session migrate-transcript! update-index-entry! now-iso root name compaction fs))
   (truncate-after-compaction! [_ name]
-    (c/truncate-after-compaction! get-session root name fs)))
+    (c/truncate-after-compaction! get-session root name fs))
+
+  (record-turn-marker! [_ session-id marker]
+    (c/record-turn-marker!* root session-id marker fs))
+  (clear-turn-marker! [_ session-id]
+    (c/clear-turn-marker!* root session-id fs))
+  (get-turn-marker [_ session-id]
+    (c/get-turn-marker* root session-id fs))
+  (turn-markers [_]
+    (c/turn-markers* root fs)))
 
 (defn create-store
   ([root]

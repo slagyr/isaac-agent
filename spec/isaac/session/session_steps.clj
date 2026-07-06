@@ -1379,6 +1379,40 @@
             result        (match/match-entries table (:messages built-request))]
         (g/should= [] (:failures result))))))
 
+;; region ----- Turn markers (isaac-7li9) -----
+
+(defn- parse-marker-value [v]
+  (let [v (clojure.string/trim v)]
+    (cond
+      (= "#*" v)                        ::any
+      (clojure.string/starts-with? v ":") (keyword (subs v 1))
+      (re-matches #"-?\d+" v)            (parse-long v)
+      :else                             v)))
+
+(defn turn-marker-matches [session-name table]
+  (let [marker (with-feature-fs #(store/get-turn-marker (session-store) session-name))]
+    (g/should-not-be-nil marker)
+    (doseq [[k v] (:rows table)]
+      (let [expected (parse-marker-value v)]
+        (when-not (= ::any expected)
+          (g/should= expected (get marker (keyword k))))))))
+
+(defn no-turn-marker [session-name]
+  (await-turn!)
+  (g/should (nil? (with-feature-fs #(store/get-turn-marker (session-store) session-name)))))
+
+(defn seed-turn-marker [session-name delivery-id]
+  (with-feature-fs
+    #(store/record-turn-marker! (session-store) session-name
+                                {:source :hail :delivery-id delivery-id :started-at 0})))
+
+(defn orphaned-turn-markers-are [table]
+  (let [expected (set (map first (:rows table)))
+        actual   (set (map :session-id (with-feature-fs #(store/orphaned-turn-markers (session-store)))))]
+    (g/should= expected actual)))
+
+;; endregion ^^^^^ Turn markers ^^^^^
+
 ;; region ----- Routing -----
 
 ;; "an (empty) Isaac root at" / "an empty Isaac state directory" routing
@@ -1434,6 +1468,19 @@
 (defgiven "crew {crew:string} has quarters" isaac.session.session-steps/crew-has-quarters)
 
 (defgiven "the LLM response is delayed by {int} seconds" isaac.session.session-steps/llm-response-delayed)
+
+(defthen #"a turn marker exists for session \"([^\"]+)\" with:" isaac.session.session-steps/turn-marker-matches
+  "Asserts a durable turn marker is present for the session and matches the
+   key/value table (values: keywords, ints, strings; #* = present, any).")
+
+(defthen #"no turn marker exists for session \"([^\"]+)\"" isaac.session.session-steps/no-turn-marker
+  "Awaits the turn and asserts its durable marker was cleared on completion.")
+
+(defgiven #"a turn marker exists for session \"([^\"]+)\" referencing delivery \"([^\"]+)\"" isaac.session.session-steps/seed-turn-marker
+  "Seeds an orphan turn marker (no live in-flight entry) referencing a hail delivery.")
+
+(defthen "the orphaned turn markers are:" isaac.session.session-steps/orphaned-turn-markers-are
+  "Asserts the exact set of sessions whose turn markers have no live in-flight entry.")
 
 (defgiven "the following sessions exist:" isaac.session.session-steps/sessions-exist
   "Creates sessions on disk via the file-backed SessionStore (NOT the :crew

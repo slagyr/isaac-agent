@@ -141,7 +141,39 @@
 (defn transcript-path [root session-file]
   (str (sessions-dir root) "/" session-file))
 
+(defn turns-dir [root]
+  (str (sessions-dir root) "/turns"))
+
+(defn turn-marker-path [root session-id]
+  (str (turns-dir root) "/" session-id ".edn"))
+
 ;; endregion ^^^^^ Paths ^^^^^
+
+;; region ----- Turn markers (isaac-7li9) -----
+
+(defn record-turn-marker!* [root session-id marker fs]
+  (let [path (turn-marker-path root session-id)]
+    (mkdirs*! fs (fs/parent path))
+    (spit*! fs path (write-edn (assoc marker :session-id (str session-id))))))
+
+(defn clear-turn-marker!* [root session-id fs]
+  (delete*! fs (turn-marker-path root session-id)))
+
+(defn get-turn-marker* [root session-id fs]
+  (let [path (turn-marker-path root session-id)]
+    (when (exists?* fs path)
+      (edn/read-string (slurp* fs path)))))
+
+(defn turn-markers* [root fs]
+  (let [dir (turns-dir root)]
+    (if-let [children (children* fs dir)]
+      (->> children
+           (filter #(str/ends-with? % ".edn"))
+           (keep #(edn/read-string (slurp* fs (str dir "/" %))))
+           vec)
+      [])))
+
+;; endregion ^^^^^ Turn markers ^^^^^
 
 ;; region ----- Transcript -----
 

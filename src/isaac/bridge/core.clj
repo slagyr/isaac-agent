@@ -150,16 +150,39 @@
       :else
       {:charge c})))
 
+(defn- marker-source [charge]
+  (let [kind (:kind (:origin charge))]
+    (cond
+      (= :hail kind) :hail
+      (= :cron kind) :cron
+      (:comm charge) :comm
+      :else          :cli)))
+
+(defn- turn-marker
+  "The durable resume ROUTING for an in-flight turn (isaac-7li9): source, the hail
+   delivery id / embedded delivery payload when present, and started-at. Resolved
+   values (model, etc.) are deliberately NOT stored — they re-resolve at resume."
+  [charge]
+  (let [origin   (:origin charge)
+        delivery (:hail-delivery charge)]
+    (cond-> {:source     (marker-source charge)
+             :started-at (System/currentTimeMillis)}
+      (:hail-id origin) (assoc :delivery-id (str (:hail-id origin)))
+      delivery          (assoc :attempts (:attempts delivery) :delivery delivery))))
+
 (defn- dispatch-charge! [c]
   (let [{:keys [charge result]} (route-charge! c)]
     (if charge
       (if-let [session-key (:session-key charge)]
         (let [session-store* (or (:session-store charge) (nexus/get-in [:sessions :store]))]
           (if (store/mark-in-flight! session-store* session-key)
-            (try
-              (turn/run-turn! charge)
-              (finally
-                (store/clear-in-flight! session-store* session-key)))
+            (do
+              (store/record-turn-marker! session-store* session-key (turn-marker charge))
+              (try
+                (turn/run-turn! charge)
+                (finally
+                  (store/clear-turn-marker! session-store* session-key)
+                  (store/clear-in-flight! session-store* session-key))))
             (refuse-dispatch session-key)))
         (turn/run-turn! charge))
       result)))

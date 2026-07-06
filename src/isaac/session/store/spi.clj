@@ -25,7 +25,15 @@
   (append-error! [this name error])
   (append-compaction! [this name compaction])
   (splice-compaction! [this name compaction])
-  (truncate-after-compaction! [this name]))
+  (truncate-after-compaction! [this name])
+  ;; Durable turn markers (isaac-7li9): resume ROUTING for an in-flight turn,
+  ;; kept at sessions/turns/<session-id>.edn (a store-private detail). The bridge
+  ;; is the only writer. `turn-markers` returns each marker map (including its
+  ;; :session-id).
+  (record-turn-marker! [this session-id marker])
+  (clear-turn-marker! [this session-id])
+  (get-turn-marker [this session-id])
+  (turn-markers [this]))
 
 (defonce ^:private in-flight* (atom {}))
 
@@ -55,6 +63,13 @@
 
 (defn in-flight? [store session-id]
   (contains? (get-in @in-flight* [store :sessions] {}) session-id))
+
+(defn orphaned-turn-markers
+  "Turn markers with no live in-memory in-flight entry for their session (D4):
+   after a restart the atom is empty so every surviving marker is an orphan; at
+   runtime a live turn always has its atom entry so it can never be an orphan."
+  [store]
+  (remove #(in-flight? store (:session-id %)) (turn-markers store)))
 
 (defn in-flight-count [store crew-name]
   (->> (vals (get-in @in-flight* [store :sessions] {}))

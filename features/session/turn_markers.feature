@@ -13,7 +13,6 @@ Feature: Durable turn markers
   Background:
     Given default Grover setup
 
-  @wip
   Scenario: a turn records a durable marker at dispatch and clears it on completion
     Given the following sessions exist:
       | name     |
@@ -29,7 +28,6 @@ Feature: Durable turn markers
     When the turn ends on session "longwave"
     Then no turn marker exists for session "longwave"
 
-  @wip
   Scenario: a failed turn still clears its marker
     Given the following sessions exist:
       | name    |
@@ -40,7 +38,6 @@ Feature: Durable turn markers
     When the user sends "hail the relay" on session "skybeam"
     Then no turn marker exists for session "skybeam"
 
-  @wip
   Scenario: only markers without a live turn are orphans
     Given the following sessions exist:
       | name      |

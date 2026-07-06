@@ -299,7 +299,17 @@
                                                (assoc e :parentId new-parent)
                                                e))))
                                    transcript)]
-          (swap! state assoc-in [:transcripts id] new-transcript))))))
+          (swap! state assoc-in [:transcripts id] new-transcript)))))
+
+  (record-turn-marker! [_ session-id marker]
+    (swap! state assoc-in [:turn-markers (str session-id)]
+           (assoc marker :session-id (str session-id))))
+  (clear-turn-marker! [_ session-id]
+    (swap! state update :turn-markers dissoc (str session-id)))
+  (get-turn-marker [_ session-id]
+    (get-in @state [:turn-markers (str session-id)]))
+  (turn-markers [_]
+    (vec (vals (:turn-markers @state)))))
 
 ;; endregion
 
