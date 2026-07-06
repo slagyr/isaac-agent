@@ -100,16 +100,20 @@
     :charge/unresolved true
     :charge/reason reason))
 
+(defn- session-model-override [session-entry]
+  (session-ctx/normalize-model-ref (:model session-entry)))
+
 (defn- behavior-opts
   "Opts for resolve-behavior: crew plus explicit model overrides only.
    Resolved provider model ids from the request's :model are omitted so a
    stale dispatch-time model cannot pin behavior across config reload."
   [crew-id {:keys [model-override model-ref]} session-entry]
-  (cond-> {:crew crew-id}
-    model-override (assoc :model model-override)
-    model-ref (assoc :model model-ref)
-    (and (nil? model-override) (nil? model-ref) (:model session-entry))
-    (assoc :model (:model session-entry))))
+  (let [session-model (session-model-override session-entry)]
+    (cond-> {:crew crew-id}
+      model-override (assoc :model (session-ctx/normalize-model-ref model-override))
+      model-ref (assoc :model (session-ctx/normalize-model-ref model-ref))
+      (and (nil? model-override) (nil? model-ref) session-model)
+      (assoc :model session-model))))
 
 (defn build
   "Build a charge from a request map.

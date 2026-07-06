@@ -37,7 +37,6 @@ Feature: Crew model hot-reload
     And the user sends "second" on session "flip-sess"
     Then the last chat request on session "flip-sess" used model "beta-1"
 
-  @wip
   Scenario: an explicit session-level model override still wins after a crew reload
     A session that pinned its own :model must not be clobbered when the crew's
     model config changes — the override outranks crew config, before and after.
@@ -52,7 +51,8 @@ Feature: Crew model hot-reload
     And the isaac EDN file "config/crew/flipper.edn" exists with:
       | path  | value  |
       | model | :alpha |
-    And a session "pinned" is created with explicit model ":beta"
+    When a session "pinned" is created with explicit crew "flipper"
+    And a session "pinned" exists with model ":beta"
     And the following model responses are queued:
       | type | content | model  |
       | text | one     | beta-1 |

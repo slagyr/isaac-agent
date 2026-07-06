@@ -199,6 +199,7 @@
         "context-mode"      (edn/read-string value)
         "effort"            (parse-long value)
         "history-retention" (edn/read-string value)
+        "model"             (session-ctx/normalize-model-ref (edn/read-string value))
         value))))
 
 (defn- loaded-config []
@@ -268,15 +269,20 @@
         (fs/spit   fs* path (pr-str updated))
         (invalidate-feature-config!)))))
 
+(defn- lookup-model-cfg [models model-id]
+  (let [id (session-ctx/normalize-model-ref model-id)]
+    (or (get models id)
+        (get models (keyword id))
+        (some (fn [[_ cfg]] (when (= id (:model cfg)) cfg)) models)
+        (first (filter #(= id (:model %)) (vals models))))))
+
 (defn- current-model-config []
   (let [models    (loaded-models)
         session   (current-session)
         agent     (current-agent-config)
         defaults  (:defaults (loaded-config))
         model-id  (or (:model session) (:model agent) (:model defaults))]
-    (or (get models model-id)
-        (some (fn [[_ cfg]] (when (= model-id (:model cfg)) cfg)) models)
-        (first (filter #(= model-id (:model %)) (vals models))))))
+    (lookup-model-cfg models model-id)))
 
 (defn- parse-model-content [content]
   (let [trimmed (when (string? content) (str/trim content))]
@@ -875,8 +881,7 @@
         events        (atom [])
         channel       (memory-comm/channel events)
         p-cfg         (provider-config)
-        send-opts     {:model          (:model model-cfg)
-                       :soul           (:soul agent-cfg)
+        send-opts     {:soul           (:soul agent-cfg)
                        :provider       (when provider-name
                                          (llm-provider/make-provider provider-name p-cfg))
                        :context-window (:context-window model-cfg)

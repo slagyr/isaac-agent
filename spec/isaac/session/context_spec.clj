@@ -1,6 +1,7 @@
 (ns isaac.session.context-spec
   (:require
     [isaac.config.api :as config]
+    [isaac.config.loader :as loader]
     [isaac.fs :as fs]
     [isaac.marigold :as marigold]
     [isaac.session.store.spi :as store]
@@ -133,6 +134,24 @@
       (should= :reset (:context-mode behavior))
       (should= 6 (:effort behavior))
       (should= {:async? false :strategy :rubberband :head 0.3 :threshold 0.7} (:compaction behavior)))
+    (config/dangerously-install-config! nil "spec"))
+
+  (it "honors an explicit session-level model override over the crew model"
+    (config/dangerously-install-config! {:defaults  {:crew crew-name}
+                                         :crew      {crew-name {:model "alpha" :soul crew-soul}
+                                                     "flipper" {:model "alpha" :soul "flip"}}
+                                         :models    {"alpha" {:model "alpha-1" :provider "grover"}
+                                                     "beta"  {:model "beta-1" :provider "grover"}}
+                                         :providers {"grover" {:api "grover"}}} "spec")
+    (sut/create-with-resolved-behavior! "pinned" {:crew "flipper" :model ":beta"})
+    (let [session (helper/get-session test-root "pinned")]
+      (should= "flipper" (:crew session))
+      (should= "beta" (:model session))
+      (should= "beta-1" (get-in (sut/resolve-behavior "pinned") [:model-cfg :model])))
+    (config/dangerously-install-config!
+      (assoc-in (loader/snapshot "spec") [:crew "flipper" :model] "alpha")
+      "spec")
+    (should= "beta-1" (get-in (sut/resolve-behavior "pinned") [:model-cfg :model]))
     (config/dangerously-install-config! nil "spec"))
 
   (it "creates a session with resolved locked defaults and explicit overrides"

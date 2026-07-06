@@ -1,7 +1,9 @@
 (ns isaac.session.context
   (:require
+    [clojure.edn :as edn]
     [c3kit.apron.schema :as schema]
     [clojure.string :as str]
+    [isaac.config.schema.root :as config-schema]
     [isaac.config.loader :as loader]
     [isaac.config.resolve :as resolve]
     [isaac.effort :as effort]
@@ -90,6 +92,14 @@
 (def ^:private behavioral-keys
   [:compaction :context-mode :context-window :crew :cwd :effort :history-retention :model :nonce :provider])
 
+(defn normalize-model-ref
+  "Coerce a session-level model override to a canonical config id string."
+  [model-ref]
+  (when model-ref
+    (config-schema/->id (if (and (string? model-ref) (str/starts-with? model-ref ":"))
+                          (edn/read-string model-ref)
+                          model-ref))))
+
 (defn- ensure-session-nonce
   [session-entry session-store*]
   (cond
@@ -101,7 +111,7 @@
   (let [crew-id        (or (:crew session-entry)
                            (get-in cfg [:defaults :crew])
                            "main")
-        model-override (:model session-entry)
+        model-override (normalize-model-ref (:model session-entry))
         ctx            (resolve/resolve-crew-context cfg crew-id
                                                     (cond-> {:root root}
                                                       model-override (assoc :model-override model-override)))
@@ -209,7 +219,7 @@
                       (contains? opts :compaction)   (assoc :compaction (:compaction opts))
                       (contains? opts :context-mode) (assoc :context-mode (:context-mode opts))
                       (contains? opts :effort)       (assoc :effort (:effort opts))
-                      (contains? opts :model)        (assoc :model (:model opts))
+                      (contains? opts :model)        (assoc :model (normalize-model-ref (:model opts)))
                       (contains? opts :provider)     (assoc :provider (:provider opts)))]
      (if (seq updates)
        (store/update-session! store (:id entry) updates)
