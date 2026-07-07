@@ -2,8 +2,8 @@
   (:require
     [cheshire.core :as json]
     [clojure.pprint :as pprint]
+    [clojure.set :as set]
     [clojure.string :as str]
-    [isaac.bridge.core :as bridge]
     [isaac.charge :as charge]
     [isaac.comm.null :as null-comm]
     [isaac.drive.turn :as turn]
@@ -13,8 +13,7 @@
     [isaac.nexus :as nexus]
     [isaac.session.store.impl-common :as store-common]
     [isaac.session.store.memory :as memory-store]
-    [isaac.session.store.spi :as store]
-    [isaac.session.transcript :as transcript])
+    [isaac.session.store.spi :as store])
   (:import
     (java.time Instant)))
 
@@ -98,7 +97,7 @@
                                            (get-in entry [:message :id])
                                            (:id entry)))))
                              set)]
-    (seq (clojure.set/difference tool-call-ids tool-result-ids))))
+    (seq (set/difference tool-call-ids tool-result-ids))))
 
 (declare sync-truncated-transcript!)
 
@@ -154,14 +153,16 @@
 (defn- requeue-hail! [root marker]
   (when-let [delivery (some-> (marker->delivery marker)
                               (assoc :attempts (resume-attempts marker)))]
-    (write-delivery! root delivery)))
+    (write-delivery! root delivery)
+    true))
 
 (defn- dispatch-comm-resume! [session-id cfg]
   (turn/run-turn!
     (charge/build {:config      cfg
                    :session-key session-id
                    :input       resume-note
-                   :comm        null-comm/channel})))
+                   :comm        null-comm/channel}))
+  true)
 
 (defn- resume-marker!
   [{:keys [session-store root cfg window-ms now-ms]} marker]
@@ -170,7 +171,8 @@
     (if (comm-stale? marker window-ms now-ms)
       (do
         (log/info :resume/comm-stale :session session-id)
-        (store/clear-turn-marker! session-store session-id))
+        (store/clear-turn-marker! session-store session-id)
+        {:dropped 1})
       (do
         (when (crash-orphan? marker)
           (log/warn :resume/crash-orphan :session session-id))
@@ -179,10 +181,12 @@
         (try
           (cond
             (= :hail source)
-            (requeue-hail! root marker)
+            (when (requeue-hail! root marker)
+              {:requeued 1})
 
             (#{:comm :cron :cli} source)
-            (dispatch-comm-resume! session-id cfg)
+            (when (dispatch-comm-resume! session-id cfg)
+              {:requeued 1})
 
             :else nil)
           (finally
@@ -201,11 +205,20 @@
         window-ms  (or resume-window-ms
                        (get-in cfg [:turn-resume-window-ms])
                        default-resume-window-ms)
+        markers    (vec (store/turn-markers session-store))
         opts       {:session-store session-store
                     :root          root
                     :cfg           cfg
                     :window-ms     window-ms
-                    :now-ms        now-ms}]
-    (doseq [marker (store/turn-markers session-store)]
-      (resume-marker! opts marker))
+                    :now-ms        now-ms}
+        summary    (reduce (fn [acc marker]
+                             (merge-with + acc (or (resume-marker! opts marker) {})))
+                           {:markers  (count markers)
+                            :requeued 0
+                            :dropped  0}
+                           markers)]
+    (log/info :resume/scan-complete
+              :markers (:markers summary)
+              :requeued (:requeued summary)
+              :dropped (:dropped summary))
     nil))
