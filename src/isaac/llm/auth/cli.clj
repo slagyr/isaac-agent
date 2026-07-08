@@ -12,7 +12,13 @@
 
 ;; region ----- Login -----
 
-(defn- known-providers [] #{"anthropic" "ollama" "openai" "chatgpt"})
+(defn- known-providers [] #{"anthropic" "ollama" "openai" "chatgpt" "grok"})
+
+(defn- load-auth-config [reason]
+  (loader/load-config! (root/current-root) (fs/instance) reason))
+
+(defn- oauth-provider? [provider-name]
+  (contains? #{"chatgpt" "grok"} provider-name))
 
 (defn- login-api-key [provider-name]
   (print (str "Enter API key for " provider-name ": "))
@@ -21,7 +27,7 @@
     (if (str/blank? key)
       (do (println "Error: API key is required")
           1)
-      (let [sdir (or (:root (loader/load-config! (root/current-root) (fs/instance) "auth cli: key login"))
+      (let [sdir (or (:root (load-auth-config "auth cli: key login"))
                      (root/current-root))]
         (auth-store/save-api-key! sdir provider-name key (fs/instance))
         (println (str "Authenticated with " provider-name " via API key"))
@@ -33,50 +39,53 @@
   (root/current-root))
 
 (defn- login-device-code [provider-name]
-  (println "Requesting device code...")
-  (let [user-code-resp (device-code/request-user-code!)]
-    (if (:error user-code-resp)
-      (do
-        (println (str "Error: Failed to request device code: " (:error user-code-resp)))
-        1)
-      (let [user-code    (:user_code user-code-resp)
-            device-id    (:device_auth_id user-code-resp)
-            raw-interval (:interval user-code-resp)
-            interval     (if (string? raw-interval) (parse-long raw-interval) (or raw-interval 5))]
-        (println)
-        (println "Follow these steps to sign in:")
-        (println)
-        (println "  1. Open this link in your browser:")
-        (println (str "     " device-code/verification-url))
-        (println)
-        (println "  2. Enter this one-time code (expires in 15 minutes)")
-        (println (str "     " user-code))
-        (println)
-        (println "Waiting for authorization...")
-        (let [auth-resp (device-code/poll-for-auth! device-id user-code (* interval 1000))]
-          (cond
-            (:error auth-resp)
-            (do
-              (println (str "Error: Authorization failed: " (:error auth-resp)))
-              1)
+  (let [descriptor (device-code/provider-descriptor! provider-name)]
+    (println "Requesting device code...")
+    (let [user-code-resp (device-code/request-user-code! descriptor)]
+      (if (:error user-code-resp)
+        (do
+          (println (str "Error: Failed to request device code: " (:error user-code-resp)))
+          1)
+        (let [user-code    (:user_code user-code-resp)
+              device-id    (or (:device_auth_id user-code-resp)
+                               (:device_code user-code-resp))
+              raw-interval (:interval user-code-resp)
+              interval     (if (string? raw-interval) (parse-long raw-interval) (or raw-interval 5))]
+          (println)
+          (println "Follow these steps to sign in:")
+          (println)
+          (println "  1. Open this link in your browser:")
+          (println (str "     " (device-code/verification-url descriptor)))
+          (println)
+          (println "  2. Enter this one-time code (expires in 15 minutes)")
+          (println (str "     " user-code))
+          (println)
+          (println "Waiting for authorization...")
+          (let [auth-resp (device-code/poll-for-auth! descriptor device-id user-code (* interval 1000))]
+            (cond
+              (:error auth-resp)
+              (do
+                (println (str "Error: Authorization failed: " (:error auth-resp)))
+                1)
 
-            :else
-            (let [tokens (device-code/exchange-tokens! (:authorization_code auth-resp)
-                                                       (:code_verifier auth-resp))]
-              (cond
-                (:error tokens)
-                (do
-                  (println (str "Error: Token exchange failed: " (:error tokens)
-                                (when (:body tokens) (str " - " (:body tokens)))))
-                  1)
+              :else
+              (let [tokens (device-code/exchange-tokens! descriptor
+                                                         (:authorization_code auth-resp)
+                                                         (:code_verifier auth-resp))]
+                (cond
+                  (:error tokens)
+                  (do
+                    (println (str "Error: Token exchange failed: " (:error tokens)
+                                  (when (:body tokens) (str " - " (:body tokens)))))
+                    1)
 
-                :else
-                (do
-                  (auth-store/save-tokens! (auth-dir) provider-name tokens (fs/instance))
-                  (println)
-                  (println "Authentication successful!")
-                  (println (str "Tokens saved for " provider-name))
-                  0)))))))))
+                  :else
+                  (do
+                    (auth-store/save-tokens! (auth-dir) provider-name tokens (fs/instance))
+                    (println)
+                    (println "Authentication successful!")
+                    (println (str "Tokens saved for " provider-name))
+                    0))))))))))
 
 (defn- login [{:keys [provider api-key]}]
   (cond
@@ -94,7 +103,7 @@
     (do (println (str "Unknown provider: " provider))
         1)
 
-    (= "chatgpt" provider)
+    (oauth-provider? provider)
     (login-device-code provider)
 
     api-key
@@ -146,7 +155,7 @@
       "no auth required")))
 
 (defn- status [_opts]
-  (let [cfg  (loader/load-config! (root/current-root) (fs/instance) "auth cli: status")
+  (let [cfg  (load-auth-config "auth cli: status")
         root (or (:root cfg) (root/current-root))
         fs*  (fs/instance)
         now  (System/currentTimeMillis)]

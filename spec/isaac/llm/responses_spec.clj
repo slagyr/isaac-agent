@@ -20,7 +20,15 @@
 (def oauth-device-config {:base-url  "https://chatgpt.com/backend-api/codex"
                           :auth      "oauth-device"
                           :name      "chatgpt"
-                          :root "/tmp/isaac-home/.isaac"})
+                          :root "/tmp/isaac-home/.isaac"
+                          :oauth     {:issuer "https://auth.openai.com"
+                                      :client-id "app_EMoamEEZ73f0CkXaXp7hrann"
+                                      :device-path "/api/accounts/deviceauth/usercode"
+                                      :poll-path "/api/accounts/deviceauth/token"
+                                      :token-path "/oauth/token"
+                                      :verification-url "https://auth.openai.com/codex/device"
+                                      :originator "isaac"
+                                      :chatgpt-account-id? true}})
 
 (describe "OpenAI Responses Provider"
 
@@ -150,7 +158,8 @@
                                                   {:type "oauth" :access "stale" :refresh "rt-ok"
                                                    :expires (- (System/currentTimeMillis) 1000)})
                       auth-store/token-needs-refresh? auth-store/token-needs-refresh?
-                      auth-store/refresh-oauth-tokens! (fn [_ _ _]
+                      auth-store/refresh-oauth-tokens! (fn [_ _ _ descriptor]
+                                                         (should= (:oauth oauth-device-config) descriptor)
                                                          {:tokens {:type "oauth" :access token
                                                                    :expires (+ (System/currentTimeMillis) (* 30 60 1000))}})]
           (let [result (sut/chat {:model "gpt-5.4" :messages [{:role "user" :content "hi"}]}

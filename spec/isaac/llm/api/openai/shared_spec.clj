@@ -7,7 +7,14 @@
     [isaac.nexus :as nexus]
     [speclj.core :refer :all]))
 
-(def oauth-config {:auth "oauth-device" :root "/auth"})
+(def oauth-config {:auth "oauth-device"
+                   :root "/auth"
+                   :oauth {:issuer "https://auth.openai.com"
+                           :token-path "/oauth/token"
+                           :verification-url "https://auth.openai.com/codex/device"
+                           :client-id "chatgpt-client"
+                           :originator "isaac"
+                           :chatgpt-account-id? true}})
 
 (describe "openai shared oauth"
 
@@ -18,7 +25,8 @@
       (auth-store/save-tokens! "/auth" "chatgpt" {:access_token  "at-old"
                                                   :refresh_token "rt-ok"
                                                   :expires_in    -60} @fs)
-      (with-redefs [device-code/refresh-tokens! (fn [_]
+      (with-redefs [device-code/refresh-tokens! (fn [descriptor _]
+                                                  (should= (:oauth oauth-config) descriptor)
                                                   {:access_token "at-new" :expires_in 3600})]
         (let [tokens (sut/resolve-oauth-tokens "chatgpt" oauth-config)]
           (should= "at-new" (:access tokens))
@@ -29,7 +37,9 @@
       (auth-store/save-tokens! "/auth" "chatgpt" {:access_token  "at-old"
                                                   :refresh_token "rt-bad"
                                                   :expires_in    -60} @fs)
-      (with-redefs [device-code/refresh-tokens! (fn [_] {:error :api-error})]
+      (with-redefs [device-code/refresh-tokens! (fn [descriptor _]
+                                                  (should= (:oauth oauth-config) descriptor)
+                                                  {:error :api-error})]
         (should-be-nil (sut/resolve-oauth-tokens "chatgpt" oauth-config)))))
 
   (it "retries once after auth-failed when refresh succeeds"
@@ -38,7 +48,8 @@
                                                 :expires_in    3600} @fs)
     (let [attempts* (atom 0)]
       (nexus/-with-nested-nexus {:fs @fs}
-        (with-redefs [device-code/refresh-tokens! (fn [_]
+        (with-redefs [device-code/refresh-tokens! (fn [descriptor _]
+                                                    (should= (:oauth oauth-config) descriptor)
                                                     {:access_token "at-new" :expires_in 3600})]
           (let [result (sut/with-oauth-refresh-retry "chatgpt" oauth-config
                        (fn []

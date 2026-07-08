@@ -3,11 +3,39 @@
     [cheshire.core :as json]
     [clojure.string :as str]
     [gherclj.core :as g :refer [defgiven defwhen defthen helper!]]
+    [isaac.foundation.cli-steps :as fcli]
     [isaac.fs :as fs]
     [isaac.llm.api.openai.shared :as openai-shared]
     [isaac.llm.auth.device-code :as device-code]
     [isaac.llm.auth.store :as auth-store]
     [isaac.nexus :as nexus]))
+
+(defn- stubbed-device-code-login? []
+  (not= false (g/get :oauth-device-code-stub)))
+
+(defn- stub-user-code-response [_descriptor]
+  {:device_auth_id "device-auth-stub"
+   :user_code      "TEST-CODE"
+   :interval       0})
+
+(defn- stub-auth-response [_descriptor _device-id _user-code _interval-ms]
+  {:authorization_code "auth-code-stub"
+   :code_verifier     "code-verifier-stub"})
+
+(defn- stub-token-response [_descriptor _authorization-code _code-verifier]
+  {:access_token  "at-stub"
+   :refresh_token "rt-stub"
+   :id_token      "id-stub"
+   :expires_in    3600})
+
+(fcli/register-isaac-run-wrapper!
+  (fn [thunk]
+    (if (stubbed-device-code-login?)
+      (with-redefs [device-code/request-user-code! stub-user-code-response
+                    device-code/poll-for-auth!   stub-auth-response
+                    device-code/exchange-tokens! stub-token-response]
+        (thunk))
+      (thunk))))
 
 (helper! isaac.agent.auth-steps)
 
@@ -61,11 +89,17 @@
 (defn oauth-token-refresh-fails []
   (g/assoc! :oauth-refresh-stub {:error :api-error}))
 
+(def ^:private chatgpt-oauth-descriptor
+  {:issuer           "https://auth.openai.com"
+   :client-id        "chatgpt-client"
+   :token-path       "/oauth/token"
+   :verification-url "https://auth.openai.com/codex/device"})
+
 (defn chatgpt-oauth-access-resolved []
   (with-redefs [device-code/refresh-tokens!
-                (fn [_] (g/get :oauth-refresh-stub))]
+                (fn [_ _] (g/get :oauth-refresh-stub))]
     (let [tokens (openai-shared/resolve-oauth-tokens
-                   "chatgpt" {:auth "oauth-device" :root (auth-root)})]
+                   "chatgpt" {:auth "oauth-device" :root (auth-root) :oauth chatgpt-oauth-descriptor})]
       (g/assoc! :oauth-resolve-result tokens))))
 
 (defn chatgpt-oauth-tokens-have-future-expiry []
@@ -86,9 +120,9 @@
 
 (defn oauth-access-error-mentions [message]
   (with-redefs [device-code/refresh-tokens!
-                (fn [_] (g/get :oauth-refresh-stub))]
+                (fn [_ _] (g/get :oauth-refresh-stub))]
     (let [err (openai-shared/missing-auth-error "chatgpt"
-                                                {:auth "oauth-device" :root (auth-root)})]
+                                                {:auth "oauth-device" :root (auth-root) :oauth chatgpt-oauth-descriptor})]
       (g/should (str/includes? (:message err) message)))))
 
 (defgiven "authenticated credentials exist for provider {provider:string}" isaac.agent.auth-steps/authenticated-credentials

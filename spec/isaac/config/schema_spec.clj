@@ -82,7 +82,28 @@
                                 {:base-url "https://api"
                                  :api      marigold/helm-api
                                  :auth     "oauth-device"
-                                 :headers  {"X-Foo" "bar"}}))))
+                                 :headers  {"X-Foo" "bar"}})))
+
+    (it "provider conforms including oauth descriptor metadata"
+      (should= {:base-url "https://api.x.ai/v1"
+                :api marigold/helm-api
+                :auth "oauth-device"
+                :oauth {:issuer "https://auth.x.ai"
+                        :client-id "grok-client"
+                        :device-path "/oauth2/device/code"
+                        :token-path "/oauth2/token"
+                        :verification-url "https://accounts.x.ai/oauth2/device"
+                        :flow :oidc-device-code}}
+               (lexicon/conform (runtime-spec sut/provider)
+                                {:base-url "https://api.x.ai/v1"
+                                 :api marigold/helm-api
+                                 :auth "oauth-device"
+                                 :oauth {:issuer "https://auth.x.ai"
+                                         :client-id "grok-client"
+                                         :device-path "/oauth2/device/code"
+                                         :token-path "/oauth2/token"
+                                         :verification-url "https://accounts.x.ai/oauth2/device"
+                                         :flow :oidc-device-code}}))))
 
   (describe "custom validation"
 

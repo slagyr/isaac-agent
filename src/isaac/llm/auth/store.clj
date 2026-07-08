@@ -72,15 +72,15 @@
 
 (defn- refresh-failure [provider-name]
   {:error :refresh-failed
-   :message (str "Missing OpenAI ChatGPT login. Run `isaac auth login --provider " provider-name "` first.")})
+   :message (str "Missing OAuth login for " provider-name ". Run `isaac auth login --provider " provider-name "` first.")})
 
 (defn refresh-oauth-tokens!
   "Refresh OAuth tokens for provider-name when :refresh is present.
    Returns {:tokens ...} on success or {:error ... :message ...} on failure.
    Single-flight per auth-dir + provider via locking."
-  ([auth-dir provider-name fs*]
-   (refresh-oauth-tokens! auth-dir provider-name fs* {}))
-  ([auth-dir provider-name fs* {:keys [force?]}]
+  ([auth-dir provider-name fs* descriptor]
+   (refresh-oauth-tokens! auth-dir provider-name fs* descriptor {}))
+  ([auth-dir provider-name fs* descriptor {:keys [force?]}]
    (locking (refresh-lock auth-dir provider-name)
      (let [tokens (load-tokens auth-dir provider-name fs*)]
        (cond
@@ -94,7 +94,7 @@
          (refresh-failure provider-name)
 
          :else
-         (let [response (device-code/refresh-tokens! (:refresh tokens))]
+         (let [response (device-code/refresh-tokens! descriptor (:refresh tokens))]
            (if (or (:error response) (not (:access_token response)))
              (refresh-failure provider-name)
              (do

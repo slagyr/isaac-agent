@@ -53,7 +53,17 @@
         (should= "responses" (:api d))
         (should= "oauth-device" (:auth d))
         (should= "https://chatgpt.com/backend-api/codex" (:base-url d))
+        (should= "https://auth.openai.com" (get-in d [:oauth :issuer]))
+        (should= "/api/accounts/deviceauth/usercode" (get-in d [:oauth :device-path]))
         (should-be-nil (:models d))))
+
+    (it "returns chat-completions config for grok with oauth-device"
+      (let [d (sut/template "grok")]
+        (should= "chat-completions" (:api d))
+        (should= "oauth-device" (:auth d))
+        (should= "https://api.x.ai/v1" (:base-url d))
+        (should= "https://auth.x.ai" (get-in d [:oauth :issuer]))
+        (should= "/oauth2/device/code" (get-in d [:oauth :device-path]))))
 
     (it "returns grover config with none auth and empty models"
       (let [d (sut/template "grover")]

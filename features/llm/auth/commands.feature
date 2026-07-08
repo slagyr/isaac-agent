@@ -24,6 +24,12 @@ Feature: Auth Commands
     Then the stdout contains "Unknown provider: bogus"
     And the exit code is 1
 
+  Scenario: Login with Grok device-code OAuth
+    When isaac is run with "auth login --provider grok"
+    Then the stdout contains "https://accounts.x.ai/oauth2/device"
+    And the stdout contains "Tokens saved for grok"
+    And the exit code is 0
+
   # --- Status ---
 
   Scenario: Show auth status

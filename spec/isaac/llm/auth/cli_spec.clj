@@ -59,28 +59,41 @@
       (it "returns 1 when --api-key not specified"
         (should= 1 (sut/run ["login" "--provider" "anthropic"])))
 
-      (describe "chatgpt device code flow"
+      (describe "oauth device-code flow"
 
         (it "accepts chatgpt as a known provider"
           (let [output (atom nil)]
-            (with-redefs [device-code/request-user-code! (fn [] {:error :api-error :status 404})]
+            (with-redefs [device-code/request-user-code! (fn [_] {:error :api-error :status 404})]
               (binding [*out* (java.io.StringWriter.)]
                 (sut/run ["login" "--provider" "chatgpt"])
                 (reset! output (str *out*))))
             (should-not-contain "Unknown provider" @output)))
 
+        (it "accepts grok as a known provider"
+          (let [output (atom nil)]
+            (with-redefs [device-code/request-user-code! (fn [_] {:error :api-error :status 404})]
+              (binding [*out* (java.io.StringWriter.)]
+                (sut/run ["login" "--provider" "grok"])
+                (reset! output (str *out*))))
+            (should-not-contain "Unknown provider" @output)))
+
         (it "initiates device code flow without --api-key"
-          (let [steps (atom [])]
-            (with-redefs [device-code/request-user-code! (fn []
+          (let [steps      (atom [])
+                descriptor {:verification-url "https://auth.openai.com/codex/device"}]
+            (with-redefs [device-code/provider-descriptor! (fn [_] descriptor)
+                          device-code/request-user-code! (fn [d]
+                                                           (should= descriptor d)
                                                            (swap! steps conj :request-code)
                                                            {:device_auth_id "dauth-1"
                                                             :user_code      "TEST-CODE"
                                                             :interval       5})
-                          device-code/poll-for-auth!      (fn [_ _ _]
+                          device-code/poll-for-auth!      (fn [d _ _ _]
+                                                           (should= descriptor d)
                                                            (swap! steps conj :poll)
                                                            {:authorization_code "auth-xyz"
                                                             :code_verifier     "verify-abc"})
-                          device-code/exchange-tokens!    (fn [_ _]
+                          device-code/exchange-tokens!    (fn [d _ _]
+                                                            (should= descriptor d)
                                                             (swap! steps conj :exchange)
                                                             {:access_token  "at-ok"
                                                              :refresh_token "rt-ok"
@@ -92,16 +105,18 @@
               (should= [:request-code :poll :exchange :save] @steps))))
 
         (it "handles string interval from API response"
-          (let [poll-interval (atom nil)]
-            (with-redefs [device-code/request-user-code! (fn []
+          (let [poll-interval (atom nil)
+                descriptor    {:verification-url "https://auth.openai.com/codex/device"}]
+            (with-redefs [device-code/provider-descriptor! (fn [_] descriptor)
+                          device-code/request-user-code! (fn [_]
                                                            {:device_auth_id "dauth-1"
                                                             :user_code      "TEST-CODE"
                                                             :interval       "5"})
-                          device-code/poll-for-auth!      (fn [_ _ interval-ms]
+                          device-code/poll-for-auth!      (fn [_ _ _ interval-ms]
                                                            (reset! poll-interval interval-ms)
                                                            {:authorization_code "ac"
                                                             :code_verifier     "cv"})
-                          device-code/exchange-tokens!    (fn [_ _]
+                          device-code/exchange-tokens!    (fn [_ _ _]
                                                             {:access_token  "at"
                                                              :refresh_token "rt"
                                                              :id_token      "id"
@@ -111,27 +126,30 @@
               (should= 5000 @poll-interval))))
 
         (it "returns 1 when request-user-code fails"
-          (with-redefs [device-code/request-user-code! (fn [] {:error :api-error :status 404})]
+          (with-redefs [device-code/provider-descriptor! (fn [_] {:verification-url "https://auth.openai.com/codex/device"})
+                        device-code/request-user-code! (fn [_] {:error :api-error :status 404})]
             (should= 1 (sut/run ["login" "--provider" "chatgpt"]))))
 
         (it "returns 1 when poll-for-auth fails"
-          (with-redefs [device-code/request-user-code! (fn []
+          (with-redefs [device-code/provider-descriptor! (fn [_] {:verification-url "https://auth.openai.com/codex/device"})
+                        device-code/request-user-code! (fn [_]
                                                          {:device_auth_id "d"
                                                           :user_code      "C"
                                                           :interval       5})
-                        device-code/poll-for-auth!      (fn [_ _ _]
+                        device-code/poll-for-auth!      (fn [_ _ _ _]
                                                          {:error :timeout})]
             (should= 1 (sut/run ["login" "--provider" "chatgpt"]))))
 
         (it "returns 1 when token exchange fails"
-          (with-redefs [device-code/request-user-code! (fn []
+          (with-redefs [device-code/provider-descriptor! (fn [_] {:verification-url "https://auth.openai.com/codex/device"})
+                        device-code/request-user-code! (fn [_]
                                                          {:device_auth_id "d"
                                                           :user_code      "C"
                                                           :interval       5})
-                        device-code/poll-for-auth!      (fn [_ _ _]
+                        device-code/poll-for-auth!      (fn [_ _ _ _]
                                                          {:authorization_code "ac"
                                                           :code_verifier     "cv"})
-                        device-code/exchange-tokens!    (fn [_ _]
+                        device-code/exchange-tokens!    (fn [_ _ _]
                                                           {:error :api-error})]
             (should= 1 (sut/run ["login" "--provider" "chatgpt"]))))
 
