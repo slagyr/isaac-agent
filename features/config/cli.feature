@@ -177,12 +177,12 @@ Feature: Config Command
       """
     When isaac is run with "config validate"
     Then the stderr matches:
-      | pattern                              |
-      | providers\.bogus\.api              |
-      | must be one of                      |
-      | file: config/providers/bogus\.edn   |
-      | bad value: carrier-pigeon           |
-      | valid: .*chat-completions.*       |
+      | pattern                                                              |
+      | providers\.bogus\.api                                                |
+      | must be a registered contribution to :isaac\.agent/llm-api           |
+      | file: config/providers/bogus\.edn                                    |
+      | bad value: carrier-pigeon                                            |
+      | valid: .*chat-completions.*                                          |
     And the exit code is 1
 
   Scenario: validate reports unknown tool refs with file and valid set

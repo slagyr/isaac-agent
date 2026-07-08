@@ -54,8 +54,8 @@ Feature: Api extension
       """
     When the config is loaded
     Then the config has validation errors matching:
-      | key                    | value       |
-      | providers.tin-test.api | must be one of |
+      | key                    | value                                                      |
+      | providers.tin-test.api | must be a registered contribution to :isaac.agent/llm-api |
 
   Scenario: Config validation fails for an unregistered api
     Given an empty Isaac root at "/tmp/isaac"
@@ -68,5 +68,5 @@ Feature: Api extension
       """
     When the config is loaded
     Then the config has validation errors matching:
-      | key                 | value       |
-      | providers.bogus.api | must be one of |
+      | key                 | value                                                      |
+      | providers.bogus.api | must be a registered contribution to :isaac.agent/llm-api |

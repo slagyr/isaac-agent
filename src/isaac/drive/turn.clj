@@ -271,18 +271,26 @@
       (subs content (count full-content))
       content)))
 
+(defn- meaningful-final-chunk? [chunk]
+  (or (get-in chunk [:message :content])
+      (get-in chunk [:delta :text])
+      (seq (:tool-calls chunk))))
+
 (defn stream-response! [p request on-chunk]
   (let [full-content (atom "")
+        final-resp   (atom nil)
         result       (dispatch/dispatch-chat-stream p request
                                                     (fn [chunk]
                                                       (when-let [piece (chunk-piece @full-content chunk)]
                                                         (when (seq piece)
                                                           (swap! full-content str piece)
-                                                          (on-chunk piece)))))]
+                                                          (on-chunk piece)))
+                                                      (when (:done chunk)
+                                                        (reset! final-resp chunk))))]
     (if (:error result)
       result
       {:content  (or (not-empty @full-content) (get-in result [:message :content]) "")
-       :response result})))
+       :response (if (meaningful-final-chunk? @final-resp) @final-resp result)})))
 
 
 (defn- emit-response-content! [channel-impl session-key response]
