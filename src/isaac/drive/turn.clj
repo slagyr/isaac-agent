@@ -273,19 +273,16 @@
 
 (defn stream-response! [p request on-chunk]
   (let [full-content (atom "")
-        final-resp   (atom nil)
         result       (dispatch/dispatch-chat-stream p request
                                                     (fn [chunk]
                                                       (when-let [piece (chunk-piece @full-content chunk)]
                                                         (when (seq piece)
                                                           (swap! full-content str piece)
-                                                          (on-chunk piece)))
-                                                      (when (:done chunk)
-                                                        (reset! final-resp chunk))))]
+                                                          (on-chunk piece)))))]
     (if (:error result)
       result
       {:content  (or (not-empty @full-content) (get-in result [:message :content]) "")
-       :response (or @final-resp result)})))
+       :response result})))
 
 
 (defn- emit-response-content! [channel-impl session-key response]
@@ -308,6 +305,10 @@
       (string? raw) (not (#{"false" "0" "no" "off"} (str/lower-case raw)))
       :else (boolean raw))))
 
+(defn- stream-non-tool-turns? [provider-config]
+  (boolean (or (get provider-config :stream-non-tool-turns)
+               (get provider-config :streamNonToolTurns))))
+
 (defn- unwrap-stream-result
   "stream-response! returns {:content streamed-text :response chat-response}.
    The tool loop wants the inner chat-response so it can read :message and :tool-calls."
@@ -326,6 +327,11 @@
   [channel-impl session-key p request]
   (cond
     (and (:tools request) (stream-supports-tool-calls? (api/config p)))
+    (fn [req] (unwrap-stream-result
+                (stream-response! p req
+                                  (fn [chunk] (comm/on-text-chunk channel-impl session-key chunk)))))
+
+    (and (not (seq (:tools request))) (stream-non-tool-turns? (api/config p)))
     (fn [req] (unwrap-stream-result
                 (stream-response! p req
                                   (fn [chunk] (comm/on-text-chunk channel-impl session-key chunk)))))

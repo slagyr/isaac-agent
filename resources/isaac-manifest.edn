@@ -74,6 +74,7 @@
  {:messages {:factory isaac.llm.api.messages/make},
   :grover {:factory isaac.llm.api.grover/make},
   :ollama {:factory isaac.llm.api.ollama/make},
+  :claude-cli {:factory isaac.llm.api.claude-cli/make},
   :chat-completions {:factory isaac.llm.api.chat-completions/make},
   :responses {:factory isaac.llm.api.responses/make}},
  :isaac.agent/tools
@@ -121,7 +122,13 @@
   {:template
    {:api "responses",
     :base-url "https://chatgpt.com/backend-api/codex",
-    :auth "oauth-device"}}},
+    :auth "oauth-device"}},
+  :claude-code
+  {:template
+   {:api "claude-cli",
+    :auth "none",
+    :command "claude",
+    :stream-supports-tool-calls false}}},
  :isaac.agent/slash-commands
  {:crew {:factory isaac.slash.builtin/crew-command},
   :cwd {:factory isaac.slash.builtin/cwd-command},
@@ -195,6 +202,16 @@
       :stream-supports-tool-calls
       {:type :boolean,
        :description "Whether streaming mode supports tool calls"},
+      :stream-non-tool-turns
+      {:type :boolean,
+       :description "Use chat-stream for turns without tools (claude-cli)"},
+      :command
+      {:type :string,
+       :description "CLI binary path for claude-cli shell-out"},
+      :extra-args
+      {:type :seq,
+       :description "Extra CLI args forwarded before the prompt (claude-cli)",
+       :spec {:type :string}},
       :compaction
       {:type :map,
        :description "Compaction policy override for this provider",

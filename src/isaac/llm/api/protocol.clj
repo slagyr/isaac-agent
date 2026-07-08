@@ -150,6 +150,7 @@
                 (= provider "grover")                            "grover"
                 (str/starts-with? (or provider "") "anthropic")  "messages"
                 (= provider "ollama")                            "ollama"
+                (= provider "claude-code")                       "claude-cli"
                 :else                                            nil))
           ->api))
 
