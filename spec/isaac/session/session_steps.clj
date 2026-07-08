@@ -327,6 +327,7 @@
      "type"
      "content"
      "tool_call"
+     "tool_calls"
      "arguments"
      "wait"
      "status"
@@ -388,12 +389,18 @@
       (get m "model")
       (assoc :model (let [v (get m "model")] (when-not (str/blank? v) v)))
 
+      (= "tool_calls" (some-> (get m "type") str/lower-case))
+      (assoc :type "tool_calls")
+
       (some? (when-not (str/blank? tool-name) tool-name))
       (assoc :tool_call tool-name)
 
       (and (not (str/blank? tool-name))
            (not (str/blank? arguments)))
       (assoc :arguments (json/parse-string arguments true))
+
+      (and (get m "tool_calls") (not (str/blank? (get m "tool_calls"))))
+      (assoc :tool_calls (json/parse-string (get m "tool_calls") true))
 
       (or input-tokens output-tokens)
       (assoc :usage {:input_tokens  (or input-tokens 0)

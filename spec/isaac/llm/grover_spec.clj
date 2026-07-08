@@ -114,6 +114,15 @@
         (should= {:path "README"} (get-in resp [:message :tool_calls 0 :function :arguments]))
         (should= "" (get-in resp [:message :content]))))
 
+    (it "returns multiple scripted tool calls in one response"
+      (sut/enqueue! [{:type "tool_calls"
+                      :tool_calls [{:function {:name "read" :arguments {:filePath "a"}}}
+                                   {:function {:name "read" :arguments {:filePath "b"}}}]}])
+      (let [resp (sut/chat {:model "echo" :messages [{:role "user" :content "go"}]} "grover" {})]
+        (should= 2 (count (get-in resp [:message :tool_calls])))
+        (should= "read" (get-in resp [:message :tool_calls 0 :function :name]))
+        (should= "read" (get-in resp [:message :tool_calls 1 :function :name]))))
+
     (it "waits for release when a scripted response is marked wait"
       (sut/enqueue! [{:type "text" :content "Scripted answer" :wait true}])
       (let [response (future (sut/chat {:model "echo" :messages [{:role "user" :content "Ignored"}]}

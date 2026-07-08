@@ -2,6 +2,7 @@
   (:require [cheshire.core :as json]
             [clojure.string :as str]
             [isaac.llm.api.protocol :as llm-api]
+            [isaac.llm.turn-instructions :as turn-instructions]
             [isaac.session.transcript :as message-content]))
 
 ;; region ----- Tool Result Truncation -----
@@ -240,6 +241,7 @@
    (build-system-text soul boot-files rules-text skill-menu-text nil nil nonce))
   ([soul boot-files rules-text skill-menu-text session-name crew nonce]
    (str/join "\n\n" (remove str/blank? [soul boot-files rules-text skill-menu-text
+                                        turn-instructions/parallel-tool-calls-hint
                                         (session-identity-block session-name crew)
                                         (injection-guard nonce)]))))
 

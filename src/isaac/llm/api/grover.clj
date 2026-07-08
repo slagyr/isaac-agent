@@ -169,17 +169,20 @@
       (= "error" (:type scripted))
       {:error :llm-error :message (:content scripted) :model resp-model}
 
-      (:tool_call scripted)
-      (merge {:model   resp-model
-              :message {:role       "assistant"
-                        :content    ""
-                        :tool_calls [{:function {:name      (:tool_call scripted)
-                                                  :arguments (:arguments scripted)}}]}
-              :done    true
-              :done_reason "stop"}
-             metadata
-              token-counts
-              token-overrides)
+      (or (seq (:tool_calls scripted)) (:tool_call scripted))
+      (let [calls (if (seq (:tool_calls scripted))
+                    (:tool_calls scripted)
+                    [{:function {:name      (:tool_call scripted)
+                                 :arguments (:arguments scripted)}}])]
+        (merge {:model   resp-model
+                :message {:role       "assistant"
+                          :content    ""
+                          :tool_calls calls}
+                :done    true
+                :done_reason "stop"}
+               metadata
+               token-counts
+               token-overrides))
 
       :else
       (merge {:model   resp-model

@@ -1,6 +1,7 @@
 (ns isaac.llm.prompt.builder-spec
   (:require
     [isaac.llm.prompt.builder :as sut]
+    [isaac.llm.turn-instructions :as turn-instructions]
     [speclj.core :refer :all]))
 
 (def sample-transcript
@@ -112,6 +113,11 @@
         (should= "system" (get-in p [:messages 0 :role]))
         (should-contain "You are Isaac." (get-in p [:messages 0 :content]))))
 
+    (it "includes parallel tool call batching hint in the system prompt"
+      (let [p (sut/build {:model "test" :soul "You are Isaac." :transcript sample-transcript})]
+        (should-contain turn-instructions/parallel-tool-calls-hint
+                        (get-in p [:messages 0 :content]))))
+
     (it "appends boot files to the system prompt when present"
       (let [p (sut/build {:model "test"
                           :soul "You are Isaac."
@@ -193,16 +199,18 @@
         (should (every? #(contains? #{"system" "user" "assistant"} (:role %)) (:messages p)))))
 
     (it "converts error entries to assistant messages and excludes unrecognized roles"
-      (let [p (sut/build {:model "test" :soul "Test." :transcript error-transcript})]
-        (should= [{:role "system" :content "Test."}
+      (let [p (sut/build {:model "test" :soul "Test." :transcript error-transcript})
+            system (str "Test.\n\n" turn-instructions/parallel-tool-calls-hint)]
+        (should= [{:role "system" :content system}
                   {:role "user" :content "Hello"}
                   {:role "assistant" :content "Error: another error"}
                   {:role "assistant" :content "Recovered"}]
                  (:messages p))))
 
     (it "includes tool results as user messages and excludes the preceding user turn and tool call"
-      (let [p (sut/build {:model "test" :soul "Test." :transcript tool-transcript})]
-        (should= [{:role "system" :content "Test."}
+      (let [p (sut/build {:model "test" :soul "Test." :transcript tool-transcript})
+            system (str "Test.\n\n" turn-instructions/parallel-tool-calls-hint)]
+        (should= [{:role "system" :content system}
                   {:role "user" :content "README contents"}
                   {:role "assistant" :content "Here is the README summary."}]
                  (:messages p))))

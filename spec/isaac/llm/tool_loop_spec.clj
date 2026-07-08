@@ -53,6 +53,24 @@
                (:token-counts result))
       (should= false (:loop-request? result))))
 
+  (it "executes every tool in a multi-call batch before recursing"
+    (let [chat-fn     (queue-chat
+                        [{:tool-calls [{:id "tc1" :name "read" :arguments {:path "a"}}
+                                        {:id "tc2" :name "read" :arguments {:path "b"}}]
+                          :usage      {:input-tokens 10 :output-tokens 5}}
+                         {:message {:role "assistant" :content "done"}
+                          :usage   {:input-tokens 3 :output-tokens 1}}])
+          tool-runs   (atom [])
+          tool-fn     (fn [name args]
+                        (swap! tool-runs conj {:name name :args args})
+                        (str "ok-" (:path args)))
+          followup-fn (recording-followup (atom []))
+          result      (sut/run chat-fn followup-fn {:messages []} tool-fn)]
+      (should= 2 (count @tool-runs))
+      (should= "a" (get-in (first @tool-runs) [:args :path]))
+      (should= "b" (get-in (second @tool-runs) [:args :path]))
+      (should= 2 (count (:tool-calls result)))))
+
   (it "executes tools and recurs when the response has tool-calls"
     (let [chat-fn     (queue-chat
                         [{:tool-calls [{:id "tc1" :name "read" :arguments {:path "x"}}]
