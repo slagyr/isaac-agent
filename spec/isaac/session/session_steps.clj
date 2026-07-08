@@ -332,6 +332,7 @@
      "status"
      "retry-after"
      "retry-after-ms"
+     "reason"
      "message"
      "usage.input_tokens"
      "usage.output_tokens"
@@ -359,7 +360,8 @@
          wait?             (= "true" (some-> (get m "wait") not-empty str/lower-case))
          status            (some-> (get m "status") not-empty parse-long)
          retry-after       (some-> (get m "retry-after") not-empty parse-long)
-         retry-after-ms    (some-> (get m "retry-after-ms") not-empty parse-long)]
+         retry-after-ms    (some-> (get m "retry-after-ms") not-empty parse-long)
+         reason            (some-> (get m "reason") not-empty)]
     (cond-> {}
       (some? (get m "type"))
       (assoc :type (get m "type"))
@@ -375,6 +377,9 @@
 
       retry-after-ms
       (assoc :retry-after-ms retry-after-ms)
+
+      reason
+      (assoc :reason (keyword reason))
 
       (or (some? (get m "content"))
           (and (not (str/blank? arguments)) (str/blank? tool-name)))
@@ -1404,6 +1409,13 @@
     (g/should (:unavailable? result))
     (g/should= (parse-long ms-str) (:retry-after-ms result))))
 
+(defn turn-result-is-unavailable-with-retry-after-ms-and-reason [ms-str reason-str]
+  (when (g/get :turn-future) (await-turn!))
+  (let [result (g/get :llm-result)]
+    (g/should (:unavailable? result))
+    (g/should= (parse-long ms-str) (:retry-after-ms result))
+    (g/should= (keyword reason-str) (:reason result))))
+
 (defn session-has-no-role [key-str role]
   (let [entries (with-feature-fs #(get-transcript key-str))
         role    (unquote-string role)]
@@ -1757,6 +1769,9 @@
 
 (defthen #"the turn result is unavailable with retry-after-ms (\d+)"
   isaac.session.session-steps/turn-result-is-unavailable-with-retry-after-ms)
+
+(defthen #"the turn result is unavailable with retry-after-ms (\d+) and reason (\w+)"
+  isaac.session.session-steps/turn-result-is-unavailable-with-retry-after-ms-and-reason)
 
 (defthen #"session \"([^\"]+)\" has no transcript entries with role \"([^\"]+)\"" isaac.session.session-steps/session-has-no-role)
 

@@ -4,11 +4,17 @@
     [isaac.logger :as log]))
 
 (def default-provider-retry-after-ms 1800000)
+(def default-provider-auth-retry-ms 300000)
 
 (defn provider-retry-after-ms
   [cfg]
   (or (get-in cfg [:defaults :provider-retry-after-ms])
       default-provider-retry-after-ms))
+
+(defn provider-auth-retry-after-ms
+  [cfg]
+  (or (get-in cfg [:defaults :provider-auth-retry-ms])
+      default-provider-auth-retry-ms))
 
 (defn- wall-message? [message]
   (let [lower (some-> message str/lower-case)]
@@ -33,6 +39,10 @@
   (or (= 429 (:status result))
       (wall-message? (response-message result))))
 
+(defn- auth-response? [result]
+  (or (= :auth-failed (:error result))
+      (contains? #{401 403} (:status result))))
+
 (defn- retry-after-secs [value]
   (cond
     (nil? value) nil
@@ -47,9 +57,7 @@
       (* secs 1000)
       default-ms)))
 
-(defn classify
-  "Classify a provider wall into {:unavailable? true :retry-after-ms N}.
-   Returns nil when the response is a genuine failure."
+(defn- classify-wall
   [result cfg provider]
   (when (wall-response? result)
     (let [retry-ms (retry-after-ms result (provider-retry-after-ms cfg))]
@@ -57,12 +65,41 @@
                 :provider provider
                 :status (:status result)
                 :retry-after-ms retry-ms)
-      {:unavailable? true :retry-after-ms retry-ms})))
+      {:unavailable? true
+       :retry-after-ms retry-ms
+       :reason       :wall
+       :provider     provider})))
+
+(defn- classify-auth
+  [result cfg provider]
+  (when (auth-response? result)
+    (let [retry-ms (provider-auth-retry-after-ms cfg)]
+      (log/warn :chat/provider-auth-rejected
+                :provider provider
+                :status (:status result)
+                :retry-after-ms retry-ms)
+      {:unavailable? true
+       :retry-after-ms retry-ms
+       :reason       :auth
+       :provider     provider})))
+
+(defn classify
+  "Classify provider weather into {:unavailable? true :retry-after-ms N :reason ...}.
+   Returns nil when the response is a genuine failure."
+  [result cfg provider]
+  (or (classify-auth result cfg provider)
+      (classify-wall result cfg provider)))
 
 (defn normalize
-  "Pass through pre-classified unavailable results; classify wall errors."
+  "Pass through pre-classified unavailable results; classify auth and wall errors."
   [result cfg provider]
   (cond
-    (:unavailable? result) result
-    (:error result)        (or (classify result cfg provider) result)
-    :else                  result))
+    (:unavailable? result)
+    (cond-> result
+      (nil? (:reason result)) (assoc :reason :wall)
+      (nil? (:provider result)) (assoc :provider provider))
+
+    (:error result)
+    (or (classify result cfg provider) result)
+
+    :else result))

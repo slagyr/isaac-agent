@@ -28,7 +28,7 @@ Feature: Provider wall classification
       | model        | type       | status | retry-after |
       | snuffy-codex | http-error | 429    | 60          |
     When the user sends "knock knock" on session "trash-can"
-    Then the turn result is unavailable with retry-after-ms 60000
+    Then the turn result is unavailable with retry-after-ms 60000 and reason wall
     And the log has entries matching:
       | level | event                 | provider | status |
       | :warn | :chat/provider-walled | chatgpt  | 429    |
@@ -49,4 +49,25 @@ Feature: Provider wall classification
       | model        | type       | status | message                                               |
       | snuffy-codex | http-error | 429    | usage_limit_reached: The usage limit has been reached |
     When the user sends "knock knock" on session "trash-can"
-    Then the turn result is unavailable with retry-after-ms 1800000
+    Then the turn result is unavailable with retry-after-ms 1800000 and reason wall
+
+  Scenario: a provider 401 classifies the turn as auth unavailability (isaac-5a4n)
+    Given the isaac EDN file "config/models/snuffy.edn" exists with:
+      | path           | value          |
+      | model          | snuffy-codex   |
+      | provider       | grover:chatgpt |
+      | context-window | 128000         |
+    And the isaac EDN file "config/crew/oscar.edn" exists with:
+      | path  | value  |
+      | model | snuffy |
+    And the following sessions exist:
+      | name      | crew  |
+      | trash-can | oscar |
+    And the following model responses are queued:
+      | model        | type       | status | message       |
+      | snuffy-codex | http-error | 401    | Unauthorized  |
+    When the user sends "knock knock" on session "trash-can"
+    Then the turn result is unavailable with retry-after-ms 300000 and reason auth
+    And the log has entries matching:
+      | level | event                        | provider | status |
+      | :warn | :chat/provider-auth-rejected | chatgpt  | 401    |

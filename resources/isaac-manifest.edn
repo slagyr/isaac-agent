@@ -413,7 +413,30 @@
      {:type :int,
       :default 1800000,
       :description
-      "Default retry-after (ms) when a provider wall has no Retry-After header"}}}},
+      "Default retry-after (ms) when a provider wall has no Retry-After header"},
+     :provider-auth-retry-ms
+     {:type :int,
+      :default 300000,
+      :description
+      "Default retry-after (ms) when a provider auth failure blocks a turn"}}}},
+  :attention
+  {:schema
+   {:name :attention,
+    :type :map,
+    :description "System-scoped attention routing for operator outages",
+    :schema
+    {:notify
+     {:type :map,
+      :description "Default notification channel for system-scoped attention",
+      :schema
+      {:comm {:type :string, :description "Comm id to deliver attention messages"},
+       :target {:type :string, :description "Comm-specific target (channel, user, etc.)"}}},
+     :break-glass
+     {:type :map,
+      :description "Break-glass attention channel (declared; unused in 5a4n)",
+      :schema
+      {:comm {:type :string},
+       :target {:type :string}}}}}},
   :skill-paths
   {:schema
    {:type :seq,

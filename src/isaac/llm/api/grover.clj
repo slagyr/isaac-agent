@@ -155,8 +155,10 @@
       (throw (Exception. (or (:content scripted) "grover exception")))
 
       (= "unavailable" (:type scripted))
-      {:unavailable? true
-       :retry-after-ms (long (or (:retry-after-ms scripted) 0))}
+      (cond-> {:unavailable? true
+               :retry-after-ms (long (or (:retry-after-ms scripted) 0))
+               :reason         (or (some-> (:reason scripted) keyword) :wall)}
+        (:model scripted) (assoc :provider (:model scripted)))
 
       (= "http-error" (:type scripted))
       (cond-> {:error :api-error
