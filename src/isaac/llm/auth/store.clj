@@ -2,6 +2,7 @@
   (:require
     [cheshire.core :as json]
     [clojure.string :as str]
+    [isaac.drive.provider-wall :as provider-wall]
     [isaac.fs :as fs]
     [isaac.llm.auth.device-code :as device-code]))
 
@@ -74,6 +75,13 @@
   {:error :refresh-failed
    :message (str "Missing OAuth login for " provider-name ". Run `isaac auth login --provider " provider-name "` first.")})
 
+(defn- refresh-provider-wall [provider-name response]
+  (or (provider-wall/classify response nil provider-name)
+      {:unavailable?   true
+       :retry-after-ms provider-wall/default-provider-retry-after-ms
+       :message        (or (:message response)
+                           "OAuth token refresh failed.")}))
+
 (defn refresh-oauth-tokens!
   "Refresh OAuth tokens for provider-name when :refresh is present.
    Returns {:tokens ...} on success or {:error ... :message ...} on failure.
@@ -96,7 +104,7 @@
          :else
          (let [response (device-code/refresh-tokens! descriptor (:refresh tokens))]
            (if (or (:error response) (not (:access_token response)))
-             (refresh-failure provider-name)
+             (refresh-provider-wall provider-name response)
              (do
                (save-tokens! auth-dir provider-name
                              (cond-> response

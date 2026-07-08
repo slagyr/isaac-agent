@@ -64,7 +64,8 @@
           (nil? tokens) nil
 
           (auth-store/token-needs-refresh? tokens)
-          (:tokens (auth-store/refresh-oauth-tokens! root provider-name fs* descriptor))
+          (let [result (auth-store/refresh-oauth-tokens! root provider-name fs* descriptor)]
+            (or (:tokens result) result))
 
           :else tokens)))))
 
@@ -75,11 +76,13 @@
     (if (and (= :auth-failed (:error result))
              (oauth-device-auth? (:auth config))
              (oauth-auth-root config))
-      (let [root       (oauth-auth-root config)
-            fs*        (fs/instance)
-            descriptor (oauth-descriptor config)]
-        (when (:tokens (auth-store/refresh-oauth-tokens! root provider-name fs* descriptor {:force? true}))
-          (f)))
+      (let [root         (oauth-auth-root config)
+            fs*          (fs/instance)
+            descriptor   (oauth-descriptor config)
+            refresh-result (auth-store/refresh-oauth-tokens! root provider-name fs* descriptor {:force? true})]
+        (if (:tokens refresh-result)
+          (f)
+          refresh-result))
       result)))
 
 (defn provider-env-var
@@ -106,9 +109,12 @@
     nil
 
     (oauth-device-auth? auth)
-    (when-not (resolve-oauth-tokens provider-name config)
-      {:error   :auth-missing
-       :message (str "Missing OAuth login for " provider-name ". Run `isaac auth login --provider " provider-name "` first.")})
+    (let [result (resolve-oauth-tokens provider-name config)]
+      (cond
+        (:unavailable? result) result
+        (:access result)       nil
+        :else                  {:error   :auth-missing
+                                :message (str "Missing OAuth login for " provider-name ". Run `isaac auth login --provider " provider-name "` first.")}))
 
     (str/blank? (resolve-api-key provider-name config))
     (let [env-var (provider-env-var provider-name)

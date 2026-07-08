@@ -130,7 +130,7 @@
           (let [saved (json/parse-string (fs/slurp @fs "/auth/auth.json") true)]
             (should= "at-new" (get-in saved [(keyword oauth-provider) :access]))))))
 
-    (it "returns login guidance when refresh fails"
+    (it "treats refresh failure without a 429 as unavailable using the default retry"
       (sut/save-tokens! "/auth" oauth-provider {:access_token  "at-old"
                                                  :refresh_token "rt-bad"
                                                  :expires_in    -60} @fs)
@@ -138,8 +138,22 @@
                                                   (should= @oauth-descriptor descriptor)
                                                   {:error :api-error})]
         (let [result (sut/refresh-oauth-tokens! "/auth" oauth-provider @fs @oauth-descriptor)]
-          (should= :refresh-failed (:error result))
-          (should (re-find #"isaac auth login" (:message result))))))
+          (should (:unavailable? result))
+          (should= 1800000 (:retry-after-ms result))))))
+
+    (it "classifies a refresh provider wall as unavailable"
+      (sut/save-tokens! "/auth" oauth-provider {:access_token  "at-old"
+                                                 :refresh_token "rt-bad"
+                                                 :expires_in    -60} @fs)
+      (with-redefs [device-code/refresh-tokens! (fn [descriptor _]
+                                                  (should= @oauth-descriptor descriptor)
+                                                  {:error :api-error
+                                                   :status 429
+                                                   :retry-after 60
+                                                   :message "usage_limit_reached: The usage limit has been reached"})]
+        (let [result (sut/refresh-oauth-tokens! "/auth" oauth-provider @fs @oauth-descriptor)]
+          (should (:unavailable? result))
+          (should= 60000 (:retry-after-ms result))))
 
     (it "returns existing tokens when not yet due for refresh"
       (sut/save-tokens! "/auth" oauth-provider {:access_token  "at-fresh"

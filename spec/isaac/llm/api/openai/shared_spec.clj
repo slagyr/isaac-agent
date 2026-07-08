@@ -32,7 +32,7 @@
           (should= "at-new" (:access tokens))
           (should-not (auth-store/token-expired? tokens))))))
 
-  (it "returns nil when refresh fails"
+  (it "surfaces a non-429 refresh failure as unavailable with the default retry"
     (nexus/-with-nested-nexus {:fs @fs}
       (auth-store/save-tokens! "/auth" "chatgpt" {:access_token  "at-old"
                                                   :refresh_token "rt-bad"
@@ -40,7 +40,24 @@
       (with-redefs [device-code/refresh-tokens! (fn [descriptor _]
                                                   (should= (:oauth oauth-config) descriptor)
                                                   {:error :api-error})]
-        (should-be-nil (sut/resolve-oauth-tokens "chatgpt" oauth-config)))))
+        (let [result (sut/missing-auth-error "chatgpt" oauth-config)]
+          (should (:unavailable? result))
+          (should= 1800000 (:retry-after-ms result))))))
+
+  (it "surfaces a refresh provider wall as unavailable"
+    (nexus/-with-nested-nexus {:fs @fs}
+      (auth-store/save-tokens! "/auth" "chatgpt" {:access_token  "at-old"
+                                                  :refresh_token "rt-bad"
+                                                  :expires_in    -60} @fs)
+      (with-redefs [device-code/refresh-tokens! (fn [descriptor _]
+                                                  (should= (:oauth oauth-config) descriptor)
+                                                  {:error :api-error
+                                                   :status 429
+                                                   :retry-after 60
+                                                   :message "usage_limit_reached: The usage limit has been reached"})]
+        (let [result (sut/missing-auth-error "chatgpt" oauth-config)]
+          (should (:unavailable? result))
+          (should= 60000 (:retry-after-ms result))))))
 
   (it "retries once after auth-failed when refresh succeeds"
     (auth-store/save-tokens! "/auth" "chatgpt" {:access_token  "at-old"
