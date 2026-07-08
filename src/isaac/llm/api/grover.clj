@@ -156,9 +156,8 @@
 
       (= "unavailable" (:type scripted))
       (cond-> {:unavailable? true
-               :retry-after-ms (long (or (:retry-after-ms scripted) 0))
-               :reason         (or (some-> (:reason scripted) keyword) :wall)}
-        (:model scripted) (assoc :provider (:model scripted)))
+              :retry-after-ms (long (or (:retry-after-ms scripted) 0))}
+        (:reason scripted) (assoc :reason (keyword (:reason scripted))))
 
       (= "http-error" (:type scripted))
       (cond-> {:error :api-error
