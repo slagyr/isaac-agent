@@ -238,12 +238,17 @@
 
 (defn build-system-text
   ([soul boot-files rules-text skill-menu-text nonce]
-   (build-system-text soul boot-files rules-text skill-menu-text nil nil nonce))
+   (build-system-text soul boot-files rules-text skill-menu-text nil nil nonce true))
   ([soul boot-files rules-text skill-menu-text session-name crew nonce]
-   (str/join "\n\n" (remove str/blank? [soul boot-files rules-text skill-menu-text
-                                        turn-instructions/parallel-tool-calls-hint
-                                        (session-identity-block session-name crew)
-                                        (injection-guard nonce)]))))
+   (build-system-text soul boot-files rules-text skill-menu-text session-name crew nonce true))
+  ([soul boot-files rules-text skill-menu-text session-name crew nonce include-tool-batching-hint?]
+   (str/join "\n\n" (remove str/blank?
+                            (cond-> [soul boot-files rules-text skill-menu-text]
+                              include-tool-batching-hint?
+                              (conj turn-instructions/parallel-tool-calls-hint)
+                              :always
+                              (into [(session-identity-block session-name crew)
+                                     (injection-guard nonce)]))))))
 
 (defn- sanitize-user-text [text nonce]
   (cond-> (or text "")
@@ -299,8 +304,8 @@
 
 (defn- build-messages
   "Compose the messages array: system prompt + history (or compacted summary + post-compaction)."
-  [soul boot-files rules-text skill-menu-text session-name crew nonce guidance origin transcript context-window filter-fn]
-  (let [system-text (build-system-text soul boot-files rules-text skill-menu-text session-name crew nonce)
+  [soul boot-files rules-text skill-menu-text session-name crew nonce guidance origin transcript context-window filter-fn include-tool-batching-hint?]
+  (let [system-text (build-system-text soul boot-files rules-text skill-menu-text session-name crew nonce include-tool-batching-hint?)
         compaction  (find-last-compaction transcript)]
     (if compaction
       (let [preserved (when-let [first-kept-entry-id (:firstKeptEntryId compaction)]
@@ -358,8 +363,9 @@
      :tools          - vector of tool definitions (optional)
      :context-window - context window size for tool result truncation (optional)
      :filter-fn      - message filter function (default filter-messages)"
-  [{:keys [boot-files crew guidance model nonce origin rules-text session-name skill-menu-text soul transcript tools context-window filter-fn]}]
-  (let [messages (build-messages soul boot-files rules-text skill-menu-text session-name crew nonce guidance origin transcript context-window (or filter-fn filter-messages))
+  [{:keys [boot-files crew guidance model nonce origin rules-text session-name skill-menu-text soul transcript tools context-window filter-fn include-tool-batching-hint?]}]
+  (let [include-hint? (if (nil? include-tool-batching-hint?) true include-tool-batching-hint?)
+        messages (build-messages soul boot-files rules-text skill-menu-text session-name crew nonce guidance origin transcript context-window (or filter-fn filter-messages) include-hint?)
         prompt   (cond-> {:model    model
                           :messages messages}
                     (seq tools) (assoc :tools (mapv llm-api/wrapped-function-tool tools)))]

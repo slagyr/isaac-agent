@@ -60,7 +60,8 @@
                                              :transcript        transcript
                                              :context-window    context-window
                                              :model             model
-                                             :tools             tools})]
+                                             :tools                        tools
+                                              :include-tool-batching-hint? false})]
     (:tokenEstimate prompt)))
 
 (defn compaction-target [entries {:keys [strategy head]} context-window]

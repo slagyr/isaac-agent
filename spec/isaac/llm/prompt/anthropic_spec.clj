@@ -1,6 +1,7 @@
 (ns isaac.llm.prompt.anthropic-spec
   (:require
     [isaac.llm.api.messages :as sut]
+     [isaac.llm.turn-instructions :as turn-instructions]
     [speclj.core :refer :all]))
 
 (def sample-transcript
@@ -27,7 +28,8 @@
     (it "puts soul in system as content block with cache_control"
       (let [p (sut/build {:model "claude-sonnet-4-6" :soul "You are Isaac." :transcript sample-transcript})]
         (should= "text" (get-in p [:system 0 :type]))
-        (should= "You are Isaac." (get-in p [:system 0 :text]))
+        (should-contain "You are Isaac." (get-in p [:system 0 :text]))
+        (should-contain turn-instructions/parallel-tool-calls-hint (get-in p [:system 0 :text]))
         (should= "ephemeral" (get-in p [:system 0 :cache_control :type]))))
 
     (it "extracts messages without system role"
