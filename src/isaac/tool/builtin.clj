@@ -17,7 +17,7 @@
 ;; region ----- Registration -----
 
 (def ^:private ordered-built-in-tools
-  ["read" "write" "edit" "grep" "glob" "web_fetch" "web_search" "memory_write" "memory_get" "memory_search" "exec" "session_info" "session_model" "load_skill" "list_skills" "comm_send" "hail-send"])
+  ["read" "write" "edit" "multi_edit" "grep" "glob" "web_fetch" "web_search" "memory_write" "memory_get" "memory_search" "exec" "session_info" "session_model" "load_skill" "list_skills" "comm_send" "hail-send"])
 
 (def ^:private built-in-tool-specs
   {"read"          {:name        "read"
@@ -44,6 +44,19 @@
                                                 "replace_all" {:type "boolean" :description "Replace all occurrences"}}
                                    :required   ["file_path" "old_string" "new_string"]}
                      :handler     #'file/edit-tool}
+   "multi_edit"    {:name        "multi_edit"
+                     :description "Apply multiple validated string replacements atomically"
+                     :parameters  {:type       "object"
+                                   :properties {"edits" {:type        "array"
+                                                         :description "Replacement entries (same fields as edit)"
+                                                         :items       {:type       "object"
+                                                                       :properties {"file_path"   {:type "string"}
+                                                                                    "old_string"  {:type "string"}
+                                                                                    "new_string"  {:type "string"}
+                                                                                    "replace_all" {:type "boolean"}}
+                                                                       :required   ["file_path" "old_string" "new_string"]}}}
+                                   :required   ["edits"]}
+                     :handler     #'file/multi-edit-tool}
    "grep"          {:name        "grep"
                      :description "Search file contents with ripgrep"
                      :parameters  {:type       "object"
@@ -132,6 +145,7 @@
 (defn read-tool-factory [_] (spec-for "read"))
 (defn write-tool-factory [_] (spec-for "write"))
 (defn edit-tool-factory [_] (spec-for "edit"))
+(defn multi-edit-tool-factory [_] (spec-for "multi_edit"))
 (defn grep-tool-factory [_] (spec-for "grep"))
 (defn glob-tool-factory [_] (spec-for "glob"))
 (defn web-fetch-tool-factory [_] (spec-for "web_fetch"))

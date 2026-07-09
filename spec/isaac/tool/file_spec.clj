@@ -251,6 +251,62 @@
                                    "new_string" "y"})]
         (should (:isError result)))))
 
+  (describe "multi_edit"
+
+    (it "applies edits across two files"
+      (support/write-file! "a.txt" "alpha")
+      (support/write-file! "b.txt" "beta")
+      (let [result (sut/multi-edit-tool {"edits" [{"file_path"  (str support/test-dir "/a.txt")
+                                                  "old_string" "alpha"
+                                                  "new_string" "ALPHA"}
+                                                 {"file_path"  (str support/test-dir "/b.txt")
+                                                  "old_string" "beta"
+                                                  "new_string" "BETA"}]})]
+        (should-be-nil (:isError result))
+        (should= "ALPHA" (support/read-file "a.txt"))
+        (should= "BETA" (support/read-file "b.txt"))
+        (should (str/includes? (:result result) "replacement"))))
+
+    (it "aborts when a later entry does not match"
+      (support/write-file! "a.txt" "keep-me")
+      (let [result (sut/multi-edit-tool {"edits" [{"file_path"  (str support/test-dir "/a.txt")
+                                                  "old_string" "keep-me"
+                                                  "new_string" "changed"}
+                                                 {"file_path"  (str support/test-dir "/a.txt")
+                                                  "old_string" "missing"
+                                                  "new_string" "nope"}]})]
+        (should (:isError result))
+        (should (re-find #"edit entry 2" (:error result)))
+        (should= "keep-me" (support/read-file "a.txt"))))
+
+    (it "applies sequential edits in one file against evolving content"
+      (support/write-file! "seq.txt" "foo bar")
+      (let [result (sut/multi-edit-tool {"edits" [{"file_path"  (str support/test-dir "/seq.txt")
+                                                  "old_string" "foo"
+                                                  "new_string" "FOO"}
+                                                 {"file_path"  (str support/test-dir "/seq.txt")
+                                                  "old_string" "FOO bar"
+                                                  "new_string" "done"}]})]
+        (should-be-nil (:isError result))
+        (should= "done" (support/read-file "seq.txt"))))
+
+    (it "honors replace_all on one entry"
+      (support/write-file! "all.txt" "x\nx")
+      (let [result (sut/multi-edit-tool {"edits" [{"file_path"   (str support/test-dir "/all.txt")
+                                                  "old_string"  "x"
+                                                  "new_string"  "y"
+                                                  "replace_all" true}]})]
+        (should-be-nil (:isError result))
+        (should= "y\ny" (support/read-file "all.txt"))))
+
+    (it "fails when old_string is ambiguous without replace_all"
+      (support/write-file! "dup.txt" "z\nz")
+      (let [result (sut/multi-edit-tool {"edits" [{"file_path"  (str support/test-dir "/dup.txt")
+                                                  "old_string" "z"
+                                                  "new_string" "w"}]})]
+        (should (:isError result))
+        (should (re-find #"multiple" (:error result))))))
+
   #_{:clj-kondo/ignore [:unresolved-symbol]}
   (describe "path resolution against session cwd"
 

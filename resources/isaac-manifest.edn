@@ -85,6 +85,7 @@
   {:factory isaac.tool.builtin/session-model-tool-factory},
   :grep {:factory isaac.tool.builtin/grep-tool-factory},
   :edit {:factory isaac.tool.builtin/edit-tool-factory},
+  :multi_edit {:factory isaac.tool.builtin/multi-edit-tool-factory},
   :memory_write
   {:factory isaac.tool.builtin/memory-write-tool-factory},
   :web_search {:factory isaac.tool.builtin/web-search-tool-factory},

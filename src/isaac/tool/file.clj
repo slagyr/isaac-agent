@@ -1,6 +1,7 @@
 ;; mutation-tested: 2026-05-06
 (ns isaac.tool.file
   (:require
+    [clojure.java.io :as io]
     [clojure.string :as str]
     [isaac.fs :as fs]
     [isaac.tool.fs-bounds :as bounds])
@@ -78,6 +79,49 @@
           (catch Exception e
             {:isError true :error (.getMessage e)})))))
 
+(defn- match-count [content old-string]
+  (-> old-string Pattern/quote Pattern/compile (re-seq content) count))
+
+(defn- validate-replacement [content old-string replace-all]
+  (let [count (match-count content old-string)]
+    (cond
+      (= 0 count) {:error (str "not found: " old-string)}
+      (and (> count 1) (not replace-all)) {:error (str "multiple matches for: " old-string)}
+      :else {:replacements (if replace-all count 1)})))
+
+(defn- apply-replacement [content old-string new-string replace-all]
+  (str/replace content old-string new-string))
+
+(defn- single-edit-entry
+  "Validate and apply one edit against current file content. Returns {:content ... :replacements n}
+   or {:error ...}."
+  [content {:keys [old_string new_string replace_all]}]
+  (or (when (some? content)
+        (let [replace-all (boolean replace_all)
+              validation  (validate-replacement content old_string replace-all)]
+          (if (:error validation)
+            validation
+            {:content      (apply-replacement content old_string new_string replace-all)
+             :replacements (:replacements validation)})))
+      {:error "missing file content"}))
+
+(defn- resolve-edit-file-path [args session-cwd raw-path]
+  (let [via-session (bounds/resolve-path raw-path session-cwd)]
+    (cond
+      (and via-session (.isAbsolute (io/file via-session))) via-session
+      (and (bounds/root args) (seq (str raw-path)))
+      (.getCanonicalPath (io/file (bounds/root args) raw-path))
+      :else via-session)))
+
+(defn- edit-entry-at-index [index entry content]
+  (let [entry  (bounds/string-key-map entry)
+        result (single-edit-entry content {:old_string  (get entry "old_string")
+                                           :new_string  (get entry "new_string")
+                                           :replace_all (bounds/arg-bool entry "replace_all" false)})]
+    (if (:error result)
+      {:error (str "edit entry " (inc index) ": " (:error result))}
+      result)))
+
 (defn edit-tool
   "Replace text in a file.
    Args: file_path, old_string, new_string, replace_all."
@@ -93,15 +137,47 @@
         (if-not (fs/exists? fs* file-path)
           {:isError true :error (str "not found: " file-path)}
           (let [content (or (fs/slurp fs* file-path) "")
-                count   (-> old-string Pattern/quote Pattern/compile (re-seq content) count)]
-            (cond
-              (= 0 count)
-              {:isError true :error (str "not found: " old-string)}
-
-              (and (> count 1) (not replace-all))
-              {:isError true :error (str "multiple matches for: " old-string)}
-
-              :else
-              (let [new-content (str/replace content old-string new-string)]
-                (fs/spit fs* file-path new-content)
+                result  (single-edit-entry content {:old_string  old-string
+                                                    :new_string  new-string
+                                                    :replace_all replace-all})]
+            (if (:error result)
+              {:isError true :error (:error result)}
+              (do
+                (fs/spit fs* file-path (:content result))
                 {:result (str "edited " file-path)})))))))
+
+(defn multi-edit-tool
+  "Apply N validated string replacements atomically.
+   Args: edits — vector of maps with file_path, old_string, new_string, replace_all (optional)."
+  [args]
+  (let [args        (bounds/string-key-map args)
+        fs*         (bounds/filesystem args)
+        session-cwd (bounds/session-workdir args)
+        edits       (vec (or (get args "edits") []))]
+    (if (empty? edits)
+      {:isError true :error "edits must be a non-empty array"}
+      (loop [i 0 file-contents {} summaries []]
+        (if (= i (count edits))
+          (try
+            (doseq [[path content] file-contents]
+              (fs/spit fs* path content))
+            {:result (str/join "\n" summaries)}
+            (catch Exception e
+              {:isError true :error (.getMessage e)}))
+          (let [entry     (bounds/string-key-map (nth edits i))
+                file-path (resolve-edit-file-path args session-cwd (get entry "file_path"))]
+            (or (bounds/ensure-path-allowed args file-path)
+                (if-not (fs/exists? fs* file-path)
+                  {:isError true :error (str "edit entry " (inc i) ": not found: " file-path)}
+                  (let [content (or (get file-contents file-path)
+                                    (fs/slurp fs* file-path)
+                                    "")
+                        result  (edit-entry-at-index i entry content)]
+                    (if (:error result)
+                      {:isError true :error (:error result)}
+                      (recur (inc i)
+                             (assoc file-contents file-path (:content result))
+                             (conj summaries (str file-path ": "
+                                                  (:replacements result)
+                                                  " replacement(s)")))))))))))
+))
