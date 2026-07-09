@@ -1,8 +1,8 @@
 (ns isaac.tool.output-cap
   (:require [clojure.string :as str]))
 
-(def default-max-output-lines 2000)
-(def default-max-output-bytes 262144)
+(def default-max-output-lines 1000)
+(def default-max-output-bytes 131072)
 
 (defn- byte-count [s]
   (alength (.getBytes ^String s "UTF-8")))

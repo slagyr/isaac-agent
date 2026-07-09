@@ -41,4 +41,12 @@
       (let [lines   (map #(str "line " %) (range 1 21))
             content (str/join "\n" lines)
             result  (sut/cap-result content 5 100000)]
-        (should (re-find #"\[ 15 lines truncated" result))))))
+        (should (re-find #"\[ 15 lines truncated" result))))
+
+    (it "truncates at the halved default line cap when no override is passed"
+      (let [lines   (map #(str "line " %) (range 1 1021))
+            content (str/join "\n" lines)
+            result  (sut/cap-result content sut/default-max-output-lines sut/default-max-output-bytes)]
+        (should (str/includes? result "[ 20 lines truncated; line cap hit ]"))
+        (should (str/includes? result "line 1"))
+        (should (str/includes? result "line 1020"))))))

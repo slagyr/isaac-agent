@@ -71,3 +71,11 @@ Feature: Config set / unset
     When isaac is run with "config set crew.joe.effort not-a-number"
     Then the stderr contains "effort"
     And the exit code is 1
+
+  Scenario: config set tools.defaults.max-lines succeeds and the value lands
+    Given default Grover setup
+    When isaac is run with "config set tools.defaults.max-lines 500"
+    Then the exit code is 0
+    When isaac is run with "config get tools.defaults.max-lines"
+    Then the stdout contains "500"
+    And the exit code is 0

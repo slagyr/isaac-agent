@@ -248,9 +248,19 @@
   :tools
   {:schema
    {:type :map,
-    :description "Tool configuration (per-tool config maps)",
+    :description "Tool configuration (per-tool config maps and global defaults)",
     :schema
-    {:web_search
+    {:defaults
+     {:type :map,
+      :description "Global tool output caps applied at the turn boundary",
+      :schema
+      {:max-lines
+       {:type :int,
+        :description "Max lines in a tool result string before head-tail truncation"},
+       :max-bytes
+       {:type :int,
+        :description "Max UTF-8 bytes in a tool result string before head-tail truncation"}}}
+     :web_search
      {:type :map,
       :description "Web search tool config",
       :schema

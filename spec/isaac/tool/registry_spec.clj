@@ -113,7 +113,7 @@
 
     (it "caps tool output bytes using the configured max-bytes limit"
       (sut/register! {:name "verbose" :handler (fn [_] (apply str (repeat 200 "x")))})
-      (with-redefs [loader/snapshot (fn [_] {:tools {:defaults {:max-lines 2000 :max-bytes 100}}})]
+      (with-redefs [loader/snapshot (fn [_] {:tools {:defaults {:max-lines 1000 :max-bytes 100}}})]
         (let [result (sut/execute "verbose" {})]
           (should (str/includes? (:result result) "bytes truncated; byte cap hit")))))
 

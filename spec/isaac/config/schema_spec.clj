@@ -68,6 +68,11 @@
                (lexicon/conform (runtime-spec sut/crew)
                                 {:tags #{:role/worker :project/chess}})))
 
+    (it "root tools.defaults conforms max-lines and max-bytes"
+      (should= {:defaults {:max-lines 500 :max-bytes 131072}}
+               (lexicon/conform (runtime-spec sut/field-tools)
+                                {:defaults {:max-lines 500 :max-bytes 131072}})))
+
     (it "model conforms with all required + optional fields"
       (should= {:id test-model-id :model marigold/helm-mark-iii :provider test-provider-id :context-window 128000}
                (lexicon/conform (runtime-spec sut/model)
