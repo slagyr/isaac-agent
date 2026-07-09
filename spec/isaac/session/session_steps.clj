@@ -914,6 +914,7 @@
   (drive-dispatch/clear-last-request!)
   (let [cfg           (loader/normalize-config (loaded-config))
         _             (config/dangerously-install-config! cfg "spec")
+        _             (commit-feature-config!)
         agent-cfg     (current-agent-config)
         model-cfg     (current-model-config)
         provider-name (:provider model-cfg)
@@ -1777,7 +1778,7 @@
 (defthen #"the turn result is unavailable with retry-after-ms (\d+)"
   isaac.session.session-steps/turn-result-is-unavailable-with-retry-after-ms)
 
-(defthen #"the turn result is unavailable with retry-after-ms (\d+) and reason (\w+)"
+(defthen #"the turn result is unavailable with retry-after-ms (\d+) and reason ([\w-]+)"
   isaac.session.session-steps/turn-result-is-unavailable-with-retry-after-ms-and-reason)
 
 (defthen #"session \"([^\"]+)\" has no transcript entries with role \"([^\"]+)\"" isaac.session.session-steps/session-has-no-role)
