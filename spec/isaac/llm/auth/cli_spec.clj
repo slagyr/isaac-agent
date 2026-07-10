@@ -130,6 +130,20 @@
                         device-code/request-user-code! (fn [_] {:error :api-error :status 404})]
             (should= 1 (sut/run ["login" "--provider" "chatgpt"]))))
 
+        (it "prints HTTP status and body message on device-code failure, not bare :unknown"
+          (let [output (atom nil)]
+            (with-redefs [device-code/provider-descriptor! (fn [_] device-code/grok-descriptor)
+                          device-code/request-user-code! (fn [_]
+                                                           {:error   :api-error
+                                                            :status  415
+                                                            :message "Form requests must have Content-Type: application/x-www-form-urlencoded"})]
+              (binding [*out* (java.io.StringWriter.)]
+                (should= 1 (sut/run ["login" "--provider" "grok"]))
+                (reset! output (str *out*))))
+            (should (clojure.string/includes? @output "415"))
+            (should (clojure.string/includes? @output "form-urlencoded"))
+            (should-not (clojure.string/includes? @output ":unknown"))))
+
         (it "returns 1 when poll-for-auth fails"
           (with-redefs [device-code/provider-descriptor! (fn [_] {:verification-url "https://auth.openai.com/codex/device"})
                         device-code/request-user-code! (fn [_]

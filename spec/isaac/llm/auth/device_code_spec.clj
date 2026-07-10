@@ -2,6 +2,7 @@
   (:require
     [babashka.http-client :as http]
     [cheshire.core :as json]
+    [clojure.string :as str]
     [isaac.llm.auth.device-code :as sut]
     [speclj.core :refer :all]))
 
@@ -48,19 +49,30 @@
           (should= "https://auth.openai.com/api/accounts/deviceauth/usercode" (:url @captured))
           (should= {"client_id" "app_EMoamEEZ73f0CkXaXp7hrann"} (:body @captured)))))
 
-    (it "passes descriptor URL and client_id for grok"
+    (it "passes descriptor URL and client_id for grok via form encoding (oidc)"
       (let [captured (atom nil)
             descriptor {:issuer           "https://auth.x.ai"
                         :device-path      "/oauth2/device/code"
                         :token-path       "/oauth2/token"
                         :verification-url "https://accounts.x.ai/oauth2/device"
+                        :flow             :oidc-device-code
                         :client-id        "grok-client"}]
-        (with-redefs [sut/-post-json! (fn [url headers body]
-                                        (reset! captured {:url url :headers headers :body body})
+        (with-redefs [sut/-post-form! (fn [url body]
+                                        (reset! captured {:url url :body body})
                                         {:device_code "dc" :user_code "UC" :interval 5})]
           (sut/request-user-code! descriptor)
           (should= "https://auth.x.ai/oauth2/device/code" (:url @captured))
           (should= {"client_id" "grok-client"} (:body @captured)))))
+
+    (it "uses JSON for chatgpt openai device-auth request (regression)"
+      (let [captured (atom nil)]
+        (with-redefs [sut/-post-json! (fn [url headers body]
+                                        (reset! captured {:url url :headers headers :body body})
+                                        {:device_auth_id "x" :user_code "Y" :interval 5})
+                      sut/-post-form! (fn [& _] (throw (ex-info "oidc must not use form for chatgpt" {})))]
+          (sut/request-user-code! sut/chatgpt-descriptor)
+          (should= "https://auth.openai.com/api/accounts/deviceauth/usercode" (:url @captured))
+          (should= {"client_id" "app_EMoamEEZ73f0CkXaXp7hrann"} (:body @captured)))))
 
     (it "returns error map on failure"
       (with-redefs [sut/-post-json! (fn [_url _headers _body]
@@ -95,6 +107,15 @@
           (should= :api-error (:error result))
           (should= 500 (:status result)))))
 
+    (it "surfaces response body message on 415 form error"
+      (with-redefs [http/post (fn [_ _]
+                                {:status 415
+                                 :body   "Form requests must have Content-Type: application/x-www-form-urlencoded"})]
+        (let [result (sut/-post-form! "https://auth.x.ai/oauth2/device/code" {"client_id" "x"})]
+          (should= :api-error (:error result))
+          (should= 415 (:status result))
+          (should-contain "form-urlencoded" (:message result)))))
+
     (it "returns unknown on exception"
       (with-redefs [http/post (fn [_ _] (throw (ex-info "boom" {})))]
         (let [result (sut/-post-json! "https://example.test" {} {})]
@@ -125,14 +146,14 @@
           (should= "https://auth.openai.com/api/accounts/deviceauth/token" (:url @captured))
           (should= {"device_auth_id" "dauth-999" "user_code" "CODE-5678"} (:body @captured)))))
 
-    (it "uses oidc device_code polling for descriptor-driven providers"
+    (it "uses oidc device_code polling via form encoding for descriptor-driven providers"
       (let [captured   (atom nil)
             descriptor {:issuer           "https://auth.x.ai"
                         :client-id        "grok-client"
                         :token-path       "/oauth2/token"
                         :verification-url "https://accounts.x.ai/oauth2/device"
                         :flow             :oidc-device-code}]
-        (with-redefs [sut/-post-json! (fn [url _headers body]
+        (with-redefs [sut/-post-form! (fn [url body]
                                         (reset! captured {:url url :body body})
                                         {:access_token "at" :refresh_token "rt"})]
           (sut/poll-for-auth! descriptor "dc-999" "CODE-5678" 0)
@@ -141,6 +162,36 @@
                     "client_id" "grok-client"
                     "device_code" "dc-999"}
                    (:body @captured)))))
+
+    (it "asserts form Content-Type on oidc device-code request (scripted endpoint)"
+      (let [captured (atom nil)
+            descriptor (assoc sut/grok-descriptor :flow :oidc-device-code)]
+        (with-redefs [http/post (fn [url opts]
+                                  (reset! captured {:url url :opts opts})
+                                  {:status 200
+                                   :body   (json/generate-string {:device_code "dc" :user_code "UC" :interval 5})})]
+          (sut/request-user-code! descriptor)
+          (should= "application/x-www-form-urlencoded"
+                   (get-in @captured [:opts :headers "Content-Type"]))
+          (should-contain "client_id=" (get-in @captured [:opts :body])))))
+
+    (it "asserts form Content-Type on oidc poll and refresh"
+      (let [poll-captured (atom nil)
+            descriptor    (assoc sut/grok-descriptor :flow :oidc-device-code)]
+        (with-redefs [http/post (fn [url opts]
+                                  (when (str/includes? url "/oauth2/token")
+                                    (reset! poll-captured {:url url :opts opts}))
+                                  {:status 200
+                                   :body   (json/generate-string
+                                             (if (str/includes? (or (get opts :body) "") "device_code")
+                                               {:access_token "at" :refresh_token "rt"}
+                                               {:access_token "at2" :refresh_token "rt2" :expires_in 3600}))})]
+          (sut/poll-for-auth! descriptor "dc-1" "UC" 0)
+          (should= "application/x-www-form-urlencoded"
+                   (get-in @poll-captured [:opts :headers "Content-Type"]))
+          (sut/refresh-tokens! descriptor "rt-stored")
+          (should= "application/x-www-form-urlencoded"
+                   (get-in @poll-captured [:opts :headers "Content-Type"])))))
 
     (it "returns error on non-pending failure"
       (with-redefs [sut/-post-json! (fn [_url _headers _body]

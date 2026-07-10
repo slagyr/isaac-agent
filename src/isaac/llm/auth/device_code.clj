@@ -35,12 +35,27 @@
 
 ;; region ----- HTTP Helpers -----
 
+(defn- error-body-message [parsed]
+  (cond
+    (string? parsed) parsed
+    (map? parsed)    (or (:message parsed) (:error parsed) (:error_description parsed))
+    :else            nil))
+
+(defn- parse-response-body [body]
+  (when (some? body)
+    (try
+      (json/parse-string body true)
+      (catch Exception _ body))))
+
 (defn- parse-response [resp error-fn]
-  (let [parsed (json/parse-string (:body resp) true)]
+  (let [raw    (:body resp)
+        parsed (parse-response-body raw)]
     (if (>= (:status resp) 400)
-      {:error  (error-fn (:status resp))
-       :status (:status resp)
-       :body   parsed}
+      (let [detail (error-body-message parsed)]
+        (cond-> {:error  (error-fn (:status resp))
+                 :status (:status resp)
+                 :body   parsed}
+          detail (assoc :message (str detail))))
       parsed)))
 
 (defn- json-request-opts [headers body]
@@ -161,6 +176,21 @@
     {"device_auth_id" device-id
      "user_code"      user-code}))
 
+(defn- device-code-request-body [descriptor]
+  {"client_id" (:client-id descriptor)})
+
+(defn- post-device-code-request! [descriptor]
+  (let [url  (device-code-url descriptor)
+        body (device-code-request-body descriptor)]
+    (case (oauth-flow descriptor)
+      :oidc-device-code (-post-form! url body)
+      (-post-json! url {} body))))
+
+(defn- post-device-code-poll! [descriptor url body]
+  (case (oauth-flow descriptor)
+    :oidc-device-code (-post-form! url body)
+    (-post-json! url {} body)))
+
 ;; endregion ^^^^^ Descriptor Helpers ^^^^^
 
 ;; region ----- Device Code Flow -----
@@ -168,10 +198,7 @@
 (defn request-user-code!
   "Step 1: Request a device code and user code from the provider descriptor."
   [descriptor]
-  (let [descriptor (provider-descriptor! descriptor)]
-    (-post-json! (device-code-url descriptor)
-                 {}
-                 {"client_id" (:client-id descriptor)})))
+  (post-device-code-request! (provider-descriptor! descriptor)))
 
 (defn poll-for-auth!
   "Step 2: Poll for authorization. Returns auth code response or error.
@@ -182,7 +209,7 @@
         body       (poll-body descriptor device-id user-code)]
     (loop [elapsed 0]
       (sleep! interval-ms)
-      (let [result (-post-json! url {} body)]
+      (let [result (post-device-code-poll! descriptor url body)]
         (cond
           (not (:error result))   result
           (pending-error? result) (if (timed-out? elapsed)

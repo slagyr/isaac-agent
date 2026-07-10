@@ -38,13 +38,24 @@
 (defn- auth-dir []
   (root/current-root))
 
+(defn- format-device-code-error [resp]
+  (str (:error resp)
+       (when-let [st (:status resp)] (str " (HTTP " st ")"))
+       (when-let [msg (:message resp)] (str ": " msg))
+       (when (and (not (:message resp)) (map? (:body resp)))
+         (when-let [b (or (get-in resp [:body :message])
+                           (get-in resp [:body :error])
+                           (get-in resp [:body :error_description]))]
+           (str ": " b)))))
+
 (defn- login-device-code [provider-name]
   (let [descriptor (device-code/provider-descriptor! provider-name)]
     (println "Requesting device code...")
     (let [user-code-resp (device-code/request-user-code! descriptor)]
       (if (:error user-code-resp)
         (do
-          (println (str "Error: Failed to request device code: " (:error user-code-resp)))
+          (println (str "Error: Failed to request device code: "
+                        (format-device-code-error user-code-resp)))
           1)
         (let [user-code    (:user_code user-code-resp)
               device-id    (or (:device_auth_id user-code-resp)
@@ -65,7 +76,8 @@
             (cond
               (:error auth-resp)
               (do
-                (println (str "Error: Authorization failed: " (:error auth-resp)))
+                (println (str "Error: Authorization failed: "
+                              (format-device-code-error auth-resp)))
                 1)
 
               :else
