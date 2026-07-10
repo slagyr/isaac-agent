@@ -13,6 +13,10 @@
 (describe "Auth Store"
 
   (with fs (fs/mem-fs))
+  (with oauth-descriptor {:issuer           "https://auth.openai.com"
+                          :token-path       "/oauth/token"
+                          :verification-url "https://auth.openai.com/codex/device"
+                          :client-id        "chatgpt-client"})
 
   (describe "save-tokens!"
 
@@ -116,31 +120,48 @@
       (sut/save-tokens! "/auth" oauth-provider {:access_token  "at-old"
                                                  :refresh_token "rt-stored"
                                                  :expires_in    -3600} @fs)
-      (with-redefs [device-code/refresh-tokens! (fn [rt]
+      (with-redefs [device-code/refresh-tokens! (fn [descriptor rt]
+                                                  (should= @oauth-descriptor descriptor)
                                                   (should= "rt-stored" rt)
                                                   {:access_token "at-new" :expires_in 3600})]
-        (let [{:keys [tokens]} (sut/refresh-oauth-tokens! "/auth" oauth-provider @fs)]
+        (let [{:keys [tokens]} (sut/refresh-oauth-tokens! "/auth" oauth-provider @fs @oauth-descriptor)]
           (should= "at-new" (:access tokens))
           (should-not (sut/token-expired? tokens))
           (let [saved (json/parse-string (fs/slurp @fs "/auth/auth.json") true)]
             (should= "at-new" (get-in saved [(keyword oauth-provider) :access]))))))
 
-    (it "returns login guidance when refresh fails"
+    (it "treats refresh failure without a 429 as unavailable using the default retry"
       (sut/save-tokens! "/auth" oauth-provider {:access_token  "at-old"
                                                  :refresh_token "rt-bad"
                                                  :expires_in    -60} @fs)
-      (with-redefs [device-code/refresh-tokens! (fn [_] {:error :api-error})]
-        (let [result (sut/refresh-oauth-tokens! "/auth" oauth-provider @fs)]
-          (should= :refresh-failed (:error result))
-          (should (re-find #"isaac auth login" (:message result))))))
+      (with-redefs [device-code/refresh-tokens! (fn [descriptor _]
+                                                  (should= @oauth-descriptor descriptor)
+                                                  {:error :api-error})]
+        (let [result (sut/refresh-oauth-tokens! "/auth" oauth-provider @fs @oauth-descriptor)]
+          (should (:unavailable? result))
+          (should= 1800000 (:retry-after-ms result))))))
+
+    (it "classifies a refresh provider wall as unavailable"
+      (sut/save-tokens! "/auth" oauth-provider {:access_token  "at-old"
+                                                 :refresh_token "rt-bad"
+                                                 :expires_in    -60} @fs)
+      (with-redefs [device-code/refresh-tokens! (fn [descriptor _]
+                                                  (should= @oauth-descriptor descriptor)
+                                                  {:error :api-error
+                                                   :status 429
+                                                   :retry-after 60
+                                                   :message "usage_limit_reached: The usage limit has been reached"})]
+        (let [result (sut/refresh-oauth-tokens! "/auth" oauth-provider @fs @oauth-descriptor)]
+          (should (:unavailable? result))
+          (should= 60000 (:retry-after-ms result))))
 
     (it "returns existing tokens when not yet due for refresh"
       (sut/save-tokens! "/auth" oauth-provider {:access_token  "at-fresh"
                                                  :refresh_token "rt-stored"
                                                  :expires_in    3600} @fs)
       (let [calls* (atom 0)]
-        (with-redefs [device-code/refresh-tokens! (fn [_] (swap! calls* inc) {:access_token "x" :expires_in 1})]
-          (let [{:keys [tokens]} (sut/refresh-oauth-tokens! "/auth" oauth-provider @fs)]
+        (with-redefs [device-code/refresh-tokens! (fn [_ _] (swap! calls* inc) {:access_token "x" :expires_in 1})]
+          (let [{:keys [tokens]} (sut/refresh-oauth-tokens! "/auth" oauth-provider @fs @oauth-descriptor)]
             (should= "at-fresh" (:access tokens))
             (should= 0 @calls*)))))
 
@@ -148,12 +169,38 @@
       (sut/save-tokens! "/auth" oauth-provider {:access_token  "at-old"
                                                 :refresh_token "rt-stored"
                                                 :expires_in    -60} @fs)
-      (with-redefs [device-code/refresh-tokens! (fn [_] {:access_token "at-new" :expires_in 3600})]
-        (sut/refresh-oauth-tokens! "/auth" oauth-provider @fs)
+      (with-redefs [device-code/refresh-tokens! (fn [descriptor _]
+                                                  (should= @oauth-descriptor descriptor)
+                                                  {:access_token "at-new" :expires_in 3600})]
+        (sut/refresh-oauth-tokens! "/auth" oauth-provider @fs @oauth-descriptor)
         (should= "at-new"
                  (get-in (json/parse-string (fs/slurp @fs "/auth/auth.json") true)
                          [(keyword oauth-provider) :access]))
-        (should= "at-new" (:access (sut/load-tokens "/auth" oauth-provider @fs)))))
+        (let [stored (sut/load-tokens "/auth" oauth-provider @fs)]
+          (should= "at-new" (:access stored))
+          (should= "rt-stored" (:refresh stored))
+          (should= "at-new" (:access (get-in (json/parse-string (fs/slurp @fs "/auth/auth.json") true)
+                                             [(keyword oauth-provider)])))))
+
+    (it "persists a rotated refresh token before releasing the single-flight lock"
+      (sut/save-tokens! "/auth" oauth-provider {:access_token  "at-old"
+                                                :refresh_token "rt-stored"
+                                                :expires_in    -60} @fs)
+      (let [release   (promise)
+            started   (promise)
+            fs-val    @fs]
+        (with-redefs [device-code/refresh-tokens! (fn [descriptor _]
+                                                    (should= @oauth-descriptor descriptor)
+                                                    (deliver started true)
+                                                    @release
+                                                    {:access_token "at-new"
+                                                     :refresh_token "rt-rotated"
+                                                     :expires_in 3600})]
+          (let [refresh-f (future (sut/refresh-oauth-tokens! "/auth" oauth-provider fs-val @oauth-descriptor))]
+            @started
+            (deliver release true)
+            @refresh-f
+            (should= "rt-rotated" (:refresh (sut/load-tokens "/auth" oauth-provider fs-val)))))))
 
     (it "refreshes exactly once when two callers race (single-flight)"
       (sut/save-tokens! "/auth" oauth-provider {:access_token  "at-old"
@@ -163,18 +210,23 @@
             in-flight (promise)
             release   (promise)
             fs-val    @fs]
-        (with-redefs [device-code/refresh-tokens! (fn [_]
+        (with-redefs [device-code/refresh-tokens! (fn [descriptor _]
+                                                    (should= @oauth-descriptor descriptor)
                                                     (swap! calls* inc)
                                                     (deliver in-flight true)
                                                     @release
-                                                    {:access_token "at-new" :expires_in 3600})]
-          (let [f1 (future (sut/refresh-oauth-tokens! "/auth" oauth-provider fs-val))]
+                                                    {:access_token "at-new"
+                                                     :refresh_token "rt-rotated"
+                                                     :expires_in 3600})]
+          (let [f1 (future (sut/refresh-oauth-tokens! "/auth" oauth-provider fs-val @oauth-descriptor))]
             @in-flight                                    ; f1 is inside the refresh, holding the lock
-            (let [f2 (future (sut/refresh-oauth-tokens! "/auth" oauth-provider fs-val))]
+            (let [f2 (future (sut/refresh-oauth-tokens! "/auth" oauth-provider fs-val @oauth-descriptor))]
               ;; f2 must block on the single-flight lock — it cannot start a second POST
               (should= ::pending (deref f2 300 ::pending))
               (should= 1 @calls*)
               (deliver release true)                      ; let f1 finish and release the lock
               @f1
               (should= "at-new" (:access (:tokens @f2)))  ; f2 gets the token f1 fetched
+              (should= "rt-rotated" (:refresh (:tokens @f2)))
               (should= 1 @calls*))))))))
+  )

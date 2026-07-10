@@ -9,13 +9,23 @@
 
   (with-stubs)
 
-  (describe "constants"
+  (describe "descriptors"
 
-    (it "has the OpenAI client ID"
-      (should= "app_EMoamEEZ73f0CkXaXp7hrann" sut/client-id))
+    (it "provides the built-in chatgpt oauth descriptor"
+      (let [descriptor sut/chatgpt-descriptor]
+        (should= "app_EMoamEEZ73f0CkXaXp7hrann" (:client-id descriptor))
+        (should= "https://auth.openai.com" (:issuer descriptor))
+        (should= "https://auth.openai.com/codex/device" (:verification-url descriptor))))
 
-    (it "has the auth base URL"
-      (should= "https://auth.openai.com" sut/base-url)))
+    (it "derives device-code endpoints from an oauth descriptor"
+      (let [descriptor {:issuer           "https://auth.x.ai"
+                        :device-path      "/oauth2/device/code"
+                        :authorize-path   "/oauth2/authorize"
+                        :verification-url "https://accounts.x.ai/oauth2/device"
+                        :token-path       "/oauth2/token"
+                        :client-id        "grok-client"}]
+        (should= "https://auth.x.ai/oauth2/device/code" (#'sut/device-code-url descriptor))
+        (should= "https://auth.x.ai/oauth2/token" (#'sut/token-url descriptor)))))
 
   (describe "request-user-code!"
 
@@ -24,24 +34,38 @@
                                       {:device_auth_id "dauth-123"
                                        :user_code      "ABCD-1234"
                                        :interval       5})]
-        (let [result (sut/request-user-code!)]
+        (let [result (sut/request-user-code! sut/chatgpt-descriptor)]
           (should= "dauth-123" (:device_auth_id result))
           (should= "ABCD-1234" (:user_code result))
           (should= 5 (:interval result)))))
 
-    (it "passes correct URL and client_id"
+    (it "passes descriptor URL and client_id for chatgpt"
       (let [captured (atom nil)]
         (with-redefs [sut/-post-json! (fn [url headers body]
                                         (reset! captured {:url url :headers headers :body body})
                                         {:device_auth_id "x" :user_code "Y" :interval 5})]
-          (sut/request-user-code!)
+          (sut/request-user-code! sut/chatgpt-descriptor)
           (should= "https://auth.openai.com/api/accounts/deviceauth/usercode" (:url @captured))
           (should= {"client_id" "app_EMoamEEZ73f0CkXaXp7hrann"} (:body @captured)))))
+
+    (it "passes descriptor URL and client_id for grok"
+      (let [captured (atom nil)
+            descriptor {:issuer           "https://auth.x.ai"
+                        :device-path      "/oauth2/device/code"
+                        :token-path       "/oauth2/token"
+                        :verification-url "https://accounts.x.ai/oauth2/device"
+                        :client-id        "grok-client"}]
+        (with-redefs [sut/-post-json! (fn [url headers body]
+                                        (reset! captured {:url url :headers headers :body body})
+                                        {:device_code "dc" :user_code "UC" :interval 5})]
+          (sut/request-user-code! descriptor)
+          (should= "https://auth.x.ai/oauth2/device/code" (:url @captured))
+          (should= {"client_id" "grok-client"} (:body @captured)))))
 
     (it "returns error map on failure"
       (with-redefs [sut/-post-json! (fn [_url _headers _body]
                                       {:error :api-error :status 404})]
-        (let [result (sut/request-user-code!)]
+        (let [result (sut/request-user-code! sut/chatgpt-descriptor)]
           (should= :api-error (:error result))))))
 
   (describe "-post-json!"
@@ -87,24 +111,41 @@
                                           {:error :pending :status 403}
                                           {:authorization_code "auth-code-xyz"
                                            :code_verifier     "verifier-abc"}))]
-          (let [result (sut/poll-for-auth! "dauth-123" "ABCD-1234" 0)]
+          (let [result (sut/poll-for-auth! sut/chatgpt-descriptor "dauth-123" "ABCD-1234" 0)]
             (should= "auth-code-xyz" (:authorization_code result))
             (should= "verifier-abc" (:code_verifier result))
             (should= 3 @call-count)))))
 
-    (it "passes device_auth_id and user_code in body"
+    (it "passes descriptor token URL, device_auth_id, and user_code in body"
       (let [captured (atom nil)]
         (with-redefs [sut/-post-json! (fn [url _headers body]
                                         (reset! captured {:url url :body body})
                                         {:authorization_code "ac" :code_verifier "cv"})]
-          (sut/poll-for-auth! "dauth-999" "CODE-5678" 0)
+          (sut/poll-for-auth! sut/chatgpt-descriptor "dauth-999" "CODE-5678" 0)
           (should= "https://auth.openai.com/api/accounts/deviceauth/token" (:url @captured))
           (should= {"device_auth_id" "dauth-999" "user_code" "CODE-5678"} (:body @captured)))))
+
+    (it "uses oidc device_code polling for descriptor-driven providers"
+      (let [captured   (atom nil)
+            descriptor {:issuer           "https://auth.x.ai"
+                        :client-id        "grok-client"
+                        :token-path       "/oauth2/token"
+                        :verification-url "https://accounts.x.ai/oauth2/device"
+                        :flow             :oidc-device-code}]
+        (with-redefs [sut/-post-json! (fn [url _headers body]
+                                        (reset! captured {:url url :body body})
+                                        {:access_token "at" :refresh_token "rt"})]
+          (sut/poll-for-auth! descriptor "dc-999" "CODE-5678" 0)
+          (should= "https://auth.x.ai/oauth2/token" (:url @captured))
+          (should= {"grant_type" "urn:ietf:params:oauth:grant-type:device_code"
+                    "client_id" "grok-client"
+                    "device_code" "dc-999"}
+                   (:body @captured)))))
 
     (it "returns error on non-pending failure"
       (with-redefs [sut/-post-json! (fn [_url _headers _body]
                                       {:error :api-error :status 500})]
-        (let [result (sut/poll-for-auth! "dauth-123" "CODE" 0)]
+        (let [result (sut/poll-for-auth! sut/chatgpt-descriptor "dauth-123" "CODE" 0)]
           (should= :api-error (:error result)))))
 
     (it "times out after repeated pending responses"
@@ -113,7 +154,7 @@
                                         (swap! calls inc)
                                         {:error :pending :status 403})
                       sut/sleep!     (fn [_] nil)]
-          (let [result (sut/poll-for-auth! "dauth-123" "CODE" sut/poll-timeout-ms)]
+          (let [result (sut/poll-for-auth! sut/chatgpt-descriptor "dauth-123" "CODE" sut/poll-timeout-ms)]
             (should= :timeout (:error result))
             (should= 2 @calls)))))
 
@@ -122,7 +163,7 @@
         (with-redefs [sut/-post-json! (fn [_url _headers _body]
                                         {:authorization_code "auth-code" :code_verifier "verifier"})
                       sut/sleep!     (fn [interval] (swap! slept conj interval))]
-          (sut/poll-for-auth! "dauth-123" "CODE" 5000)
+          (sut/poll-for-auth! sut/chatgpt-descriptor "dauth-123" "CODE" 5000)
           (should= [5000] @slept)))))
 
   (describe "-post-form!"
@@ -161,7 +202,7 @@
                                        :refresh_token "rt-final"
                                        :id_token      "id-final"
                                        :expires_in    86400})]
-        (let [result (sut/exchange-tokens! "auth-code" "verifier")]
+        (let [result (sut/exchange-tokens! sut/chatgpt-descriptor "auth-code" "verifier")]
           (should= "at-final" (:access_token result))
           (should= "rt-final" (:refresh_token result))
           (should= 86400 (:expires_in result)))))
@@ -171,7 +212,7 @@
         (with-redefs [sut/-post-form! (fn [url body]
                                         (reset! captured {:url url :body body})
                                         {:access_token "x" :refresh_token "y" :expires_in 1})]
-          (sut/exchange-tokens! "my-auth-code" "my-verifier")
+          (sut/exchange-tokens! sut/chatgpt-descriptor "my-auth-code" "my-verifier")
           (should= "https://auth.openai.com/oauth/token" (:url @captured))
           (let [body (:body @captured)]
             (should= "authorization_code" (get body "grant_type"))
@@ -183,7 +224,7 @@
     (it "returns error on failure"
       (with-redefs [sut/-post-form! (fn [_url _body]
                                       {:error :api-error :status 400})]
-        (let [result (sut/exchange-tokens! "bad-code" "bad-verifier")]
+        (let [result (sut/exchange-tokens! sut/chatgpt-descriptor "bad-code" "bad-verifier")]
           (should= :api-error (:error result))))))
 
   (describe "refresh-tokens!"
@@ -193,7 +234,7 @@
                                       {:access_token  "at-refreshed"
                                        :refresh_token "rt-rotated"
                                        :expires_in    3600})]
-        (let [result (sut/refresh-tokens! "rt-stored")]
+        (let [result (sut/refresh-tokens! sut/chatgpt-descriptor "rt-stored")]
           (should= "at-refreshed" (:access_token result))
           (should= "rt-rotated" (:refresh_token result)))))
 
@@ -202,17 +243,30 @@
         (with-redefs [sut/-post-form! (fn [url body]
                                         (reset! captured {:url url :body body})
                                         {:access_token "x" :expires_in 1})]
-          (sut/refresh-tokens! "my-refresh")
+          (sut/refresh-tokens! sut/chatgpt-descriptor "my-refresh")
           (should= "https://auth.openai.com/oauth/token" (:url @captured))
           (let [body (:body @captured)]
             (should= "refresh_token" (get body "grant_type"))
             (should= "app_EMoamEEZ73f0CkXaXp7hrann" (get body "client_id"))
             (should= "my-refresh" (get body "refresh_token"))))))
 
+    (it "supports a descriptor-driven refresh endpoint"
+      (let [captured   (atom nil)
+            descriptor {:issuer           "https://auth.x.ai"
+                        :token-path       "/oauth2/token"
+                        :client-id        "grok-client"
+                        :verification-url "https://accounts.x.ai/oauth2/device"}]
+        (with-redefs [sut/-post-form! (fn [url body]
+                                        (reset! captured {:url url :body body})
+                                        {:access_token "x" :refresh_token "rt-2" :expires_in 1})]
+          (sut/refresh-tokens! descriptor "my-refresh")
+          (should= "https://auth.x.ai/oauth2/token" (:url @captured))
+          (should= "grok-client" (get-in @captured [:body "client_id"])))) )
+
     (it "returns error on failure"
       (with-redefs [sut/-post-form! (fn [_url _body]
                                       {:error :api-error :status 400})]
-        (let [result (sut/refresh-tokens! "bad-refresh")]
+        (let [result (sut/refresh-tokens! sut/chatgpt-descriptor "bad-refresh")]
           (should= :api-error (:error result))))))
 
   (describe "exchange-api-key!"
@@ -222,7 +276,7 @@
         (with-redefs [sut/-post-form! (fn [url body]
                                         (reset! captured {:url url :body body})
                                         {:access_token "sk-oauth-backed"})]
-          (let [result (sut/exchange-api-key! "id-token-123")]
+          (let [result (sut/exchange-api-key! sut/chatgpt-descriptor "id-token-123")]
             (should= "sk-oauth-backed" (:access_token result))
             (should= "https://auth.openai.com/oauth/token" (:url @captured))
             (should= "urn:ietf:params:oauth:grant-type:token-exchange" (get-in @captured [:body "grant_type"]))
@@ -232,5 +286,5 @@
 
   (describe "verification-url"
 
-    (it "returns the device verification URL"
-      (should= "https://auth.openai.com/codex/device" sut/verification-url)))))
+    (it "returns the device verification URL from the descriptor"
+      (should= "https://auth.openai.com/codex/device" (sut/verification-url sut/chatgpt-descriptor))))))

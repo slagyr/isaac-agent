@@ -123,13 +123,36 @@
   {:template
    {:api "responses",
     :base-url "https://chatgpt.com/backend-api/codex",
-    :auth "oauth-device"}},
+    :auth "oauth-device",
+    :oauth {:issuer "https://auth.openai.com"
+            :client-id "app_EMoamEEZ73f0CkXaXp7hrann"
+            :device-path "/api/accounts/deviceauth/usercode"
+            :poll-path "/api/accounts/deviceauth/token"
+            :token-path "/oauth/token"
+            :redirect-uri "https://auth.openai.com/deviceauth/callback"
+            :verification-url "https://auth.openai.com/codex/device"
+            :flow :openai-device-auth
+            :originator "isaac"
+            :chatgpt-account-id? true
+            :token-exchange {:requested-token "openai-api-key"
+                             :subject-token-type "urn:ietf:params:oauth:token-type:id_token"}}}}
   :claude-code
   {:template
    {:api "claude-cli",
     :auth "none",
     :command "claude",
-    :stream-supports-tool-calls false}}},
+    :stream-supports-tool-calls false}}
+  :grok
+  {:template
+   {:api "chat-completions",
+    :base-url "https://api.x.ai/v1",
+    :auth "oauth-device",
+    :oauth {:issuer "https://auth.x.ai"
+            :client-id "b1a00492-073a-47ea-816f-4c329264a828"
+            :device-path "/oauth2/device/code"
+            :token-path "/oauth2/token"
+            :verification-url "https://accounts.x.ai/oauth2/device"
+            :flow :oidc-device-code}}}},
  :isaac.agent/slash-commands
  {:crew {:factory isaac.slash.builtin/crew-command},
   :cwd {:factory isaac.slash.builtin/cwd-command},
@@ -184,6 +207,22 @@
        :description "Extra HTTP headers to include in requests",
        :key-spec {:type :string},
        :value-spec {:type :string}},
+      :oauth
+      {:type :map,
+       :description "OAuth device-code/provider descriptor metadata",
+       :schema {:issuer {:type :string}
+                :client-id {:type :string}
+                :device-path {:type :string}
+                :poll-path {:type :string}
+                :token-path {:type :string}
+                :redirect-uri {:type :string}
+                :verification-url {:type :string}
+                :flow {:type :keyword}
+                :originator {:type :string}
+                :chatgpt-account-id? {:type :boolean}
+                :token-exchange {:type :map
+                                 :schema {:requested-token {:type :string}
+                                          :subject-token-type {:type :string}}}}},
       :token
       {:type :string,
        :description "Authentication token (alias for api-key)"},

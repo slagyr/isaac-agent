@@ -5,6 +5,7 @@
     [cheshire.core :as json]
     [clojure.string :as str]
     [isaac.config.loader :as loader]
+    [isaac.llm.auth.device-code :as device-code]
     [isaac.llm.auth.store :as auth-store]
     [isaac.llm.followup :as followup]
     [isaac.fs :as fs]
@@ -50,16 +51,21 @@
   (when (or auth-dir root)
     (or auth-dir root)))
 
+(defn- oauth-descriptor [config]
+  (some-> config :oauth device-code/provider-descriptor!))
+
 (defn resolve-oauth-tokens [provider-name {:keys [auth] :as config}]
   (when (oauth-device-auth? auth)
     (when-let [root (oauth-auth-root config)]
-      (let [fs*    (fs/instance)
-            tokens (auth-store/load-tokens root provider-name fs*)]
+      (let [fs*        (fs/instance)
+            descriptor (oauth-descriptor config)
+            tokens     (auth-store/load-tokens root provider-name fs*)]
         (cond
           (nil? tokens) nil
 
           (auth-store/token-needs-refresh? tokens)
-          (:tokens (auth-store/refresh-oauth-tokens! root provider-name fs*))
+          (let [result (auth-store/refresh-oauth-tokens! root provider-name fs* descriptor)]
+            (or (:tokens result) result))
 
           :else tokens)))))
 
@@ -70,10 +76,13 @@
     (if (and (= :auth-failed (:error result))
              (oauth-device-auth? (:auth config))
              (oauth-auth-root config))
-      (let [root (oauth-auth-root config)
-            fs*  (fs/instance)]
-        (when (:tokens (auth-store/refresh-oauth-tokens! root provider-name fs* {:force? true}))
-          (f)))
+      (let [root         (oauth-auth-root config)
+            fs*          (fs/instance)
+            descriptor   (oauth-descriptor config)
+            refresh-result (auth-store/refresh-oauth-tokens! root provider-name fs* descriptor {:force? true})]
+        (if (:tokens refresh-result)
+          (f)
+          refresh-result))
       result)))
 
 (defn provider-env-var
@@ -100,9 +109,12 @@
     nil
 
     (oauth-device-auth? auth)
-    (when-not (resolve-oauth-tokens provider-name config)
-      {:error   :auth-missing
-       :message "Missing OpenAI ChatGPT login. Run `isaac auth login --provider chatgpt` first."})
+    (let [result (resolve-oauth-tokens provider-name config)]
+      (cond
+        (:unavailable? result) result
+        (:access result)       nil
+        :else                  {:error   :auth-missing
+                                :message (str "Missing OAuth login for " provider-name ". Run `isaac auth login --provider " provider-name "` first.")}))
 
     (str/blank? (resolve-api-key provider-name config))
     (let [env-var (provider-env-var provider-name)
@@ -122,16 +134,19 @@
     (:simulate-provider config) (assoc :simulate-provider (:simulate-provider config))))
 
 (defn auth-headers [provider-name config]
-  (let [oauth-tokens (resolve-oauth-tokens provider-name config)
+  (let [descriptor   (oauth-descriptor config)
+        oauth-tokens (resolve-oauth-tokens provider-name config)
         oauth-token  (:access oauth-tokens)
-        account-id   (or (extract-account-id oauth-tokens)
-                         (when (= "chatgpt" (:simulate-provider config)) "grover-account"))
+        account-id   (when (or (:chatgpt-account-id? descriptor)
+                               (= "chatgpt" (:simulate-provider config)))
+                       (or (extract-account-id oauth-tokens)
+                           (when (= "chatgpt" (:simulate-provider config)) "grover-account")))
         api-key      (resolve-api-key provider-name config)
         token        (or oauth-token api-key)]
     (cond-> {"content-type" "application/json"}
-      token                             (assoc "Authorization" (str "Bearer " token))
-      account-id                        (assoc "ChatGPT-Account-Id" account-id)
-      (oauth-device-auth? (:auth config)) (assoc "originator" "isaac"))))
+      token           (assoc "Authorization" (str "Bearer " token))
+      account-id      (assoc "ChatGPT-Account-Id" account-id)
+      (:originator descriptor) (assoc "originator" (:originator descriptor)))))
 
 ;; endregion ^^^^^ Auth ^^^^^
 
