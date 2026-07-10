@@ -163,6 +163,47 @@
                     "device_code" "dc-999"}
                    (:body @captured)))))
 
+    (it "keeps polling through oidc authorization_pending then succeeds"
+      (let [calls (atom 0)
+            descriptor (assoc sut/grok-descriptor :flow :oidc-device-code)]
+        (with-redefs [sut/-post-form! (fn [_ _]
+                                        (swap! calls inc)
+                                        (if (<= @calls 2)
+                                          {:error  :api-error
+                                           :status 400
+                                           :body   {:error "authorization_pending"}}
+                                          {:access_token "at-ok" :refresh_token "rt-ok"}))
+                      sut/sleep! (fn [_] nil)]
+          (let [result (sut/poll-for-auth! descriptor "dc-1" "UC" 5000)]
+            (should= "at-ok" (:access_token result))
+            (should= 3 @calls)))))
+
+    (it "increases poll interval after oidc slow_down"
+      (let [calls (atom 0)
+            slept (atom [])
+            descriptor (assoc sut/grok-descriptor :flow :oidc-device-code)]
+        (with-redefs [sut/-post-form! (fn [_ _]
+                                        (swap! calls inc)
+                                        (if (= 1 @calls)
+                                          {:error  :api-error
+                                           :status 400
+                                           :body   {:error "slow_down"}}
+                                          {:access_token "at" :refresh_token "rt"}))
+                      sut/sleep! (fn [ms] (swap! slept conj ms))]
+          (sut/poll-for-auth! descriptor "dc-1" "UC" 5000)
+          (should= [5000 10000] @slept))))
+
+    (it "terminates oidc poll on access_denied with message"
+      (let [descriptor (assoc sut/grok-descriptor :flow :oidc-device-code)]
+        (with-redefs [sut/-post-form! (fn [_ _]
+                                        {:error  :api-error
+                                         :status 400
+                                         :body   {:error "access_denied"}})
+                      sut/sleep! (fn [_] nil)]
+          (let [result (sut/poll-for-auth! descriptor "dc-1" "UC" 0)]
+            (should= :api-error (:error result))
+            (should= "access_denied" (:message result))))))
+
     (it "asserts form Content-Type on oidc device-code request (scripted endpoint)"
       (let [captured (atom nil)
             descriptor (assoc sut/grok-descriptor :flow :oidc-device-code)]

@@ -1,6 +1,6 @@
 (ns isaac.llm.auth.cli-spec
   (:require
-    [clojure.string]
+    [clojure.string :as str]
     [isaac.fs :as fs]
     [isaac.llm.auth.device-code :as device-code]
     [isaac.llm.auth.store :as auth-store]
@@ -143,6 +143,30 @@
             (should (clojure.string/includes? @output "415"))
             (should (clojure.string/includes? @output "form-urlencoded"))
             (should-not (clojure.string/includes? @output ":unknown"))))
+
+        (it "completes grok login after authorization_pending polls (oidc RFC 8628)"
+          (let [poll-calls (atom 0)
+                descriptor (assoc device-code/grok-descriptor :flow :oidc-device-code)]
+            (with-redefs [device-code/provider-descriptor! (fn [_] descriptor)
+                          device-code/-post-form!
+                          (fn [url _body]
+                            (if (str/includes? url "/device/code")
+                              {:device_code "dc-live" :user_code "LIVE-CODE" :interval 5}
+                              (do
+                                (swap! poll-calls inc)
+                                (if (<= @poll-calls 2)
+                                  {:error  :api-error
+                                   :status 400
+                                   :body   {:error "authorization_pending"}}
+                                  {:authorization_code "ac" :code_verifier "cv"}))))
+                          device-code/sleep! (fn [_] nil)
+                          device-code/exchange-tokens! (fn [_ _ _]
+                                                         {:access_token  "at"
+                                                          :refresh_token "rt"
+                                                          :expires_in    3600})
+                          auth-store/save-tokens! (fn [_ _ _ _] nil)]
+              (should= 0 (sut/run ["login" "--provider" "grok"]))
+              (should= 3 @poll-calls))))
 
         (it "returns 1 when poll-for-auth fails"
           (with-redefs [device-code/provider-descriptor! (fn [_] {:verification-url "https://auth.openai.com/codex/device"})
