@@ -1,5 +1,5 @@
 {:id :isaac.agent,
- :version "0.1.12",
+ :version "0.1.13",
  :builtin? true,
  :factory isaac.agent.module/create-module,
  :berths
