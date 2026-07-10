@@ -144,9 +144,14 @@
             (should (clojure.string/includes? @output "form-urlencoded"))
             (should-not (clojure.string/includes? @output ":unknown"))))
 
-        (it "completes grok login after authorization_pending polls (oidc RFC 8628)"
-          (let [poll-calls (atom 0)
-                descriptor (assoc device-code/grok-descriptor :flow :oidc-device-code)]
+        (it "completes grok login after authorization_pending polls (oidc direct token, no exchange)"
+          (let [poll-calls    (atom 0)
+                exchange-calls (atom 0)
+                saved         (atom nil)
+                descriptor    (assoc device-code/grok-descriptor :flow :oidc-device-code)
+                token-resp    {:access_token  "at-direct"
+                                :refresh_token "rt-direct"
+                                :expires_in    3600}]
             (with-redefs [device-code/provider-descriptor! (fn [_] descriptor)
                           device-code/-post-form!
                           (fn [url _body]
@@ -158,15 +163,18 @@
                                   {:error  :api-error
                                    :status 400
                                    :body   {:error "authorization_pending"}}
-                                  {:authorization_code "ac" :code_verifier "cv"}))))
+                                  token-resp))))
                           device-code/sleep! (fn [_] nil)
                           device-code/exchange-tokens! (fn [_ _ _]
-                                                         {:access_token  "at"
-                                                          :refresh_token "rt"
-                                                          :expires_in    3600})
-                          auth-store/save-tokens! (fn [_ _ _ _] nil)]
+                                                         (swap! exchange-calls inc)
+                                                         {:error :api-error})
+                          auth-store/save-tokens! (fn [_ provider tokens _]
+                                                    (reset! saved {:provider provider :tokens tokens}))]
               (should= 0 (sut/run ["login" "--provider" "grok"]))
-              (should= 3 @poll-calls))))
+              (should= 3 @poll-calls)
+              (should= 0 @exchange-calls)
+              (should= "at-direct" (get-in @saved [:tokens :access_token]))
+              (should= "grok" (:provider @saved)))))
 
         (it "returns 1 when poll-for-auth fails"
           (with-redefs [device-code/provider-descriptor! (fn [_] {:verification-url "https://auth.openai.com/codex/device"})

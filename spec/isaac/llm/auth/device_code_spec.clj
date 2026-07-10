@@ -176,6 +176,8 @@
                       sut/sleep! (fn [_] nil)]
           (let [result (sut/poll-for-auth! descriptor "dc-1" "UC" 5000)]
             (should= "at-ok" (:access_token result))
+            (should= "rt-ok" (:refresh_token result))
+            (should-not (:authorization_code result))
             (should= 3 @calls)))))
 
     (it "increases poll interval after oidc slow_down"
