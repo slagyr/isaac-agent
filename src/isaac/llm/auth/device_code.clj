@@ -30,7 +30,8 @@
    :device-path      "/oauth2/device/code"
    :token-path       "/oauth2/token"
    :verification-url "https://accounts.x.ai/oauth2/device"
-   :flow             :oidc-device-code})
+   :flow             :oidc-device-code
+   :scope            "api:access offline_access"})
 
 ;; endregion ^^^^^ Constants ^^^^^
 
@@ -201,7 +202,10 @@
      "user_code"      user-code}))
 
 (defn- device-code-request-body [descriptor]
-  {"client_id" (:client-id descriptor)})
+  (cond-> {"client_id" (:client-id descriptor)}
+    (and (= :oidc-device-code (oauth-flow descriptor))
+         (seq (:scope descriptor)))
+    (assoc "scope" (:scope descriptor))))
 
 (defn- post-device-code-request! [descriptor]
   (let [url  (device-code-url descriptor)

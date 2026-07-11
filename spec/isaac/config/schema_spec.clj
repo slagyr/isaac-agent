@@ -98,7 +98,8 @@
                         :device-path "/oauth2/device/code"
                         :token-path "/oauth2/token"
                         :verification-url "https://accounts.x.ai/oauth2/device"
-                        :flow :oidc-device-code}}
+                        :flow :oidc-device-code
+                        :scope "api:access offline_access"}}
                (lexicon/conform (runtime-spec sut/provider)
                                 {:base-url "https://api.x.ai/v1"
                                  :api marigold/helm-api
@@ -108,7 +109,8 @@
                                          :device-path "/oauth2/device/code"
                                          :token-path "/oauth2/token"
                                          :verification-url "https://accounts.x.ai/oauth2/device"
-                                         :flow :oidc-device-code}}))))
+                                         :flow :oidc-device-code
+                                         :scope "api:access offline_access"}}))))
 
   (describe "custom validation"
 

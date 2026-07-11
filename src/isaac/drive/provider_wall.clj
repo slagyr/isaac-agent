@@ -78,10 +78,11 @@
                 :provider provider
                 :status (:status result)
                 :retry-after-ms retry-ms)
-      {:unavailable? true
-       :retry-after-ms retry-ms
-       :reason       :auth
-       :provider     provider})))
+      (cond-> {:unavailable? true
+               :retry-after-ms retry-ms
+               :reason       :auth
+               :provider     provider}
+        (seq (response-message result)) (assoc :message (response-message result))))))
 
 (defn classify
   "Classify provider weather into {:unavailable? true :retry-after-ms N :reason ...}.

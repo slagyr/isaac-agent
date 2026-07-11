@@ -206,7 +206,7 @@
             (should= :api-error (:error result))
             (should= "access_denied" (:message result))))))
 
-    (it "asserts form Content-Type on oidc device-code request (scripted endpoint)"
+    (it "asserts form Content-Type and scope on oidc device-code request (scripted endpoint)"
       (let [captured (atom nil)
             descriptor (assoc sut/grok-descriptor :flow :oidc-device-code)]
         (with-redefs [http/post (fn [url opts]
@@ -216,7 +216,19 @@
           (sut/request-user-code! descriptor)
           (should= "application/x-www-form-urlencoded"
                    (get-in @captured [:opts :headers "Content-Type"]))
-          (should-contain "client_id=" (get-in @captured [:opts :body])))))
+          (should-contain "client_id=" (get-in @captured [:opts :body]))
+          (should-contain "scope=" (get-in @captured [:opts :body]))
+          (should-contain "api%3Aaccess" (get-in @captured [:opts :body]))
+          (should-contain "offline_access" (get-in @captured [:opts :body])))))
+
+    (it "does not send scope on chatgpt openai device-auth request (regression)"
+      (let [captured (atom nil)]
+        (with-redefs [sut/-post-json! (fn [url headers body]
+                                        (reset! captured {:url url :headers headers :body body})
+                                        {:device_auth_id "x" :user_code "Y" :interval 5})]
+          (sut/request-user-code! sut/chatgpt-descriptor)
+          (should-not (contains? (:body @captured) "scope"))
+          (should-not (contains? (:body @captured) :scope)))))
 
     (it "asserts form Content-Type on oidc poll and refresh"
       (let [poll-captured (atom nil)

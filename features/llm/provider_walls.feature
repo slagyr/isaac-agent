@@ -71,3 +71,21 @@ Feature: Provider wall classification
     And the log has entries matching:
       | level | event                        | provider | status |
       | :warn | :chat/provider-auth-rejected | chatgpt  | 401    |
+
+  Scenario: a provider 403 permission-denied classifies as auth (grok scope)
+    Given the isaac EDN file "config/models/snuffy.edn" exists with:
+      | path           | value          |
+      | model          | snuffy-codex   |
+      | provider       | grover:chatgpt |
+      | context-window | 128000         |
+    And the isaac EDN file "config/crew/oscar.edn" exists with:
+      | path  | value  |
+      | model | snuffy |
+    And the following sessions exist:
+      | name      | crew  |
+      | trash-can | oscar |
+    And the following model responses are queued:
+      | model        | type       | status | message                                                      |
+      | snuffy-codex | http-error | 403    | OAuth2 token missing required scope: api:access              |
+    When the user sends "knock knock" on session "trash-can"
+    Then the turn result is unavailable with retry-after-ms 300000 and reason auth
