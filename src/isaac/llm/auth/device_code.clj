@@ -8,6 +8,7 @@
 ;; region ----- Constants -----
 
 (def poll-timeout-ms (* 15 60 1000))
+(def oidc-slow-down-extra-ms 5000)
 
 (def chatgpt-descriptor
   {:issuer               "https://auth.openai.com"
@@ -79,8 +80,36 @@
    :timeout 30000
    :throw   false})
 
+(defn- oauth-flow [descriptor]
+  (or (:flow descriptor)
+      (when (:poll-path descriptor) :openai-device-auth)
+      :oidc-device-code))
+
 (defn- pending-error? [result]
   (= :pending (:error result)))
+
+(defn- oidc-oauth-error-code [result]
+  (when (map? (:body result))
+    (some-> (:error (:body result)) str)))
+
+(defn- classify-oidc-poll-result [result]
+  (if-not (:error result)
+    result
+    (let [code (oidc-oauth-error-code result)]
+      (cond
+        (contains? #{"authorization_pending" "slow_down"} code)
+        (assoc result :error :pending :oauth_error code)
+
+        (contains? #{"expired_token" "access_denied"} code)
+        (assoc result :error :api-error :message code)
+
+        :else result))))
+
+(defn- next-poll-interval-ms [descriptor classified-result current-interval-ms]
+  (if (and (= :oidc-device-code (oauth-flow descriptor))
+           (= "slow_down" (:oauth_error classified-result)))
+    (+ current-interval-ms oidc-slow-down-extra-ms)
+    current-interval-ms))
 
 (defn sleep! [interval-ms]
   (when (pos? interval-ms)
@@ -121,11 +150,6 @@
   (or (:verification-url descriptor)
       (:verification_uri descriptor)
       (:verification_uri_complete descriptor)))
-
-(defn- oauth-flow [descriptor]
-  (or (:flow descriptor)
-      (when (:poll-path descriptor) :openai-device-auth)
-      :oidc-device-code))
 
 (defn- join-url [base path]
   (str (str/replace (or base "") #"/$" "")
@@ -206,16 +230,22 @@
   [descriptor device-id user-code interval-ms]
   (let [descriptor (provider-descriptor! descriptor)
         url        (poll-url descriptor)
-        body       (poll-body descriptor device-id user-code)]
-    (loop [elapsed 0]
-      (sleep! interval-ms)
-      (let [result (post-device-code-poll! descriptor url body)]
+        body       (poll-body descriptor device-id user-code)
+        oidc?      (= :oidc-device-code (oauth-flow descriptor))]
+    (loop [elapsed 0 sleep-ms interval-ms]
+      (sleep! sleep-ms)
+      (let [raw    (post-device-code-poll! descriptor url body)
+            result (if oidc? (classify-oidc-poll-result raw) raw)]
         (cond
-          (not (:error result))   result
-          (pending-error? result) (if (timed-out? elapsed)
-                                    (timeout-result)
-                                    (recur (next-elapsed elapsed interval-ms)))
-          :else                   result)))))
+          (not (:error result)) result
+
+          (if oidc? (= :pending (:error result)) (pending-error? result))
+          (if (timed-out? elapsed)
+            (timeout-result)
+            (recur (next-elapsed elapsed sleep-ms)
+                   (next-poll-interval-ms descriptor result sleep-ms)))
+
+          :else result)))))
 
 (defn exchange-tokens!
   "Step 3: Exchange authorization code for access/refresh tokens."

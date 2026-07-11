@@ -13,14 +13,22 @@
 (defn- stubbed-device-code-login? []
   (not= false (g/get :oauth-device-code-stub)))
 
-(defn- stub-user-code-response [_descriptor]
-  {:device_auth_id "device-auth-stub"
-   :user_code      "TEST-CODE"
-   :interval       0})
+(defn- stub-user-code-response [descriptor]
+  (if (= :oidc-device-code (:flow descriptor))
+    {:device_code "device-code-stub"
+     :user_code   "TEST-CODE"
+     :interval    0}
+    {:device_auth_id "device-auth-stub"
+     :user_code      "TEST-CODE"
+     :interval       0}))
 
-(defn- stub-auth-response [_descriptor _device-id _user-code _interval-ms]
-  {:authorization_code "auth-code-stub"
-   :code_verifier     "code-verifier-stub"})
+(defn- stub-auth-response [descriptor _device-id _user-code _interval-ms]
+  (if (= :oidc-device-code (:flow descriptor))
+    {:access_token  "at-stub"
+     :refresh_token "rt-stub"
+     :expires_in    3600}
+    {:authorization_code "auth-code-stub"
+     :code_verifier     "code-verifier-stub"}))
 
 (defn- stub-token-response [_descriptor _authorization-code _code-verifier]
   {:access_token  "at-stub"

@@ -81,14 +81,24 @@
                 1)
 
               :else
-              (let [tokens (device-code/exchange-tokens! descriptor
-                                                         (:authorization_code auth-resp)
-                                                         (:code_verifier auth-resp))]
+              (let [tokens (if (= :oidc-device-code (:flow descriptor))
+                             auth-resp
+                             (device-code/exchange-tokens! descriptor
+                                                           (:authorization_code auth-resp)
+                                                           (:code_verifier auth-resp)))]
                 (cond
                   (:error tokens)
                   (do
-                    (println (str "Error: Token exchange failed: " (:error tokens)
-                                  (when (:body tokens) (str " - " (:body tokens)))))
+                    (println (str "Error: "
+                                  (if (= :oidc-device-code (:flow descriptor))
+                                      "Authorization succeeded but no access_token in response"
+                                      (str "Token exchange failed: " (:error tokens)
+                                           (when (:body tokens) (str " - " (:body tokens)))))))
+                    1)
+
+                  (not (:access_token tokens))
+                  (do
+                    (println "Error: Authorization succeeded but no access_token in response")
                     1)
 
                   :else
