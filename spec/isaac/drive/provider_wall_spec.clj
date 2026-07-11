@@ -1,16 +1,28 @@
 (ns isaac.drive.provider-wall-spec
   (:require
+    [clojure.string :as str]
     [isaac.drive.provider-wall :as sut]
     [speclj.core :refer :all]))
 
 (describe "provider wall classification"
+
+  (it "classifies 403 permission-denied as auth unavailability with message"
+    (let [result {:error :api-error
+                  :status 403
+                  :body {:code "permission-denied"
+                         :error "OAuth2 token missing required scope: api:access"}}
+          classified (sut/classify result {} "grok")]
+      (should= :auth (:reason classified))
+      (should= 300000 (:retry-after-ms classified))
+      (should (str/includes? (:message classified) "api:access"))))
 
   (it "classifies 401 http errors as auth unavailability"
     (let [result {:error :api-error :status 401 :message "Unauthorized"}]
       (should= {:unavailable? true
                 :retry-after-ms 300000
                 :reason :auth
-                :provider "grover"}
+                :provider "grover"
+                :message "Unauthorized"}
                (sut/classify result {} "grover"))))
 
   (it "classifies auth-failed errors as auth unavailability"

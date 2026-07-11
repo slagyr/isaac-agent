@@ -134,7 +134,9 @@
                                               :model-override (or (:with-model override) (:model opts))
                                               :origin         {:kind :cli}
                                               :comm           comm}))]
-                  (if (or (:error result) (get-in result [:response :error]))
+                  (if (or (:error result)
+                          (:unavailable? result)
+                          (get-in result [:response :error]))
                     (do
                       (binding [*out* *err*]
                         (println (single-turn/error-message result)))

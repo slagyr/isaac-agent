@@ -34,7 +34,11 @@
       (map? body) (pr-str body))))
 
 (defn error-message [result]
-  (or (:message result)
+  (or (when (:unavailable? result)
+        (str "provider unavailable"
+             (when-let [r (:reason result)] (str " (" (name r) ")"))
+             (when-let [m (:message result)] (str ": " m))))
+      (:message result)
       (body-error-message result)
       (when (:status result)
         (str "HTTP " (:status result) " " (name (:error result))
@@ -926,13 +930,15 @@
                           (let [messages (api/followup-messages p req response tool-calls tool-results)]
                             (reset! current-request (assoc req :messages messages))
                             messages))
-            result      (-> (tool-loop/run chat-fn followup-fn request tool-fn
-                                           {:max-loops  tool-loop-max
-                                            :cancelled? #(bridge/cancelled? session-key)})
-                            (final-loop-summary chat-fn @current-request)
-                            (#(canned-loop-exhausted-message % input @current-request))
-                            (guard-empty-terminal-response chat-fn @current-request)
-                            finalize-turn-result)]
+            result      (let [provider-name (api/display-name p)]
+                          (-> (tool-loop/run chat-fn followup-fn request tool-fn
+                                             {:max-loops  tool-loop-max
+                                              :cancelled? #(bridge/cancelled? session-key)})
+                              (provider-wall/normalize config provider-name)
+                              (final-loop-summary chat-fn @current-request)
+                              (#(canned-loop-exhausted-message % input @current-request))
+                              (guard-empty-terminal-response chat-fn @current-request)
+                              finalize-turn-result))]
         (log/debug :turn/model-response-summary
                    :session session-key
                    :provider (api/display-name p)

@@ -152,7 +152,8 @@
             :device-path "/oauth2/device/code"
             :token-path "/oauth2/token"
             :verification-url "https://accounts.x.ai/oauth2/device"
-            :flow :oidc-device-code}}}},
+            :flow :oidc-device-code
+            :scope "api:access offline_access"}}}},
  :isaac.agent/slash-commands
  {:crew {:factory isaac.slash.builtin/crew-command},
   :cwd {:factory isaac.slash.builtin/cwd-command},
@@ -218,6 +219,7 @@
                 :redirect-uri {:type :string}
                 :verification-url {:type :string}
                 :flow {:type :keyword}
+                :scope {:type :string}
                 :originator {:type :string}
                 :chatgpt-account-id? {:type :boolean}
                 :token-exchange {:type :map

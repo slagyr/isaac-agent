@@ -13,6 +13,14 @@ Feature: Prompt single-turn command
     Then the stdout contains "Four, I think"
     And the exit code is 0
 
+  Scenario: prompt exits nonzero on provider 403 auth rejection (isaac-zyvx)
+    Given the following model responses are queued:
+      | type       | status | message                                         | model |
+      | http-error | 403    | OAuth2 token missing required scope: api:access | echo  |
+    When isaac is run with "prompt -m 'hello'"
+    Then the exit code is 1
+    And the stderr contains "api:access"
+
   Scenario: Default session is prompt-default
     Given the following model responses are queued:
       | type | content | model |
