@@ -228,7 +228,7 @@
                                         {:device_auth_id "x" :user_code "Y" :interval 5})]
           (sut/request-user-code! sut/chatgpt-descriptor)
           (should-not (contains? (:body @captured) "scope"))
-          (should-not (contains? (:body @captured) :scope))))))
+          (should-not (contains? (:body @captured) :scope)))))
 
     (it "asserts form Content-Type on oidc poll and refresh"
       (let [poll-captured (atom nil)
