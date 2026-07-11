@@ -1,5 +1,5 @@
 {:id :isaac.agent,
- :version "0.1.14",
+ :version "0.1.15",
  :builtin? true,
  :factory isaac.agent.module/create-module,
  :berths
@@ -136,7 +136,7 @@
             :chatgpt-account-id? true
             :token-exchange {:requested-token "openai-api-key"
                              :subject-token-type "urn:ietf:params:oauth:token-type:id_token"}}}}
-  :claude-code
+  :claude
   {:template
    {:api "claude-cli",
     :auth "none",

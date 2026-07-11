@@ -1,6 +1,6 @@
 Feature: Claude subscription provider via CLI shell-out
 
-  The claude-code provider uses the local `claude` binary (logged in with
+  The `claude` provider uses the local `claude` binary (logged in with
   subscription) for raw completions. Isaac owns the full prompt, transcript,
   and tool loop. The binary is invoked with --print, no claude tools,
   no claude session management.
@@ -10,13 +10,13 @@ Feature: Claude subscription provider via CLI shell-out
     And config:
       | key        | value  |
       | log.output | memory |
-    And the isaac EDN file "config/providers/claude-code.edn" exists with:
+    And the isaac EDN file "config/providers/claude.edn" exists with:
       | path    | value  |
       | command | claude |
     And the isaac EDN file "config/models/sub-sonnet.edn" exists with:
       | path     | value        |
       | model    | sonnet       |
-      | provider | claude-code  |
+      | provider | claude  |
     And the isaac EDN file "config/crew/thinker.edn" exists with:
       | path  | value       |
       | model | sub-sonnet  |
@@ -39,7 +39,7 @@ Feature: Claude subscription provider via CLI shell-out
       | (full prompt text as arg)|       |
 
   Scenario: streaming response from claude subscription provider
-    Given the isaac EDN file "config/providers/claude-code.edn" exists with:
+    Given the isaac EDN file "config/providers/claude.edn" exists with:
       | path                  | value |
       | command               | claude |
       | stream-non-tool-turns | true  |
@@ -83,7 +83,7 @@ Feature: Claude subscription provider via CLI shell-out
       | --model                  | sonnet|
 
   Scenario: claude subscription provider with custom binary path
-    Given the isaac EDN file "config/providers/claude-code.edn" exists with:
+    Given the isaac EDN file "config/providers/claude.edn" exists with:
       | path    | value              |
       | command | /custom/path/claude|
     And the claude binary at "/custom/path/claude" is stubbed to return "42"
@@ -98,7 +98,7 @@ Feature: Claude subscription provider via CLI shell-out
       | --model                  | sonnet|
 
   Scenario: extra args from provider config are forwarded
-    Given the isaac EDN file "config/providers/claude-code.edn" exists with:
+    Given the isaac EDN file "config/providers/claude.edn" exists with:
       | path        | value         |
       | command     | claude        |
       | extra-args  | ["--foo","bar"]|
@@ -115,13 +115,13 @@ Feature: Claude subscription provider via CLI shell-out
       | --foo                    | bar   |
 
   Scenario: full history passed each turn (Isaac controls transcript)
-    Given the isaac EDN file "config/providers/claude-code.edn" exists with:
+    Given the isaac EDN file "config/providers/claude.edn" exists with:
       | path    | value  |
       | command | claude |
     And the isaac EDN file "config/models/sub-sonnet.edn" exists with:
       | path     | value        |
       | model    | sonnet       |
-      | provider | claude-code  |
+      | provider | claude  |
     And the following sessions exist:
       | name | crew    |
       | math | thinker |
@@ -143,13 +143,13 @@ Feature: Claude subscription provider via CLI shell-out
       | (no --continue or --resume) | |
 
   Scenario: claude subscription provider uses subscription login (no raw API key)
-    Given the isaac EDN file "config/providers/claude-code.edn" exists with:
+    Given the isaac EDN file "config/providers/claude.edn" exists with:
       | path    | value  |
       | command | claude |
     And the isaac EDN file "config/models/sub-sonnet.edn" exists with:
       | path     | value        |
       | model    | sonnet       |
-      | provider | claude-code  |
+      | provider | claude  |
     And the following sessions exist:
       | name | crew    |
       | sub  | thinker |
@@ -168,14 +168,14 @@ Feature: Claude subscription provider via CLI shell-out
       | (no ANTHROPIC_API_KEY in env) | |
 
   Scenario: claude subscription provider with extra args from config
-    Given the isaac EDN file "config/providers/claude-code.edn" exists with:
+    Given the isaac EDN file "config/providers/claude.edn" exists with:
       | path        | value         |
       | command     | claude        |
       | extra-args  | ["--foo","bar"]|
     And the isaac EDN file "config/models/sub-sonnet.edn" exists with:
       | path     | value        |
       | model    | sonnet       |
-      | provider | claude-code  |
+      | provider | claude  |
     And the following sessions exist:
       | name | crew    |
       | main | thinker |

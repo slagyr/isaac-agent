@@ -71,8 +71,8 @@
         (should= "none" (:auth d))
         (should= nil (:models d))))
 
-    (it "returns claude-cli config for claude-code with subscription shell-out defaults"
-      (let [d (sut/template "claude-code")]
+    (it "returns claude-cli config for claude with subscription shell-out defaults"
+      (let [d (sut/template "claude")]
         (should= "claude-cli" (:api d))
         (should= "none" (:auth d))
         (should= "claude" (:command d))
@@ -120,7 +120,7 @@
         (should-contain "openai" known)
         (should-contain "chatgpt" known)
         (should-contain "xai" known)
-        (should-contain "claude-code" known))))
+        (should-contain "claude" known))))
 
   (describe "registry"
 
