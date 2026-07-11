@@ -215,6 +215,12 @@
         message (or (:message result) (:output (g/get :llm-result)) "")]
     (g/should (str/includes? message fragment))))
 
+(defn error-classified-auth []
+  (session-steps/await-turn!)
+  (let [result (or (g/get :llm-result) (g/get :dispatch-result))]
+    (g/should (:unavailable? result))
+    (g/should= :auth (:reason result))))
+
 (defn credentials-file-exists [_path]
   (let [path (expand-home "~/.claude/.credentials.json")
         fs*  (mem-fs)]
@@ -277,6 +283,8 @@
   isaac.llm.claude-cli-steps/claude-binary-error-reported)
 
 (defthen #"the error message contains \"([^\"]+)\"" isaac.llm.claude-cli-steps/error-message-contains)
+
+(defthen "the error is classified as auth-unavailable" isaac.llm.claude-cli-steps/error-classified-auth)
 
 (defgiven #"the file \"([^\"]+)\" exists with the subscription login"
   isaac.llm.claude-cli-steps/credentials-file-exists)

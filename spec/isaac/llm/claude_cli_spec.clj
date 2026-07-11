@@ -5,7 +5,7 @@
     [isaac.drive.turn :as turn]
     [isaac.llm.api.claude-cli :as sut]
     [isaac.llm.api.protocol :as api]
-    [speclj.core :refer [before describe it should=]]))
+    [speclj.core :refer [before describe it should should= should-not]]))
 
 (describe "claude-cli api"
   (before
@@ -58,4 +58,32 @@
                       {:command "claude" :extra-args ["--foo" "bar"]})
           argv (:argv (first (sut/invocations)))]
       (let [idx (.indexOf argv "--foo")]
-        (should= "bar" (nth argv (inc idx)))))))
+        (should= "bar" (nth argv (inc idx))))))
+
+  (it "suppresses all tools with --tools \"\" and never emits the bad flags"
+    (sut/clear-invocations!)
+    (sut/chat {:model "sonnet" :messages [{:role "user" :content "yo"}]}
+              "claude-code" {:command "claude"})
+    (let [argv (:argv (first (sut/invocations)))
+          idx  (.indexOf argv "--tools")]
+      (should (<= 0 idx))
+      (should= "" (nth argv (inc idx)))
+      (should (neg? (.indexOf argv "--disallowed-tools")))
+      (should (neg? (.indexOf argv "--max-turns")))))
+
+  (it "classifies a login failure as auth-unavailable and reports it loudly"
+    (sut/set-stub! (constantly {:exit 1 :out "" :err "Not logged in · Please run /login"}))
+    (let [res (sut/chat {:model "sonnet" :messages [{:role "user" :content "hi"}]}
+                        "claude-code" {:command "claude"})]
+      (should= :llm-error (:error res))
+      (should (str/includes? (:message res) "Please run /login"))
+      (should (:unavailable? res))
+      (should= :auth (:reason res))))
+
+  (it "reports a nonzero exit as a loud error without auth misclassification"
+    (sut/set-stub! (constantly {:exit 1 :out "" :err "claude: boom"}))
+    (let [res (sut/chat {:model "sonnet" :messages [{:role "user" :content "hi"}]}
+                        "claude-code" {:command "claude"})]
+      (should= :llm-error (:error res))
+      (should (str/includes? (:message res) "claude: boom"))
+      (should-not (:unavailable? res)))))
