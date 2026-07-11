@@ -966,8 +966,12 @@
                 (log/debug :chat/stream-completed :session session-key))
               (when (seq @executed-tools)
                 (run-tool-calls! ctx session-key @executed-tools))
-              (or (process-response! ctx session-key result {:model model :provider provider-name})
-                  result))))))))
+              (let [result* (cond-> result
+                              (seq @executed-tools)
+                              (assoc :executed-tool-names
+                                     (into #{} (keep #(get-in % [0 :name]) @executed-tools))))]
+                (or (process-response! ctx session-key result* {:model model :provider provider-name})
+                    result*)))))))))
 
 (defn- run-turn-body!
   "The successful-path pipeline. Returns the result that finish-turn! should
