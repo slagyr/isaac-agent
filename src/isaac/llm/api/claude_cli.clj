@@ -83,18 +83,48 @@
      :tool-calls tool-calls
      :usage      {:input-tokens 0 :output-tokens 0}}))
 
-(defn- error-response [message]
-  {:error :llm-error :message message})
+(def ^:private auth-failure-re
+  #"(?i)not logged in|please run\s*/login|invalid api key|not authenticated|no credentials|unauthorized")
+
+(defn- auth-failure? [out err]
+  (boolean (re-find auth-failure-re (str (or out "") "\n" (or err "")))))
+
+(defn- error-message [result]
+  (or (not-empty (str/trim (str (:err result))))
+      (not-empty (str/trim (str (:out result))))
+      "claude binary failed"))
+
+(defn- error-response
+  "Loud on the prompt path (:error + :message) AND classified for hail
+   defer+attention when the failure is auth ({:unavailable? true :reason :auth},
+   the provider_wall convention). (isaac-kn7y)"
+  [result]
+  (cond-> {:error :llm-error :message (error-message result)}
+    (auth-failure? (:out result) (:err result))
+    (assoc :unavailable? true :reason :auth)))
+
+(defn- failed?
+  "A run failed when the process exited nonzero OR the output is a login/auth
+   failure that the CLI otherwise reports on a zero exit (the empty-success
+   disease this bean fixes)."
+  [result]
+  (or (not (zero? (:exit result)))
+      (auth-failure? (:out result) (:err result))))
 
 ;; endregion ^^^^^ Prompt / Response ^^^^^
 
 ;; region ----- CLI Invocation -----
 
 (defn- flag-args [streaming?]
+  ;; `--tools ""` disables ALL built-in tools (the real CLI flag; the prior
+  ;; `--disallowed-tools all` denied a tool literally named "all" — i.e. nothing,
+  ;; and warned). With no tools there is no tool loop, so the --print run is a
+  ;; pure completion; `--max-turns` does not exist in this CLI version. Isaac
+  ;; owns the transcript, so session persistence stays off. (isaac-kn7y)
   (cond-> ["--print"
            "--output-format" (if streaming? "stream-json" "text")]
     streaming? (conj "--include-partial-messages")
-    :always (into ["--disallowed-tools" "all"
+    :always (into ["--tools" ""
                    "--no-session-persistence"])))
 
 (defn- extra-args [cfg]
@@ -117,10 +147,7 @@
 (defn- run-process! [argv env]
   (if-let [stub @stub-state*]
     (stub {:argv argv :env env})
-    (let [result @(process/shell {:command argv
-                                  :env     env
-                                  :err     :string
-                                  :out     :string})]
+    (let [result @(process/process argv {:env env :err :string :out :string})]
       {:exit (:exit result)
        :out  (:out result)
        :err  (:err result)})))
@@ -159,13 +186,13 @@
 
 (defn chat [request _provider-name cfg]
   (let [result (invoke! cfg request false)]
-    (if (zero? (:exit result))
-      (success-response (:model request) (:out result))
-      (error-response (or (not-empty (:err result)) (:out result) "claude binary failed")))))
+    (if (failed? result)
+      (error-response result)
+      (success-response (:model request) (:out result)))))
 
 (defn chat-stream [request on-chunk _provider-name cfg]
   (let [result (invoke! cfg request true)]
-    (if (zero? (:exit result))
+    (if-not (failed? result)
       (let [lines   (str/split-lines (:out result))
             deltas  (vec (stream-json-deltas lines))
             content (str/join deltas)]
@@ -175,7 +202,7 @@
         (let [response (success-response (:model request) content)]
           (on-chunk {:done true})
           response))
-      (error-response (or (not-empty (:err result)) (:out result) "claude binary failed")))))
+      (error-response result))))
 
 (defn followup-messages [request response tool-calls tool-results]
   (let [assistant-msg (or (:message response)

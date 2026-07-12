@@ -33,7 +33,7 @@ Feature: Claude subscription provider via CLI shell-out
       | arg                      | value |
       | --print                  |       |
       | --output-format          | text  |
-      | --disallowed-tools       | all   |
+      | --tools                  |       |
       | --no-session-persistence |       |
       | --model                  | sonnet|
       | (full prompt text as arg)|       |
@@ -51,7 +51,7 @@ Feature: Claude subscription provider via CLI shell-out
       | --print                  |               |
       | --output-format          | stream-json   |
       | --include-partial-messages|              |
-      | --disallowed-tools       | all           |
+      | --tools                  |       |
       | --no-session-persistence |               |
       | --model                  | sonnet        |
       | (full prompt text as arg)|               |
@@ -78,9 +78,16 @@ Feature: Claude subscription provider via CLI shell-out
       | arg                      | value |
       | --print                  |       |
       | --output-format          | text  |
-      | --disallowed-tools       | all   |
+      | --tools                  |       |
       | --no-session-persistence |       |
       | --model                  | sonnet|
+
+  Scenario: login failure is a loud error and classifies as auth-unavailable
+    Given the claude binary is stubbed to fail with exit code 1 and message "Not logged in · Please run /login"
+    When the user sends "hi" on session "main"
+    Then an error is reported indicating the claude binary failed
+    And the error message contains "Please run /login"
+    And the error is classified as auth-unavailable
 
   Scenario: claude subscription provider with custom binary path
     Given the isaac EDN file "config/providers/claude.edn" exists with:
@@ -93,7 +100,7 @@ Feature: Claude subscription provider via CLI shell-out
       | arg                      | value |
       | --print                  |       |
       | --output-format          | text  |
-      | --disallowed-tools       | all   |
+      | --tools                  |       |
       | --no-session-persistence |       |
       | --model                  | sonnet|
 
@@ -109,7 +116,7 @@ Feature: Claude subscription provider via CLI shell-out
       | arg                      | value |
       | --print                  |       |
       | --output-format          | text  |
-      | --disallowed-tools       | all   |
+      | --tools                  |       |
       | --no-session-persistence |       |
       | --model                  | sonnet|
       | --foo                    | bar   |
@@ -136,7 +143,7 @@ Feature: Claude subscription provider via CLI shell-out
       | arg                      | value |
       | --print                  |       |
       | --output-format          | text  |
-      | --disallowed-tools       | all   |
+      | --tools                  |       |
       | --no-session-persistence |       |
       | --model                  | sonnet|
       | (prompt arg contains full history) | |
@@ -162,7 +169,7 @@ Feature: Claude subscription provider via CLI shell-out
       | arg                      | value |
       | --print                  |       |
       | --output-format          | text  |
-      | --disallowed-tools       | all   |
+      | --tools                  |       |
       | --no-session-persistence |       |
       | --model                  | sonnet|
       | (no ANTHROPIC_API_KEY in env) | |
@@ -186,7 +193,7 @@ Feature: Claude subscription provider via CLI shell-out
       | arg                      | value |
       | --print                  |       |
       | --output-format          | text  |
-      | --disallowed-tools       | all   |
+      | --tools                  |       |
       | --no-session-persistence |       |
       | --model                  | sonnet|
       | --foo                    | bar   |
