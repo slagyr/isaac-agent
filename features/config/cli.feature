@@ -907,3 +907,82 @@ Feature: Config Command
       | Usage: isaac config set <config-path>         |
       | -\s+Read the value as EDN from stdin          |
     And the exit code is 0
+
+  # ----- Keys / list (isaac-grof) -----
+
+  Scenario: config keys prints bare key names at a path
+    Given config file "providers/xai.edn" containing:
+      """
+      {:api "responses" :base-url "https://api.x.ai/v1" :auth "api-key" :api-key "sk-real-secret-value"}
+      """
+    And config file "providers/grok.edn" containing:
+      """
+      {:type :grok}
+      """
+    When isaac is run with "config keys providers"
+    Then the stdout contains "xai"
+    And the stdout contains "grok"
+    And the stdout does not contain "config/providers"
+    And the stdout does not contain "https://api.x.ai/v1"
+    And the exit code is 0
+
+  Scenario: config list prints keys with their config source
+    Given config file "providers/xai.edn" containing:
+      """
+      {:api "responses" :base-url "https://api.x.ai/v1" :auth "api-key" :api-key "sk-real-secret-value"}
+      """
+    And config file "providers/grok.edn" containing:
+      """
+      {:type :grok}
+      """
+    When isaac is run with "config list providers"
+    Then the stdout contains "xai"
+    And the stdout contains "config/providers/xai.edn"
+    And the stdout does not contain "sk-real-secret-value"
+    And the exit code is 0
+
+  Scenario: a leaf path prints nothing
+    Given config file "providers/xai.edn" containing:
+      """
+      {:api "responses" :base-url "https://api.x.ai/v1" :auth "api-key" :api-key "sk-real-secret-value"}
+      """
+    And config file "providers/grok.edn" containing:
+      """
+      {:type :grok}
+      """
+    When isaac is run with "config keys providers.xai.base-url"
+    Then the stdout is empty
+    And the exit code is 0
+
+  Scenario: keys and list emit structured output under --json
+    Given config file "providers/xai.edn" containing:
+      """
+      {:api "responses" :base-url "https://api.x.ai/v1" :auth "api-key" :api-key "sk-real-secret-value"}
+      """
+    And config file "providers/grok.edn" containing:
+      """
+      {:type :grok}
+      """
+    When isaac is run with "config keys providers --json"
+    Then the stdout JSON contains:
+      | path | expected    |
+      | 0    | "grok"      |
+      | 1    | "ollama"    |
+      | 2    | "xai"       |
+    When isaac is run with "config list providers --json"
+    Then the stdout contains "\"source\""
+    And the stdout does not contain "sk-real-secret-value"
+    And the exit code is 0
+
+  Scenario: config validate --json emits structured warnings
+    Given config file "isaac.edn" containing:
+      """
+      {:defaults     {:crew :main :model :llama}
+       :crew         {:main {}}
+       :models       {:llama {:model "llama3.3:1b" :provider :anthropic}}
+       :providers    {:anthropic {}}
+       :experimental {:feature-flag true}}
+      """
+    When isaac is run with "config validate --json"
+    Then the stdout parses as JSON with a warnings array naming the offending path
+    And the exit code is 0
