@@ -113,15 +113,31 @@
   (claude-cli/clear-invocations!)
   (claude-cli/set-stub! f))
 
-(defn- stream-json-out [chunks]
-  (str/join "\n"
-            (map (fn [text]
-                   (json/generate-string {:type "content_block_delta"
-                                          :delta {:text text}}))
-                 chunks)))
+(defn- json-result-out [text & [{:keys [usage]}]]
+  (json/generate-string
+    (cond-> {:type   "result"
+             :result text}
+      usage (assoc :usage usage))))
+
+(defn- stream-json-out [chunks & [{:keys [usage]}]]
+  (let [delta-lines (map (fn [text]
+                           (json/generate-string {:type "content_block_delta"
+                                                  :delta {:text text}}))
+                         chunks)
+        result-line (json/generate-string
+                      {:type   "result"
+                       :result (apply str chunks)
+                       :usage  (or usage {:input_tokens  42
+                                          :output_tokens 7
+                                          :cache_read_input_tokens      3
+                                          :cache_creation_input_tokens 1})})]
+    (str/join "\n" (conj (vec delta-lines) result-line))))
 
 (defn- stub-return [text]
-  {:exit 0 :out text :err ""})
+  {:exit 0 :out (json-result-out text {:usage {:input_tokens  100
+                                              :output_tokens 25
+                                              :cache_read_input_tokens      0
+                                              :cache_creation_input_tokens 0}}) :err ""})
 
 (defn- stub-fail [exit message]
   {:exit exit :out "" :err message})
@@ -142,7 +158,7 @@
 (defn claude-binary-stubbed-stream [raw]
   (let [chunks (parse-stream-chunks raw)]
     (g/should (pos? (count chunks)))
-    (install-stub! (constantly (stub-return (stream-json-out chunks))))))
+    (install-stub! (constantly {:exit 0 :out (stream-json-out chunks) :err ""}))))
 
 (defn claude-binary-stubbed-tool-then-text []
   (let [state (atom 0)]
@@ -154,6 +170,21 @@
                               "</tool_call>"))
           2 (stub-return "done")
           (stub-return "done"))))))
+
+(defn claude-binary-stubbed-json-with-usage [text input output]
+  (install-stub!
+    (constantly
+      {:exit 0
+       :out  (json-result-out text {:usage {:input_tokens  (parse-long input)
+                                            :output_tokens (parse-long output)}})
+       :err  ""})))
+
+(defn claude-binary-stubbed-json-no-usage [text]
+  (install-stub!
+    (constantly {:exit 0 :out (json-result-out text) :err ""})))
+
+(defn claude-binary-stubbed-stream-with-usage [raw]
+  (claude-binary-stubbed-stream raw))
 
 (defn claude-binary-stubbed-fail [exit message]
   (install-stub! (constantly (stub-fail (parse-long exit) message))))
@@ -246,6 +277,8 @@
     (g/should (:unavailable? result))
     (g/should= :auth (:reason result))))
 
+
+
 (defn credentials-file-exists [_path]
   (let [path (expand-home "~/.claude/.credentials.json")
         fs*  (mem-fs)]
@@ -276,6 +309,15 @@
   isaac.llm.claude-cli-steps/claude-binary-at-stubbed-return)
 
 (defgiven #"the claude binary is stubbed to stream (.+)" isaac.llm.claude-cli-steps/claude-binary-stubbed-stream)
+
+(defgiven #"the claude binary is stubbed to return json with usage \"([^\"]+)\" and tokens (\d+) and (\d+)"
+  isaac.llm.claude-cli-steps/claude-binary-stubbed-json-with-usage)
+
+(defgiven #"the claude binary is stubbed to return json without usage \"([^\"]+)\""
+  isaac.llm.claude-cli-steps/claude-binary-stubbed-json-no-usage)
+
+(defgiven #"the claude binary is stubbed to stream-json with terminal usage (.+)"
+  isaac.llm.claude-cli-steps/claude-binary-stubbed-stream-with-usage)
 
 (defgiven "the claude binary is stubbed to first return tool call text for exec, then \"done\""
   isaac.llm.claude-cli-steps/claude-binary-stubbed-tool-then-text)

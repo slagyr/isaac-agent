@@ -32,7 +32,7 @@ Feature: Claude subscription provider via CLI shell-out
     And the claude binary was invoked exactly once with:
       | arg                      | value |
       | --print                  |       |
-      | --output-format          | text  |
+      | --output-format          | json  |
       | --tools                  |       |
       | --no-session-persistence |       |
       | --model                  | sonnet|
@@ -92,7 +92,7 @@ Feature: Claude subscription provider via CLI shell-out
     And the claude binary was invoked exactly once with:
       | arg                      | value |
       | --print                  |       |
-      | --output-format          | text  |
+      | --output-format          | json  |
       | --tools                  |       |
       | --no-session-persistence |       |
       | --model                  | sonnet|
@@ -114,7 +114,7 @@ Feature: Claude subscription provider via CLI shell-out
     And the claude binary at "/custom/path/claude" was invoked exactly once with:
       | arg                      | value |
       | --print                  |       |
-      | --output-format          | text  |
+      | --output-format          | json  |
       | --tools                  |       |
       | --no-session-persistence |       |
       | --model                  | sonnet|
@@ -130,7 +130,7 @@ Feature: Claude subscription provider via CLI shell-out
     And the claude binary was invoked exactly once with:
       | arg                      | value |
       | --print                  |       |
-      | --output-format          | text  |
+      | --output-format          | json  |
       | --tools                  |       |
       | --no-session-persistence |       |
       | --model                  | sonnet|
@@ -157,7 +157,7 @@ Feature: Claude subscription provider via CLI shell-out
     And the claude binary was invoked exactly once with:
       | arg                      | value |
       | --print                  |       |
-      | --output-format          | text  |
+      | --output-format          | json  |
       | --tools                  |       |
       | --no-session-persistence |       |
       | --model                  | sonnet|
@@ -184,7 +184,7 @@ Feature: Claude subscription provider via CLI shell-out
     And the claude binary was invoked exactly once with:
       | arg                      | value |
       | --print                  |       |
-      | --output-format          | text  |
+      | --output-format          | json  |
       | --tools                  |       |
       | --no-session-persistence |       |
       | --model                  | sonnet|
@@ -208,8 +208,39 @@ Feature: Claude subscription provider via CLI shell-out
     And the claude binary was invoked exactly once with:
       | arg                      | value |
       | --print                  |       |
-      | --output-format          | text  |
+      | --output-format          | json  |
       | --tools                  |       |
       | --no-session-persistence |       |
       | --model                  | sonnet|
       | --foo                    | bar   |
+
+  Scenario: non-stream json output records token usage on the transcript
+    Given the claude binary is stubbed to return json with usage "4" and tokens 120 and 15
+    When the user sends "What is 2+2?" on session "main"
+    Then the response is "4"
+    And session "main" has transcript matching:
+      | #index | type    | message.role | message.usage.input-tokens | message.usage.output-tokens |
+      | -1     | message | assistant    | 120                        | 15                          |
+    And the claude binary was invoked exactly once with:
+      | arg                      | value |
+      | --output-format          | json  |
+
+  Scenario: streaming stream-json records terminal usage on the transcript
+    Given the isaac EDN file "config/providers/claude.edn" exists with:
+      | path                  | value |
+      | command               | claude |
+      | stream-non-tool-turns | true  |
+    And the claude binary is stubbed to stream-json with terminal usage ["Hi", " there"]
+    When the user sends "hi" on session "main"
+    Then the response streams as ["Hi", " there"]
+    And session "main" has transcript matching:
+      | #index | type    | message.role | message.usage.input-tokens | message.usage.output-tokens | message.usage.cache-read | message.usage.cache-write |
+      | -1     | message | assistant    | 42                         | 7                           | 3                        | 1                         |
+
+  Scenario: missing usage in json output still completes with zero usage
+    Given the claude binary is stubbed to return json without usage "ok"
+    When the user sends "hi" on session "main"
+    Then the response is "ok"
+    And session "main" has transcript matching:
+      | #index | type    | message.role | message.usage.input-tokens | message.usage.output-tokens |
+      | -1     | message | assistant    | 0                          | 0                           |

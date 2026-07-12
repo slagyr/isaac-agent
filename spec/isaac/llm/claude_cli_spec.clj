@@ -11,7 +11,11 @@
   (before
     (sut/clear-stub!)
     (sut/clear-invocations!)
-    (sut/set-stub! (constantly {:exit 0 :out "hi" :err ""})))
+    (sut/set-stub! (constantly {:exit 0
+                                :out  (json/generate-string {:type   "result"
+                                                             :result "hi"
+                                                             :usage  {:input_tokens 1 :output_tokens 1}})
+                                :err  ""})))
 
   (it "returns assistant content from stubbed binary output"
     (let [res (sut/chat {:model "sonnet" :messages [{:role "user" :content "yo"}]}
@@ -116,4 +120,46 @@
                         "claude" {:command "claude"})]
       (should= :llm-error (:error res))
       (should (str/includes? (:message res) "claude: boom"))
-      (should-not (:unavailable? res)))))
+      (should-not (:unavailable? res))))
+
+  (it "parses json result text and usage"
+    (sut/set-stub!
+      (constantly {:exit 0
+                   :out  (json/generate-string {:type   "result"
+                                                :result "answer"
+                                                :usage  {:input_tokens  50
+                                                         :output_tokens 9
+                                                         :cache_read_input_tokens      2
+                                                         :cache_creation_input_tokens 1}})
+                   :err  ""}))
+    (let [res (sut/chat {:model "sonnet" :messages [{:role "user" :content "yo"}]}
+                        "claude" {:command "claude"})]
+      (should= "answer" (get-in res [:message :content]))
+      (should= 50 (:input-tokens (:usage res)))
+      (should= 9 (:output-tokens (:usage res)))
+      (should= 2 (:cache-read (:usage res)))
+      (should= 1 (:cache-write (:usage res)))))
+
+  (it "degrades to zero usage when json omits usage"
+    (sut/set-stub!
+      (constantly {:exit 0
+                   :out  (json/generate-string {:type "result" :result "ok"})
+                   :err  ""}))
+    (let [res (sut/chat {:model "sonnet" :messages [{:role "user" :content "yo"}]}
+                        "claude" {:command "claude"})]
+      (should= "ok" (get-in res [:message :content]))
+      (should= 0 (:input-tokens (:usage res)))
+      (should= 0 (:output-tokens (:usage res)))))
+
+  (it "uses stream-json terminal result usage"
+    (let [out (str/join "\n"
+                        [(json/generate-string {:type "content_block_delta" :delta {:text "Hi"}})
+                         (json/generate-string {:type   "result"
+                                                :result "Hi"
+                                                :usage  {:input_tokens 10 :output_tokens 2}})])
+          _   (sut/set-stub! (constantly {:exit 0 :out out :err ""}))
+          res (sut/chat-stream {:model "sonnet" :messages [{:role "user" :content "hi"}]}
+                               (fn [_]) "claude" {:command "claude"})]
+      (should= "Hi" (get-in res [:message :content]))
+      (should= 10 (:input-tokens (:usage res)))
+      (should= 2 (:output-tokens (:usage res))))))

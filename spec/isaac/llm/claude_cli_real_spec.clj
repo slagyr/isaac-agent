@@ -49,7 +49,10 @@
           (pending (str "no claude login present: " (:message res)))
           (do
             (should-not (:error res))
-            (should (seq (str/trim (or (get-in res [:message :content]) ""))))))))))
+            (should (seq (str/trim (or (get-in res [:message :content]) ""))))
+            (let [usage (:usage res)]
+              (should (pos? (or (:input-tokens usage) 0)))
+              (should (pos? (or (:output-tokens usage) 0))))))))))
 
 (describe "claude-cli witnessed tool roundtrip (isaac-ozv9)"
   (tags :real :slow)

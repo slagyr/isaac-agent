@@ -98,14 +98,45 @@
   (let [open-idx (str/index-of (or text "") tool-call-open)]
     (if open-idx (subs text 0 open-idx) text)))
 
-(defn- success-response [model text]
+(defn- zero-usage []
+  {:input-tokens 0 :output-tokens 0 :cache-read 0 :cache-write 0})
+
+(defn- parse-cli-usage [usage]
+  (when (and (map? usage)
+             (or (contains? usage :input_tokens)
+                 (contains? usage :output_tokens)
+                 (contains? usage :cache_read_input_tokens)
+                 (contains? usage :cache_creation_input_tokens)))
+    {:input-tokens  (or (:input_tokens usage) 0)
+     :output-tokens (or (:output_tokens usage) 0)
+     :cache-read    (or (:cache_read_input_tokens usage) 0)
+     :cache-write   (or (:cache_creation_input_tokens usage) 0)}))
+
+(defn- normalize-usage [usage]
+  (cond
+    (not (map? usage)) (zero-usage)
+    (contains? usage :input-tokens) usage
+    :else (or (parse-cli-usage usage) (zero-usage))))
+
+(defn- success-response [model text usage]
   (let [tool-calls (parse-tool-calls text)
-        content    (visible-text text)]
+        content    (visible-text text)
+        usage*     (normalize-usage usage)]
     {:message    (cond-> {:role "assistant" :content content}
                    (seq tool-calls) (assoc :tool_calls tool-calls))
      :model      model
      :tool-calls tool-calls
-     :usage      {:input-tokens 0 :output-tokens 0}}))
+     :usage      usage*}))
+
+(defn- parse-json-output [out]
+  (try
+    (let [parsed (json/parse-string (str/trim (or out "")) true)]
+      (if (= "result" (:type parsed))
+        {:text  (str (or (:result parsed) ""))
+         :usage (normalize-usage (:usage parsed))}
+        {:text (or out "") :usage (zero-usage)}))
+    (catch Exception _
+      {:text (or out "") :usage (zero-usage)})))
 
 (def ^:private auth-failure-re
   #"(?i)not logged in|please run\s*/login|invalid api key|not authenticated|no credentials|unauthorized")
@@ -146,7 +177,7 @@
   ;; pure completion; `--max-turns` does not exist in this CLI version. Isaac
   ;; owns the transcript, so session persistence stays off. (isaac-kn7y)
   (cond-> ["--print"
-           "--output-format" (if streaming? "stream-json" "text")]
+           "--output-format" (if streaming? "stream-json" "json")]
     streaming? (conj "--include-partial-messages")
     :always (into ["--tools" ""
                    "--no-session-persistence"])))
@@ -186,27 +217,42 @@
     (record-invocation! {:argv argv :env env})
     (run-process! argv env)))
 
-(defn- stream-json-deltas [lines]
-  (mapcat (fn [line]
-            (when (seq (str/trim line))
-              (try
-                (let [event (json/parse-string line true)]
-                  (cond
-                    (get-in event [:delta :text])
-                    [(get-in event [:delta :text])]
+(defn- stream-json-event [line]
+  (when (seq (str/trim line))
+    (try
+      (json/parse-string line true)
+      (catch Exception _ nil))))
 
-                    (get-in event [:content_block_delta :delta :text])
-                    [(get-in event [:content_block_delta :delta :text])]
+(defn- stream-json-delta-text [event]
+  (cond
+    (get-in event [:delta :text])
+    (get-in event [:delta :text])
 
-                    (get-in event [:message :content 0 :text])
-                    [(get-in event [:message :content 0 :text])]
+    (get-in event [:content_block_delta :delta :text])
+    (get-in event [:content_block_delta :delta :text])
 
-                    (string? (:text event))
-                    [(:text event)]
+    (get-in event [:message :content 0 :text])
+    (get-in event [:message :content 0 :text])
 
-                    :else nil))
-                (catch Exception _ nil))))
-          lines))
+    (string? (:text event))
+    (:text event)
+
+    :else nil))
+
+(defn- parse-stream-json-output [lines]
+  (loop [deltas []
+         usage  (zero-usage)
+         [line & more] lines]
+    (if line
+      (let [event (stream-json-event line)]
+        (recur (if-let [t (when event (stream-json-delta-text event))]
+                 (conj deltas t)
+                 deltas)
+               (if (= "result" (:type event))
+                 (normalize-usage (:usage event))
+                 usage)
+               more))
+      {:deltas deltas :usage usage})))
 
 ;; endregion ^^^^^ CLI Invocation ^^^^^
 
@@ -216,18 +262,19 @@
   (let [result (invoke! cfg request false)]
     (if (failed? result)
       (error-response result)
-      (success-response (:model request) (:out result)))))
+      (let [{:keys [text usage]} (parse-json-output (:out result))]
+        (success-response (:model request) text usage)))))
 
 (defn chat-stream [request on-chunk _provider-name cfg]
   (let [result (invoke! cfg request true)]
     (if-not (failed? result)
-      (let [lines   (str/split-lines (:out result))
-            deltas  (vec (stream-json-deltas lines))
-            content (str/join deltas)]
+      (let [lines    (str/split-lines (:out result))
+            {:keys [deltas usage]} (parse-stream-json-output lines)
+            content  (str/join deltas)]
         (doseq [delta deltas]
           (when (seq delta)
             (on-chunk {:message {:role "assistant" :content delta} :done false})))
-        (let [response (success-response (:model request) content)]
+        (let [response (success-response (:model request) content usage)]
           (on-chunk {:done true})
           response))
       (error-response result))))
