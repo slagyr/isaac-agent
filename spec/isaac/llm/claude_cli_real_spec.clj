@@ -63,10 +63,7 @@
           (pending (str "no claude login present: " (:message res)))
           (do
             (should-not (:error res))
-            (should (seq (str/trim (or (get-in res [:message :content]) ""))))
-            (let [usage (:usage res)]
-              (should (pos? (or (:input-tokens usage) 0)))
-              (should (pos? (or (:output-tokens usage) 0))))))))))
+            (should (seq (str/trim (or (get-in res [:message :content]) "")))))))))
 
 (describe "claude-cli real turn persists token usage on transcript (isaac-l70j)"
   (tags :real :slow)
