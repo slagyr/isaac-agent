@@ -46,6 +46,9 @@
 (defn- prompt-arg [argv]
   (when (seq argv) (last argv)))
 
+(defn- system-prompt-arg [argv]
+  (get (argv->arg-map argv) "--system-prompt"))
+
 (defn- match-invocation-table [argv env table]
   (let [arg-map  (argv->arg-map argv)
         prompt   (prompt-arg argv)
@@ -56,6 +59,28 @@
           (= arg "(full prompt text as arg)")
           (when (or (nil? prompt) (str/starts-with? prompt "--"))
             (swap! failures conj "expected full prompt text as final arg"))
+
+          (= arg "(conversation prompt as final arg)")
+          (when (or (nil? prompt) (str/starts-with? prompt "--"))
+            (swap! failures conj "expected conversation prompt as final arg"))
+
+          (= arg "(system prompt contains protocol contract)")
+          (let [system (system-prompt-arg argv)]
+            (when-not (and system (str/includes? system claude-cli/tool-protocol-contract))
+              (swap! failures conj "system prompt missing tool protocol contract")))
+
+          (= arg "(user prompt does not contain protocol contract)")
+          (when (and prompt (str/includes? prompt claude-cli/tool-protocol-contract))
+            (swap! failures conj "tool protocol contract leaked into user prompt"))
+
+          (= arg "(system prompt contains soul text)")
+          (let [system (system-prompt-arg argv)]
+            (when-not (and system (str/includes? system "Think hard."))
+              (swap! failures conj "system prompt missing soul text")))
+
+          (= arg "(user prompt does not contain soul text)")
+          (when (and prompt (str/includes? prompt "Think hard."))
+            (swap! failures conj "soul text leaked into user prompt"))
 
           (= arg "(prompt arg contains full history)")
           (when-not (and prompt

@@ -36,7 +36,10 @@ Feature: Claude subscription provider via CLI shell-out
       | --tools                  |       |
       | --no-session-persistence |       |
       | --model                  | sonnet|
-      | (full prompt text as arg)|       |
+      | --system-prompt          |       |
+      | (system prompt contains soul text) | |
+      | (conversation prompt as final arg) | |
+      | (user prompt does not contain soul text) | |
 
   Scenario: streaming response from claude subscription provider
     Given the isaac EDN file "config/providers/claude.edn" exists with:
@@ -54,7 +57,8 @@ Feature: Claude subscription provider via CLI shell-out
       | --tools                  |       |
       | --no-session-persistence |               |
       | --model                  | sonnet        |
-      | (full prompt text as arg)|               |
+      | --system-prompt          |               |
+      | (conversation prompt as final arg) |      |
 
   Scenario: tool-using turn with Isaac-managed tools
     Given the isaac EDN file "config/crew/thinker.edn" exists with:
@@ -68,6 +72,17 @@ Feature: Claude subscription provider via CLI shell-out
     And the claude binary was invoked exactly twice
     And the second invocation included the tool result serialized in the prompt text
     And the response is "done"
+
+  Scenario: tool protocol contract rides on system prompt authority
+    Given the crew has tools: [exec]
+    And the claude binary is stubbed to return "ok"
+    When the user sends "run a command" on session "main"
+    Then the claude binary was invoked exactly once with:
+      | arg                      | value |
+      | --system-prompt          |       |
+      | (system prompt contains protocol contract) | |
+      | (user prompt does not contain protocol contract) | |
+      | (conversation prompt as final arg) | |
 
   Scenario: error from claude binary is reported
     Given the claude binary is stubbed to fail with exit code 1 and message "claude: boom"
@@ -146,6 +161,7 @@ Feature: Claude subscription provider via CLI shell-out
       | --tools                  |       |
       | --no-session-persistence |       |
       | --model                  | sonnet|
+      | --system-prompt          |       |
       | (prompt arg contains full history) | |
       | (no --continue or --resume) | |
 
