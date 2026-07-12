@@ -80,6 +80,6 @@ Feature: Context-window guard when compaction cannot save the turn
     And the directory "comm/delivery/pending" has exactly 1 file
     And the only file in "comm/delivery/pending" EDN contains:
       | path    | value                                          |
-      | comm    | discord                                        |
+      | comm    | :discord                                       |
       | target  | boiler-room                                    |
       | content | contains "Compaction disabled" and "giving-up" |

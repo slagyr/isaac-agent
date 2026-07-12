@@ -198,58 +198,9 @@
 (defn grover-records-zero-provider-requests []
   (g/should= [] (grover/provider-requests)))
 
-(defn- isaac-relative-path [p]
-  (str (root) "/" p))
-
-(defn- match-pending-cell [actual expected]
-  (let [s (str/trim (str expected))]
-    (cond
-      (and (str/starts-with? s "contains ")
-           (str/includes? s " and "))
-       (let [m (re-find #"contains \"([^\"]+)\" and \"([^\"]+)\"" s)]
-         (and m (string? actual)
-              (str/includes? actual (nth m 1))
-              (str/includes? actual (nth m 2))))
-      (str/starts-with? s "contains ")
-        (let [m (re-find #"contains \"([^\"]+)\"" s)]
-         (and m (string? actual) (str/includes? actual (nth m 1))))
-      :else
-       (= (str expected)
-           (cond
-             (keyword? actual) (name actual)
-             :else (str actual))))))
-
-(defn directory-has-exactly-n-files [dir n-str]
-  (with-feature-fs
-    (fn []
-      (let [fs*   (mem-fs)
-            path  (isaac-relative-path dir)
-            files (when (fs/exists? fs* path) (fs/children fs* path))]
-        (g/should= (parse-long n-str) (count (or files [])))))))
-
-
-(defn only-file-in-dir-edn-contains [dir table]
-  (with-feature-fs
-    (fn []
-      (let [fs*    (mem-fs)
-            path   (isaac-relative-path dir)
-            files  (when (fs/exists? fs* path) (vec (fs/children fs* path)))]
-        (g/should= 1 (count files))
-        (let [record (edn/read-string (fs/slurp fs* (str path "/" (first files))))]
-          (doseq [row (:rows table)]
-            (let [p (get row "path")
-                  v (get row "value")
-                  a (get record (keyword p))]
-              (g/should (match-pending-cell a v)))))))))
-
-
 (defwhen "the user sends \"{content:string}\" on session \"{key:string}\" via memory comm" isaac.comm.comm-steps/user-sends-via-memory-channel)
 
 (defthen "grover records zero provider requests" isaac.comm.comm-steps/grover-records-zero-provider-requests)
-
-(defthen #"the directory \"([^\"]+)\" has exactly (\d+) files?" isaac.comm.comm-steps/directory-has-exactly-n-files)
-
-(defthen #"the only file in \"([^\"]+)\" EDN contains:" isaac.comm.comm-steps/only-file-in-dir-edn-contains)
 
 (defthen "the memory comm has events matching:" isaac.comm.comm-steps/memory-channel-events-match
   "Reads :memory-comm-events captured by the preceding 'via memory
