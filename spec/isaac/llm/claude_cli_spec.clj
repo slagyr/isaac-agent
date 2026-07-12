@@ -60,10 +60,40 @@
       (let [idx (.indexOf argv "--foo")]
         (should= "bar" (nth argv (inc idx))))))
 
+  (it "passes soul text via --system-prompt, not the conversation prompt"
+    (sut/clear-invocations!)
+    (sut/chat {:model    "sonnet"
+               :messages [{:role "system" :content "Be wise."}
+                          {:role "user" :content "yo"}]}
+              "claude" {:command "claude"})
+    (let [argv   (:argv (first (sut/invocations)))
+          idx    (.indexOf argv "--system-prompt")
+          system (when (<= 0 idx) (nth argv (inc idx)))
+          prompt (last argv)]
+      (should (str/includes? system "Be wise."))
+      (should-not (str/includes? prompt "Be wise."))
+      (should= "User: yo" prompt)))
+
+  (it "puts the tool protocol contract in --system-prompt when tools are present"
+    (sut/clear-invocations!)
+    (sut/chat {:model    "sonnet"
+               :messages [{:role "system" :content "Be wise."}
+                          {:role "user" :content "run it"}]
+               :tools    [{:type "function" :function {:name "exec"}}]}
+              "claude" {:command "claude"})
+    (let [argv   (:argv (first (sut/invocations)))
+          idx    (.indexOf argv "--system-prompt")
+          system (when (<= 0 idx) (nth argv (inc idx)))
+          prompt (last argv)]
+      (should (str/includes? system sut/tool-protocol-contract))
+      (should (str/includes? system "## Tools"))
+      (should-not (str/includes? prompt sut/tool-protocol-contract))
+      (should-not (str/includes? prompt "## Tools"))))
+
   (it "suppresses all tools with --tools \"\" and never emits the bad flags"
     (sut/clear-invocations!)
     (sut/chat {:model "sonnet" :messages [{:role "user" :content "yo"}]}
-              "claude-code" {:command "claude"})
+              "claude" {:command "claude"})
     (let [argv (:argv (first (sut/invocations)))
           idx  (.indexOf argv "--tools")]
       (should (<= 0 idx))
@@ -74,7 +104,7 @@
   (it "classifies a login failure as auth-unavailable and reports it loudly"
     (sut/set-stub! (constantly {:exit 1 :out "" :err "Not logged in · Please run /login"}))
     (let [res (sut/chat {:model "sonnet" :messages [{:role "user" :content "hi"}]}
-                        "claude-code" {:command "claude"})]
+                        "claude" {:command "claude"})]
       (should= :llm-error (:error res))
       (should (str/includes? (:message res) "Please run /login"))
       (should (:unavailable? res))
@@ -83,7 +113,7 @@
   (it "reports a nonzero exit as a loud error without auth misclassification"
     (sut/set-stub! (constantly {:exit 1 :out "" :err "claude: boom"}))
     (let [res (sut/chat {:model "sonnet" :messages [{:role "user" :content "hi"}]}
-                        "claude-code" {:command "claude"})]
+                        "claude" {:command "claude"})]
       (should= :llm-error (:error res))
       (should (str/includes? (:message res) "claude: boom"))
       (should-not (:unavailable? res)))))

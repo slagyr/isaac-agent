@@ -34,6 +34,9 @@
 (def ^:private tool-call-open "<tool_call>")
 (def ^:private tool-call-close "</tool_call>")
 
+(def tool-protocol-contract
+  "You have no built-in tools. To act, emit <tool_call>{\"name\":\"<tool>\",\"arguments\":{...}}</tool_call> exactly as written; the harness executes it and returns results in a follow-up turn.")
+
 (defn- content->text [content]
   (cond
     (string? content) content
@@ -43,12 +46,33 @@
                            (str/join))
     :else (str content)))
 
-(defn- messages->prompt-text [request]
-  (let [tool-lines (when (seq (:tools request))
-                     [(str "## Tools\n" (json/generate-string (:tools request)))])
-        role-lines (for [{:keys [role content]} (:messages request)]
+(defn- system-messages [request]
+  (filter #(= "system" (:role %)) (:messages request)))
+
+(defn- conversation-messages [request]
+  (remove #(= "system" (:role %)) (:messages request)))
+
+(defn- system-text [request]
+  (->> (system-messages request)
+       (map #(content->text (:content %)))
+       (remove str/blank?)
+       (str/join "\n\n")))
+
+(defn- tool-defs-text [request]
+  (when (seq (:tools request))
+    (str "## Tools\n" (json/generate-string (:tools request)))))
+
+(defn- build-system-prompt [request]
+  (str/join "\n\n"
+            (remove str/blank?
+                    [(system-text request)
+                     (when (seq (:tools request)) tool-protocol-contract)
+                     (tool-defs-text request)])))
+
+(defn- conversation->prompt-text [request]
+  (let [role-lines (for [{:keys [role content]} (conversation-messages request)]
                      (str (str/capitalize (name role)) ": " (content->text content)))]
-    (str/join "\n\n" (remove str/blank? (concat role-lines tool-lines)))))
+    (str/join "\n\n" (remove str/blank? role-lines))))
 
 (defn- tool-call-text [name args]
   (str tool-call-open (json/generate-string {:name name :arguments args}) tool-call-close))
@@ -137,12 +161,16 @@
   (dissoc (into {} (System/getenv)) "ANTHROPIC_API_KEY"))
 
 (defn- build-argv [cfg request streaming?]
-  (let [prompt (messages->prompt-text request)]
-    (into [(command-path cfg)]
-          (concat (extra-args cfg)
-                  (flag-args streaming?)
-                  ["--model" (:model request)]
-                  [prompt]))))
+  (let [system (build-system-prompt request)
+        prompt (conversation->prompt-text request)
+        base   (into [(command-path cfg)]
+                     (concat (extra-args cfg)
+                             (flag-args streaming?)
+                             ["--model" (:model request)]))
+        flags  (if (seq (str/trim system))
+                 (into base ["--system-prompt" system])
+                 base)]
+    (into flags [prompt])))
 
 (defn- run-process! [argv env]
   (if-let [stub @stub-state*]
