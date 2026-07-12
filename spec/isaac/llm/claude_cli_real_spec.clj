@@ -1,5 +1,5 @@
 (ns isaac.llm.claude-cli-real-spec
-  "Spec-vs-reality smoke (isaac-kn7y / isaac-ozv9): executes the ACTUAL claude
+  "Spec-vs-reality smoke (isaac-kn7y / isaac-ozv9 / isaac-l70j): executes the ACTUAL claude
    binary. Stubs prove spec-conformance; only this proves spec-CORRECTNESS.
 
    Opt-in and self-skipping so normal CI never shells out or hits the network:
@@ -8,9 +8,16 @@
   (:require
     [babashka.process :as process]
     [clojure.string :as str]
+    [isaac.bridge.core :as bridge]
+    [isaac.comm.null :as null-comm]
+    [isaac.config.api :as config]
+    [isaac.fs :as fs]
     [isaac.llm.api.claude-cli :as sut]
     [isaac.llm.tool-loop :as tool-loop]
-    [speclj.core :refer [describe it should should-not pending tags]]))
+    [isaac.marigold.agent :as marigold.agent]
+    [isaac.nexus :as nexus]
+    [isaac.session.spec-helper :as session-helper]
+    [speclj.core :refer [describe it should should-not pending tags around]]))
 
 (defn- enabled? []
   (not (str/blank? (System/getenv "ISAAC_CLAUDE_REAL"))))
@@ -20,6 +27,13 @@
     (zero? (:exit @(process/process ["claude" "--version"]
                                     {:out :string :err :string})))
     (catch Exception _ false)))
+
+(defn- last-assistant-message [root session-key]
+  (->> (session-helper/get-transcript root session-key)
+       (filter #(= "message" (:type %)))
+       (filter #(= "assistant" (get-in % [:message :role])))
+       last
+       :message))
 
 (def ^:private exec-tool-def
   {:type     "function"
@@ -53,6 +67,53 @@
             (let [usage (:usage res)]
               (should (pos? (or (:input-tokens usage) 0)))
               (should (pos? (or (:output-tokens usage) 0))))))))))
+
+(describe "claude-cli real turn persists token usage on transcript (isaac-l70j)"
+  (tags :real :slow)
+
+  (around [example]
+    (marigold.agent/with-real-manifest*
+      (fn []
+        (session-helper/with-memory-store
+          (let [root (str (System/getProperty "java.io.tmpdir")
+                          "/isaac-claude-real-"
+                          (java.util.UUID/randomUUID))]
+            (nexus/-with-nested-nexus {:root root :fs (fs/mem-fs)}
+              (example)))))))
+
+  (it "drives a real turn and stores nonzero usage on the assistant transcript entry"
+    (cond
+      (not (enabled?))
+      (pending "set ISAAC_CLAUDE_REAL=1 on a logged-in box to run transcript @real smoke")
+
+      (not (claude-installed?))
+      (pending "claude binary not installed")
+
+      :else
+      (let [root        (nexus/get :root)
+            session-key "claude-usage-real"
+            cfg         {:defaults  {:crew "thinker" :model "sub-sonnet"}
+                         :crew      {"thinker" {:model "sub-sonnet" :soul "You are a test harness."}}
+                         :models    {"sub-sonnet" {:model "sonnet" :provider "claude" :context-window 200000}}
+                         :providers {"claude" {:api "claude-cli" :command "claude"}}}]
+        (config/dangerously-install-config! cfg "claude-cli real transcript smoke")
+        (let [result (bridge/dispatch!
+                       {:session-key session-key
+                        :input       "Reply with exactly the word: pong"
+                        :comm        null-comm/channel
+                        :origin      {:kind :cli}
+                        :config      cfg})]
+          (cond
+            (:unavailable? result)
+            (pending (str "no claude login present: " (or (:message result) (:reason result))))
+
+            (:error result)
+            (throw (ex-info "real turn failed" result)))
+          (let [assistant (last-assistant-message root session-key)
+                usage     (:usage assistant)]
+            (should (seq (str/trim (or (:content assistant) ""))))
+            (should (pos? (or (:input-tokens usage) 0)))
+            (should (pos? (or (:output-tokens usage) 0)))))))))
 
 (describe "claude-cli witnessed tool roundtrip (isaac-ozv9)"
   (tags :real :slow)
