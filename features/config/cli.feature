@@ -986,3 +986,77 @@ Feature: Config Command
     When isaac is run with "config validate --json"
     Then the stdout parses as JSON with a warnings array naming the offending path
     And the exit code is 0
+
+  # ----- Structured readers/writers (isaac-0jse) -----
+
+  Scenario: config get models --json emits structured subtree
+    Given config file "isaac.edn" containing:
+      """
+      {:defaults {:crew :main :model :llama}
+       :crew {:main {}}
+       :models {:llama {:model "llama3.3:1b" :provider :anthropic}}
+       :providers {:anthropic {}}}
+      """
+    When isaac is run with "config get models --json"
+    Then the stdout contains "llama3.3:1b"
+    And the exit code is 0
+
+  Scenario: config get models --edn round-trips
+    Given config file "isaac.edn" containing:
+      """
+      {:defaults {:crew :main :model :llama}
+       :crew {:main {}}
+       :models {:llama {:model "llama3.3:1b" :provider :anthropic}}
+       :providers {:anthropic {}}}
+      """
+    When isaac is run with "config get models --edn"
+    Then the stdout contains ":llama"
+    And the stdout contains "llama3.3:1b"
+    And the exit code is 0
+
+  Scenario: config sources --json emits structured file list
+    Given config file "isaac.edn" containing:
+      """
+      {:defaults {:crew :main :model :llama}
+       :crew {:main {}}
+       :models {:llama {:model "llama3.3:1b" :provider :anthropic}}
+       :providers {:anthropic {}}}
+      """
+    When isaac is run with "config sources --json"
+    Then the stdout contains "\"sources\""
+    And the stdout contains "\"precedence\""
+    And the exit code is 0
+
+  Scenario: config schema crew.value --json emits schema node
+    When isaac is run with "config schema crew.value --json"
+    Then the stdout contains "\"type\""
+    And the exit code is 0
+
+  Scenario: config set --json emits structured mutation result
+    Given config file "models/gpt.edn" containing:
+      """
+      {:model "gpt-5.4" :provider :anthropic}
+      """
+    And config file "providers/anthropic.edn" containing:
+      """
+      {}
+      """
+    And config file "crew/cordelia.edn" containing:
+      """
+      {:model :gpt}
+      """
+    And config file "crew/cordelia.md" containing:
+      """
+      Old soul.
+      """
+    When isaac is run with "config set crew.cordelia.soul \"New soul.\" --json"
+    Then the stdout JSON contains:
+      | path | expected              |
+      | ok   | true                  |
+      | path | "crew.cordelia.soul"  |
+    And the exit code is 0
+
+  Scenario: unknown flag on config get errors cleanly
+    When isaac is run with "config get models --not-a-real-flag"
+    Then the stderr contains "Unknown option"
+    And the exit code is 1

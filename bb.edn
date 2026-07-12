@@ -28,7 +28,7 @@
                                 (when (pos? exit) (System/exit exit))))]
                         (run! "bb" "config-bypass-lint")
                         (run! "clojure" "-M:spec")
-                        (run! "clojure" "-M:features"))}
+                        (run! "clojure" "-M:dev-local:features"))}
 
   verify   {:doc      "Run the full verification gate"
             :requires ([clojure.java.shell :as sh])
@@ -39,14 +39,14 @@
                                 (when (pos? exit) (System/exit exit))))]
                         (run! "bb" "config-bypass-lint")
                         (run! "clojure" "-M:spec")
-                        (run! "clojure" "-M:features"))}
+                        (run! "clojure" "-M:dev-local:features"))}
 
   features {:doc      "Run gherclj feature specs (excludes @slow and @wip)"
             :requires ([clojure.java.shell :as sh])
             :task     (do
                         (run 'clean)
                         (let [{:keys [exit out err]}
-                              (apply sh/sh "clojure" "-M:features" *command-line-args*)]
+                              (apply sh/sh "clojure" "-M:dev-local:features" *command-line-args*)]
                           (when (seq out) (print out))
                           (when (seq err) (binding [*out* *err*] (print err)))
                           (when (pos? exit) (System/exit exit))))}
