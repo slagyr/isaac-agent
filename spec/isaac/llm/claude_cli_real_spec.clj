@@ -49,7 +49,7 @@
           (pending (str "no claude login present: " (:message res)))
           (do
             (should-not (:error res))
-            (should (seq (str/trim (or (get-in res [:message :content]) "")))))))))
+            (should (seq (str/trim (or (get-in res [:message :content]) ""))))))))))
 
 (describe "claude-cli real response carries nonzero usage (isaac-l70j)"
   (tags :real :slow)
