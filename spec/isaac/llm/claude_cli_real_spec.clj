@@ -29,10 +29,10 @@
                             :properties {:command {:type "string"}}
                             :required   ["command"]}}})
 
-(describe "claude-cli real binary smoke (isaac-kn7y / isaac-l70j)"
+(describe "claude-cli real binary smoke (isaac-kn7y)"
   (tags :real :slow)
 
-  (it "returns a real answer with nonzero token usage from a logged-in claude binary"
+  (it "returns a real, non-empty answer from a logged-in claude binary"
     (cond
       (not (enabled?))
       (pending "set ISAAC_CLAUDE_REAL=1 on a logged-in box to run the @real smoke")
@@ -49,7 +49,28 @@
           (pending (str "no claude login present: " (:message res)))
           (do
             (should-not (:error res))
-            (should (seq (str/trim (or (get-in res [:message :content]) ""))))
+            (should (seq (str/trim (or (get-in res [:message :content]) "")))))))))
+
+(describe "claude-cli real response carries nonzero usage (isaac-l70j)"
+  (tags :real :slow)
+
+  (it "reports nonzero input and output tokens on the claude-cli response"
+    (cond
+      (not (enabled?))
+      (pending "set ISAAC_CLAUDE_REAL=1 on a logged-in box to run usage @real smoke")
+
+      (not (claude-installed?))
+      (pending "claude binary not installed")
+
+      :else
+      (let [res (sut/chat {:model    "sonnet"
+                           :messages [{:role "user" :content "Reply with exactly the word: pong"}]}
+                          "claude"
+                          {:command "claude"})]
+        (if (:unavailable? res)
+          (pending (str "no claude login present: " (:message res)))
+          (do
+            (should-not (:error res))
             (let [usage (:usage res)]
               (should (pos? (or (:input-tokens usage) 0)))
               (should (pos? (or (:output-tokens usage) 0))))))))))

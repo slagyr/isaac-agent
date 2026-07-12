@@ -2,10 +2,17 @@
   (:require
     [cheshire.core :as json]
     [clojure.string :as str]
-    [isaac.drive.turn :as turn]
+    [isaac.drive.turn :as drive-turn]
+    [isaac.fs :as fs]
     [isaac.llm.api.claude-cli :as sut]
     [isaac.llm.api.protocol :as api]
-    [speclj.core :refer [before describe it should should= should-not]]))
+    [isaac.marigold :as marigold]
+    [isaac.marigold.agent :as marigold.agent]
+    [isaac.nexus :as nexus]
+    [isaac.session.spec-helper :as session-helper]
+    [speclj.core :refer [around before describe it should should= should-not]]))
+
+(def ^:private transcript-test-dir marigold/home)
 
 (describe "claude-cli api"
   (before
@@ -51,7 +58,7 @@
           _   (sut/set-stub! (constantly {:exit 0 :out out :err ""}))
           p   (sut/make "claude" {:command "claude"})
           chunks (atom [])]
-      (turn/stream-response! p {:model "sonnet" :messages [{:role "user" :content "hi"}]}
+      (drive-turn/stream-response! p {:model "sonnet" :messages [{:role "user" :content "hi"}]}
                              (fn [piece] (swap! chunks conj piece)))
       (should= ["Hello" " " "world"] @chunks)))
 
@@ -163,3 +170,52 @@
       (should= "Hi" (get-in res [:message :content]))
       (should= 10 (:input-tokens (:usage res)))
       (should= 2 (:output-tokens (:usage res))))))
+
+(describe "claude-cli persisted transcript usage (isaac-l70j)"
+  (marigold.agent/with-manifest)
+
+  (around [example]
+    (nexus/-with-nexus {:root transcript-test-dir :fs (fs/mem-fs)}
+      (session-helper/with-memory-store
+        (example))))
+
+  (it "non-stream chat persists nonzero usage on the assistant transcript entry"
+    (session-helper/create-session! transcript-test-dir "claude-ns-usage")
+    (sut/set-stub!
+      (constantly {:exit 0
+                   :out  (json/generate-string {:type   "result"
+                                                :result "4"
+                                                :usage  {:input_tokens 120 :output_tokens 15}})
+                   :err  ""}))
+    (let [res (sut/chat {:model "sonnet" :messages [{:role "user" :content "yo"}]}
+                        "claude"
+                        {:command "claude"})]
+      (drive-turn/process-response! "claude-ns-usage" {:response res}
+                                    {:model "sonnet" :provider "claude"})
+      (let [assistant (-> (session-helper/get-transcript transcript-test-dir "claude-ns-usage")
+                          last
+                          :message)
+            usage (:usage assistant)]
+        (should (pos? (:input-tokens usage)))
+        (should (pos? (:output-tokens usage))))))
+
+  (it "streaming terminal usage persists nonzero fields on the assistant transcript entry"
+    (session-helper/create-session! transcript-test-dir "claude-stream-usage")
+    (let [out (str/join "\n"
+                        [(json/generate-string {:type "content_block_delta" :delta {:text "Hi"}})
+                         (json/generate-string {:type   "result"
+                                                :result "Hi"
+                                                :usage  {:input_tokens 88 :output_tokens 11}})])]
+      (sut/set-stub! (constantly {:exit 0 :out out :err ""}))
+      (let [res (sut/chat-stream {:model "sonnet" :messages [{:role "user" :content "hi"}]}
+                                 (fn [_])
+                                 "claude"
+                                 {:command "claude"})]
+        (drive-turn/process-response! "claude-stream-usage" {:response res}
+                                      {:model "sonnet" :provider "claude"})
+        (let [assistant (-> (session-helper/get-transcript transcript-test-dir "claude-stream-usage")
+                            last
+                            :message)
+              usage (:usage assistant)]
+          (should (pos? (:input-tokens usage)))
+          (should (pos? (:output-tokens usage))))))))
