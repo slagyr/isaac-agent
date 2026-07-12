@@ -20,6 +20,13 @@ Feature: Config Command
       | validate\s+Validate config                                      |
       | get \[config-path\]\s+Print the resolved config, or a subtree   |
       | sources\s+List contributing config files                        |
+      | --json\s+Print structured JSON output                         |
+    And the exit code is 0
+
+  Scenario: config --help documents structured output flags (isaac-0jse)
+    When isaac is run with "config --help"
+    Then the stdout contains "--json"
+    And the stdout contains "--edn"
     And the exit code is 0
 
   Scenario: config validate has its own help page via --help
