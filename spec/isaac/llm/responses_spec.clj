@@ -309,7 +309,35 @@
       (should= {:model "gpt-5.4"
                 :input [{:role "user" :content "hi"}]
                 :store true}
-               (@#'sut/responses-request-base "gpt-5.4" [{:role "user" :content "hi"}] true))))
+               (@#'sut/responses-request-base "gpt-5.4" [{:role "user" :content "hi"}] true)))
+
+    (it "when stateful, cycle 2+ request chains previous_response_id and sends only tool outputs"
+      (let [result (@#'sut/->responses-request
+                     {:model                 "snuffy-codex"
+                      :stateful              true
+                      :previous_response_id  "resp-1"
+                      :messages              [{:role "user" :content "count the cans"}
+                                              {:role       "assistant"
+                                               :content    ""
+                                               :tool_calls [{:id       "fc_1"
+                                                             :type     "function"
+                                                             :function {:name      "exec"
+                                                                        :arguments "{\"command\":\"true\"}"}}]}
+                                              {:role "tool" :tool_call_id "fc_1" :content "ok"}]})]
+        (should= true (:store result))
+        (should= "resp-1" (:previous_response_id result))
+        (should= 1 (count (:input result)))
+        (should= "function_call_output" (:type (first (:input result))))))
+
+    (it "without stateful, full context is resent and previous_response_id is omitted"
+      (let [result (@#'sut/->responses-request
+                     {:model                "snuffy-codex"
+                      :previous_response_id "resp-1"
+                      :messages             [{:role "user" :content "count the cans"}
+                                             {:role "tool" :tool_call_id "fc_1" :content "ok"}]})]
+        (should= false (:store result))
+        (should-not (contains? result :previous_response_id))
+        (should= "user" (:role (first (:input result)))))))
 
   (describe "effort wire translation"
 
