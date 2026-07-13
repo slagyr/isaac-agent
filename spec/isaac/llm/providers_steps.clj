@@ -193,6 +193,22 @@
   "Stubs the LLM HTTP layer so provider calls return a minimal successful
    response immediately while still capturing the outbound request.")
 
+(defn outbound-http-request-n-matches [n table]
+  (session-steps/await-turn!)
+  (let [idx       (dec (long (if (string? n) (parse-long n) n)))
+        requests  (vec (outbound-http-requests))
+        raw       (nth requests idx nil)
+        request   (request-for-match raw)
+        result    (match/match-object table request)]
+    (g/assoc! :outbound-http-request raw)
+    (g/should= [] (:failures result))))
+
+(defn outbound-http-request-n-lacks-path [n path]
+  (session-steps/await-turn!)
+  (let [idx     (dec (long (if (string? n) (parse-long n) n)))
+        request (request-for-match (nth (vec (outbound-http-requests)) idx nil))]
+    (g/should= nil (match/get-path request path))))
+
 (defthen "the last outbound HTTP request matches:" isaac.llm.providers-steps/outbound-http-request-matches
   "Awaits the turn future, then matches the last HTTP request Isaac
    sent to any provider. Table uses the match/match-object DSL (dot-path
@@ -201,6 +217,12 @@
 (defthen "an outbound HTTP request to {url:string} matches:" isaac.llm.providers-steps/outbound-http-request-to-url-matches
   "Filters captured HTTP requests by url, then matches the nth (default
    first). Use a row with key='#index' to select a different position.")
+
+(defthen #"outbound HTTP request (\d+) matches:" isaac.llm.providers-steps/outbound-http-request-n-matches
+  "1-based indexed outbound HTTP request match (body/store/previous_response_id etc.).")
+
+(defthen #"outbound HTTP request (\d+) has no ([^\s]+)" isaac.llm.providers-steps/outbound-http-request-n-lacks-path
+  "1-based indexed absence assertion for an outbound HTTP request path.")
 
 (defthen "the last provider request does not contain path {path:string}" isaac.llm.providers-steps/provider-request-lacks-path)
 

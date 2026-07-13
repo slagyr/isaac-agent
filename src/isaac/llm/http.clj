@@ -100,7 +100,9 @@
    Checks HTTP status codes: 401 -> :auth-failed, 4xx/5xx -> :api-error."
   [url headers body & [{:keys [session-key simulate-provider timeout] :or {timeout 120000}}]]
   (if (simulated-provider? {:simulate-provider simulate-provider})
-    (grover/post-json! simulate-provider url headers body)
+    (do
+      (log-http-request! url headers body {:session-key session-key :simulate-provider simulate-provider :timeout timeout} false)
+      (grover/post-json! simulate-provider url headers body))
     (cancellable-call session-key
                       #(try
                          (log-http-request! url headers body {:session-key session-key :simulate-provider simulate-provider :timeout timeout} false)
@@ -154,7 +156,9 @@
    process-event is (fn [data accumulated] -> accumulated) for custom accumulation."
   [url headers body on-chunk process-event initial & [{:keys [session-key simulate-provider timeout] :or {timeout 120000}}]]
   (if (simulated-provider? {:simulate-provider simulate-provider})
-    (grover/post-sse! simulate-provider url headers body on-chunk process-event initial)
+    (do
+      (log-http-request! url headers body {:session-key session-key :simulate-provider simulate-provider :timeout timeout} true)
+      (grover/post-sse! simulate-provider url headers body on-chunk process-event initial))
     (cancellable-call session-key
                       #(try
                          (log-http-request! url headers body {:session-key session-key :simulate-provider simulate-provider :timeout timeout} true)

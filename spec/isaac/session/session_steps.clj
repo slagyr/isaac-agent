@@ -361,6 +361,7 @@
      "tool_call"
      "tool_calls"
      "arguments"
+     "id"
      "wait"
      "status"
      "retry-after"
@@ -398,6 +399,9 @@
     (cond-> {}
       (some? (get m "type"))
       (assoc :type (get m "type"))
+
+      (and (get m "id") (not (str/blank? (get m "id"))))
+      (assoc :id (get m "id"))
 
       (some? (get m "message"))
       (assoc :message (get m "message"))
@@ -496,8 +500,11 @@
     (g/assoc! :provider-request (or (last outbound-requests)
                                     (grover/last-provider-request)
                                     grover-request))
-    (g/assoc! :outbound-http-requests outbound-requests)
-    (g/assoc! :outbound-http-request (or (first outbound-requests)
+    ;; Append across turns so multi-turn scenarios can index request N.
+    (g/update! :outbound-http-requests
+               (fn [prior]
+                 (vec (concat (or prior []) (or outbound-requests [])))))
+    (g/assoc! :outbound-http-request (or (last outbound-requests)
                                          (grover/last-provider-request)
                                          grover-request))
     (g/assoc! :tool-result tool-result)

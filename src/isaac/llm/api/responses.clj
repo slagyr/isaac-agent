@@ -42,30 +42,56 @@
     :else
     {:role role :content content}))
 
-(defn- responses-request-base [model input]
+(defn- truthy-stateful? [v]
+  (cond
+    (true? v)  true
+    (false? v) false
+    (nil? v)   false
+    (string? v) (contains? #{"true" "1" "yes"} (str/lower-case v))
+    :else      (boolean v)))
+
+(defn- responses-request-base [model input store?]
   {:model model
    :input input
-   :store false})
+   :store (boolean store?)})
 
-(defn- ->responses-request [{:keys [model messages system tools]}]
-  (let [all-messages (cond->> messages
-                        system (into [{:role "system" :content system}]))
-        instructions (->> all-messages
-                          (filter #(= "system" (:role %)))
-                          (map :content)
-                          (remove str/blank?)
-                          (str/join "\n\n"))
-        input        (->> all-messages
-                          (remove #(= "system" (:role %)))
-                          (mapcat #(let [r (sanitize-responses-message %)]
-                                     (if (vector? r) r [r])))
-                          vec)]
-    (cond-> (responses-request-base model input)
-      (seq tools)                       (assoc :tools tools)
-      (not (str/blank? instructions)) (assoc :instructions instructions))))
+(defn- ->responses-request
+  ([request] (->responses-request request nil))
+  ([{:keys [model messages system tools stateful previous_response_id previous-response-id]} provider-cfg]
+   (let [store?       (truthy-stateful? (if (nil? stateful)
+                                          (get provider-cfg :stateful)
+                                          stateful))
+         prev-id      (or previous_response_id previous-response-id)
+         chained?     (and store? (not (str/blank? (str prev-id))))
+         all-messages (cond->> messages
+                         system (into [{:role "system" :content system}]))
+         instructions (->> all-messages
+                           (filter #(= "system" (:role %)))
+                           (map :content)
+                           (remove str/blank?)
+                           (str/join "
 
-(defn- ->codex-responses-request [request]
-  (let [base  (->responses-request request)
+"))
+         input        (if chained?
+                        (->> all-messages
+                             (remove #(= "system" (:role %)))
+                             (filter #(or (= "tool" (:role %))
+                                          (= "function_call_output" (:type %))))
+                             (mapcat #(let [r (sanitize-responses-message %)]
+                                        (if (vector? r) r [r])))
+                             vec)
+                        (->> all-messages
+                             (remove #(= "system" (:role %)))
+                             (mapcat #(let [r (sanitize-responses-message %)]
+                                        (if (vector? r) r [r])))
+                             vec))]
+     (cond-> (responses-request-base model input store?)
+       (seq tools)                       (assoc :tools tools)
+       (and (not chained?) (not (str/blank? instructions))) (assoc :instructions instructions)
+       chained?                          (assoc :previous_response_id (str prev-id))))))
+
+(defn- ->codex-responses-request [request provider-cfg]
+  (let [base  (->responses-request request provider-cfg)
         base  (if (contains? base :instructions) base (assoc base :instructions ""))
         level (effort/effort->string (:effort request))]
     (if level
@@ -119,14 +145,26 @@
     (let [response (:response data)]
       (cond-> accumulated
         response          (assoc :response response)
+        (:id response)    (assoc :response-id (:id response))
         (:model response) (assoc :model (:model response))
         (:usage response) (assoc :usage (:usage response))))
+
+    "response.created"
+    (let [response (:response data)]
+      (cond-> accumulated
+        (:id response) (assoc :response-id (:id response))))
 
     accumulated))
 
 (defn- chat-stream-with-responses-api [provider-name config base-url _headers request on-delta]
   (let [url     (str base-url "/responses")
-        body    (assoc (->codex-responses-request request) :stream true)
+        body    (assoc (->codex-responses-request
+                         (cond-> request
+                           (and (nil? (:stateful request))
+                                (contains? config :stateful))
+                           (assoc :stateful (:stateful config)))
+                         config)
+                       :stream true)
         initial {:role "assistant" :content "" :model nil :usage {} :response nil :tool-calls []}
         send!   (fn []
                   (llm-http/post-sse! url (shared/auth-headers provider-name config) body
@@ -144,26 +182,28 @@
        :message "responses stream ended without response.completed"}
 
       :else
-      (let [tool-calls (:tool-calls result)
-            response   (:response result)]
+      (let [tool-calls  (:tool-calls result)
+            response    (:response result)
+            response-id (or (:response-id result) (:id response))]
         (log/debug :responses/reasoning
                    :model             (:model result)
                    :effort            (get-in response [:reasoning :effort])
                    :summary           (get-in response [:reasoning :summary])
                    :reasoning-tokens  (get-in response [:usage :output_tokens_details :reasoning_tokens])
                    :cached-tokens     (get-in response [:usage :input_tokens_details :cached_tokens]))
-        {:message    (cond-> {:role "assistant" :content (:content result)}
-                              (seq tool-calls) (assoc :tool_calls (mapv (fn [tc]
-                                                                           {:id       (:id tc)
-                                                                           :type     "function"
-                                                                           :function {:name      (:name tc)
-                                                                                      :arguments (:arguments tc)}})
-                                                                       tool-calls)))
-         :model      (:model result)
-         :response   response
-         :tool-calls tool-calls
-         :usage      (shared/parse-usage (:usage result))
-         :_headers   (shared/auth-headers provider-name config)}))))
+        (cond-> {:message    (cond-> {:role "assistant" :content (:content result)}
+                                      (seq tool-calls) (assoc :tool_calls (mapv (fn [tc]
+                                                                                   {:id       (:id tc)
+                                                                                    :type     "function"
+                                                                                    :function {:name      (:name tc)
+                                                                                               :arguments (:arguments tc)}})
+                                                                               tool-calls)))
+                 :model      (:model result)
+                 :response   response
+                 :tool-calls tool-calls
+                 :usage      (shared/parse-usage (:usage result))
+                 :_headers   (shared/auth-headers provider-name config)}
+          response-id (assoc :response-id response-id))))))
 
 (defn chat
   "Send a Responses API request (streams internally; returns accumulated response)."
