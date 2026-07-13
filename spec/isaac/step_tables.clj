@@ -7,9 +7,9 @@
 (defn- parse-segment [s]
   (cond
     (= "#count" s) [[:count]]
-    (re-matches #"\d+" s) [[:idx (parse-long s)]]
+    (re-matches #"-?\d+" s) [[:idx (parse-long s)]]
     :else
-    (let [parts (re-seq #"([\w-]+)|\[(\d+)\]" s)]
+    (let [parts (re-seq #"([\w-]+)|\[(-?\d+)\]" s)]
       (mapv (fn [[_ key idx]]
               (if key
                 [:key key]
@@ -19,12 +19,22 @@
 (defn parse-path [path]
   (mapcat parse-segment (str/split path #"\.")))
 
+(defn- resolve-index [idx entries-count]
+  (let [resolved (if (neg? idx)
+                   (+ entries-count idx)
+                   idx)]
+    (when (<= 0 resolved (dec entries-count))
+      resolved)))
+
 (defn get-path [entity path-str]
   (reduce
     (fn [obj [tag v]]
       (case tag
         :key (get obj (keyword v))
-        :idx (nth obj v nil)
+        :idx (if (sequential? obj)
+               (when-let [i (resolve-index v (count obj))]
+                 (nth obj i nil))
+               (nth obj v nil))
         :count (when (or (sequential? obj) (map? obj) (string? obj))
                  (count obj))))
     entity
