@@ -303,7 +303,13 @@
       (should= {:model "gpt-5.4"
                 :input [{:role "user" :content "hi"}]
                 :store false}
-               (@#'sut/responses-request-base "gpt-5.4" [{:role "user" :content "hi"}]))))
+               (@#'sut/responses-request-base "gpt-5.4" [{:role "user" :content "hi"}] false)))
+
+    (it "builds a responses request base with store enabled when stateful"
+      (should= {:model "gpt-5.4"
+                :input [{:role "user" :content "hi"}]
+                :store true}
+               (@#'sut/responses-request-base "gpt-5.4" [{:role "user" :content "hi"}] true))))
 
   (describe "effort wire translation"
 
