@@ -761,12 +761,14 @@
                                         :skill-menu-text skill-menu-text
                                         :soul       soul
                                         :transcript transcript
-                                        :tools      tools})]
+                                        :tools      tools})
+        stateful   (get (api/config p) :stateful)]
     (cond-> {:model (:model prompt-out) :messages (:messages prompt-out)}
             (:system prompt-out) (assoc :system (:system prompt-out))
             (:max_tokens prompt-out) (assoc :max_tokens (:max_tokens prompt-out))
             (:tools prompt-out) (assoc :tools (:tools prompt-out))
-            (some? effort) (assoc :effort effort))))
+            (some? effort) (assoc :effort effort)
+            (some? stateful) (assoc :stateful stateful))))
 
 ;; endregion ^^^^^ Request Building ^^^^^
 
@@ -817,7 +819,7 @@
         rules-text     (session-ctx/read-rules-text (:config charge) root (:cwd session))
         augmented      (augment-provider root provider session-key context-window
                                          (select-keys (or model-cfg {})
-                                                      [:thinking-budget-max :think-mode]))]
+                                                      [:thinking-budget-max :think-mode :stateful]))]
     (log/debug :turn/context-resolved
                :session session-key
                :crew crew
@@ -930,8 +932,9 @@
                           (let [messages (api/followup-messages p req response tool-calls tool-results)]
                             (reset! current-request (assoc req :messages messages))
                             messages))
-            result      (let [provider-name (api/display-name p)]
-                          (-> (tool-loop/run chat-fn followup-fn request tool-fn
+            result      (let [provider-name (api/display-name p)
+                              request*     (assoc request :provider provider-name)]
+                          (-> (tool-loop/run chat-fn followup-fn request* tool-fn
                                              {:max-loops  tool-loop-max
                                               :cancelled? #(bridge/cancelled? session-key)})
                               (provider-wall/normalize config provider-name)

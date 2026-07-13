@@ -518,6 +518,10 @@
       {:type :boolean,
        :description
        "Whether to attach :effort to requests for this model (default true)"},
+      :stateful
+      {:type :boolean,
+       :description
+       "Responses API: chain tool-loop cycles with previous_response_id + store:true when true (default false)"},
       :history-retention
       {:type :keyword,
        :description

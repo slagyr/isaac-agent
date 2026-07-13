@@ -164,7 +164,8 @@
                :status (long (or (:status scripted) 500))
                :message (or (:message scripted) (:content scripted) "http error")
                :model resp-model}
-        (:retry-after scripted) (assoc :retry-after (long (:retry-after scripted))))
+        (:retry-after scripted) (assoc :retry-after (long (:retry-after scripted)))
+        (:id scripted) (assoc :response-id (:id scripted)))
 
       (= "error" (:type scripted))
       {:error :llm-error :message (:content scripted) :model resp-model}
@@ -174,24 +175,28 @@
                     (:tool_calls scripted)
                     [{:function {:name      (:tool_call scripted)
                                  :arguments (:arguments scripted)}}])]
-        (merge {:model   resp-model
-                :message {:role       "assistant"
-                          :content    ""
-                          :tool_calls calls}
-                :done    true
-                :done_reason "stop"}
-               metadata
-               token-counts
-               token-overrides))
+        (cond-> (merge {:model   resp-model
+                        :message {:role       "assistant"
+                                  :content    ""
+                                  :tool_calls calls}
+                        :done    true
+                        :done_reason "stop"}
+                       metadata
+                       token-counts
+                       token-overrides)
+          (:id scripted) (assoc :response-id (:id scripted)
+                                :response {:id (:id scripted)})))
 
       :else
-      (merge {:model   resp-model
-              :message {:role "assistant" :content (:content scripted)}
-              :done    true
-              :done_reason "stop"}
-              metadata
-               token-counts
-               token-overrides))))
+      (cond-> (merge {:model   resp-model
+                      :message {:role "assistant" :content (:content scripted)}
+                      :done    true
+                      :done_reason "stop"}
+                      metadata
+                       token-counts
+                       token-overrides)
+        (:id scripted) (assoc :response-id (:id scripted)
+                              :response {:id (:id scripted)})))))
 
 (defn- context-window-error [request cfg]
   (let [enforce?       (:enforce-context-window cfg)
@@ -300,6 +305,7 @@
                                              :usage (merge {:input_tokens  (:prompt_eval_count response)
                                                             :output_tokens (:eval_count response)}
                                                            (:usage response))}
+                                      (:response-id response) (assoc :id (:response-id response))
                                       (:reasoning response) (assoc :reasoning (:reasoning response)))}]
                        (concat (map (fn [chunk]
                                       {:type "response.output_text.delta"
@@ -310,6 +316,7 @@
                                                      :usage (merge {:input_tokens  (:prompt_eval_count response)
                                                                     :output_tokens (:eval_count response)}
                                                                    (:usage response))}
+                                              (:response-id response) (assoc :id (:response-id response))
                                               (:reasoning response) (assoc :reasoning (:reasoning response)))}]))]
           (reduce-provider-events events on-chunk process-event initial))
         (let [events (concat (map (fn [chunk]
