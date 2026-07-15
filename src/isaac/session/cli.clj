@@ -273,6 +273,26 @@
     (println message))
   1)
 
+(defn- print-rename-reminder! [old-id new-id]
+  (println (str "renamed: " old-id " -> " new-id))
+  (println "Reminder: update any Discord :discord/channels :session mappings and pinned --session scripts that still reference the old key."))
+
+(defn- run-rename [opts old-id new-id]
+  (cond
+    (or (str/blank? old-id) (str/blank? new-id))
+    (do (println "Usage: isaac sessions rename <old-id> <new-id>") 1)
+
+    :else
+    (let [{session-store :store} (install-cli! opts)]
+      (try
+        (if-let [renamed (store/rename-session! session-store old-id new-id)]
+          (do
+            (print-rename-reminder! old-id (or (:key renamed) new-id))
+            0)
+          (print-mutation-error! (str "session not found: " old-id)))
+        (catch clojure.lang.ExceptionInfo e
+          (print-mutation-error! (ex-message e)))))))
+
 (defn- parse-mutation-target [raw-path]
   (if-let [dot-index (str/index-of raw-path ".")]
     {:session-id (subs raw-path 0 dot-index)
@@ -417,7 +437,8 @@
 (def ^:private set-help    ["Usage: isaac sessions set <id>.<path> <value>" "Set a value on a session field."])
 (def ^:private unset-help  ["Usage: isaac sessions unset <id>.<path>" "Clear a value on a session field."])
 (def ^:private show-help   ["Usage: isaac sessions show <id>" "Show full detail for one session."])
-(def ^:private delete-help ["Usage: isaac sessions delete <id>" "Delete one session."])
+(def ^:private delete-help ["Usage: isaac sessions delete <id>" "Delete a session."])
+(def ^:private rename-help ["Usage: isaac sessions rename <old-id> <new-id>" "Rename a session key, preserving transcript and metadata."])
 
 (defn- run-list [opts list-args]
   (let [{:keys [options errors]} (parse-option-map list-args)]
@@ -451,6 +472,11 @@
       (if (help-requested? (rest raw-args))
         (apply print-subcommand-help! delete-help)
         (run-delete opts (second raw-args)))
+
+      (= "rename" subcmd)
+      (if (help-requested? (rest raw-args))
+        (apply print-subcommand-help! rename-help)
+        (run-rename opts (second raw-args) (nth raw-args 2 nil)))
 
       (= "set" subcmd)
       (if (help-requested? (rest raw-args))
@@ -497,4 +523,5 @@
    {:name "show"   :summary "Show one session"}
    {:name "set"    :summary "Set a mutable field: sessions set <id>.<path> <value>"}
    {:name "unset"  :summary "Clear a mutable field: sessions unset <id>.<path>"}
+   {:name "rename" :summary "Rename a session key: sessions rename <old-id> <new-id>"}
    {:name "delete" :summary "Delete a session"}])

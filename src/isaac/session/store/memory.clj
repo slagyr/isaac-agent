@@ -106,6 +106,42 @@
         (swap! state #(-> % (update :sessions dissoc id) (update :transcripts dissoc id)))
         true)))
 
+  (rename-session! [this old-name new-name]
+    (let [old-id (c/session-id old-name)
+          new-id (c/session-id new-name)
+          entry  (get-in @state [:sessions old-id])]
+      (cond
+        (nil? entry)
+        nil
+
+        (store/in-flight? this old-id)
+        (throw (ex-info (str "cannot rename in-flight session '" old-name
+                             "': a turn is in progress. Wait for it to finish or cancel it first.")
+                        {:reason :in-flight :old-id old-id :new-id new-id}))
+
+        (get-in @state [:sessions new-id])
+        (throw (ex-info (str "cannot rename to '" new-name
+                             "': a session with that key already exists.")
+                        {:reason :collision :old-id old-id :new-id new-id}))
+
+        (= old-id new-id)
+        entry
+
+        :else
+        (let [renamed (-> entry
+                          (assoc :id new-id
+                                 :key new-id
+                                 :name (or new-name new-id)
+                                 :session-file (str new-id ".jsonl")
+                                 :updated-at (now-iso)))
+              transcript (get-in @state [:transcripts old-id] [])]
+          (swap! state #(-> %
+                            (update :sessions dissoc old-id)
+                            (assoc-in [:sessions new-id] renamed)
+                            (update :transcripts dissoc old-id)
+                            (assoc-in [:transcripts new-id] transcript)))
+          renamed))))
+
   (list-sessions [_]
     (->> (vals (:sessions @state)) (sort-by :id) vec))
 

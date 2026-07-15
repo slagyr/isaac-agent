@@ -101,6 +101,15 @@
           (c/delete*! fs path))
         true))))
 
+(defn- rename-session! [this root old-name new-name fs]
+  (c/rename-session!
+    read-session-store
+    (fn [store old-id renamed]
+      (write-index! root (-> store (dissoc old-id) (assoc (:id renamed) renamed)) fs))
+    now-iso
+    #(store/in-flight? this %)
+    root old-name new-name fs))
+
 ;; endregion ^^^^^ Public API ^^^^^
 
 ;; region ----- Store type -----
@@ -111,6 +120,8 @@
     (create-session! root name opts fs))
   (delete-session! [_ name]
     (delete-session! root name fs))
+  (rename-session! [this old-name new-name]
+    (rename-session! this root old-name new-name fs))
   (list-sessions [_]
     (c/list-sessions read-session-store root nil fs))
   (list-sessions-by-agent [_ agent]

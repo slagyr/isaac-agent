@@ -404,6 +404,50 @@
 
   ;; endregion ^^^^^ delete-session! ^^^^^
 
+  ;; region ----- rename-session! -----
+
+  (describe "rename-session!"
+
+    (it "rewrites the index entry and moves the transcript"
+      (sut/create-session! test-dir test-key {:tags #{:project/x}})
+      (store/update-session! (s) test-key {:total-tokens 5000})
+      (store/append-message! (s) test-key {:role "user" :content "hello"})
+      (let [result (store/rename-session! (s) test-key "skipper")
+            entry  (store/get-session (s) "skipper")
+            fs*    (nexus/get :fs)]
+        (should= "skipper" (:id result))
+        (should= "skipper" (:key entry))
+        (should= 5000 (:total-tokens entry))
+        (should-be-nil (store/get-session (s) test-key))
+        (should-not (fs/exists? fs* (str test-dir "/sessions/" test-key ".jsonl")))
+        (should (fs/exists? fs* (str test-dir "/sessions/skipper.jsonl")))
+        (should= 2 (count (store/get-transcript (s) "skipper")))))
+
+    (it "refuses a collision without clobbering the target"
+      (sut/create-session! test-dir test-key)
+      (sut/create-session! test-dir "skipper" {:crew "ketch"})
+      (try
+        (store/rename-session! (s) test-key "skipper")
+        (should-fail "expected collision")
+        (catch clojure.lang.ExceptionInfo e
+          (should= :collision (:reason (ex-data e)))
+          (should= "ketch" (:crew (store/get-session (s) "skipper")))
+          (should-not-be-nil (store/get-session (s) test-key)))))
+
+    (it "refuses renaming an in-flight session"
+      (let [store (s)]
+        (sut/create-session! test-dir test-key)
+        (store/mark-in-flight! store test-key)
+        (try
+          (store/rename-session! store test-key "skipper")
+          (should-fail "expected in-flight refusal")
+          (catch clojure.lang.ExceptionInfo e
+            (should= :in-flight (:reason (ex-data e)))
+            (should-not-be-nil (store/get-session store test-key))
+            (should-be-nil (store/get-session store "skipper")))))))
+
+  ;; endregion ^^^^^ rename-session! ^^^^^
+
   ;; region ----- store/create integration -----
 
   (describe "store/create with :jsonl-edn-index"

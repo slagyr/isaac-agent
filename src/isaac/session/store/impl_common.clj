@@ -333,6 +333,62 @@
     (contains? store identifier) identifier
     :else (let [id (session-id identifier)] (when (contains? store id) id))))
 
+(defn- move-if-exists! [fs source destination]
+  (when (and source destination (exists?* fs source))
+    (mkdirs*! fs (fs/parent destination))
+    (fs/move fs source destination)))
+
+(defn rename-session!
+  "Atomically rename a stored session. Shared by sidecar + index stores.
+
+  `read-session-fn`  — (fn [root fs] store-map)
+  `commit-fn`        — (fn [store old-id new-entry] ...) persist the renamed entry
+                       and drop the old id from the store map / sidecars
+  `now-iso-fn`       — () -> ISO timestamp
+  `in-flight-check`  — (fn [old-id] truthy when a turn is in progress)
+
+  Returns the renamed entry, nil when the source is missing, or throws
+  ex-info with :reason :in-flight / :collision."
+  [read-session-fn commit-fn now-iso-fn in-flight-check root old-name new-name fs]
+  (let [store   (read-session-fn root fs)
+        old-id  (resolve-entry-id store old-name)
+        new-id  (session-id new-name)
+        entry   (when old-id (get store old-id))]
+    (cond
+      (nil? entry)
+      nil
+
+      (in-flight-check old-id)
+      (throw (ex-info (str "cannot rename in-flight session '" old-name
+                           "': a turn is in progress. Wait for it to finish or cancel it first.")
+                      {:reason :in-flight :old-id old-id :new-id new-id}))
+
+      (and (not= old-id new-id) (contains? store new-id))
+      (throw (ex-info (str "cannot rename to '" new-name
+                           "': a session with that key already exists.")
+                      {:reason :collision :old-id old-id :new-id new-id}))
+
+      (= old-id new-id)
+      entry
+
+      :else
+      (let [old-session-file (:session-file entry)
+            new-session-file (str new-id ".jsonl")
+            renamed          (conform-session!
+                               (-> entry
+                                   (assoc :id new-id
+                                          :key new-id
+                                          :name (or new-name new-id)
+                                          :session-file new-session-file
+                                          :updated-at (now-iso-fn))))]
+        (move-if-exists! fs
+                         (when old-session-file (transcript-path root old-session-file))
+                         (transcript-path root new-session-file))
+        (move-if-exists! fs (sidecar-path root old-id) (sidecar-path root new-id))
+        (move-if-exists! fs (turn-marker-path root old-id) (turn-marker-path root new-id))
+        (commit-fn store old-id renamed)
+        renamed))))
+
 (defn create-session! [read-session-fn write-fn now-iso-fn normalize-ts-fn root identifier opts fs]
   (let [opts               (entry-defaults opts)
         store              (read-session-fn root fs)

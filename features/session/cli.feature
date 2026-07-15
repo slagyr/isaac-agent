@@ -25,6 +25,7 @@ Feature: Sessions Command
     And the stdout contains "Subcommands:"
     And the stdout contains "list"
     And the stdout contains "show"
+    And the stdout contains "rename"
     And the exit code is 0
 
   Scenario: sessions set --help shows the set usage
@@ -46,6 +47,57 @@ Feature: Sessions Command
     When isaac is run with "sessions delete --help"
     Then the stdout contains "Usage: isaac sessions delete <id>"
     And the exit code is 0
+
+  Scenario: sessions rename --help shows the rename usage
+    When isaac is run with "sessions rename --help"
+    Then the stdout contains "Usage: isaac sessions rename <old-id> <new-id>"
+    And the exit code is 0
+
+  # isaac-n9ez: in-place rename preserves crew/tags/tokens/transcript under the new key
+  Scenario: rename moves an idle session to the new key, preserving its state
+    Given the following sessions exist:
+      | name | crew | tags               | total-tokens | last-input-tokens |
+      | joe  | main | #{:project/x :wip} | 5000         | 5000              |
+    When isaac is run with "sessions rename joe skipper"
+    Then the exit code is 0
+    And session "joe" does not exist
+    When isaac is run with "sessions show skipper --json"
+    Then the stdout JSON contains:
+      | path         | value                |
+      | key          | "skipper"            |
+      | crew         | "main"               |
+      | tags         | ["project/x", "wip"] |
+      | total-tokens | 5000                 |
+    And the exit code is 0
+
+  # isaac-n9ez: refuse mid-turn rename so turn markers/transcripts stay consistent
+  Scenario: renaming an in-flight session is refused, leaving it untouched
+    Given the following sessions exist:
+      | name | crew |
+      | joe  | main |
+    And session "joe" is in flight
+    When isaac is run with "sessions rename joe skipper"
+    Then the stderr contains "cannot rename in-flight session 'joe': a turn is in progress. Wait for it to finish or cancel it first."
+    And the exit code is 1
+    And session "skipper" does not exist
+    When isaac is run with "sessions show joe --json"
+    Then the exit code is 0
+
+  # isaac-n9ez: collision must not clobber the target session
+  Scenario: renaming onto an existing key is refused, clobbering nothing
+    Given the following sessions exist:
+      | name    | crew  |
+      | joe     | main  |
+      | skipper | ketch |
+    When isaac is run with "sessions rename joe skipper"
+    Then the stderr contains "cannot rename to 'skipper': a session with that key already exists."
+    And the exit code is 1
+    When isaac is run with "sessions show joe --json"
+    Then the exit code is 0
+    When isaac is run with "sessions show skipper --json"
+    Then the stdout JSON contains:
+      | path | value   |
+      | crew | "ketch" |
 
   Scenario: sessions list shows one flat table sorted alphabetically with a CREW column
     Given the following sessions exist:

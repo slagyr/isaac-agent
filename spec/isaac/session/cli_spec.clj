@@ -135,4 +135,43 @@
     (let [err (binding [*err* (java.io.StringWriter.)]
                 (should= 1 (sut/run-fn {:home "/test" :_raw-args ["set" "joe.crew" "nobody"]}))
                 (str *err*))]
-      (should-contain "nobody" err))))
+      (should-contain "nobody" err)))
+
+  (it "renames an idle session preserving crew tags and tokens"
+    (helper/create-session! "/test/sessions" "joe" {:crew "main" :tags #{:project/x :wip}})
+    (helper/update-session! "/test/sessions" "joe" {:total-tokens 5000 :last-input-tokens 5000})
+    (let [out (with-out-str
+                (should= 0 (sut/run-fn {:home "/test" :_raw-args ["rename" "joe" "skipper"]})))
+          entry (helper/get-session "/test/sessions" "skipper")]
+      (should-contain "renamed: joe -> skipper" out)
+      (should-contain "Reminder:" out)
+      (should-be-nil (helper/get-session "/test/sessions" "joe"))
+      (should= "skipper" (:key entry))
+      (should= "main" (:crew entry))
+      (should= #{:project/x :wip} (:tags entry))
+      (should= 5000 (:total-tokens entry))))
+
+  (it "refuses renaming an in-flight session"
+    (helper/create-session! "/test/sessions" "joe" {:crew "main"})
+    (store/mark-in-flight! (store/registered-store) "joe")
+    (let [err (binding [*err* (java.io.StringWriter.)]
+                (should= 1 (sut/run-fn {:home "/test" :_raw-args ["rename" "joe" "skipper"]}))
+                (str *err*))]
+      (should-contain "cannot rename in-flight session 'joe': a turn is in progress. Wait for it to finish or cancel it first." err)
+      (should-not-be-nil (helper/get-session "/test/sessions" "joe"))
+      (should-be-nil (helper/get-session "/test/sessions" "skipper"))))
+
+  (it "refuses a rename collision without clobbering the target"
+    (helper/create-session! "/test/sessions" "joe" {:crew "main"})
+    (helper/create-session! "/test/sessions" "skipper" {:crew "ketch"})
+    (let [err (binding [*err* (java.io.StringWriter.)]
+                (should= 1 (sut/run-fn {:home "/test" :_raw-args ["rename" "joe" "skipper"]}))
+                (str *err*))]
+      (should-contain "cannot rename to 'skipper': a session with that key already exists." err)
+      (should= "ketch" (:crew (helper/get-session "/test/sessions" "skipper")))
+      (should-not-be-nil (helper/get-session "/test/sessions" "joe"))))
+
+  (it "shows rename usage on --help"
+    (let [out (with-out-str
+                (should= 0 (sut/run-fn {:home "/test" :_raw-args ["rename" "--help"]})))]
+      (should-contain "Usage: isaac sessions rename <old-id> <new-id>" out))))

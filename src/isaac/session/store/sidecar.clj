@@ -109,6 +109,17 @@
         (when (c/exists?* fs path) (c/delete*! fs path))
         true))))
 
+(defn- rename-session! [this root old-name new-name fs]
+  (c/rename-session!
+    read-session-store
+    (fn [_store old-id renamed]
+      (when (c/exists?* fs (c/sidecar-path root old-id))
+        (c/delete*! fs (c/sidecar-path root old-id)))
+      (write-sidecar! root renamed fs))
+    now-iso
+    #(store/in-flight? this %)
+    root old-name new-name fs))
+
 (defn update-tokens!
   ([root identifier updates]
    (update-tokens! root identifier updates (runtime-fs!)))
@@ -140,6 +151,8 @@
     (create-session! root name opts fs))
   (delete-session! [_ name]
     (delete-session! root name fs))
+  (rename-session! [this old-name new-name]
+    (rename-session! this root old-name new-name fs))
   (list-sessions [_]
     (c/list-sessions read-session-store root nil fs))
   (list-sessions-by-agent [_ agent]

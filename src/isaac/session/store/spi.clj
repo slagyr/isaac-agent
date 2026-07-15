@@ -14,6 +14,7 @@
 (defprotocol SessionStore
   (open-session! [this name opts])
   (delete-session! [this name])
+  (rename-session! [this old-name new-name])
   (list-sessions [this])
   (list-sessions-by-agent [this agent])
   (most-recent-session [this])

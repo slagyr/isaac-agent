@@ -145,4 +145,50 @@
         (store/open-session! s "joe" {:crew "main" :tags #{:role/worker :project/chess}})
         (store/open-session! s "sue" {:crew "main" :tags #{:role/worker}})
         (should= ["joe"]
-                 (mapv :id (store/by-tags s #{:role/worker :project/chess})))))))
+                 (mapv :id (store/by-tags s #{:role/worker :project/chess}))))))
+
+  (describe "rename-session!"
+
+    (it "moves an idle session to the new key, preserving crew tags and tokens"
+      (let [s (memory/create-store)]
+        (store/open-session! s "joe" {:crew "main" :tags #{:project/x :wip}})
+        (store/update-session! s "joe" {:total-tokens 5000 :last-input-tokens 5000})
+        (store/append-message! s "joe" {:role "user" :content "hello"})
+        (let [result (store/rename-session! s "joe" "skipper")
+              entry  (store/get-session s "skipper")]
+          (should= "skipper" (:id result))
+          (should= "skipper" (:key entry))
+          (should= "main" (:crew entry))
+          (should= #{:project/x :wip} (:tags entry))
+          (should= 5000 (:total-tokens entry))
+          (should= 5000 (:last-input-tokens entry))
+          (should-be-nil (store/get-session s "joe"))
+          (should= 2 (count (store/get-transcript s "skipper"))))))
+
+    (it "refuses a collision without clobbering the target"
+      (let [s (memory/create-store)]
+        (store/open-session! s "joe" {:crew "main"})
+        (store/open-session! s "skipper" {:crew "ketch"})
+        (try
+          (store/rename-session! s "joe" "skipper")
+          (should-fail "expected collision")
+          (catch clojure.lang.ExceptionInfo e
+            (should= :collision (:reason (ex-data e)))
+            (should= "ketch" (:crew (store/get-session s "skipper")))
+            (should-not-be-nil (store/get-session s "joe"))))))
+
+    (it "refuses renaming an in-flight session"
+      (let [s (memory/create-store)]
+        (store/open-session! s "joe" {:crew "main"})
+        (store/mark-in-flight! s "joe")
+        (try
+          (store/rename-session! s "joe" "skipper")
+          (should-fail "expected in-flight refusal")
+          (catch clojure.lang.ExceptionInfo e
+            (should= :in-flight (:reason (ex-data e)))
+            (should-not-be-nil (store/get-session s "joe"))
+            (should-be-nil (store/get-session s "skipper"))))))
+
+    (it "returns nil when the source session is missing"
+      (let [s (memory/create-store)]
+        (should-be-nil (store/rename-session! s "missing" "skipper"))))))
