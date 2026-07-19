@@ -481,7 +481,30 @@
             (let [entry (first (filter #(= :session/compaction-stopped (:event %)) @log/captured-logs))]
               (should-not-be-nil entry)
               (should= :no-progress (:reason entry))
-              (should-not-be-nil (event events "compaction-success"))))))))
+              (should-not-be-nil (event events "compaction-success")))))))
+
+    (it "rechecks after a successful chunked compaction"
+      (let [provider      (->TestProvider marigold/starcore {:api marigold/sky-api})
+            session-key   "compact-chunked"
+            session-store (store/registered-store)
+            events        (atom [])
+            follow-up     (atom nil)]
+        (helper/create-session! test-dir session-key)
+        (with-redefs [compaction/compact!               (fn [& _] {:summary "Chunked summary" :chunked true})
+                      compaction/estimate-prompt-tokens (fn [_ _] 200)
+                      sut/run-compaction-check!         (fn [next-session-key next-opts next-attempt allow-async?]
+                                                          (reset! follow-up [next-session-key next-opts next-attempt allow-async?]))]
+          (#'sut/perform-compaction! session-key 1 800 {:comm           (memory-comm/channel events)
+                                                        :context-window 1000
+                                                        :model          "test-model"
+                                                        :provider       provider
+                                                        :soul           "You are Isaac."
+                                                        :root           test-dir
+                                                        :session-store  session-store})
+          (should-not-be-nil (event events "compaction-success"))
+          (should= session-key (first @follow-up))
+          (should= 2 (nth @follow-up 2))
+          (should= false (nth @follow-up 3))))))
 
   (describe "build-turn"
     #_{:clj-kondo/ignore [:unresolved-symbol]}

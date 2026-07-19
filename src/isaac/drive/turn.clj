@@ -595,20 +595,25 @@
                   (comm/on-compaction-success ch session-key {:summary      (:summary result)
                                                               :tokens-saved (max 0 (- prompt-tokens updated-total))
                                                               :duration-ms  (- (System/currentTimeMillis) started-at)}))
-                (when-not (:chunked result)
-                  (if (>= updated-total prompt-tokens)
-                    (log/warn :session/compaction-stopped
-                              :session session-key
-                              :provider provider-name
-                              :model model
-                              :reason :no-progress
-                              :attempt attempt
-                              :total-tokens updated-total
-                              :context-window context-window)
-                    (run-compaction-check! session-key
-                                           (assoc opts :comm ch :transcript-lock transcript-lock)
-                                           (inc attempt)
-                                           false)))))))))))
+                ;; Recheck after every successful splice — including chunked ones.
+                ;; Chunking only splits the summary LLM calls; the post-splice
+                ;; estimate can still exceed threshold (tool-schema floor, or a
+                ;; model-switch into a much smaller window). Skipping recheck on
+                ;; :chunked left compaction-count stuck at 1 and flaked the
+                ;; smaller-context feature (isaac-h5xm).
+                (if (>= updated-total prompt-tokens)
+                  (log/warn :session/compaction-stopped
+                            :session session-key
+                            :provider provider-name
+                            :model model
+                            :reason :no-progress
+                            :attempt attempt
+                            :total-tokens updated-total
+                            :context-window context-window)
+                  (run-compaction-check! session-key
+                                         (assoc opts :comm ch :transcript-lock transcript-lock)
+                                         (inc attempt)
+                                         false))))))))))
 
 (defn- start-async-compaction! [session-key opts]
   (when-let [lock (reserve-async-compaction! session-key)]

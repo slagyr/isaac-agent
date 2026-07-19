@@ -1199,6 +1199,10 @@
               direct))))))
 
 (defn sessions-match [table]
+  ;; Await any in-flight turn first — user-sends only waits 50ms before parking
+  ;; the future, and this matcher is often the first Then after a send.
+  (await-turn!)
+  (await-acp-turn!)
   (let [listing (mapv session-match-entry (with-feature-fs #(list-sessions)))
         result  (match/match-entries table listing)]
     (g/should= [] (:failures result))))

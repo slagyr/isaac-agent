@@ -155,9 +155,10 @@ Feature: Context Compaction Logging
       | model | claude-opus-4-6 |
       | provider | grover |
       | context-window | 96 |
-    # context-window kept well inside the "needs 2 compactions" plateau (≤32),
-    # not at its 33-token upper edge, so small token-count differences across
-    # environments can't tip the loop down to a single compaction (CI flake).
+    # context-window well below the live estimate floor so rubberband must loop.
+    # First pass is often chunked (summary-request > window); recheck still runs
+    # after chunked success (drive/turn perform-compaction!) so count reaches 2
+    # deterministically (isaac-h5xm flake: Expected 2 got 1 when recheck skipped).
     And the isaac EDN file "config/models/qwen3-coder.edn" exists with:
       | path | value |
       | model | qwen3-coder:30b |
