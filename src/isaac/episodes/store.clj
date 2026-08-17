@@ -1,12 +1,22 @@
 (ns isaac.episodes.store
   "Filesystem layout for closed episodes:
      <root>/episodes/<crew>/<episode-id>/episode.edn
-     <root>/episodes/<crew>/<episode-id>/<scene-id>.edn"
+     <root>/episodes/<crew>/<episode-id>/<scene-id>.md
+
+   Scenes are markdown with YAML frontmatter (structure) + distilled text body.
+   episode.edn stays EDN (all structure, no prose).
+
+   Frontmatter split/parse matches isaac.config's md-with-frontmatter
+   component (same regex + clj-yaml)."
   (:require
+    [clj-yaml.core :as yaml]
     [clojure.edn :as edn]
     [clojure.string :as str]
     [isaac.fs :as fs]
     [isaac.session.store.impl-common :as impl]))
+
+(def ^:private SCENE_FRONTMATTER_KEYS
+  [:id :start-id :end-id :started-at :ended-at :seal-reason :gist])
 
 (defn episodes-root [root]
   (str root "/episodes"))
@@ -20,8 +30,8 @@
 (defn- episode-edn-path [root crew episode-id]
   (str (episode-path root crew episode-id) "/episode.edn"))
 
-(defn- scene-edn-path [root crew episode-id scene-id]
-  (str (episode-path root crew episode-id) "/" scene-id ".edn"))
+(defn- scene-md-path [root crew episode-id scene-id]
+  (str (episode-path root crew episode-id) "/" scene-id ".md"))
 
 (defn- write-edn! [fs* path value]
   (fs/mkdirs fs* (fs/parent path))
@@ -31,6 +41,62 @@
   (when (fs/exists? fs* path)
     (edn/read-string (fs/slurp fs* path))))
 
+(defn- yaml-scalar [value]
+  (cond
+    (keyword? value) (name value)
+    (string? value)  value
+    (number? value)  value
+    (true? value)    true
+    (false? value)   false
+    (nil? value)     nil
+    :else            (str value)))
+
+(defn- scene->frontmatter [scene]
+  (into (array-map)
+        (keep (fn [k]
+                (when-let [v (get scene k)]
+                  [(name k) (yaml-scalar v)]))
+              SCENE_FRONTMATTER_KEYS)))
+
+(defn- format-scene-md [scene]
+  (let [fm   (scene->frontmatter scene)
+        body (or (:text scene) "")]
+    (str "---\n"
+         (yaml/generate-string fm :dumper-options {:flow-style :block})
+         "---\n"
+         (when-not (str/blank? body)
+           (str "\n" body
+                (when-not (str/ends-with? body "\n") "\n"))))))
+
+(defn- write-scene-md! [fs* path scene]
+  (fs/mkdirs fs* (fs/parent path))
+  (fs/spit fs* path (format-scene-md scene)))
+
+;; Same split regex as isaac.config.loader / isaac.config.parse (md frontmatter).
+(defn- split-frontmatter [content]
+  (when-let [[_ frontmatter body]
+             (re-matches #"(?s)\A---\r?\n(.*?)\r?\n---\r?\n?(.*)\z" content)]
+    {:frontmatter frontmatter
+     :body        (str/replace body #"^\r?\n" "")}))
+
+(defn- keywordize-seal-reason [v]
+  (cond
+    (keyword? v) v
+    (string? v)  (keyword v)
+    :else        v))
+
+(defn- parse-scene-md [content]
+  (when-let [{:keys [frontmatter body]} (split-frontmatter content)]
+    (let [data (yaml/parse-string frontmatter :keywords true)
+          ;; File convention adds a trailing newline; strip it so :text
+          ;; round-trips to the sealed scene value.
+          text (str/replace (or body "") #"\r?\n\z" "")]
+      (cond-> (select-keys data SCENE_FRONTMATTER_KEYS)
+        (:seal-reason data)
+        (update :seal-reason keywordize-seal-reason)
+        true
+        (assoc :text text)))))
+
 (defn- list-dir-names [fs* dir]
   (if (fs/exists? fs* dir)
     (->> (or (fs/children fs* dir) [])
@@ -39,9 +105,16 @@
          vec)
     []))
 
+(defn- scene-file?
+  "True for scene payloads — .md preferred; legacy .edn still recognized for cleanup."
+  [name]
+  (and (or (str/ends-with? name ".md")
+           (str/ends-with? name ".edn"))
+       (not= name "episode.edn")))
+
 (defn write-episode!
-  "Persist episode record + scene files. When `:replace-scenes?` is true,
-   deletes prior `*.edn` scene files (keeps episode.edn until rewrite)."
+  "Persist episode record + scene markdown files. When `:replace-scenes?` is true,
+   deletes prior scene files (`.md` and legacy `.edn`; keeps episode.edn until rewrite)."
   ([fs* root episode scenes]
    (write-episode! fs* root episode scenes {}))
   ([fs* root episode scenes {:keys [replace-scenes?]}]
@@ -51,12 +124,11 @@
      (fs/mkdirs fs* dir)
      (when replace-scenes?
        (doseq [name (list-dir-names fs* dir)
-               :when (and (str/ends-with? name ".edn")
-                          (not= name "episode.edn"))]
+               :when (scene-file? name)]
          (fs/delete fs* (str dir "/" name))))
      (write-edn! fs* (episode-edn-path root crew id) episode)
      (doseq [scene scenes]
-       (write-edn! fs* (scene-edn-path root crew id (:id scene)) scene))
+       (write-scene-md! fs* (scene-md-path root crew id (:id scene)) scene))
      episode)))
 
 (defn read-episode
@@ -65,15 +137,18 @@
   (read-edn fs* (episode-edn-path root crew episode-id)))
 
 (defn read-scene
+  "Read a scene markdown file (YAML frontmatter + body as :text)."
   [fs* root crew episode-id scene-id]
-  (read-edn fs* (scene-edn-path root crew episode-id scene-id)))
+  (let [path (scene-md-path root crew episode-id scene-id)]
+    (when (fs/exists? fs* path)
+      (parse-scene-md (fs/slurp fs* path)))))
 
 (defn list-scene-ids
-  "Scene file basenames (sans .edn), sorted — chronological when ids are timestamped."
+  "Scene file basenames (sans .md), sorted — chronological when ids are timestamped."
   [fs* root crew episode-id]
   (->> (list-dir-names fs* (episode-path root crew episode-id))
-       (filter #(and (str/ends-with? % ".edn") (not= % "episode.edn")))
-       (map #(subs % 0 (- (count %) 4)))
+       (filter #(str/ends-with? % ".md"))
+       (map #(subs % 0 (- (count %) 3)))
        sort
        vec))
 

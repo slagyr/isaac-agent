@@ -31,7 +31,7 @@
             ["Usage: isaac episodes migrate-session <session-id> [options]"
              ""
              "Materialize a session as a closed episode under"
-             "~/.isaac/episodes/<crew>/<episode-id>/ (episode.edn + scene files)."
+             "~/.isaac/episodes/<crew>/<episode-id>/ (episode.edn + scene .md files)."
              "Session files are not modified."
              ""
              "Options:"

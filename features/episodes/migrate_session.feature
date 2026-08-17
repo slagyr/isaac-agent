@@ -1,8 +1,9 @@
 Feature: Episodes — migrate-session
   `isaac episodes migrate-session <session-id>` materializes an existing
   session as a closed episode: a directory under ~/.isaac/episodes/<crew>/
-  holding episode.edn plus one immutable EDN file per scene, with gists
-  written by the configured gist model (:episodes {:gist-model ...}).
+  holding episode.edn plus one immutable markdown scene file
+  (<scene-id>.md: YAML frontmatter + distilled text body) per scene, with
+  gists written by the configured gist model (:episodes {:gist-model ...}).
   Session files remain untouched and authoritative. Ids are timestamped
   (<yyyy-MM-dd-HHmm>-<chaos>), taken from the session's own message times,
   not migration time. The segmentation LLM speaks span-local ordinals in

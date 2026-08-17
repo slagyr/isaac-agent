@@ -118,8 +118,9 @@
    (supports #\"regex\" cells). Remembers the episode for subsequent scene steps.")
 
 (defthen "that episode has scenes matching:" isaac.episodes.episode-steps/that-episode-has-scenes-matching
-  "Asserts sealed scene files for the current episode, in id order. Columns:
-   gist, text (regex ok). Count and order must match the table.")
+  "Asserts sealed scene .md files (YAML frontmatter + body) for the current
+   episode, in id order. Columns: gist, text (regex ok). Count and order must
+   match the table.")
 
 (defthen #"scene (\d+) of that episode does not contain \"([^\"]+)\"" isaac.episodes.episode-steps/scene-n-does-not-contain
   "Absence assertion on scene N's :text (1-based).")
