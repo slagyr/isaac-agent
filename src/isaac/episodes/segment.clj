@@ -15,26 +15,33 @@
 (def DEFAULT_SIZE_CAP 80)
 
 (def ^:private BOUNDARY_LINE
-  #"^\s*(?:(\d+)\s*-\s*(\d+)|(\d+))\s*:\s*(.+?)\s*$")
+  #"(?i)^\s*(?:(\d+)\s*-\s*(\d+|end|present|last)|(\d+))\s*:\s*(.+?)\s*$")
 
 (defn parse-scenes
   "Parse LLM text into a vector of {:start :end :gist} maps.
 
    Line format only — non-matching lines (preamble, fences, blanks) are
-   ignored. Returns [] when no boundary lines are found (caller treats
-   empty as a parse failure against tiling)."
-  [text]
-  (if-not (string? text)
-    []
-    (->> (str/split-lines text)
-         (keep (fn [line]
-                 (when-let [[_ a b solo gist] (re-matches BOUNDARY_LINE line)]
-                   (let [start (Long/parseLong (or a solo))
-                         end   (Long/parseLong (or b solo))]
-                     {:start start
-                      :end   end
-                      :gist  (str/trim gist)}))))
-         vec)))
+   ignored. An open-ended end (`end`/`present`/`last`) resolves to `n`
+   when known; dropped otherwise (tiling still gates correctness).
+   Returns [] when no boundary lines are found (caller treats empty as
+   a parse failure against tiling)."
+  ([text] (parse-scenes text nil))
+  ([text n]
+   (if-not (string? text)
+     []
+     (->> (str/split-lines text)
+          (keep (fn [line]
+                  (when-let [[_ a b solo gist] (re-matches BOUNDARY_LINE line)]
+                    (let [start (Long/parseLong (or a solo))
+                          end   (cond
+                                  solo               start
+                                  (re-matches #"\d+" b) (Long/parseLong b)
+                                  :else              n)]
+                      (when end
+                        {:start start
+                         :end   (long end)
+                         :gist  (str/trim gist)})))))
+          vec))))
 
 (defn valid-tiling?
   "True when scenes are sorted non-overlapping contiguous cover of 1..n."
@@ -166,7 +173,7 @@
                        :message    (format-provider-error provider response)
                        :response   response}
                       (let [text   (response-text response)
-                            scenes (parse-scenes text)]
+                            scenes (parse-scenes text (count distilled-messages))]
                         (if (and (seq scenes)
                                  (valid-tiling? (count distilled-messages) scenes))
                           {:ok (resolve-ordinals distilled-messages scenes) :raw text}

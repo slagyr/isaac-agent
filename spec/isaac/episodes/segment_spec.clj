@@ -35,6 +35,18 @@
 
     (it "returns empty when no boundary lines match"
       (should= [] (sut/parse-scenes "this is not a scene line at all")))
+
+    (it "resolves an open-ended final boundary (end/present/last) to n"
+      (should= [{:start 1 :end 2 :gist "wine"}
+                {:start 3 :end 5 :gist "wrap up"}]
+               (sut/parse-scenes "1-2: wine\n3-present: wrap up" 5))
+      (should= [{:start 1 :end 4 :gist "all of it"}]
+               (sut/parse-scenes "1-end: all of it" 4))
+      (should= [{:start 2 :end 6 :gist "tail"}]
+               (sut/parse-scenes "2-last: tail" 6)))
+
+    (it "drops open-ended boundaries when n is unknown"
+      (should= [] (sut/parse-scenes "3-present: wrap up")))
     )
 
   (context "validate-tiling"

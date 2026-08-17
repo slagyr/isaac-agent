@@ -80,5 +80,13 @@
             prompt (sut/format-span-prompt msgs nil)]
         (should (re-find #"(?m)^2\. \[toolResult\] \(dropped\)$" prompt))
         (should (re-find #"(?m)^3\. \[assistant\] a$" prompt))))
+
+    (it "states the message count and requires the final line to end at N"
+      (let [msgs [{:id "a" :role "user" :text "one" :dropped? false}
+                  {:id "b" :role "assistant" :text "two" :dropped? false}
+                  {:id "c" :role "user" :text "three" :dropped? false}]
+            prompt (sut/format-span-prompt msgs nil)]
+        (should (re-find #"There are 3 messages" prompt))
+        (should (re-find #"final line must end at 3" prompt))))
     )
   )

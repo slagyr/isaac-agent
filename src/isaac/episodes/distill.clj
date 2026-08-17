@@ -145,7 +145,10 @@
         preamble (when-not (str/blank? preceding-summary)
                    (str "Preceding context (summary of the conversation before this point):\n"
                         preceding-summary "\n\n"))]
-    (str SEGMENT_INSTRUCTIONS "\n"
+    (str SEGMENT_INSTRUCTIONS
+         "There are " (count distilled-messages) " messages. "
+         "Your final line must end at " (count distilled-messages) ".\n"
+         "\n"
          preamble
          "Messages:\n"
          body)))
