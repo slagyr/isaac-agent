@@ -926,7 +926,6 @@ Feature: Config Command
     And the stdout does not contain "https://api.x.ai/v1"
     And the exit code is 0
 
-  @wip
   Scenario: config keys with no path lists root keys
     Given config file "isaac.edn" containing:
       """
@@ -959,7 +958,6 @@ Feature: Config Command
     And the stdout does not contain "sk-real-secret-value"
     And the exit code is 0
 
-  @wip
   Scenario: config list with no path lists root keys and sources
     Given config file "isaac.edn" containing:
       """
