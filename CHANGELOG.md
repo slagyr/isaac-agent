@@ -9,6 +9,7 @@
 - migrate-session: line-format segmentation, provider-error abort, flagged-span `:raw`, 1-based span numbers (isaac-80pq).
 - Optional embedding seam (`:embedding` config, Embedder protocol, ollama adapter, `isaac embed` CLI) for phase-1 recall (isaac-5lri).
 - Episode scenes stored as `<scene-id>.md` (YAML frontmatter + distilled text body); `episode.edn` unchanged (isaac-lq7x).
+- Mid-loop transcript flush: each toolCall is persisted before exec and each toolResult immediately after; cancel leaves a dangling toolCall (isaac-l7lv).
 
 ### Breaking
 

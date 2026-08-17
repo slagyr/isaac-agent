@@ -149,22 +149,38 @@
 (defn- append-error! [ctx session-key error-entry]
   (with-transcript-lock session-key #(store/append-error! (or (:session-store ctx) (nexus/get-in [:sessions :store])) session-key error-entry)))
 
+(defn- persist-tool-call!
+  "Write the assistant toolCall entry as soon as the call is known."
+  [ctx session-key tc]
+  (when (and ctx session-key tc)
+    (append-message! ctx session-key
+                     {:role    "assistant"
+                      :content [{:type      "toolCall"
+                                 :id        (:id tc)
+                                 :name      (:name tc)
+                                 :arguments (:arguments tc)}]})))
+
+(defn- persist-tool-result!
+  "Write the toolResult entry as soon as the tool returns."
+  [ctx session-key tc result]
+  (when (and ctx session-key tc)
+    (let [error? (and (string? result) (str/starts-with? result "Error:"))]
+      (append-message! ctx session-key
+                       (cond-> {:role "toolResult" :id (:id tc) :content result}
+                         error? (assoc :isError true))))))
+
 (defn run-tool-calls!
+  "Legacy dump of [tool-call result] pairs. Mid-loop persist (isaac-l7lv)
+   writes each pair as it happens; this remains for callers that still
+   accumulate pairs and flush once. Prefer persist-tool-call! /
+   persist-tool-result!."
   ([session-key tool-results]
     (run-tool-calls! {} session-key tool-results))
   ([ctx-or-root session-key tool-results]
    (let [ctx (normalize-ctx ctx-or-root)]
      (doseq [[tc result] tool-results]
-       (append-message! ctx session-key
-                        {:role    "assistant"
-                         :content [{:type      "toolCall"
-                                    :id        (:id tc)
-                                    :name      (:name tc)
-                                    :arguments (:arguments tc)}]})
-       (let [error? (str/starts-with? result "Error:")]
-         (append-message! ctx session-key
-                          (cond-> {:role "toolResult" :id (:id tc) :content result}
-                            error? (assoc :isError true))))))))
+       (persist-tool-call! ctx session-key tc)
+       (persist-tool-result! ctx session-key tc result)))))
 
 (defn- normalized-error [err]
   (if (string? err) (keyword err) err))
@@ -854,13 +870,15 @@
 
 (defn- record-tool-call!
   "Wrap a tool invocation with comm callbacks, cancellation tracking, and
-   accumulation into the executed-tools atom for later transcript persistence."
-  [{:keys [session-key allowed-tools module-index executed-tools caps] ch :comm} name arguments]
+   mid-loop transcript persist: toolCall before exec, toolResult after return.
+   Still accumulates into executed-tools for loop bookkeeping (not re-persist)."
+  [{:keys [session-key allowed-tools module-index executed-tools caps ctx] ch :comm} name arguments]
   (let [tc         {:id (str (java.util.UUID/randomUUID)) :name name :arguments arguments :type "toolCall"}
         tool-state (atom :pending)
         cancel!    #(when (compare-and-set! tool-state :pending :cancelled)
                       (comm/on-tool-cancel ch session-key tc))]
     (comm/on-tool-call ch session-key tc)
+    (persist-tool-call! ctx session-key tc)
     (bridge/on-cancel! session-key cancel!)
     (let [tool-fn* #_{:clj-kondo/ignore [:invalid-arity]} (tool-registry/tool-fn allowed-tools module-index caps)
           result   (tool-fn*
@@ -870,13 +888,15 @@
         (cancel!)
         (throw (ex-info "cancelled" {:type :cancelled})))
       (when (compare-and-set! tool-state :pending :completed)
+        (persist-tool-result! ctx session-key tc result)
         (swap! executed-tools conj [tc result])
         (comm/on-tool-result ch session-key tc result))
       result)))
 
 (defn- execute-llm-turn!
-  "Build the chat request, drive the tool-loop, persist tool pairs and the
-   final assistant response. Returns the final result map."
+  "Build the chat request, drive the tool-loop, and persist the final
+   assistant response. Tool pairs are written mid-loop by record-tool-call!.
+   Returns the final result map."
   [session-key input ctx]
   (let [{:keys [provider allowed-tools effort boot-files rules-text skill-menu-text]} ctx
         charge        (:charge ctx)
@@ -927,7 +947,8 @@
                                                        :allowed-tools  allowed-tools
                                                       :module-index   module-index
                                                       :caps           caps
-                                                      :executed-tools executed-tools})]
+                                                      :executed-tools executed-tools
+                                                      :ctx            ctx})]
       (when-let [done (:compaction-llm-done (active-compaction-state session-key))]
         (deref done 5000 nil))
       (let [chat-fn     (chat-fn-for ch session-key p request)
@@ -957,10 +978,7 @@
             (or (= :cancelled (:error result))
                 (bridge/cancelled-response? result)
                 (bridge/cancelled? session-key))
-            (do
-              (when (seq @executed-tools)
-                (run-tool-calls! ctx session-key @executed-tools))
-              (suspend/interrupt-result session-key))
+            (suspend/interrupt-result session-key)
 
             (:unavailable? result)
             result
@@ -969,8 +987,6 @@
             (do
               (when-not (:error result)
                 (log/debug :chat/stream-completed :session session-key))
-              (when (seq @executed-tools)
-                (run-tool-calls! ctx session-key @executed-tools))
               (or (process-response! ctx session-key result {:model model :provider provider-name})
                   result))))))))
 

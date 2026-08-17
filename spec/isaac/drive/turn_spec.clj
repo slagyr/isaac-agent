@@ -291,6 +291,110 @@
           (should= [] @executed-tools)
           (should= ["tool-call" "tool-cancel"] (mapv :event @events))))))
 
+
+  (describe "mid-loop transcript flush"
+    #_{:clj-kondo/ignore [:unresolved-symbol]}
+    (around [example]
+      (nexus/-with-nexus {:root test-dir :fs (fs/mem-fs)}
+        (helper/with-memory-store
+          (example))))
+
+    (it "writes the assistant toolCall before the tool runs"
+      (helper/create-session! test-dir "mid-flush-call")
+      (let [events         (atom [])
+            executed-tools (atom [])
+            seen-mid       (atom nil)
+            ctx            {:session-store (store/registered-store)}]
+        (with-redefs [bridge/on-cancel!     (fn [_ _] nil)
+                      tool-registry/tool-fn (fn [_ _ _]
+                                              (fn [_ _]
+                                                (reset! seen-mid
+                                                        (->> (helper/get-transcript test-dir "mid-flush-call")
+                                                             (keep #(get-in % [:message :content]))
+                                                             flatten
+                                                             (filter #(= "toolCall" (:type %)))
+                                                             last))
+                                                {:result "ok"}))]
+          (#'sut/record-tool-call! {:comm           (memory-comm/channel events)
+                                    :session-key    "mid-flush-call"
+                                    :allowed-tools  #{"search"}
+                                    :executed-tools executed-tools
+                                    :ctx            ctx}
+                                   "search"
+                                   {"query" "logs"})
+          (should-not-be-nil @seen-mid)
+          (should= "search" (:name @seen-mid))
+          (should= (get-in (first @executed-tools) [0 :id]) (:id @seen-mid))
+          (should= "toolCall" (:type @seen-mid)))))
+
+    (it "writes the toolResult immediately after the tool returns"
+      (helper/create-session! test-dir "mid-flush-result")
+      (let [events         (atom [])
+            executed-tools (atom [])
+            ctx            {:session-store (store/registered-store)}]
+        (with-redefs [bridge/on-cancel!     (fn [_ _] nil)
+                      tool-registry/tool-fn (fn [_ _ _]
+                                              (fn [_ _] {:result "ok"}))]
+          (#'sut/record-tool-call! {:comm           (memory-comm/channel events)
+                                    :session-key    "mid-flush-result"
+                                    :allowed-tools  #{"search"}
+                                    :executed-tools executed-tools
+                                    :ctx            ctx}
+                                   "search"
+                                   {"query" "logs"})
+          (let [entries   (helper/get-transcript test-dir "mid-flush-result")
+                messages  (mapv :message entries)
+                last-two  (take-last 2 messages)
+                tc-id     (get-in (first @executed-tools) [0 :id])]
+            (should= "assistant" (:role (first last-two)))
+            (should= "toolCall" (get-in (first last-two) [:content 0 :type]))
+            (should= tc-id (get-in (first last-two) [:content 0 :id]))
+            (should= "toolResult" (:role (second last-two)))
+            (should= tc-id (:id (second last-two)))
+            (should= {:result "ok"} (:content (second last-two)))))))
+
+    (it "leaves a dangling toolCall and no result when the tool reports cancelled"
+      (helper/create-session! test-dir "mid-flush-cancel")
+      (let [events         (atom [])
+            executed-tools (atom [])
+            ctx            {:session-store (store/registered-store)}]
+        (with-redefs [bridge/on-cancel!     (fn [_ _] nil)
+                      tool-registry/tool-fn (fn [_ _ _]
+                                              (fn [_ _] {:error :cancelled}))]
+          (should-throw clojure.lang.ExceptionInfo
+                        "cancelled"
+                        (#'sut/record-tool-call! {:comm           (memory-comm/channel events)
+                                                  :session-key    "mid-flush-cancel"
+                                                  :allowed-tools  #{"search"}
+                                                  :executed-tools executed-tools
+                                                  :ctx            ctx}
+                                                "search"
+                                                {"query" "logs"}))
+          (let [messages (mapv :message (helper/get-transcript test-dir "mid-flush-cancel"))]
+            (should= 1 (count (filter #(= "toolCall" (get-in % [:content 0 :type])) messages)))
+            (should= 0 (count (filter #(= "toolResult" (:role %)) messages)))))))
+
+    (it "does not double-write tool pairs after a two-tool turn"
+      (helper/create-session! test-dir "mid-flush-two")
+      (let [events         (atom [])
+            executed-tools (atom [])
+            ctx            {:session-store (store/registered-store)}
+            rec            {:comm           (memory-comm/channel events)
+                            :session-key    "mid-flush-two"
+                            :allowed-tools  #{"search" "lookup"}
+                            :executed-tools executed-tools
+                            :ctx            ctx}]
+        (with-redefs [bridge/on-cancel!     (fn [_ _] nil)
+                      tool-registry/tool-fn (fn [_ _ _]
+                                              (fn [_ _] {:result "ok"}))]
+          (#'sut/record-tool-call! rec "search" {"query" "a"})
+          (#'sut/record-tool-call! rec "lookup" {"query" "b"})
+          (let [messages   (mapv :message (helper/get-transcript test-dir "mid-flush-two"))
+                tool-calls (filter #(= "toolCall" (get-in % [:content 0 :type])) messages)
+                results    (filter #(= "toolResult" (:role %)) messages)]
+            (should= 2 (count tool-calls))
+            (should= 2 (count results))
+            (should= ["search" "lookup"] (mapv #(get-in % [:content 0 :name]) tool-calls)))))))
   (describe "build-chat-request"
 
     (it "passes nonce through to the provider prompt builder"
