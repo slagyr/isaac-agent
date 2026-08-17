@@ -1,10 +1,10 @@
 (ns isaac.recall.embedding-spec
   (:require
     [clojure.string :as str]
-    [clojure.string :as str]
     [isaac.llm.api.grover :as grover]
     [isaac.llm.http :as llm-http]
     [isaac.recall.embedding :as sut]
+    [isaac.recall.embedding.cli :as cli]
     [isaac.recall.embedding.ollama :as ollama]
     [isaac.recall.embedding.protocol :as protocol]
     [speclj.core :refer :all]))
@@ -65,5 +65,16 @@
           (should (str/ends-with? (:url req) "/api/embed"))
           (should= "nomic-embed-text" (get-in req [:body :model]))
           (should= ["hello"] (get-in req [:body :input])))))
+    )
+
+  (context "cli vector formatting"
+
+    (it "prints whole-number components as integers (grover stub contract)"
+      (should= "[5 532 104 111]" (#'cli/format-vector [5 532 104 111]))
+      (should= "[5 532]" (#'cli/format-vector [5.0 532.0])))
+
+    (it "preserves float precision for real embeddings"
+      (should= "[0.025516573 -0.21695295]"
+               (#'cli/format-vector [0.025516573 -0.21695295])))
     )
   )

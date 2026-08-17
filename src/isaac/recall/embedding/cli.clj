@@ -33,8 +33,14 @@
   (binding [*out* *err*]
     (println msg)))
 
-(defn- format-vector [v]
-  (pr-str (mapv long v)))
+(defn- format-component [x]
+  (if (== x (long x)) (long x) x))
+
+(defn- format-vector
+  "Whole-number components print as integers (grover's stub contract);
+   real float embeddings keep their precision."
+  [v]
+  (pr-str (mapv format-component v)))
 
 (defn run
   "Embed each argument as one text. Prints one vector line per argument.
