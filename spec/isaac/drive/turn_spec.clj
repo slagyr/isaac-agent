@@ -17,12 +17,11 @@
     [isaac.marigold.agent :as marigold.agent]
     [isaac.session.context :as session-ctx]
     [isaac.session.store.spi :as store]
-    [isaac.session.store.sidecar :as sidecar-store]
     [isaac.session.spec-helper :as helper]
     [isaac.nexus :as nexus]
     [isaac.tool.builtin :as builtin]
     [isaac.tool.registry :as tool-registry]
-    [speclj.core :refer :all]))
+    [speclj.core :refer [around describe it should should-not-be-nil should-throw should=]]))
 
 (def test-dir marigold/home)
 

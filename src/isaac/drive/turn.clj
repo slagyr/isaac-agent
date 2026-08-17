@@ -649,7 +649,7 @@
                                                       :splice-ready        splice-ready})
       future*)))
 
-(defn- compaction-estimate-opts [session-key {:keys [provider allowed-tools module-index] :as opts}]
+(defn- compaction-estimate-opts [_session-key {:keys [provider allowed-tools module-index] :as opts}]
   (assoc opts :tools (when provider (active-tools provider allowed-tools module-index))))
 
 (defn- run-compaction-check! [session-key {:keys [context-window model provider] :as opts} attempt allow-async?]
