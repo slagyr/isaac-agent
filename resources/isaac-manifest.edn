@@ -73,7 +73,11 @@
   :embed
   {:usage "embed [options] [text ...]",
    :summary "Embed text with the configured embedding provider",
-   :namespace isaac.recall.embedding.cli}},
+   :namespace isaac.recall.embedding.cli},
+  :episodes
+  {:usage "episodes [subcommand] [options]",
+   :summary "Manage episodic memory (migrate sessions to scenes + gists)",
+   :namespace isaac.episodes.cli}},
  :isaac.agent/llm-api
  {:messages {:factory isaac.llm.api.messages/make},
   :grover {:factory isaac.llm.api.grover/make},
@@ -653,7 +657,16 @@
      :model
      {:type :string,
       :description "Wire model id for the embedding provider (never enters :models)",
-      :validations [[:present-when? :source :provider]]}}}}},
+      :validations [[:present-when? :source :provider]]}}}},
+   :episodes
+   {:schema
+    {:name :episodes,
+     :type :map,
+     :description "Episodic memory settings (migration / gisting)",
+     :schema
+     {:gist-model
+      {:type :id,
+       :description "Chat model ref used for scene segmentation + gisting (defaults to :defaults :model)"}}}}},
 
  :isaac.config/check
  {:comm-reserved-schema

@@ -92,12 +92,36 @@
                                      (= (str (:value cell)) actual))))
                       {:match true}
                       {:match false :message (str "Expected " (pr-str (:value cell)) ", got: " (pr-str actual))})
-    :regex         (if (and (some? actual) (re-matches (:pattern cell) (str actual)))
-                     {:match true}
-                     {:match false :message (str "Expected match for " (:pattern cell) ", got: " (pr-str actual))})
-    :regex-capture (if (and (some? actual) (re-matches (:pattern cell) (str actual)))
-                     {:match true :capture {(:name cell) (str actual)}}
-                     {:match false :message (str "Expected match for " (:pattern cell) ", got: " (pr-str actual))})
+    :regex         (cond
+                     (nil? actual)
+                     {:match false :message (str "Expected match for " (:pattern cell) ", got: nil")}
+
+                     (string? actual)
+                     (if (re-matches (:pattern cell) actual)
+                       {:match true}
+                       {:match false :message (str "Expected match for " (:pattern cell) ", got: " (pr-str actual))})
+
+                     ;; Nested collections (e.g. :messages) — pr-str + substring search
+                     ;; so feature cells like #".*foo.*" can look inside without a path.
+                     :else
+                     (let [s (pr-str actual)]
+                       (if (re-find (:pattern cell) s)
+                         {:match true}
+                         {:match false :message (str "Expected match for " (:pattern cell) ", got: " (pr-str actual))})))
+    :regex-capture (cond
+                     (nil? actual)
+                     {:match false :message (str "Expected match for " (:pattern cell) ", got: nil")}
+
+                     (string? actual)
+                     (if (re-matches (:pattern cell) actual)
+                       {:match true :capture {(:name cell) actual}}
+                       {:match false :message (str "Expected match for " (:pattern cell) ", got: " (pr-str actual))})
+
+                     :else
+                     (let [s (pr-str actual)]
+                       (if (re-find (:pattern cell) s)
+                         {:match true :capture {(:name cell) s}}
+                         {:match false :message (str "Expected match for " (:pattern cell) ", got: " (pr-str actual))})))
     :ref           (let [expected (get captures (:name cell))]
                       (if (= expected (str actual))
                         {:match true}

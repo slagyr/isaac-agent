@@ -1401,7 +1401,7 @@
 
 (defn last-llm-request-matches [table]
   (await-turn!)
-  (let [request (g/get :llm-request)
+  (let [request (last-llm-request)
         result  (match/match-object table request)]
     (g/should= [] (:failures result))))
 

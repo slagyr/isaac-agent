@@ -1,0 +1,151 @@
+(ns isaac.episodes.distill
+  "Distill transcript messages for segmentation/gisting.
+
+   Keeps user+assistant text; collapses toolCall items to one-line markers;
+   drops toolResult payloads from scene text (ordinals still count them)."
+  (:require
+    [cheshire.core :as json]
+    [clojure.edn :as edn]
+    [clojure.string :as str]
+    [isaac.session.transcript :as transcript]))
+
+(def ^:private ARG_SUMMARY_MAX 80)
+
+(defn- truncate [s n]
+  (let [s (str s)]
+    (if (<= (count s) n) s (str (subs s 0 n) "…"))))
+
+(defn- arg-summary [arguments]
+  (cond
+    (nil? arguments) ""
+    (string? arguments)
+    (let [trimmed (str/trim arguments)]
+      (if (or (str/starts-with? trimmed "{") (str/starts-with? trimmed "["))
+        (try
+          (arg-summary (json/parse-string trimmed true))
+          (catch Exception _ (truncate trimmed ARG_SUMMARY_MAX)))
+        (truncate trimmed ARG_SUMMARY_MAX)))
+    (map? arguments)
+    (->> arguments
+         (map (fn [[k v]]
+                (str (if (keyword? k) (name k) (str k))
+                     "="
+                     (truncate (if (string? v) v (pr-str v)) 40))))
+         (str/join " ")
+         (#(truncate % ARG_SUMMARY_MAX)))
+    :else
+    (truncate (pr-str arguments) ARG_SUMMARY_MAX)))
+
+(defn- tool-marker [call]
+  (let [name (or (:name call) (get call "name") "tool")
+        args (or (:arguments call) (get call "arguments"))
+        summary (arg-summary args)]
+    (if (str/blank? summary)
+      (str "(tool " name ")")
+      (str "(tool " name " " summary ")"))))
+
+(defn- parse-content [content]
+  (cond
+    (nil? content) nil
+    (string? content)
+    (let [trimmed (str/trim content)]
+      (if (and (str/starts-with? trimmed "[") (str/ends-with? trimmed "]"))
+        (try
+          (let [parsed (json/parse-string trimmed true)]
+            (if (and (sequential? parsed) (every? map? parsed)) (vec parsed) content))
+          (catch Exception _
+            (try
+              (let [parsed (edn/read-string trimmed)]
+                (if (and (sequential? parsed) (every? map? parsed)) (vec parsed) content))
+              (catch Exception _ content))))
+        content))
+    :else content))
+
+(defn- content-parts [content]
+  (let [content (parse-content content)]
+    (cond
+      (string? content) [{:kind :text :text content}]
+      (and (sequential? content) (every? map? content))
+      (mapv (fn [item]
+              (let [type (str (or (:type item) (get item "type")))]
+                (cond
+                  (= "text" type)
+                  {:kind :text :text (or (:text item) (get item "text") "")}
+                  (= "toolCall" type)
+                  {:kind :tool :call item}
+                  :else
+                  {:kind :other})))
+            content)
+      :else
+      (when-let [t (transcript/content->text content)]
+        [{:kind :text :text t}]))))
+
+(defn message-text
+  "Distilled text for a transcript message entry, or nil when dropped."
+  [entry]
+  (let [message (or (:message entry) entry)
+        role    (or (:role message) (get message "role"))]
+    (when-not (#{"toolResult" "tool"} role)
+      (let [parts (content-parts (:content message))]
+        (when (seq parts)
+          (->> parts
+               (keep (fn [p]
+                       (case (:kind p)
+                         :text (when-not (str/blank? (:text p)) (:text p))
+                         :tool (tool-marker (:call p))
+                         nil)))
+               (str/join " ")
+               str/trim
+               not-empty))))))
+
+(defn distill-entry
+  "Normalize a transcript message entry for span tiling.
+   Always returns a map with :id :timestamp :role :text :dropped?."
+  [entry]
+  (let [message (or (:message entry) {})
+        role    (or (:role message) "unknown")
+        text    (message-text entry)]
+    {:id        (:id entry)
+     :timestamp (:timestamp entry)
+     :role      role
+     :text      text
+     :dropped?  (nil? text)}))
+
+(defn distill-messages
+  "Distill only message-typed transcript entries (skip session header/compaction)."
+  [transcript]
+  (->> transcript
+       (filter #(= "message" (:type %)))
+       (mapv distill-entry)))
+
+(def ^:private SEGMENT_INSTRUCTIONS
+  (str "Segment the numbered conversation into contiguous topical scenes.\n"
+       "Respond with ONLY a Clojure EDN vector of maps. Each map must have:\n"
+       "  :start  (int, inclusive, 1-based ordinal in this list)\n"
+       "  :end    (int, inclusive, 1-based ordinal in this list)\n"
+       "  :gist   (short string summary of the scene)\n"
+       "Rules:\n"
+       "- Scenes must tile 1..N exactly (no gaps, no overlaps, no out-of-range).\n"
+       "- Prefer multiple scenes when the topic shifts.\n"
+       "- Do not invent message content.\n"))
+
+(defn format-span-prompt
+  "Build the user message for one segmentation LLM call."
+  [distilled-messages preceding-summary]
+  (let [body (->> distilled-messages
+                  (map-indexed
+                    (fn [idx m]
+                      (let [n (inc idx)
+                            role (:role m)
+                            line (if (:dropped? m)
+                                   (str n ". [" role "] (dropped)")
+                                   (str n ". [" role "] " (:text m)))]
+                        line)))
+                  (str/join "\n"))
+        preamble (when-not (str/blank? preceding-summary)
+                   (str "Preceding context (prior compaction summary):\n"
+                        preceding-summary "\n\n"))]
+    (str SEGMENT_INSTRUCTIONS "\n"
+         preamble
+         "Messages:\n"
+         body)))

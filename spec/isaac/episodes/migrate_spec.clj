@@ -1,0 +1,95 @@
+(ns isaac.episodes.migrate-spec
+  (:require
+    [isaac.episodes.migrate :as sut]
+    [isaac.episodes.store :as store]
+    [isaac.fs :as fs]
+    [isaac.llm.api.grover :as grover]
+    [isaac.llm.provider :as llm-provider]
+    [isaac.nexus :as nexus]
+    [speclj.core :refer :all]))
+
+(describe "isaac.episodes.migrate"
+
+  (before
+    (grover/install-test-fixture!)
+    (grover/reset-queue!))
+
+  (around [example]
+    (nexus/-with-nested-nexus {:fs (fs/mem-fs)}
+      (example)))
+
+  (it "migrates a simple two-scene session"
+    (let [mem (fs/instance)
+          root "/isaac-root"
+          session {:id "quiet-regatta" :crew "cordelia"}
+          transcript [{:type "message" :id "m1" :timestamp "2026-03-01T10:00:00"
+                       :message {:role "user" :content "What wine pairs with roast pheasant?"}}
+                      {:type "message" :id "m2" :timestamp "2026-03-01T10:00:01"
+                       :message {:role "assistant" :content "A light pinot noir."}}
+                      {:type "message" :id "m3" :timestamp "2026-03-01T10:01:00"
+                       :message {:role "user" :content "Now, about the regatta schedule."}}
+                      {:type "message" :id "m4" :timestamp "2026-03-01T10:01:01"
+                       :message {:role "assistant" :content "The first race is Saturday at dawn."}}]
+          provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+          _ (grover/enqueue! [{:type "text"
+                               :content "({:start 1 :end 2 :gist \"Wine pairing for pheasant\"} {:start 3 :end 4 :gist \"Regatta scheduling\"})"}])
+          result (sut/migrate-session!
+                   {:fs mem :root root :session session :transcript transcript
+                    :provider provider :model "gist" :force? false})]
+      (should= :closed (:status result))
+      (should= 0 (:exit result))
+      (let [ep (store/find-by-migrated-from mem root "cordelia" "quiet-regatta")
+            scenes (store/list-scenes mem root "cordelia" (:id ep))]
+        (should= "quiet-regatta" (:migrated-from ep))
+        (should= 2 (count scenes))
+        (should= "Wine pairing for pheasant" (:gist (first scenes)))
+        (should (re-find #"pinot noir" (:text (first scenes)))))))
+
+  (it "migrates compaction-bounded spans in order"
+    (let [mem (fs/instance)
+          root "/isaac-root"
+          session {:id "packed-galley" :crew "cordelia"}
+          transcript [{:type "message" :id "m1" :timestamp "2026-03-01T10:00:00"
+                       :message {:role "user" :content "How much hardtack for the voyage?"}}
+                      {:type "message" :id "m2" :timestamp "2026-03-01T10:00:01"
+                       :message {:role "assistant" :content "Forty pounds should do."}}
+                      {:type "compaction" :summary "They planned the voyage provisions."}
+                      {:type "message" :id "m3" :timestamp "2026-03-01T10:01:00"
+                       :message {:role "user" :content "Now the watch rotation."}}
+                      {:type "message" :id "m4" :timestamp "2026-03-01T10:01:01"
+                       :message {:role "assistant" :content "Four-hour watches, dogged evenings."}}]
+          provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+          _ (grover/enqueue!
+              [{:type "text" :content "({:start 1 :end 2 :gist \"Provisioning hardtack\"})"}
+               {:type "text" :content "({:start 1 :end 2 :gist \"Watch rotation\"})"}])
+          result (sut/migrate-session!
+                   {:fs mem :root root :session session :transcript transcript
+                    :provider provider :model "gist"})
+          ep (store/find-by-migrated-from mem root "cordelia" "packed-galley")
+          scenes (store/list-scenes mem root "cordelia" (:id ep))]
+      (should= 0 (:exit result))
+      (should= 2 (count scenes))
+      (should= ["Provisioning hardtack" "Watch rotation"] (mapv :gist scenes))))
+
+  (it "no-ops when already migrated"
+    (let [mem (fs/instance)
+          root "/isaac-root"
+          session {:id "calm-lagoon" :crew "cordelia"}
+          transcript [{:type "message" :id "m1" :timestamp "2026-03-01T10:00:00"
+                       :message {:role "user" :content "Chart the reef passage."}}
+                      {:type "message" :id "m2" :timestamp "2026-03-01T10:00:01"
+                       :message {:role "assistant" :content "Marked; keep to leeward."}}]
+          provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+          _ (grover/enqueue! [{:type "text"
+                               :content "({:start 1 :end 2 :gist \"Reef passage charting\"})"}])
+          first (sut/migrate-session!
+                  {:fs mem :root root :session session :transcript transcript
+                   :provider provider :model "gist"})
+          second (sut/migrate-session!
+                   {:fs mem :root root :session session :transcript transcript
+                    :provider provider :model "gist"})]
+      (should= 0 (:exit first))
+      (should= 0 (:exit second))
+      (should= :already-migrated (:status second))
+      (should= 1 (count (store/list-episodes mem root "cordelia")))))
+  )
