@@ -88,5 +88,10 @@
             prompt (sut/format-span-prompt msgs nil)]
         (should (re-find #"There are 3 messages" prompt))
         (should (re-find #"final line must end at 3" prompt))))
+
+    (it "pushes against one-blob answers"
+      (let [msgs [{:id "a" :role "user" :text "one" :dropped? false}]
+            prompt (sut/format-span-prompt msgs nil)]
+        (should (re-find #"Prefer several scenes" prompt))))
     )
   )

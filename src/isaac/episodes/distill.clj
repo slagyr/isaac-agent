@@ -127,7 +127,9 @@
        "\n"
        "Every message number must fall in exactly one scene, in order,\n"
        "no gaps. Start a new scene when the topic changes. A single-message\n"
-       "scene is written as e.g. \"7-7: ...\".\n"))
+       "scene is written as e.g. \"7-7: ...\".\n"
+       "Prefer several scenes over one broad scene — long conversations\n"
+       "almost always contain multiple topics.\n"))
 
 (defn format-span-prompt
   "Build the user message for one segmentation LLM call."
