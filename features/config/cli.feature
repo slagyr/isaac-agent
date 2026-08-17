@@ -926,6 +926,24 @@ Feature: Config Command
     And the stdout does not contain "https://api.x.ai/v1"
     And the exit code is 0
 
+  @wip
+  Scenario: config keys with no path lists root keys
+    Given config file "isaac.edn" containing:
+      """
+      {:defaults  {:crew :main :model :llama}
+       :crew      {:main {}}
+       :models    {:llama {:model "llama3.3:1b" :provider :anthropic}}
+       :providers {:anthropic {}}}
+      """
+    When isaac is run with "config keys"
+    Then the stdout contains "defaults"
+    And the stdout contains "crew"
+    And the stdout contains "models"
+    And the stdout contains "providers"
+    And the stdout does not contain "module-registry"
+    And the stdout does not contain "llama3.3"
+    And the exit code is 0
+
   Scenario: config list prints keys with their config source
     Given config file "providers/xai.edn" containing:
       """
@@ -939,6 +957,21 @@ Feature: Config Command
     Then the stdout contains "xai"
     And the stdout contains "config/providers/xai.edn"
     And the stdout does not contain "sk-real-secret-value"
+    And the exit code is 0
+
+  @wip
+  Scenario: config list with no path lists root keys and sources
+    Given config file "isaac.edn" containing:
+      """
+      {:defaults  {:crew :main :model :llama}
+       :crew      {:main {}}
+       :models    {:llama {:model "llama3.3:1b" :provider :anthropic}}
+       :providers {:anthropic {}}}
+      """
+    When isaac is run with "config list"
+    Then the stdout contains "defaults"
+    And the stdout contains "config/isaac.edn"
+    And the stdout does not contain "llama3.3"
     And the exit code is 0
 
   Scenario: a leaf path prints nothing
