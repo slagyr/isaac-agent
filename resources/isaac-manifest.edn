@@ -1,5 +1,5 @@
 {:id :isaac.agent,
- :version "0.1.19",
+ :version "0.1.20",
  :builtin? true,
  :factory isaac.agent.module/create-module,
  :berths
@@ -69,7 +69,11 @@
   :sessions
   {:usage "sessions [subcommand] [options]",
    :summary "Manage stored conversation sessions",
-   :namespace isaac.session.cli}},
+   :namespace isaac.session.cli},
+  :embed
+  {:usage "embed [options] [text ...]",
+   :summary "Embed text with the configured embedding provider",
+   :namespace isaac.recall.embedding.cli}},
  :isaac.agent/llm-api
  {:messages {:factory isaac.llm.api.messages/make},
   :grover {:factory isaac.llm.api.grover/make},
@@ -631,7 +635,25 @@
     :description
     "Directory-name to prompt-type mapping for prepared prompts",
     :key-spec {:type :string},
-    :value-spec {:type :string}}}},
+    :value-spec {:type :string}}},
+  :embedding
+  {:schema
+   {:name :embedding,
+    :type :map,
+    :description "Optional embedding capability (discriminated on :source)",
+    :schema
+    {:source
+     {:type :keyword,
+      :description "Embedding source discriminator",
+      :validations [[:one-of? :provider]]},
+     :provider
+     {:type :id,
+      :description "Provider id (or grover:<target> simulation alias) resolved through :providers / templates",
+      :validations [[:present-when? :source :provider]]},
+     :model
+     {:type :string,
+      :description "Wire model id for the embedding provider (never enters :models)",
+      :validations [[:present-when? :source :provider]]}}}}},
 
  :isaac.config/check
  {:comm-reserved-schema
@@ -640,4 +662,6 @@
   {:fn isaac.config.checks/check-crew-broad-directories},
   :manifest-refs {:fn isaac.config.checks/check-manifest-refs},
   :resolved-providers
-  {:fn isaac.config.checks/check-resolved-providers}}}
+  {:fn isaac.config.checks/check-resolved-providers},
+  :embedding-provider
+  {:fn isaac.config.checks/check-embedding-provider}}}

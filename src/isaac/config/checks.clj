@@ -1,5 +1,6 @@
 (ns isaac.config.checks
   (:require
+    [clojure.string :as str]
     [clojure.java.io :as io]
     [c3kit.apron.schema :as cs]
     [isaac.config.berths :as berths]
@@ -102,3 +103,36 @@
                                        [warning]))
                                    (or (:directories tools) [])))
                          (or (:crew config) {})))}))
+
+
+(defn- known-embedding-provider-ids [config]
+  (let [providers (requiring-resolve 'isaac.llm.providers/known-providers)
+        template  (requiring-resolve 'isaac.llm.providers/template)
+        ->id      schema-base/->id
+        user-ids  (->> (keys (:providers config)) (map ->id))
+        templates (map ->id (providers))
+        aliases   (into #{"grover"} (map #(str "grover:" %) templates))]
+    {:ids (set (concat user-ids templates aliases))
+     :template template
+     :->id ->id}))
+
+(defn check-embedding-provider
+  "Present-but-broken :embedding.provider references must fail validation
+   with the house path-anchored undefined-provider message."
+  [{:keys [config]}]
+  (let [embedding (:embedding config)]
+    (if-not (and (map? embedding)
+                 (= "provider" (schema-base/->id (:source embedding)))
+                 (some? (:provider embedding)))
+      {:errors []}
+      (let [provider (schema-base/->id (:provider embedding))
+            {:keys [ids template ->id]} (known-embedding-provider-ids config)
+            ok? (or (contains? ids provider)
+                    (and (string? provider)
+                         (str/starts-with? provider "grover:")
+                         (boolean (template (subs provider (count "grover:"))))))]
+        {:errors (if ok?
+                   []
+                   [{:key   "embedding.provider"
+                     :value "references undefined provider"
+                     :bad-value provider}])}))))

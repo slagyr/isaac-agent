@@ -3,7 +3,8 @@
    slash, providers — plus isaac.api. Its berths and builtin contributions are
    declared in the manifest; this factory just yields the module instance."
   (:require
-    [isaac.module.protocol :as module]))
+    [isaac.module.protocol :as module]
+    [isaac.recall.embedding]))
 
 (defn create-module []
   (module/module))

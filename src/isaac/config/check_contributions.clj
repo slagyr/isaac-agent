@@ -6,4 +6,5 @@
   {:comm-reserved-schema    {:fn 'isaac.config.checks/check-comm-reserved-schema}
    :crew-broad-directories  {:fn 'isaac.config.checks/check-crew-broad-directories}
    :manifest-refs           {:fn 'isaac.config.checks/check-manifest-refs}
-   :resolved-providers      {:fn 'isaac.config.checks/check-resolved-providers}})
+   :resolved-providers      {:fn 'isaac.config.checks/check-resolved-providers}
+   :embedding-provider      {:fn 'isaac.config.checks/check-embedding-provider}})

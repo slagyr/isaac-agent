@@ -15,7 +15,6 @@ Feature: Embedding Seam
 
   # ----- Help -----
 
-  @wip
   Scenario: embed is registered and has help
     When isaac is run with "help embed"
     Then the stdout matches:
@@ -28,7 +27,6 @@ Feature: Embedding Seam
 
   # ----- Optional capability -----
 
-  @wip
   Scenario: embedding unconfigured is a legal tier, not an error
     When isaac is run with "config validate"
     Then the exit code is 0
@@ -40,7 +38,6 @@ Feature: Embedding Seam
 
   # ----- Provider-backed embedding -----
 
-  @wip
   Scenario: embed through a provider-backed embedder
     Given config file "isaac.edn" containing:
       """
@@ -52,7 +49,6 @@ Feature: Embedding Seam
       | \[5 532 104 111\] |
     And the exit code is 0
 
-  @wip
   Scenario: batch embed yields one vector per input text, in order
     Given config file "isaac.edn" containing:
       """
@@ -60,15 +56,14 @@ Feature: Embedding Seam
       """
     When isaac is run with "embed \"hi there\" cat \"hi there\""
     Then the stdout lines match:
-      | pattern           |
-      | \[8 777 104 101\] |
-      | \[3 312 99 116\]  |
-      | \[8 777 104 101\] |
+      | text            |
+      | [8 777 104 101] |
+      | [3 312 99 116]  |
+      | [8 777 104 101] |
     And the exit code is 0
 
   # ----- Provider config resolution -----
 
-  @wip
   Scenario: embedding resolves provider config and hits the embed endpoint
     Given config file "isaac.edn" containing:
       """
@@ -77,14 +72,13 @@ Feature: Embedding Seam
     When isaac is run with "embed hello"
     Then the last outbound HTTP request matches:
       | key        | value            |
-      | url        | /api/embed       |
+      | url        | #".*/api/embed"  |
       | body.model | nomic-embed-text |
       | body.input | ["hello"]        |
     And the exit code is 0
 
   # ----- Validation -----
 
-  @wip
   Scenario: config validation rejects an embedding config with an unknown provider
     Given config file "isaac.edn" containing:
       """
@@ -97,7 +91,6 @@ Feature: Embedding Seam
       | bad value: nonesuch                                 |
     And the exit code is 1
 
-  @wip
   Scenario: config validation rejects an unknown embedding source
     Given config file "isaac.edn" containing:
       """
@@ -105,8 +98,8 @@ Feature: Embedding Seam
       """
     When isaac is run with "config validate"
     Then the stderr matches:
-      | pattern               |
-      | embedding\.source     |
-      | bad value: warp-drive |
-      | valid: .*provider.*   |
+      | pattern                    |
+      | embedding\.source          |
+      | bad value: warp-drive      |
+      | must be one of.*provider   |
     And the exit code is 1

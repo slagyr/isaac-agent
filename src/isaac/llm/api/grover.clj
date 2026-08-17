@@ -257,14 +257,35 @@
         args      (get-in tool-call [:function :arguments])]
     (if (string? args) args (json/generate-string args))))
 
+(defn- embed-json [body]
+  (let [input (or (:input body) [])
+        texts (cond
+                (string? input) [input]
+                (sequential? input) (mapv str input)
+                :else [])
+        vectors (mapv (fn [text]
+                        (let [s (or text "")]
+                          (if (zero? (count s))
+                            [0 0 0 0]
+                            [(count s)
+                             (long (reduce + 0 (map int s)))
+                             (int (first s))
+                             (int (last s))])))
+                      texts)]
+    {:embeddings vectors
+     :model (:model body)}))
+
 (defn post-json!
   [provider url headers body]
   (capture-provider-request! provider url headers body)
-  (let [response (provider-response body nil)]
-    (cond
-      (str/ends-with? url "/responses") (responses-json response)
-      (str/ends-with? url "/messages")  (messages-json response)
-      :else                             (chat-completions-json response))))
+  (cond
+    (str/ends-with? url "/api/embed") (embed-json body)
+    :else
+    (let [response (provider-response body nil)]
+      (cond
+        (str/ends-with? url "/responses") (responses-json response)
+        (str/ends-with? url "/messages")  (messages-json response)
+        :else                             (chat-completions-json response)))))
 
 (defn- content-chunks [content]
   (cond
