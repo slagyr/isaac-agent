@@ -43,8 +43,7 @@
             (> guard 10000) false
             (= last-id (:end-id current)) true
             :else
-            (let [;; next sealed scene starts after current end — find message after end-id
-                  end-id (:end-id current)
+            (let [end-id (:end-id current)
                   ids (mapv :id span-messages)
                   idx (.indexOf ids end-id)
                   next-id (when (and (>= idx 0) (< (inc idx) (count ids)))
@@ -53,8 +52,33 @@
                 (recur nxt (inc guard))
                 false))))))))
 
-(defn- flagged-set [episode]
-  (set (or (:flagged-spans episode) [])))
+(defn- normalize-flagged
+  "Coerce legacy int span indices and map records into
+   {:span <1-based> :raw ...} maps."
+  [items]
+  (mapv (fn [item]
+          (cond
+            (map? item)
+            (let [span (or (:span item)
+                           (when-let [i (:index item)] (inc (long i)))
+                           item)]
+              (cond-> {:span (long span)}
+                (:raw item) (assoc :raw (:raw item))))
+
+            (number? item)
+            ;; Legacy 0-based indices stored on partial episodes from rxr4.
+            {:span (inc (long item))}
+
+            :else
+            {:span (long item)}))
+        (or items [])))
+
+(defn- flagged-span-numbers
+  "Set of 1-based span numbers currently flagged."
+  [episode]
+  (->> (normalize-flagged (:flagged-spans episode))
+       (map :span)
+       set))
 
 (defn- resolve-gist-model
   "Resolve {:provider :model} for gisting from config."
@@ -74,11 +98,15 @@
      :model    (or (:model ctx) model-id "gist")
      :model-id model-id}))
 
+(defn- print-err! [msg]
+  (binding [*out* *err*]
+    (println msg)))
+
 (defn migrate-session!
   "Run migration. opts:
      :fs :root :session :transcript :provider :model
      :force? :size-cap
-   Returns {:exit 0|1 :status :closed|:partial|:already-migrated|:resumed
+   Returns {:exit 0|1 :status :closed|:partial|:already-migrated|:resumed|:error
             :episode ... :message ...}"
   [{:keys [fs root session transcript provider model force? size-cap]
     :or {force? false}}]
@@ -91,7 +119,7 @@
         fully-closed? (and existing
                            (= :closed (:status existing))
                            (not force?)
-                           (empty? (flagged-set existing)))]
+                           (empty? (flagged-span-numbers existing)))]
     (cond
       fully-closed?
       {:exit 0 :status :already-migrated :episode existing
@@ -104,66 +132,85 @@
       (let [spans (segment/compaction-spans transcript size-cap)
             episode-id (or (:id existing)
                            (ids/timestamped-id (first-message-timestamp transcript)))
-            flagged (atom (if force? #{} (flagged-set existing)))
+            ;; Map 1-based span number -> flagged record
+            flagged* (atom (if force?
+                             {}
+                             (into {}
+                                   (map (fn [f] [(:span f) f]))
+                                   (normalize-flagged (:flagged-spans existing)))))
             scenes-acc (atom (if force? [] (vec sealed)))
             any-work? (atom false)
-            resumed? (atom (boolean (and existing (not force?))))]
-        (doseq [span spans]
+            resumed? (atom (boolean (and existing (not force?))))
+            abort* (atom nil)]
+        (doseq [span spans
+                :while (nil? @abort*)]
           (let [raw-msgs (:messages span)
                 distilled (mapv distill/distill-entry raw-msgs)
-                idx (:index span)
+                idx (:index span)                 ; 0-based
+                span-n (inc idx)                  ; 1-based (user-facing)
                 skip? (and (not force?)
-                           (not (contains? @flagged idx))
+                           (not (contains? @flagged* span-n))
                            (span-already-sealed? @scenes-acc raw-msgs))]
             (when-not skip?
               (reset! any-work? true)
-              (let [result (segment/segment-span! provider model distilled (:preceding-summary span))]
-                (if-let [resolved (:ok result)]
-                  (let [sealed-scenes (segment/seal-scenes distilled resolved
+              (let [result (segment/segment-span! provider model distilled
+                                                  (:preceding-summary span))]
+                (cond
+                  (:ok result)
+                  (let [sealed-scenes (segment/seal-scenes distilled (:ok result)
                                                            (if (:preceding-summary span)
                                                              :compaction
                                                              :migrate))
-                        ;; drop any prior scenes that start inside this span
                         span-ids (set (map :id raw-msgs))
                         kept (remove #(contains? span-ids (:start-id %)) @scenes-acc)]
                     (reset! scenes-acc (vec (concat kept sealed-scenes)))
-                    (swap! flagged disj idx))
-                  (do
-                    (swap! flagged conj idx)
-                    (binding [*out* *err*]
-                      (println (str "span " (inc idx) " flagged: unparseable segmentation output")))))))))
-        ;; Order scenes by first appearance of :start-id in the transcript so
-        ;; resume (which concatenates newly sealed spans after prior sealed
-        ;; scenes) still yields chronological scene order.
-        (let [msg-ids (mapv :id (filter #(= "message" (:type %)) transcript))
-              rank (fn [s]
-                     (let [i (.indexOf msg-ids (:start-id s))]
-                       (if (neg? i) Integer/MAX_VALUE i)))
-              scenes (vec (sort-by (juxt rank :id) @scenes-acc))
-              status (if (seq @flagged) :partial :closed)
-              episode {:id            episode-id
-                       :crew          crew
-                       :status        status
-                       :migrated-from session-id
-                       :scene-ids     (mapv :id scenes)
-                       :started-at    (first-message-timestamp transcript)
-                       :ended-at      (last-message-timestamp transcript)
-                       :flagged-spans (vec (sort @flagged))}
-              _ (store/write-episode! fs root episode scenes {:replace-scenes? true})
-              status-kw (cond
-                          (= :partial status) :partial
-                          (and @resumed? @any-work?) :resumed
-                          :else :closed)
-              msg (case status-kw
-                    :partial (str "partial migration; flagged spans: " (pr-str (vec (sort @flagged))))
-                    :resumed "resumed"
-                    :closed  "migrated"
-                    "migrated")]
-          {:exit (if (= :partial status) 1 0)
-           :status status-kw
-           :episode episode
-           :message msg
-           :scenes scenes})))))
+                    (swap! flagged* dissoc span-n))
+
+                  (= :provider-error (:error result))
+                  (reset! abort* {:exit 1
+                                  :status :error
+                                  :message (:message result)})
+
+                  :else
+                  (let [raw (or (:raw result) "")]
+                    (swap! flagged* assoc span-n {:span span-n :raw raw})
+                    (print-err! (str "span " span-n " flagged: unparseable segmentation output"))))))))
+
+        (if-let [abort @abort*]
+          abort
+          (let [msg-ids (mapv :id (filter #(= "message" (:type %)) transcript))
+                rank (fn [s]
+                       (let [i (.indexOf msg-ids (:start-id s))]
+                         (if (neg? i) Integer/MAX_VALUE i)))
+                scenes (vec (sort-by (juxt rank :id) @scenes-acc))
+                flagged-list (->> (vals @flagged*)
+                                  (sort-by :span)
+                                  vec)
+                status (if (seq flagged-list) :partial :closed)
+                episode {:id            episode-id
+                         :crew          crew
+                         :status        status
+                         :migrated-from session-id
+                         :scene-ids     (mapv :id scenes)
+                         :started-at    (first-message-timestamp transcript)
+                         :ended-at      (last-message-timestamp transcript)
+                         :flagged-spans flagged-list}
+                _ (store/write-episode! fs root episode scenes {:replace-scenes? true})
+                status-kw (cond
+                            (= :partial status) :partial
+                            (and @resumed? @any-work?) :resumed
+                            :else :closed)
+                msg (case status-kw
+                      :partial (str "partial migration; flagged spans: "
+                                    (pr-str (mapv :span flagged-list)))
+                      :resumed "resumed"
+                      :closed  "migrated"
+                      "migrated")]
+            {:exit (if (= :partial status) 1 0)
+             :status status-kw
+             :episode episode
+             :message msg
+             :scenes scenes}))))))
 
 (defn migrate-session-id!
   "High-level: look up session + transcript from the registered store, resolve
@@ -171,10 +218,7 @@
   [{:keys [fs root cfg session-id force? session-store]
     :or {force? false}}]
   (let [ss (or session-store (session-store/registered-store))
-        session (when ss (session-store/get-session ss session-id))
-        session (or session
-                    ;; Fallback: try open by id on file stores after install
-                    (when ss (session-store/get-session ss session-id)))]
+        session (when ss (session-store/get-session ss session-id))]
     (if-not session
       {:exit 1 :status :error :message (str "unknown session: " session-id)}
       (let [transcript (session-store/get-transcript ss session-id)

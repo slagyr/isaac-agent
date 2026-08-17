@@ -5,8 +5,8 @@ Feature: Episodes — migrate-session
   written by the configured gist model (:episodes {:gist-model ...}).
   Session files remain untouched and authoritative. Ids are timestamped
   (<yyyy-MM-dd-HHmm>-<chaos>), taken from the session's own message times,
-  not migration time. The segmentation LLM speaks span-local ordinals;
-  sealed scene records store message ids.
+  not migration time. The segmentation LLM speaks span-local ordinals in
+  line format (`1-2: gist`); sealed scene records store message ids.
 
   Background:
     Given an Isaac root at "isaac-state"
@@ -28,7 +28,7 @@ Feature: Episodes — migrate-session
 
   # ----- Migration -----
 
-    Scenario: migrating a session materializes a closed episode
+  Scenario: migrating a session materializes a closed episode
     Given the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
       | model    | gist   |
@@ -47,8 +47,8 @@ Feature: Episodes — migrate-session
       | message | user         | Now, about the regatta schedule.     |
       | message | assistant    | The first race is Saturday at dawn.  |
     And the following model responses are queued:
-      | model | type | content                                                                                            |
-      | gist  | text | ({:start 1 :end 2 :gist "Wine pairing for pheasant"} {:start 3 :end 4 :gist "Regatta scheduling"}) |
+      | model | type | content                                                                 |
+      | gist  | text | 1-2: Wine pairing for pheasant\n3-4: Regatta scheduling                 |
     When isaac is run with "episodes migrate-session quiet-regatta"
     Then the exit code is 0
     And an episode exists for crew "cordelia" matching:
@@ -60,7 +60,38 @@ Feature: Episodes — migrate-session
       | Wine pairing for pheasant | #"(?s)pinot noir"       |
       | Regatta scheduling        | #"(?s)race is Saturday" |
 
-    Scenario: scene text is distilled — tool markers kept, payloads dropped
+  Scenario: noisy preamble and fences around boundary lines still parse
+    Given the isaac EDN file "config/models/gist.edn" exists with:
+      | path     | value  |
+      | model    | gist   |
+      | provider | grover |
+    And config file "isaac.edn" containing:
+      """
+      {:episodes {:gist-model :gist}}
+      """
+    And the following sessions exist:
+      | name          | crew     |
+      | chatty-model  | cordelia |
+    And session "chatty-model" has transcript:
+      | type    | message.role | message.content                      |
+      | message | user         | What wine pairs with roast pheasant? |
+      | message | assistant    | A light pinot noir.                  |
+      | message | user         | Now, about the regatta schedule.     |
+      | message | assistant    | The first race is Saturday at dawn.  |
+    And the following model responses are queued:
+      | model | type | content                                                                                                                                      |
+      | gist  | text | Sure — here are the scenes:\n```\n1-2: Wine pairing for pheasant\n\n3-4: Regatta scheduling\n```\nHope that helps!                            |
+    When isaac is run with "episodes migrate-session chatty-model"
+    Then the exit code is 0
+    And an episode exists for crew "cordelia" matching:
+      | key           | value        |
+      | migrated-from | chatty-model |
+    And that episode has scenes matching:
+      | gist                      | text                    |
+      | Wine pairing for pheasant | #"(?s)pinot noir"       |
+      | Regatta scheduling        | #"(?s)race is Saturday" |
+
+  Scenario: scene text is distilled — tool markers kept, payloads dropped
     Given the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
       | model    | gist   |
@@ -79,8 +110,8 @@ Feature: Episodes — migrate-session
       | message | toolResult   | call_1             | 1 sad lemon, mass of unidentified cheese, Hieronymus's emergency lettuce (DO NOT TOUCH) |
       | message | assistant    |                    | One sad lemon and some cheese. Leave the lettuce alone.                                 |
     And the following model responses are queued:
-      | model | type | content                                            |
-      | gist  | text | ({:start 1 :end 4 :gist "Fridge inventory check"}) |
+      | model | type | content                         |
+      | gist  | text | 1-4: Fridge inventory check     |
     When isaac is run with "episodes migrate-session tidy-larder"
     Then the exit code is 0
     And an episode exists for crew "cordelia" matching:
@@ -93,7 +124,7 @@ Feature: Episodes — migrate-session
 
   # ----- Compaction spans -----
 
-    Scenario: compaction bounds the spans and its summary rides the next span's prompt
+  Scenario: compaction bounds the spans and its summary rides the next span's prompt
     Given the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
       | model    | gist   |
@@ -113,9 +144,9 @@ Feature: Episodes — migrate-session
       | message    |                                     | user         | Now the watch rotation.             |
       | message    |                                     | assistant    | Four-hour watches, dogged evenings. |
     And the following model responses are queued:
-      | model | type | content                                           |
-      | gist  | text | ({:start 1 :end 2 :gist "Provisioning hardtack"}) |
-      | gist  | text | ({:start 1 :end 2 :gist "Watch rotation"})        |
+      | model | type | content                      |
+      | gist  | text | 1-2: Provisioning hardtack   |
+      | gist  | text | 1-2: Watch rotation          |
     When isaac is run with "episodes migrate-session packed-galley"
     Then the exit code is 0
     And that episode has scenes matching:
@@ -128,7 +159,7 @@ Feature: Episodes — migrate-session
 
   # ----- Idempotency -----
 
-    Scenario: re-run is a no-op; --force re-migrates in place
+  Scenario: re-run is a no-op; --force re-migrates in place
     Given the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
       | model    | gist   |
@@ -145,8 +176,8 @@ Feature: Episodes — migrate-session
       | message | user         | Chart the reef passage.  |
       | message | assistant    | Marked; keep to leeward. |
     And the following model responses are queued:
-      | model | type | content                                           |
-      | gist  | text | ({:start 1 :end 2 :gist "Reef passage charting"}) |
+      | model | type | content                        |
+      | gist  | text | 1-2: Reef passage charting     |
     When isaac is run with "episodes migrate-session calm-lagoon"
     Then the exit code is 0
     When isaac is run with "episodes migrate-session calm-lagoon"
@@ -154,8 +185,8 @@ Feature: Episodes — migrate-session
     And the exit code is 0
     And crew "cordelia" has 1 episode
     Given the following model responses are queued:
-      | model | type | content                                          |
-      | gist  | text | ({:start 1 :end 2 :gist "Leeward reef passage"}) |
+      | model | type | content                       |
+      | gist  | text | 1-2: Leeward reef passage     |
     When isaac is run with "episodes migrate-session calm-lagoon --force"
     Then the exit code is 0
     And crew "cordelia" has 1 episode
@@ -165,7 +196,7 @@ Feature: Episodes — migrate-session
 
   # ----- Failure and resume -----
 
-    Scenario: bad segmentation output — one retry, span flagged, re-run resumes
+  Scenario: bad segmentation output — one retry, span flagged with raw, re-run resumes
     Given the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
       | model    | gist   |
@@ -185,10 +216,10 @@ Feature: Episodes — migrate-session
       | message    |                        | user         | Log the fog bank position.       |
       | message    |                        | assistant    | Logged at the northern approach. |
     And the following model responses are queued:
-      | model | type | content                                      |
-      | gist  | text | this is not edn at all                       |
-      | gist  | text | still {not [valid                            |
-      | gist  | text | ({:start 1 :end 2 :gist "Fog bank logging"}) |
+      | model | type | content                    |
+      | gist  | text | this is not a scene line   |
+      | gist  | text | still no boundaries here   |
+      | gist  | text | 1-2: Fog bank logging      |
     When isaac is run with "episodes migrate-session foggy-strait"
     Then the stderr contains "span 1"
     And the stderr contains "flagged"
@@ -199,9 +230,13 @@ Feature: Episodes — migrate-session
     And that episode has scenes matching:
       | gist             | text                     |
       | Fog bank logging | #"(?s)northern approach" |
+    And that episode has flagged spans matching:
+      | span | raw                        |
+      | 1    | #"(?s)still no boundaries" |
+    And the stderr contains "flagged spans: [1]"
     Given the following model responses are queued:
-      | model | type | content                                           |
-      | gist  | text | ({:start 1 :end 2 :gist "Lighthouse signalling"}) |
+      | model | type | content                        |
+      | gist  | text | 1-2: Lighthouse signalling     |
     When isaac is run with "episodes migrate-session foggy-strait"
     Then the stdout contains "resumed"
     And the exit code is 0
@@ -213,9 +248,39 @@ Feature: Episodes — migrate-session
       | Lighthouse signalling | #"(?s)Two long flashes"  |
       | Fog bank logging      | #"(?s)northern approach" |
 
+  # ----- Provider errors -----
+
+  Scenario: provider chat error aborts without flagging or retry
+    Given the isaac EDN file "config/models/gist.edn" exists with:
+      | path     | value  |
+      | model    | gist   |
+      | provider | grover |
+    And config file "isaac.edn" containing:
+      """
+      {:episodes {:gist-model :gist}}
+      """
+    And the following sessions exist:
+      | name        | crew     |
+      | dry-powder  | cordelia |
+    And session "dry-powder" has transcript:
+      | type    | message.role | message.content   |
+      | message | user         | Ready the powder. |
+      | message | assistant    | Powder ready.     |
+    And the following model responses are queued:
+      | model | type  | content       |
+      | gist  | error | auth-missing  |
+      | gist  | text  | 1-2: must not be consumed |
+    When isaac is run with "episodes migrate-session dry-powder"
+    Then the stderr contains "grover"
+    And the stderr contains "auth-missing"
+    And the stderr does not contain "unparseable"
+    And the stderr does not contain "flagged"
+    And the exit code is 1
+    And crew "cordelia" has 0 episodes
+
   # ----- Errors -----
 
-    Scenario: unknown session id fails helpfully
+  Scenario: unknown session id fails helpfully
     When isaac is run with "episodes migrate-session ghost-ship"
     Then the stderr contains "unknown session"
     And the stderr contains "ghost-ship"

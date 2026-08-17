@@ -126,3 +126,26 @@
 
 (defthen #"crew \"([^\"]+)\" has (\d+) episodes?" isaac.episodes.episode-steps/crew-has-n-episodes
   "Counts episode directories under episodes/<crew>/. Accepts episode/episodes.")
+
+(defn that-episode-has-flagged-spans-matching [table]
+  "Asserts :flagged-spans on the current episode. Table columns: span, raw."
+  (with-feature-fs
+    (fn []
+      (let [ep (or (current-episode) (ensure-current-episode!))
+            _ (g/should-not-be-nil ep)
+            ep (or (store/read-episode (mem-fs) (root-dir) (:crew ep) (:id ep)) ep)
+            flagged (vec (or (:flagged-spans ep) []))
+            headers (:headers table)
+            rows (:rows table)]
+        (g/should= (count rows) (count flagged))
+        (doseq [[row f] (map vector rows flagged)]
+          (let [row-map (zipmap headers row)
+                failures (keep (fn [[k v]]
+                                 (let [actual (get f (keyword k))]
+                                   (when-not (cell-matches? v actual)
+                                     (str k ": expected " (pr-str v) ", got: " (pr-str actual)))))
+                               row-map)]
+            (g/should= [] (vec failures))))))))
+
+(defthen "that episode has flagged spans matching:" isaac.episodes.episode-steps/that-episode-has-flagged-spans-matching
+  "Asserts episode :flagged-spans records (span 1-based, optional raw).")

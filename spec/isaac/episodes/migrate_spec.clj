@@ -18,7 +18,7 @@
     (nexus/-with-nested-nexus {:fs (fs/mem-fs)}
       (example)))
 
-  (it "migrates a simple two-scene session"
+  (it "migrates a simple two-scene session (line format)"
     (let [mem (fs/instance)
           root "/isaac-root"
           session {:id "quiet-regatta" :crew "cordelia"}
@@ -32,7 +32,7 @@
                        :message {:role "assistant" :content "The first race is Saturday at dawn."}}]
           provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
           _ (grover/enqueue! [{:type "text"
-                               :content "({:start 1 :end 2 :gist \"Wine pairing for pheasant\"} {:start 3 :end 4 :gist \"Regatta scheduling\"})"}])
+                               :content "1-2: Wine pairing for pheasant\n3-4: Regatta scheduling"}])
           result (sut/migrate-session!
                    {:fs mem :root root :session session :transcript transcript
                     :provider provider :model "gist" :force? false})]
@@ -60,8 +60,8 @@
                        :message {:role "assistant" :content "Four-hour watches, dogged evenings."}}]
           provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
           _ (grover/enqueue!
-              [{:type "text" :content "({:start 1 :end 2 :gist \"Provisioning hardtack\"})"}
-               {:type "text" :content "({:start 1 :end 2 :gist \"Watch rotation\"})"}])
+              [{:type "text" :content "1-2: Provisioning hardtack"}
+               {:type "text" :content "1-2: Watch rotation"}])
           result (sut/migrate-session!
                    {:fs mem :root root :session session :transcript transcript
                     :provider provider :model "gist"})
@@ -81,7 +81,7 @@
                        :message {:role "assistant" :content "Marked; keep to leeward."}}]
           provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
           _ (grover/enqueue! [{:type "text"
-                               :content "({:start 1 :end 2 :gist \"Reef passage charting\"})"}])
+                               :content "1-2: Reef passage charting"}])
           first (sut/migrate-session!
                   {:fs mem :root root :session session :transcript transcript
                    :provider provider :model "gist"})
@@ -92,4 +92,47 @@
       (should= 0 (:exit second))
       (should= :already-migrated (:status second))
       (should= 1 (count (store/list-episodes mem root "cordelia")))))
+
+  (it "aborts on provider error without writing episode"
+    (let [mem (fs/instance)
+          root "/isaac-root"
+          session {:id "dry-powder" :crew "cordelia"}
+          transcript [{:type "message" :id "m1" :timestamp "2026-03-01T10:00:00"
+                       :message {:role "user" :content "Ready the powder."}}
+                      {:type "message" :id "m2" :timestamp "2026-03-01T10:00:01"
+                       :message {:role "assistant" :content "Powder ready."}}]
+          provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+          _ (grover/enqueue! [{:type "error" :content "auth-missing"}
+                              {:type "text" :content "1-2: must not be consumed"}])
+          r (sut/migrate-session!
+              {:fs mem :root root :session session :transcript transcript
+               :provider provider :model "gist"})]
+      (should= 1 (:exit r))
+      (should= :error (:status r))
+      (should (re-find #"auth-missing" (:message r)))
+      (should (re-find #"grover" (:message r)))
+      (should-not (re-find #"unparseable" (:message r)))
+      (should= 0 (count (store/list-episodes mem root "cordelia")))
+      ;; no retry — second queued response remains
+      (should= 1 (count @@#'grover/queue))))
+
+  (it "persists :raw on flagged spans with 1-based numbers"
+    (let [mem (fs/instance)
+          root "/isaac-root"
+          session {:id "foggy" :crew "cordelia"}
+          transcript [{:type "message" :id "m1" :timestamp "2026-03-01T10:00:00"
+                       :message {:role "user" :content "a"}}
+                      {:type "message" :id "m2" :timestamp "2026-03-01T10:00:01"
+                       :message {:role "assistant" :content "b"}}]
+          provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+          _ (grover/enqueue! [{:type "text" :content "nope"}
+                              {:type "text" :content "still nope"}])
+          result (sut/migrate-session!
+                   {:fs mem :root root :session session :transcript transcript
+                    :provider provider :model "gist"})
+          ep (:episode result)]
+      (should= :partial (:status result))
+      (should= 1 (:exit result))
+      (should= [{:span 1 :raw "still nope"}] (:flagged-spans ep))
+      (should (re-find #"flagged spans: \[1\]" (:message result)))))
   )

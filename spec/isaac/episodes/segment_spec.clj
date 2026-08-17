@@ -1,21 +1,40 @@
 (ns isaac.episodes.segment-spec
   (:require
     [isaac.episodes.segment :as sut]
+    [isaac.llm.api.grover :as grover]
+    [isaac.llm.provider :as llm-provider]
+    [isaac.nexus :as nexus]
+    [isaac.fs :as fs]
     [speclj.core :refer :all]))
 
 (describe "isaac.episodes.segment"
 
-  (context "parse-scenes"
-    (it "reads an EDN vector of ordinal scenes"
-      (should= [{:start 1 :end 2 :gist "a"} {:start 3 :end 4 :gist "b"}]
-               (sut/parse-scenes "({:start 1 :end 2 :gist \"a\"} {:start 3 :end 4 :gist \"b\"})")))
+  (context "parse-scenes (line format)"
+    (it "reads boundary lines"
+      (should= [{:start 1 :end 2 :gist "wine pairing for pheasant"}
+                {:start 3 :end 4 :gist "regatta schedule"}]
+               (sut/parse-scenes
+                 (str "1-2: wine pairing for pheasant\n"
+                      "3-4: regatta schedule\n"))))
 
-    (it "accepts a bare vector"
-      (should= [{:start 1 :end 2 :gist "x"}]
-               (sut/parse-scenes "[{:start 1 :end 2 :gist \"x\"}]")))
+    (it "accepts bare single ordinal as N-N"
+      (should= [{:start 7 :end 7 :gist "solo note"}]
+               (sut/parse-scenes "7: solo note")))
 
-    (it "returns nil on garbage"
-      (should-be-nil (sut/parse-scenes "this is not edn at all")))
+    (it "ignores preamble, fences, and blank lines"
+      (should= [{:start 1 :end 2 :gist "wine pairing"}
+                {:start 3 :end 4 :gist "regatta"}]
+               (sut/parse-scenes
+                 (str "Sure, here are the scenes:\n"
+                      "```\n"
+                      "1-2: wine pairing\n"
+                      "\n"
+                      "3-4: regatta\n"
+                      "```\n"
+                      "Hope that helps!\n"))))
+
+    (it "returns empty when no boundary lines match"
+      (should= [] (sut/parse-scenes "this is not a scene line at all")))
     )
 
   (context "validate-tiling"
@@ -63,5 +82,47 @@
             spans (sut/compaction-spans tx)]
         (should= 1 (count spans))
         (should= 2 (count (:messages (first spans))))))
+    )
+
+  (context "segment-span!"
+    (before
+      (grover/install-test-fixture!)
+      (grover/reset-queue!))
+
+    (around [example]
+      (nexus/-with-nested-nexus {:fs (fs/mem-fs)}
+        (example)))
+
+    (it "returns ok for valid line-format output"
+      (let [provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+            msgs [{:id "a" :role "user" :text "q" :dropped? false}
+                  {:id "b" :role "assistant" :text "a" :dropped? false}]
+            _ (grover/enqueue! [{:type "text" :content "1-2: topic"}])
+            result (sut/segment-span! provider "gist" msgs nil)]
+        (should (:ok result))
+        (should= "a" (:start-id (first (:ok result))))))
+
+    (it "surfaces provider errors without retry or flag"
+      (let [provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+            msgs [{:id "a" :role "user" :text "q" :dropped? false}
+                  {:id "b" :role "assistant" :text "a" :dropped? false}]
+            _ (grover/enqueue! [{:type "error" :content "auth-missing"}
+                                {:type "text" :content "1-2: should not be consumed"}])
+            result (sut/segment-span! provider "gist" msgs nil)]
+        (should= :provider-error (:error result))
+        (should= "grover" (:provider result))
+        (should= :llm-error (:error-key result))
+        ;; second queued response must remain (no retry)
+        (should= 1 (count @@#'grover/queue))))
+
+    (it "retries once then flags with raw text"
+      (let [provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+            msgs [{:id "a" :role "user" :text "q" :dropped? false}
+                  {:id "b" :role "assistant" :text "a" :dropped? false}]
+            _ (grover/enqueue! [{:type "text" :content "garbage"}
+                                {:type "text" :content "still garbage"}])
+            result (sut/segment-span! provider "gist" msgs nil)]
+        (should= :flagged (:error result))
+        (should= "still garbage" (:raw result))))
     )
   )

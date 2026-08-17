@@ -1,40 +1,40 @@
 (ns isaac.episodes.segment
-  "Compaction-span windowing + LLM segmentation parse/validate/resolve."
+  "Compaction-span windowing + LLM segmentation parse/validate/resolve.
+
+   Segmentation LLM contract (line format):
+     <first>-<last>: <gist>
+   Bare `<n>:` is accepted as `<n>-<n>:`. Non-matching lines are ignored."
   (:require
-    [clojure.edn :as edn]
     [clojure.string :as str]
     [isaac.drive.dispatch :as dispatch]
     [isaac.episodes.distill :as distill]
-    [isaac.episodes.ids :as ids]))
+    [isaac.episodes.ids :as ids]
+    [isaac.llm.api.protocol :as api]
+    [isaac.logger :as log]))
 
 (def DEFAULT_SIZE_CAP 80)
 
+(def ^:private BOUNDARY_LINE
+  #"^\s*(?:(\d+)\s*-\s*(\d+)|(\d+))\s*:\s*(.+?)\s*$")
+
 (defn parse-scenes
-  "Parse LLM text into a vector of {:start :end :gist} maps, or nil."
+  "Parse LLM text into a vector of {:start :end :gist} maps.
+
+   Line format only — non-matching lines (preamble, fences, blanks) are
+   ignored. Returns [] when no boundary lines are found (caller treats
+   empty as a parse failure against tiling)."
   [text]
-  (when (string? text)
-    (let [trimmed (str/trim text)
-          ;; Strip common markdown fences if the model wraps output.
-          body (-> trimmed
-                   (str/replace #"(?s)^```(?:edn|clojure)?\s*" "")
-                   (str/replace #"(?s)\s*```$" "")
-                   str/trim)]
-      (try
-        (let [parsed (edn/read-string body)
-              scenes (cond
-                       (vector? parsed) parsed
-                       (list? parsed) (vec parsed)
-                       (map? parsed) [parsed]
-                       :else nil)]
-          (when (and (sequential? scenes)
-                     (every? map? scenes)
-                     (every? #(and (number? (:start %)) (number? (:end %))) scenes))
-            (mapv (fn [s]
-                    {:start (long (:start s))
-                     :end   (long (:end s))
-                     :gist  (str (or (:gist s) ""))})
-                  scenes)))
-        (catch Exception _ nil)))))
+  (if-not (string? text)
+    []
+    (->> (str/split-lines text)
+         (keep (fn [line]
+                 (when-let [[_ a b solo gist] (re-matches BOUNDARY_LINE line)]
+                   (let [start (Long/parseLong (or a solo))
+                         end   (Long/parseLong (or b solo))]
+                     {:start start
+                      :end   end
+                      :gist  (str/trim gist)}))))
+         vec)))
 
 (defn valid-tiling?
   "True when scenes are sorted non-overlapping contiguous cover of 1..n."
@@ -119,31 +119,81 @@
       (:content response)
       ""))
 
+(defn- provider-error?
+  "True when a chat response is a provider/API error map (not content)."
+  [response]
+  (boolean (and (map? response) (contains? response :error))))
+
+(defn- provider-label [provider]
+  (try
+    (or (api/display-name provider) "provider")
+    (catch Exception _ "provider")))
+
+(defn- format-provider-error [provider response]
+  (let [pname (provider-label provider)
+        err   (or (:error response) :error)
+        err-s (if (keyword? err) (clojure.core/name err) (str err))
+        msg   (or (:message response) (:content response))]
+    (if (str/blank? (str msg))
+      (str pname ": " err-s)
+      (str pname ": " err-s " — " msg))))
+
+(def ^:private RAW_LOG_MAX 500)
+
+(defn- truncate-raw [s]
+  (let [s (str s)]
+    (if (<= (count s) RAW_LOG_MAX)
+      s
+      (str (subs s 0 RAW_LOG_MAX) "…"))))
+
 (defn segment-span!
-  "Call the gist model once (with one retry) to segment a span.
-   Returns {:ok scenes} | {:error :flagged :raw ...}."
+  "Call the gist model once (with one retry on parse failure) to segment a span.
+
+   Returns:
+     {:ok scenes}
+     {:error :flagged :raw text}
+     {:error :provider-error :provider name :error-key k :message ...}"
   [provider model distilled-messages preceding-summary]
   (let [prompt (distill/format-span-prompt distilled-messages preceding-summary)
         request {:model model
                  :messages [{:role "user" :content prompt}]}
         attempt (fn []
-                  (let [response (dispatch/dispatch-chat provider request)
-                        text     (response-text response)
-                        scenes   (parse-scenes text)]
-                    (if (and scenes (valid-tiling? (count distilled-messages) scenes))
-                      {:ok (resolve-ordinals distilled-messages scenes) :raw text}
-                      {:error :bad-parse :raw text})))
-        ;; Prefer the second span's request as last-request when both succeed:
-        ;; call once; on failure retry. Capture request after successful parse
-        ;; by re-dispatch is unnecessary — dispatch already records last request.
+                  (let [response (dispatch/dispatch-chat provider request)]
+                    (if (provider-error? response)
+                      {:error      :provider-error
+                       :provider   (provider-label provider)
+                       :error-key  (:error response)
+                       :message    (format-provider-error provider response)
+                       :response   response}
+                      (let [text   (response-text response)
+                            scenes (parse-scenes text)]
+                        (if (and (seq scenes)
+                                 (valid-tiling? (count distilled-messages) scenes))
+                          {:ok (resolve-ordinals distilled-messages scenes) :raw text}
+                          {:error :bad-parse :raw text})))))
         first-try (attempt)]
-    (if (:ok first-try)
+    (cond
+      (:ok first-try)
       first-try
+
+      (= :provider-error (:error first-try))
+      first-try
+
+      :else
       (let [second-try (attempt)]
-        (if (:ok second-try)
+        (cond
+          (:ok second-try)
           second-try
-          {:error :flagged
-           :raw   (:raw second-try)})))))
+
+          (= :provider-error (:error second-try))
+          second-try
+
+          :else
+          (let [raw (or (:raw second-try) (:raw first-try) "")]
+            (log/warn :episodes/segment-flagged
+                      :raw (truncate-raw raw))
+            {:error :flagged
+             :raw   raw}))))))
 
 (defn seal-scenes
   "Build sealed scene records from resolved ordinal scenes + distilled msgs."

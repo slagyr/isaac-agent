@@ -119,15 +119,15 @@
        (mapv distill-entry)))
 
 (def ^:private SEGMENT_INSTRUCTIONS
-  (str "Segment the numbered conversation into contiguous topical scenes.\n"
-       "Respond with ONLY a Clojure EDN vector of maps. Each map must have:\n"
-       "  :start  (int, inclusive, 1-based ordinal in this list)\n"
-       "  :end    (int, inclusive, 1-based ordinal in this list)\n"
-       "  :gist   (short string summary of the scene)\n"
-       "Rules:\n"
-       "- Scenes must tile 1..N exactly (no gaps, no overlaps, no out-of-range).\n"
-       "- Prefer multiple scenes when the topic shifts.\n"
-       "- Do not invent message content.\n"))
+  (str "You are segmenting a conversation into scenes: contiguous runs of\n"
+       "messages about one topic. Below is a numbered list of messages.\n"
+       "\n"
+       "Output one line per scene, nothing else:\n"
+       "<first>-<last>: <one-sentence gist of what was discussed or decided>\n"
+       "\n"
+       "Every message number must fall in exactly one scene, in order,\n"
+       "no gaps. Start a new scene when the topic changes. A single-message\n"
+       "scene is written as e.g. \"7-7: ...\".\n"))
 
 (defn format-span-prompt
   "Build the user message for one segmentation LLM call."
@@ -143,7 +143,7 @@
                         line)))
                   (str/join "\n"))
         preamble (when-not (str/blank? preceding-summary)
-                   (str "Preceding context (prior compaction summary):\n"
+                   (str "Preceding context (summary of the conversation before this point):\n"
                         preceding-summary "\n\n"))]
     (str SEGMENT_INSTRUCTIONS "\n"
          preamble
