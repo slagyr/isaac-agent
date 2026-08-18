@@ -142,6 +142,9 @@
             any-work? (atom false)
             resumed? (atom (boolean (and existing (not force?))))
             abort* (atom nil)]
+        (println (str "migrating " session-id " -> episode " episode-id
+                      " (crew " crew ", " (count spans) " span" (when (not= 1 (count spans)) "s")
+                      ", " (count (filter #(= "message" (:type %)) transcript)) " messages)"))
         (doseq [span spans
                 :while (nil? @abort*)]
           (let [raw-msgs (:messages span)
@@ -151,20 +154,28 @@
                 skip? (and (not force?)
                            (not (contains? @flagged* span-n))
                            (span-already-sealed? @scenes-acc raw-msgs))]
-            (when-not skip?
-              (reset! any-work? true)
-              (let [result (segment/segment-span! provider model distilled
-                                                  (:preceding-summary span))]
-                (cond
-                  (:ok result)
-                  (let [sealed-scenes (segment/seal-scenes distilled (:ok result)
-                                                           (if (:preceding-summary span)
-                                                             :compaction
-                                                             :migrate))
-                        span-ids (set (map :id raw-msgs))
-                        kept (remove #(contains? span-ids (:start-id %)) @scenes-acc)]
-                    (reset! scenes-acc (vec (concat kept sealed-scenes)))
-                    (swap! flagged* dissoc span-n))
+            (if skip?
+              (println (str "  span " span-n "/" (count spans) ": already sealed"))
+              (do
+                (reset! any-work? true)
+                (let [t0 (System/nanoTime)
+                      result (segment/segment-span! provider model distilled
+                                                    (:preceding-summary span))
+                      secs (/ (long (/ (- (System/nanoTime) t0) 100000000)) 10.0)]
+                  (cond
+                    (:ok result)
+                    (let [sealed-scenes (segment/seal-scenes distilled (:ok result)
+                                                             (if (:preceding-summary span)
+                                                               :compaction
+                                                               :migrate))
+                          span-ids (set (map :id raw-msgs))
+                          kept (remove #(contains? span-ids (:start-id %)) @scenes-acc)]
+                      (println (str "  span " span-n "/" (count spans) ": "
+                                    (count distilled) " messages -> "
+                                    (count sealed-scenes) " scene" (when (not= 1 (count sealed-scenes)) "s")
+                                    " (" secs "s)"))
+                      (reset! scenes-acc (vec (concat kept sealed-scenes)))
+                      (swap! flagged* dissoc span-n))
 
                   (= :provider-error (:error result))
                   (reset! abort* {:exit 1
@@ -174,7 +185,7 @@
                   :else
                   (let [raw (or (:raw result) "")]
                     (swap! flagged* assoc span-n {:span span-n :raw raw})
-                    (print-err! (str "span " span-n " flagged: unparseable segmentation output"))))))))
+                    (print-err! (str "span " span-n " flagged: unparseable segmentation output")))))))))
 
         (if-let [abort @abort*]
           abort
@@ -200,11 +211,13 @@
                             (= :partial status) :partial
                             (and @resumed? @any-work?) :resumed
                             :else :closed)
+                counts (str (count spans) " span" (when (not= 1 (count spans)) "s")
+                            ", " (count scenes) " scene" (when (not= 1 (count scenes)) "s"))
                 msg (case status-kw
                       :partial (str "partial migration; flagged spans: "
                                     (pr-str (mapv :span flagged-list)))
-                      :resumed "resumed"
-                      :closed  "migrated"
+                      :resumed (str "resumed: " counts)
+                      :closed  (str "migrated: " counts)
                       "migrated")]
             {:exit (if (= :partial status) 1 0)
              :status status-kw
