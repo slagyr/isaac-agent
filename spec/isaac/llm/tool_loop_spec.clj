@@ -1,7 +1,7 @@
 (ns isaac.llm.tool-loop-spec
   (:require
     [isaac.llm.tool-loop :as sut]
-    [speclj.core :refer :all]))
+    [speclj.core :refer [describe it should=]]))
 
 (defn- queue-chat
   "Build a chat-fn that returns successive responses from the given queue.
