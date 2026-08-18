@@ -153,8 +153,28 @@
       s
       (str (subs s 0 RAW_LOG_MAX) "…"))))
 
+(defn- stream-scene-lines!
+  "Streaming on-chunk handler: accumulate content deltas into acc*, and print
+   each completed boundary line as it arrives (live scene visibility).
+   Skips :done chunks — grover's final chunk repeats the full content."
+  [acc* line-buf* chunk]
+  (when-not (:done chunk)
+    (let [delta (or (get-in chunk [:message :content]) "")]
+      (when (seq delta)
+        (swap! acc* str delta)
+        (swap! line-buf* str delta)
+        (loop []
+          (let [s @line-buf*]
+            (when-let [nl (str/index-of s "\n")]
+              (let [line (subs s 0 nl)]
+                (reset! line-buf* (subs s (inc nl)))
+                (when (re-matches BOUNDARY_LINE line)
+                  (println (str "    " (str/trim line)))))
+              (recur))))))))
+
 (defn segment-span!
   "Call the gist model once (with one retry on parse failure) to segment a span.
+   Streams the response, printing each boundary line as the model writes it.
 
    Returns:
      {:ok scenes}
@@ -165,14 +185,22 @@
         request {:model model
                  :messages [{:role "user" :content prompt}]}
         attempt (fn []
-                  (let [response (dispatch/dispatch-chat provider request)]
+                  (let [acc      (atom "")
+                        line-buf (atom "")
+                        response (dispatch/dispatch-chat-stream
+                                   provider request
+                                   (partial stream-scene-lines! acc line-buf))]
                     (if (provider-error? response)
                       {:error      :provider-error
                        :provider   (provider-label provider)
                        :error-key  (:error response)
                        :message    (format-provider-error provider response)
                        :response   response}
-                      (let [text   (response-text response)
+                      (let [tail   @line-buf
+                            _      (when (re-matches BOUNDARY_LINE tail)
+                                     (println (str "    " (str/trim tail))))
+                            text   (let [a @acc]
+                                     (if (seq a) a (response-text response)))
                             scenes (parse-scenes text (count distilled-messages))]
                         (if (and (seq scenes)
                                  (valid-tiling? (count distilled-messages) scenes))
