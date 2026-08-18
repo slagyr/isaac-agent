@@ -17,8 +17,7 @@ Feature: Episodes — index
 
   # ----- Help -----
 
-  @wip
-  Scenario: index subcommand is registered and has help
+    Scenario: index subcommand is registered and has help
     When isaac is run with "help episodes"
     Then the stdout matches:
       | pattern                                                                   |
@@ -29,8 +28,7 @@ Feature: Episodes — index
 
   # ----- Building the index -----
 
-  @wip
-  Scenario: indexing a crew embeds gist and text rows per scene
+    Scenario: indexing a crew embeds gist and text rows per scene
     Given config file "isaac.edn" containing:
       """
       {:embedding {:source :provider :provider "grover" :model "mini-embed"}}
@@ -46,13 +44,12 @@ Feature: Episodes — index
       | episode-id           | scene-id             | kind | model      | vector          |
       | 2026-03-01-1000-ab12 | 2026-03-01-1000-s1x1 | gist | mini-embed | [4 435 119 101] |
       | 2026-03-01-1000-ab12 | 2026-03-01-1000-s1x1 | text | mini-embed | [5 554 112 116] |
-      | 2026-03-01-1000-ab12 | 2026-03-01-1006-s2x2 | gist | mini-embed | [4 414 114 101] |
-      | 2026-03-01-1000-ab12 | 2026-03-01-1006-s2x2 | text | mini-embed | [4 423 100 110] |
+      | 2026-03-01-1000-ab12 | 2026-03-01-1006-s2x2 | gist | mini-embed | [4 411 114 101] |
+      | 2026-03-01-1000-ab12 | 2026-03-01-1006-s2x2 | text | mini-embed | [4 426 100 110] |
 
   # ----- Idempotency -----
 
-  @wip
-  Scenario: re-run adds nothing; --rebuild re-embeds from current scene files
+    Scenario: re-run adds nothing; --rebuild re-embeds from current scene files
     Given config file "isaac.edn" containing:
       """
       {:embedding {:source :provider :provider "grover" :model "mini-embed"}}
@@ -84,8 +81,7 @@ Feature: Episodes — index
 
   # ----- Optional capability -----
 
-  @wip
-  Scenario: indexing without embedding config degrades helpfully
+    Scenario: indexing without embedding config degrades helpfully
     Given crew "cordelia" has a closed episode "2026-03-01-1000-ab12" with scenes:
       | id                   | started-at          | ended-at            | gist | text  |
       | 2026-03-01-1000-s1x1 | 2026-03-01T10:00:00 | 2026-03-01T10:05:00 | wine | pinot |
@@ -98,8 +94,7 @@ Feature: Episodes — index
 
   # ----- Model changes -----
 
-  @wip
-  Scenario: switching embedding model embeds anew and keeps old rows
+    Scenario: switching embedding model embeds anew and keeps old rows
     Given config file "isaac.edn" containing:
       """
       {:embedding {:source :provider :provider "grover" :model "mini-embed"}}

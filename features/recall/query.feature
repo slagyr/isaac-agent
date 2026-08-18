@@ -18,8 +18,7 @@ Feature: Recall — query
 
   # ----- Help -----
 
-  @wip
-  Scenario: recall is registered and has help
+    Scenario: recall is registered and has help
     When isaac is run with "help recall"
     Then the stdout matches:
       | pattern                                      |
@@ -36,8 +35,7 @@ Feature: Recall — query
 
   # ----- Hybrid ranking -----
 
-  @wip
-  Scenario: ranked hits with per-channel score breakdown
+    Scenario: ranked hits with per-channel score breakdown
     Given config file "isaac.edn" containing:
       """
       {:embedding {:source :provider :provider "grover" :model "mini-embed"}}
@@ -59,8 +57,7 @@ Feature: Recall — query
 
   # ----- Lexical channel -----
 
-  @wip
-  Scenario: exact identifiers surface via the lexical channel with embeddings zeroed
+    Scenario: exact identifiers surface via the lexical channel with embeddings zeroed
     Given config file "isaac.edn" containing:
       """
       {:embedding {:source :provider :provider "grover" :model "mini-embed"}}
@@ -79,8 +76,7 @@ Feature: Recall — query
 
   # ----- Weight precedence -----
 
-  @wip
-  Scenario: weights resolve defaults, then :recall config, then CLI flags
+    Scenario: weights resolve defaults, then :recall config, then CLI flags
     Given the current time is "2026-03-10T12:00:00"
     And config file "isaac.edn" containing:
       """
@@ -112,8 +108,7 @@ Feature: Recall — query
 
   # ----- Recency -----
 
-  @wip
-  Scenario: recency favors fresh scenes; --w-recency 0 neutralizes; --half-life reshapes
+    Scenario: recency favors fresh scenes; --w-recency 0 neutralizes; --half-life reshapes
     Given the current time is "2026-03-10T12:00:00"
     And config file "isaac.edn" containing:
       """
@@ -143,8 +138,7 @@ Feature: Recall — query
 
   # ----- Missing index and model drift -----
 
-  @wip
-  Scenario: missing index and model drift fail loudly; mixed rows warn
+    Scenario: missing index and model drift fail loudly; mixed rows warn
     Given config file "isaac.edn" containing:
       """
       {:embedding {:source :provider :provider "grover" :model "mini-embed"}}

@@ -5,6 +5,7 @@
   (:require
     [isaac.episodes.cli]
     [isaac.module.protocol :as module]
+    [isaac.recall.cli]
     [isaac.recall.embedding]))
 
 (defn create-module []

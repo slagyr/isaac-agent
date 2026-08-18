@@ -344,7 +344,8 @@
     (pending "BRAVE_API_KEY is not set; skipping live web_search integration scenario")))
 
 (defn current-time-is [iso]
-  (g/assoc! :current-time (java.time.Instant/parse iso)))
+  (let [s (if (re-find #"[zZ]|[+-]\d{2}:?\d{2}$" iso) iso (str iso "Z"))]
+    (g/assoc! :current-time (java.time.Instant/parse s))))
 
 (defn current-session-is [key]
   (g/assoc! :current-session-key key))

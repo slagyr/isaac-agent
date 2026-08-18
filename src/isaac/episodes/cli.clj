@@ -9,11 +9,14 @@
     [isaac.config.root :as root]
     [isaac.episodes.migrate :as migrate]
     [isaac.fs :as fs]
+    [isaac.recall.index :as recall-index]
     [isaac.session.store.spi :as session-store]))
 
 (def option-spec
   [["-h" "--help" "Show help"]
-   [nil  "--force" "Re-run segmentation and replace sealed scenes"]])
+   [nil  "--force" "Re-run segmentation and replace sealed scenes"]
+   [nil  "--crew CREW" "Crew whose sealed scenes to index"]
+   [nil  "--rebuild" "Re-embed every scene, replacing existing index rows"]])
 
 (def ^:private help-text
   (str/join "\n"
@@ -21,6 +24,7 @@
              ""
              "Subcommands:"
              "  migrate-session <session-id>  Materialize a session as a closed episode"
+             "  index                         Embed sealed scenes into the per-crew retrieval index"
              ""
              "Options:"
              "  --force   Re-run the LLM pass and replace scenes in place"
@@ -48,6 +52,59 @@
         cfg      (loader/load-config! root-dir fs* "episodes cli")]
     (runtime/install! {:config cfg})
     {:root root-dir :fs fs* :cfg cfg :store (session-store/registered-store)}))
+
+(def ^:private index-option-spec
+  [["-h" "--help" "Show help"]
+   [nil  "--crew CREW" "Crew whose sealed scenes to index"]
+   [nil  "--rebuild" "Re-embed every scene, replacing existing index rows"]])
+
+(def ^:private index-help
+  (str/join "\n"
+            ["Usage: isaac episodes index [options]"
+             ""
+             "Embed sealed scenes into the per-crew retrieval index"
+             "(<root>/episodes/<crew>/index.ednl)."
+             ""
+             "Options:"
+             "  --crew CREW  Crew to index (defaults to :defaults :crew, else all crews)"
+             "  --rebuild    Drop existing rows and re-embed everything"
+             "  -h, --help   Show help"]))
+
+(defn- default-crew [cfg]
+  (get-in cfg [:defaults :crew]))
+
+(defn- list-crews [fs* root]
+  (let [dir (str root "/episodes")]
+    (if (fs/exists? fs* dir)
+      (->> (or (fs/children fs* dir) [])
+           (remove #(str/starts-with? % "."))
+           sort
+           vec)
+      [])))
+
+(defn- run-index [opts crew rebuild?]
+  (try
+    (let [{:keys [root fs cfg]} (install! opts)
+          crews (cond
+                  (not (str/blank? crew)) [crew]
+                  (default-crew cfg)      [(default-crew cfg)]
+                  :else                   (list-crews fs root))]
+      (if (empty? crews)
+        (do (print-err! "no crews to index") 1)
+        (loop [remaining crews]
+          (if-let [c (first remaining)]
+            (let [result (recall-index/index-crew! fs root c cfg {:rebuild? rebuild?})]
+              (if (:error result)
+                (do
+                  (print-err! (or (:message result) "no embedding configured"))
+                  1)
+                (do
+                  (println (str (:new result) " new rows"))
+                  (recur (rest remaining)))))
+            0))))
+    (catch Exception e
+      (print-err! (or (ex-message e) (.getMessage e)))
+      1)))
 
 (defn- run-migrate-session [opts session-id force?]
   (cond
@@ -97,6 +154,19 @@
           :else
           (run-migrate-session opts session-id (boolean (:force options)))))
 
+      (= "index" sub)
+      (let [{:keys [options errors]}
+            (tools-cli/parse-opts rest-args index-option-spec)]
+        (cond
+          (seq errors)
+          (do (doseq [e errors] (print-err! e)) 1)
+
+          (:help options)
+          (do (println index-help) 0)
+
+          :else
+          (run-index opts (:crew options) (boolean (:rebuild options)))))
+
       :else
       (do
         (print-err! (str "Unknown episodes subcommand: " sub))
@@ -116,4 +186,6 @@
 
 (defmethod cli-api/subcommands :episodes [_id]
   [{:name "migrate-session"
-    :summary "Materialize a session as a closed episode"}])
+    :summary "Materialize a session as a closed episode"}
+   {:name "index"
+    :summary "Embed sealed scenes into the per-crew retrieval index"}])

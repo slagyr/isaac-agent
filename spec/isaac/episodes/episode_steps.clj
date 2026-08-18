@@ -2,13 +2,24 @@
   "Feature steps for episode migration assertions."
   (:require
     [clojure.string :as str]
-    [gherclj.core :as g :refer [defthen helper!]]
+    [clojure.edn :as edn]
+    [gherclj.core :as g :refer [defgiven defthen helper!]]
     [isaac.episodes.store :as store]
+    [isaac.foundation.cli-steps :as fcli]
     [isaac.fs :as fs]
     [isaac.nexus :as nexus]
-    [isaac.step-tables :as match]))
+    [isaac.recall.index :as recall-index]
+    [isaac.step-tables :as match]
+    [isaac.tool.memory :as memory]))
 
 (helper! isaac.episodes.episode-steps)
+
+(fcli/register-isaac-run-wrapper!
+  (fn [thunk]
+    (if-let [current-time (g/get :current-time)]
+      (binding [memory/*now* current-time]
+        (thunk))
+      (thunk))))
 
 (defn- root-dir []
   (or (g/get :runtime-root-dir)
@@ -150,3 +161,79 @@
 
 (defthen "that episode has flagged spans matching:" isaac.episodes.episode-steps/that-episode-has-flagged-spans-matching
   "Asserts episode :flagged-spans records (span 1-based, optional raw).")
+
+(defn- parse-cell [s]
+  (let [s (str s)]
+    (cond
+      (re-matches #"-?\d+" s) (parse-long s)
+      (re-matches #"-?\d+\.\d+" s) (parse-double s)
+      (or (str/starts-with? s "[") (str/starts-with? s "{") (str/starts-with? s ":"))
+      (try (edn/read-string s) (catch Exception _ s))
+      :else s)))
+
+(defn crew-has-closed-episode-with-scenes [crew episode-id table]
+  (with-feature-fs
+    (fn []
+      (let [headers (:headers table)
+            rows    (:rows table)
+            scenes  (mapv (fn [row]
+                            (let [m (zipmap (map keyword headers) row)]
+                              {:id         (:id m)
+                               :started-at (:started-at m)
+                               :ended-at   (:ended-at m)
+                               :gist       (:gist m)
+                               :text       (:text m)
+                               :start-id   (str (:id m) "-start")
+                               :end-id     (str (:id m) "-end")
+                               :seal-reason :migrate}))
+                          rows)
+            episode {:id         episode-id
+                     :crew       crew
+                     :status     :closed
+                     :scene-ids  (mapv :id scenes)
+                     :started-at (:started-at (first scenes))
+                     :ended-at   (:ended-at (last scenes))}]
+        (store/write-episode! (mem-fs) (root-dir) episode scenes)
+        (g/assoc! :current-episode (assoc episode :crew crew))))))
+
+(defn index-for-crew-has-rows [crew table]
+  (with-feature-fs
+    (fn []
+      (let [rows    (recall-index/read-index (mem-fs) (root-dir) crew)
+            headers (:headers table)
+            expected (mapv (fn [row]
+                             (into {}
+                                   (map (fn [h v]
+                                          [(keyword h)
+                                           (if (= "kind" h)
+                                             (keyword (parse-cell v))
+                                             (parse-cell v))])
+                                        headers row)))
+                           (:rows table))]
+        (g/should= (count expected) (count rows))
+        (doseq [[want got] (map vector expected rows)]
+          (let [failures (keep (fn [[k v]]
+                                 (let [actual (get got k)]
+                                   (when-not (= v actual)
+                                     (str k ": expected " (pr-str v) ", got: " (pr-str actual)))))
+                               want)]
+            (g/should= [] (vec failures))))))))
+
+(defn no-index-exists-for-crew [crew]
+  (with-feature-fs
+    (fn []
+      (g/should-not (fs/exists? (mem-fs) (recall-index/index-path (root-dir) crew))))))
+
+(defgiven "crew {crew:string} has a closed episode {episode-id:string} with scenes:"
+  isaac.episodes.episode-steps/crew-has-closed-episode-with-scenes
+  "Writes episode.edn + scene .md via store/write-episode!. Synthesizes
+   start/end-ids and :seal-reason :migrate.")
+
+(defthen "the index for crew {crew:string} has rows:"
+  isaac.episodes.episode-steps/index-for-crew-has-rows
+  "Reads episodes/<crew>/index.ednl and matches the EXACT row set
+   (count included), so rebuild scenarios prove deletion.")
+
+(defthen "no index exists for crew {crew:string}"
+  isaac.episodes.episode-steps/no-index-exists-for-crew
+  "Asserts index.ednl is absent (no half-written file).")
