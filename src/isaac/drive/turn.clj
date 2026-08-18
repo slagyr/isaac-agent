@@ -5,19 +5,19 @@
     [isaac.attention :as attention]
     [isaac.bridge.cancellation :as bridge]
     [isaac.bridge.suspend :as suspend]
-    [isaac.comm.protocol :as comm]
     [isaac.comm.cli :as cli-comm]
+    [isaac.comm.protocol :as comm]
     [isaac.config.loader :as loader]
     [isaac.drive.dispatch :as dispatch]
     [isaac.drive.provider-wall :as provider-wall]
     [isaac.llm.api.protocol :as api]
     [isaac.llm.provider :as llm-provider]
     [isaac.llm.tool-loop :as tool-loop]
-     [isaac.logger :as log]
-     [isaac.nexus :as nexus]
-     [isaac.session.compaction :as compaction]
-     [isaac.session.context :as session-ctx]
-     [isaac.session.store.spi :as store]
+    [isaac.logger :as log]
+    [isaac.nexus :as nexus]
+    [isaac.session.compaction :as compaction]
+    [isaac.session.context :as session-ctx]
+    [isaac.session.store.spi :as store]
     [isaac.tool.registry :as tool-registry])
   (:import (clojure.lang ExceptionInfo)))
 
@@ -167,7 +167,7 @@
     (let [error? (and (string? result) (str/starts-with? result "Error:"))]
       (append-message! ctx session-key
                        (cond-> {:role "toolResult" :id (:id tc) :content result}
-                         error? (assoc :isError true))))))
+                               error? (assoc :isError true))))))
 
 (defn run-tool-calls!
   "Legacy dump of [tool-call result] pairs. Mid-loop persist (isaac-l7lv)
@@ -175,7 +175,7 @@
    accumulate pairs and flush once. Prefer persist-tool-call! /
    persist-tool-result!."
   ([session-key tool-results]
-    (run-tool-calls! {} session-key tool-results))
+   (run-tool-calls! {} session-key tool-results))
   ([ctx-or-root session-key tool-results]
    (let [ctx (normalize-ctx ctx-or-root)]
      (doseq [[tc result] tool-results]
@@ -192,10 +192,10 @@
 (defn- store-error! [ctx session-key result {:keys [model provider]}]
   (try
     (append-error! ctx session-key
-                    {:content  (error-message result)
-                     :error    (persisted-error (:error result))
-                     :model    model
-                     :provider provider})
+                   {:content  (error-message result)
+                    :error    (persisted-error (:error result))
+                    :model    model
+                    :provider provider})
     (catch Exception e
       (log/warn :chat/error-not-stored
                 :session session-key
@@ -245,9 +245,9 @@
                               :model    resolved-model
                               :provider provider
                               :tokens   total-tokens}
-                       usage (assoc :usage usage)
-                       stop-reason (assoc :stopReason stop-reason)
-                       reasoning (assoc :reasoning reasoning)))
+                             usage (assoc :usage usage)
+                             stop-reason (assoc :stopReason stop-reason)
+                             reasoning (assoc :reasoning reasoning)))
     (store/update-session! ss session-key
                            (cond-> {:input-tokens      (+ (or (:input-tokens session-entry) 0) turn-input-tokens)
                                     :turn-input-tokens turn-input-tokens
@@ -255,8 +255,8 @@
                                     :output-tokens     (+ (or (:output-tokens session-entry) 0) output-tokens)
                                     :total-tokens      (+ (+ (or (:input-tokens session-entry) 0) turn-input-tokens)
                                                           (+ (or (:output-tokens session-entry) 0) output-tokens))}
-                             cache-read (assoc :cache-read (+ (or (:cache-read session-entry) 0) cache-read))
-                             cache-write (assoc :cache-write (+ (or (:cache-write session-entry) 0) cache-write))))
+                                   cache-read (assoc :cache-read (+ (or (:cache-read session-entry) 0) cache-read))
+                                   cache-write (assoc :cache-write (+ (or (:cache-write session-entry) 0) cache-write))))
     nil))
 
 (defn- process-response* [ctx session-key result {:keys [model provider]}]
@@ -269,7 +269,7 @@
    (process-response* (nexus/necho) session-key result {:model model :provider provider}))
   ([ctx-or-root session-key result opts]
    (process-response* (normalize-ctx ctx-or-root)
-                       session-key result opts)))
+                      session-key result opts)))
 
 ;; endregion ^^^^^ Response Persistence ^^^^^
 
@@ -386,7 +386,7 @@
 
 (defn- finalize-turn-result [result]
   (cond-> result
-    (:loop-request? result) (assoc :ended-by :tool-loop-limit)))
+          (:loop-request? result) (assoc :ended-by :tool-loop-limit)))
 
 (def ^:private loop-exhausted-summary-instruction
   "You have hit the tool loop limit. Do not call any more tools. Write a concise assistant reply for the user using what you learned so far. If you still cannot fully answer, summarize the useful findings and what remains unresolved.")
@@ -565,7 +565,7 @@
                                           {:model               model
                                            :api                 provider
                                            :soul                soul
-                                           :root           (:root opts)
+                                           :root                (:root opts)
                                            :session-store       (:session-store opts)
                                            :context-window      context-window
                                            :transcript-lock     transcript-lock
@@ -583,7 +583,7 @@
                 (store/update-session! (or (:session-store opts) (nexus/get-in [:sessions :store])) session-key {:compaction-disabled true})
                 (when ch
                   (comm/on-compaction-disabled ch session-key {:reason :too-many-failures}))
-                 (attention/maybe-notify-compaction-disabled!
+                (attention/maybe-notify-compaction-disabled!
                   (loader/snapshot "compaction-disabled attention")
                   session-key
                   {:reason         :too-many-failures
@@ -605,7 +605,7 @@
                          :message (:message result)))
             (do
               (store/update-session! (or (:session-store opts) (nexus/get-in [:sessions :store])) session-key {:compaction-disabled false
-                                                                                              :compaction          {:consecutive-failures 0}})
+                                                                                                               :compaction          {:consecutive-failures 0}})
               (let [updated-total (compaction/estimate-prompt-tokens session-key opts)]
                 (when ch
                   (comm/on-compaction-success ch session-key {:summary      (:summary result)
@@ -705,10 +705,10 @@
               :context-window context-window
               :guard-line (context-window-guard-line-tokens context-window)
               :retry-after-ms retry-ms)
-    {:unavailable? true
-     :reason       :context-exhausted
+    {:unavailable?   true
+     :reason         :context-exhausted
      :retry-after-ms retry-ms
-     :session      session-key}))
+     :session        session-key}))
 
 (defn- maybe-context-exhausted! [session-key input ctx]
   (let [{:keys [boot-files rules-text skill-menu-text allowed-tools provider]} ctx
@@ -771,18 +771,18 @@
   (not-empty (into (set (or crew-tools [])) auto-tools)))
 
 (defn build-chat-request [p {:keys [boot-files crew effort guidance model nonce origin rules-text session-name skill-menu-text soul transcript tools]}]
-  (let [prompt-out (api/build-prompt p {:boot-files boot-files
-                                        :crew       crew
-                                        :guidance   guidance
-                                        :model      model
-                                        :nonce      nonce
-                                        :origin     origin
-                                        :rules-text rules-text
-                                        :session-name session-name
+  (let [prompt-out (api/build-prompt p {:boot-files      boot-files
+                                        :crew            crew
+                                        :guidance        guidance
+                                        :model           model
+                                        :nonce           nonce
+                                        :origin          origin
+                                        :rules-text      rules-text
+                                        :session-name    session-name
                                         :skill-menu-text skill-menu-text
-                                        :soul       soul
-                                        :transcript transcript
-                                        :tools      tools})]
+                                        :soul            soul
+                                        :transcript      transcript
+                                        :tools           tools})]
     (cond-> {:model (:model prompt-out) :messages (:messages prompt-out)}
             (:system prompt-out) (assoc :system (:system prompt-out))
             (:max_tokens prompt-out) (assoc :max_tokens (:max_tokens prompt-out))
@@ -801,7 +801,7 @@
   (when p
     (let [cfg (merge (or (api/config p) {})
                      model-cfg-overrides
-                     {:root      root
+                     {:root           root
                       :session-key    session-key
                       :context-window context-window})]
       (llm-provider/make-provider (api/display-name p) cfg))))
@@ -809,15 +809,15 @@
 (def turn-schema
   {:name   :turn
    :type   :map
-   :schema {:charge        {:type :ignore  :description "Resolved charge — the comm-supplied inputs"}
-            :session-store {:type :ignore  :description "Session store backing this turn (derived from charge or root)"}
-            :root     {:type :string  :description "Isaac state directory"}
-            :effort        {:type :long    :description "Per-turn effort budget, nil when model disallows effort"}
-            :allowed-tools {:type :ignore  :description "Set of tool keywords allowed for this turn's crew"}
-            :boot-files    {:type :ignore  :description "Boot-file contents read from the discovered project root"}
-            :rules-text    {:type :ignore  :description "Always-on prepared rule bodies read from global/project roots"}
+   :schema {:charge          {:type :ignore :description "Resolved charge — the comm-supplied inputs"}
+            :session-store   {:type :ignore :description "Session store backing this turn (derived from charge or root)"}
+            :root            {:type :string :description "Isaac state directory"}
+            :effort          {:type :long :description "Per-turn effort budget, nil when model disallows effort"}
+            :allowed-tools   {:type :ignore :description "Set of tool keywords allowed for this turn's crew"}
+            :boot-files      {:type :ignore :description "Boot-file contents read from the discovered project root"}
+            :rules-text      {:type :ignore :description "Always-on prepared rule bodies read from global/project roots"}
             :skill-menu-text {:type :ignore :description "Advertised skill descriptions injected into the cached system prompt"}
-            :provider      {:type :ignore  :description "Tools-augmented LLM provider for this turn"}}})
+            :provider        {:type :ignore :description "Tools-augmented LLM provider for this turn"}}})
 
 (defn- build-turn
   "Wraps a resolved charge with per-turn derived state. Charge already holds
@@ -827,18 +827,18 @@
   [charge]
   (let [{:keys [session-key crew crew-members context-window
                 model model-cfg provider]} charge
-        root      (or (nexus/get :root) (get-in charge [:config :root]))
-        session-store* (nexus/get-in [:sessions :store])
-        session        (store/get-session session-store* session-key)
+        root             (or (nexus/get :root) (get-in charge [:config :root]))
+        session-store*   (nexus/get-in [:sessions :store])
+        session          (store/get-session session-store* session-key)
         skill-disclosure (or (session-ctx/read-skill-disclosure (:config charge) root (:cwd session))
                              {:menu-text nil :tool-names #{}})
-        allowed-tools  (merge-allowed-tools (allowed-tool-names crew-members crew)
-                                            (:tool-names skill-disclosure))
-        boot-files     (session-ctx/read-boot-files (:cwd session))
-        rules-text     (session-ctx/read-rules-text (:config charge) root (:cwd session))
-        augmented      (augment-provider root provider session-key context-window
-                                         (select-keys (or model-cfg {})
-                                                      [:thinking-budget-max :think-mode]))]
+        allowed-tools    (merge-allowed-tools (allowed-tool-names crew-members crew)
+                                              (:tool-names skill-disclosure))
+        boot-files       (session-ctx/read-boot-files (:cwd session))
+        rules-text       (session-ctx/read-rules-text (:config charge) root (:cwd session))
+        augmented        (augment-provider root provider session-key context-window
+                                           (select-keys (or model-cfg {})
+                                                        [:thinking-budget-max :think-mode]))]
     (log/debug :turn/context-resolved
                :session session-key
                :crew crew
@@ -852,17 +852,17 @@
                :allowed-tools (some-> allowed-tools sort vec)
                :cwd (:cwd session))
     (schema/conform! turn-schema
-                     {:charge        charge
+                     {:charge          charge
                       ;; convenience accessors for storage helpers — same value, derived via session-store helper
-                      :session-store session-store*
-                      :root     root
-                      :effort        (when (get (or model-cfg {}) :allows-effort true)
-                                       (:effort charge))
-                      :allowed-tools allowed-tools
-                      :boot-files    boot-files
-                      :rules-text    rules-text
+                      :session-store   session-store*
+                      :root            root
+                      :effort          (when (get (or model-cfg {}) :allows-effort true)
+                                         (:effort charge))
+                      :allowed-tools   allowed-tools
+                      :boot-files      boot-files
+                      :rules-text      rules-text
                       :skill-menu-text (:menu-text skill-disclosure)
-                      :provider      augmented})))
+                      :provider        augmented})))
 
 (defn- finish-turn! [ch session-key result]
   (comm/on-turn-end ch session-key result)
@@ -881,9 +881,9 @@
     (persist-tool-call! ctx session-key tc)
     (bridge/on-cancel! session-key cancel!)
     (let [tool-fn* #_{:clj-kondo/ignore [:invalid-arity]} (tool-registry/tool-fn allowed-tools module-index caps)
-          result   (tool-fn*
-                     name
-                     (assoc arguments "session_key" session-key))]
+          result                                          (tool-fn*
+                                                            name
+                                                            (assoc arguments "session_key" session-key))]
       (when (= :cancelled (:error result))
         (cancel!)
         (throw (ex-info "cancelled" {:type :cancelled})))
@@ -902,10 +902,10 @@
         charge        (:charge ctx)
         {:keys [crew guidance model module-index nonce origin soul context-mode comm config crew-cfg]} charge
         tool-loop-max (resolve-tool-loop-max {:config config :crew crew :crew-cfg crew-cfg})
-        caps {:max-lines (get-in config [:tools :defaults :max-lines])
-              :max-bytes (get-in config [:tools :defaults :max-bytes])}
-        ch (or comm cli-comm/channel)
-        p  provider]
+        caps          {:max-lines (get-in config [:tools :defaults :max-lines])
+                       :max-bytes (get-in config [:tools :defaults :max-bytes])}
+        ch            (or comm cli-comm/channel)
+        p             provider]
     (append-message! ctx session-key {:role "user" :content input})
     (let [transcript      (with-transcript-lock session-key #(store/active-transcript (or (:session-store ctx) (nexus/get-in [:sessions :store])) session-key))
           transcript      (if (= :reset context-mode)
@@ -913,22 +913,22 @@
                             transcript)
           tools           (active-tools p allowed-tools module-index)
           tool-reason     (cond
-                            (empty? allowed-tools)          :no-allowed-tools
-                            (empty? tools)                  :no-registered-tools
-                            :else                           nil)
-          request         (build-chat-request p {:boot-files boot-files
-                                                 :crew       crew
-                                                 :effort     effort
-                                                 :guidance   guidance
-                                                 :model      model
-                                                 :nonce      nonce
-                                                 :origin     origin
-                                                 :rules-text rules-text
-                                                 :session-name session-key
+                            (empty? allowed-tools) :no-allowed-tools
+                            (empty? tools) :no-registered-tools
+                            :else nil)
+          request         (build-chat-request p {:boot-files      boot-files
+                                                 :crew            crew
+                                                 :effort          effort
+                                                 :guidance        guidance
+                                                 :model           model
+                                                 :nonce           nonce
+                                                 :origin          origin
+                                                 :rules-text      rules-text
+                                                 :session-name    session-key
                                                  :skill-menu-text skill-menu-text
-                                                 :soul       soul
-                                                 :transcript transcript
-                                                 :tools      tools})
+                                                 :soul            soul
+                                                 :transcript      transcript
+                                                 :tools           tools})
           _               (log/debug :turn/request-built
                                      :session session-key
                                      :provider (api/display-name p)
@@ -943,8 +943,8 @@
           current-request (atom request)
           executed-tools  (atom [])
           tool-fn         (partial record-tool-call! {:comm           ch
-                                                       :session-key    session-key
-                                                       :allowed-tools  allowed-tools
+                                                      :session-key    session-key
+                                                      :allowed-tools  allowed-tools
                                                       :module-index   module-index
                                                       :caps           caps
                                                       :executed-tools executed-tools
@@ -1010,30 +1010,30 @@
         (if-let [exhausted (maybe-context-exhausted! session-key input ctx)]
           exhausted
           (do
-        (check-compaction! ctx session-key {:boot-files        boot-files
-                                            :rules-text        rules-text
-                                            :skill-menu-text   skill-menu-text
-                                            :compaction        compaction
-                                            :context-mode      context-mode
-                                            :model             model
-                                            :soul              soul
-                                            :context-window    context-window
-                                            :provider          provider
-                                            :comm              comm
-                                            :input             input
-                                            :guidance          guidance
-                                            :nonce             nonce
-                                            :origin            origin
-                                            :module-index      module-index
-                                            :allowed-tools     allowed-tools
-                                            :config            (:config (:charge ctx))})
-        (if (bridge/cancelled? session-key)
-          (suspend/interrupt-result session-key)
-          (execute-llm-turn! session-key input ctx))))))))
+            (check-compaction! ctx session-key {:boot-files      boot-files
+                                                :rules-text      rules-text
+                                                :skill-menu-text skill-menu-text
+                                                :compaction      compaction
+                                                :context-mode    context-mode
+                                                :model           model
+                                                :soul            soul
+                                                :context-window  context-window
+                                                :provider        provider
+                                                :comm            comm
+                                                :input           input
+                                                :guidance        guidance
+                                                :nonce           nonce
+                                                :origin          origin
+                                                :module-index    module-index
+                                                :allowed-tools   allowed-tools
+                                                :config          (:config (:charge ctx))})
+            (if (bridge/cancelled? session-key)
+              (suspend/interrupt-result session-key)
+              (execute-llm-turn! session-key input ctx))))))))
 
 (defn- record-exception! [session-key e ctx]
   (let [{:keys [provider]} ctx
-        model              (:model (:charge ctx))]
+        model (:model (:charge ctx))]
     (append-error! ctx session-key {:content  (.getMessage e)
                                     :error    "exception"
                                     :ex-class (.getName (class e))
