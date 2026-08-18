@@ -1,5 +1,7 @@
 (ns isaac.session.store.impl-common-spec
   (:require
+    [cheshire.core :as json]
+    [clojure.string :as str]
     [isaac.fs :as fs]
     [isaac.session.store.impl-common :as sut]
     [isaac.nexus :as nexus]
@@ -72,3 +74,31 @@
           _       (sut/write-transcript! test-dir session-file entries (fs*))]
       (should= entries
                (sut/read-transcript-from-offset test-dir session-file 0 (fs*))))))
+
+(describe "impl-common write-json"
+
+  (it "serializes a session header without cheshire (native-bb Constructor.newInstance)"
+    (with-redefs [json/generate-string (fn [& _] (throw (ex-info "cheshire generate-string is banned on native bb" {})))]
+      (should= "{\"type\":\"session\",\"id\":\"abc12345\",\"cwd\":\"/tmp\"}"
+               (sut/write-json {:type "session" :id "abc12345" :cwd "/tmp"}))))
+
+  (it "serializes nested tool-call content without cheshire"
+    (with-redefs [json/generate-string (fn [& _] (throw (ex-info "cheshire generate-string is banned on native bb" {})))]
+      (should= (str "{\"type\":\"message\",\"message\":"
+                    "{\"role\":\"assistant\",\"content\":"
+                    "[{\"type\":\"toolCall\",\"id\":\"tc-1\",\"name\":\"read\",\"arguments\":{\"file_path\":\"notes.txt\"}}]}}")
+               (sut/write-json {:type    "message"
+                                :message {:role    "assistant"
+                                          :content [{:type      "toolCall"
+                                                     :id        "tc-1"
+                                                     :name      "read"
+                                                     :arguments {:file_path "notes.txt"}}]}}))))
+
+  (it "write-transcript! persists a session header without cheshire"
+    (with-redefs [json/generate-string (fn [& _] (throw (ex-info "cheshire generate-string is banned on native bb" {})))]
+      (nexus/-with-nexus {:fs (fs/mem-fs)}
+        (sut/write-transcript! test-dir session-file [{:type "session" :id "abc12345"}] (fs*))
+        (should= ["{\"type\":\"session\",\"id\":\"abc12345\"}"]
+                 (str/split-lines (fs/slurp (fs*) (sut/transcript-path test-dir session-file)))))))
+
+  )

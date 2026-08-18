@@ -37,7 +37,35 @@
     :else        ts))
 
 (defn read-json [s] (json/parse-string s true))
-(defn write-json [v] (json/generate-string v))
+
+(defn- json-escape [s]
+  (-> (str s)
+      (str/replace "\\" "\\\\")
+      (str/replace "\"" "\\\"")
+      (str/replace "\n" "\\n")
+      (str/replace "\r" "\\r")
+      (str/replace "\t" "\\t")))
+
+(defn- write-json-value [v]
+  (cond
+    (nil? v)     "null"
+    (true? v)    "true"
+    (false? v)   "false"
+    (number? v)  (str v)
+    (keyword? v) (str "\"" (json-escape (subs (str v) 1)) "\"")
+    (string? v)  (str "\"" (json-escape v) "\"")
+    (map? v)     (str "{"
+                      (->> v
+                           (map (fn [[k val]]
+                                  (str "\"" (json-escape (name k)) "\":" (write-json-value val))))
+                           (str/join ","))
+                      "}")
+    (or (sequential? v) (set? v))
+    (str "[" (str/join "," (map write-json-value v)) "]")
+    :else (str "\"" (json-escape v) "\"")))
+
+(defn write-json [v]
+  (write-json-value v))
 
 (defn write-edn [v]
   (binding [*print-namespace-maps* false]
