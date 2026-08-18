@@ -21,7 +21,7 @@
     [isaac.nexus :as nexus]
     [isaac.tool.builtin :as builtin]
     [isaac.tool.registry :as tool-registry]
-    [speclj.core :refer [around describe it should should-not-be-nil should-throw should=]]))
+    [speclj.core :refer [around describe it should should-not should-not-be-nil should-throw should=]]))
 
 (def test-dir marigold/home)
 
@@ -57,6 +57,32 @@
   (followup-messages [_ request _ _ _] (:messages request))
   (config [_] cfg)
   (display-name [_] name)
+  (build-prompt [_ opts]
+    (prompt/build opts)))
+
+(deftype ScriptedPromptProvider [name cfg queue captured]
+  api/Api
+  (chat [_ request]
+    (swap! captured conj request)
+    (let [resp (first @queue)]
+      (when-not resp
+        (throw (ex-info "scripted provider queue exhausted" {})))
+      (swap! queue rest)
+      resp))
+  (chat-stream [_ request _]
+    (swap! captured conj request)
+    (let [resp (first @queue)]
+      (when-not resp
+        (throw (ex-info "scripted provider queue exhausted" {})))
+      (swap! queue rest)
+      resp))
+  (followup-messages [_ request response tool-calls tool-results]
+    (into (conj (vec (:messages request))
+                {:role "assistant" :content (or (get-in response [:message :content]) "") :tool_calls tool-calls})
+          (mapv (fn [result] {:role "tool" :content result}) tool-results)))
+  (config [_] cfg)
+  (display-name [_] name)
+  (format-tools [_ tools] (when (seq tools) (mapv api/wrapped-function-tool tools)))
   (build-prompt [_ opts]
     (prompt/build opts)))
 
@@ -863,4 +889,132 @@
               (should= 2 (:assistant-content-chars response-entry))
               (should= 0 (:tool-calls-count response-entry))
               (should= 0 (:executed-tools-count response-entry)))))
-        (config/dangerously-install-config! nil "spec")))))
+        (config/dangerously-install-config! nil "spec"))))
+
+  (describe "mid-turn compaction"
+    #_{:clj-kondo/ignore [:unresolved-symbol]}
+    (around [example]
+      (nexus/-with-nexus {:root test-dir :fs (fs/mem-fs)}
+        (helper/with-memory-store
+          (example))))
+
+    (it "compacts after a large tool result lands and rebuilds the next LLM request"
+      (helper/create-session! test-dir "mid-compact")
+      (let [captured  (atom [])
+            queue     (atom [{:tool-calls [{:id "tc1" :name "dump" :arguments {}}]
+                              :message    {:role "assistant" :content ""}
+                              :model      "test-model"
+                              :usage      {}}
+                             {:message {:role "assistant" :content "done after compact"}
+                              :model   "test-model"
+                              :usage   {}}])
+            estimate* (atom 10)
+            compact-n (atom 0)
+            provider  (->ScriptedPromptProvider marigold/starcore
+                                                {:api marigold/sky-api :stream-supports-tool-calls false}
+                                                queue captured)
+            payload   (apply str (repeat 40 "HUGE-TOOL-PAYLOAD "))
+            ctx       (assoc (base-execution-ctx provider
+                                                 {:model          "test-model"
+                                                  :soul           "You are Isaac."
+                                                  :crew           "main"
+                                                  :comm           null-comm/channel
+                                                  :context-window 100})
+                        :allowed-tools #{"dump"})]
+        (tool-registry/clear!)
+        (tool-registry/register! {:name        "dump"
+                                  :description "Dump a large payload"
+                                  :parameters  {:type "object"}
+                                  :handler     (fn [_]
+                                                 (reset! estimate* 200)
+                                                 {:result payload})})
+        (with-redefs [compaction/estimate-prompt-tokens (fn [_ _] @estimate*)
+                      compaction/should-compact?        (fn [tokens _ _] (>= tokens 80))
+                      compaction/compact!               (fn [session-key _opts]
+                                                          (swap! compact-n inc)
+                                                          (helper/splice-compaction! test-dir session-key
+                                                                                     {:summary           "prior tools summarized"
+                                                                                      :tokensBefore      200
+                                                                                      :compactedEntryIds []
+                                                                                      :firstKeptEntryId  nil})
+                                                          (reset! estimate* 20)
+                                                          {:summary "prior tools summarized"})]
+          (#'sut/execute-llm-turn! "mid-compact" "go" ctx))
+        (should= 1 @compact-n)
+        (should= 2 (count @captured))
+        (let [second (pr-str (:messages (second @captured)))]
+          (should (.contains second "prior tools summarized"))
+          (should-not (.contains second "HUGE-TOOL-PAYLOAD")))))
+
+    (it "does not compact when the live estimate stays under the threshold"
+      (helper/create-session! test-dir "mid-small")
+      (let [captured  (atom [])
+            queue     (atom [{:tool-calls [{:id "tc1" :name "ping" :arguments {}}]
+                              :message    {:role "assistant" :content ""}
+                              :model      "test-model"
+                              :usage      {}}
+                             {:message {:role "assistant" :content "still small"}
+                              :model   "test-model"
+                              :usage   {}}])
+            compact-n (atom 0)
+            provider  (->ScriptedPromptProvider marigold/starcore
+                                                {:api marigold/sky-api :stream-supports-tool-calls false}
+                                                queue captured)
+            ctx       (assoc (base-execution-ctx provider
+                                                 {:model          "test-model"
+                                                  :soul           "You are Isaac."
+                                                  :crew           "main"
+                                                  :comm           null-comm/channel
+                                                  :context-window 1000})
+                        :allowed-tools #{"ping"})]
+        (tool-registry/clear!)
+        (tool-registry/register! {:name        "ping"
+                                  :description "Tiny ping"
+                                  :parameters  {:type "object"}
+                                  :handler     (fn [_] {:result "pong"})})
+        (with-redefs [compaction/estimate-prompt-tokens (fn [_ _] 12)
+                      compaction/should-compact?        (fn [_ _ _] false)
+                      compaction/compact!               (fn [& _]
+                                                          (swap! compact-n inc)
+                                                          {:summary "should-not-run"})]
+          (#'sut/execute-llm-turn! "mid-small" "go" ctx))
+        (should= 0 @compact-n)
+        (should= 2 (count @captured))))
+
+    (it "exhausts the turn when compaction cannot save and the live estimate crosses the guard"
+      (helper/create-session! test-dir "mid-exhaust")
+      (helper/update-session! test-dir "mid-exhaust" {:compaction-disabled true})
+      (let [captured  (atom [])
+            queue     (atom [{:tool-calls [{:id "tc1" :name "dump" :arguments {}}]
+                              :message    {:role "assistant" :content ""}
+                              :model      "test-model"
+                              :usage      {}}
+                             {:message {:role "assistant" :content "should not be hit"}
+                              :model   "test-model"
+                              :usage   {}}])
+            estimate* (atom 10)
+            provider  (->ScriptedPromptProvider marigold/starcore
+                                                {:api marigold/sky-api :stream-supports-tool-calls false}
+                                                queue captured)
+            ctx       (assoc (base-execution-ctx provider
+                                                 {:model          "test-model"
+                                                  :soul           "You are Isaac."
+                                                  :crew           "main"
+                                                  :comm           null-comm/channel
+                                                  :context-window 100
+                                                  :config         {}})
+                        :allowed-tools #{"dump"})]
+        (tool-registry/clear!)
+        (tool-registry/register! {:name        "dump"
+                                  :description "Dump a large payload"
+                                  :parameters  {:type "object"}
+                                  :handler     (fn [_]
+                                                 (reset! estimate* 99)
+                                                 {:result (apply str (repeat 40 "HUGE-TOOL-PAYLOAD "))})})
+        (with-redefs [compaction/estimate-prompt-tokens (fn [_ _] @estimate*)
+                      compaction/should-compact?        (fn [_ _ _] false)
+                      compaction/compact!               (fn [& _] (throw (ex-info "should not compact" {})))]
+          (let [result (#'sut/execute-llm-turn! "mid-exhaust" "go" ctx)]
+            (should= true (:unavailable? result))
+            (should= :context-exhausted (:reason result))
+            (should= 1 (count @captured))))))))

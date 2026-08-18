@@ -533,7 +533,7 @@
                  (assoc state session-key {:lock lock})))))
     (when @claimed? lock)))
 
-(declare run-compaction-check! active-tools)
+(declare run-compaction-check! active-tools build-chat-request)
 
 (defn- perform-compaction! [session-key attempt prompt-tokens {:keys [compaction-llm-done context-window model provider soul splice-ready transcript-lock] ch :comm :as opts}]
   (let [provider-name (api/display-name provider)]
@@ -742,6 +742,78 @@
    (run-compaction-check! session-key (merge (nexus/necho) opts) 1 true))
   ([ctx-or-root session-key opts]
    (run-compaction-check! session-key (merge opts (normalize-ctx ctx-or-root)) 1 true)))
+
+(defn- mid-turn-compaction-opts [ctx]
+  (let [{:keys [boot-files rules-text skill-menu-text allowed-tools provider]} ctx
+        {:keys [compaction context-mode model soul context-window
+                guidance nonce origin module-index comm config]} (:charge ctx)]
+    (merge (normalize-ctx ctx)
+           {:boot-files      boot-files
+            :rules-text      rules-text
+            :skill-menu-text skill-menu-text
+            :compaction      compaction
+            :context-mode    context-mode
+            :model           model
+            :soul            soul
+            :context-window  context-window
+            :provider        provider
+            :comm            comm
+            :guidance        guidance
+            :nonce           nonce
+            :origin          origin
+            :module-index    module-index
+            :allowed-tools   allowed-tools
+            :config          config})))
+
+(defn- rebuild-chat-request [session-key ctx]
+  (let [{:keys [provider allowed-tools effort boot-files rules-text skill-menu-text]} ctx
+        {:keys [crew guidance model module-index nonce origin soul context-mode]} (:charge ctx)
+        ss         (or (:session-store ctx) (nexus/get-in [:sessions :store]))
+        transcript (with-transcript-lock session-key #(store/active-transcript ss session-key))
+        transcript (if (= :reset context-mode)
+                      (if-let [current-user (last transcript)] [current-user] [])
+                      transcript)
+        tools       (active-tools provider allowed-tools module-index)]
+    (build-chat-request provider {:boot-files      boot-files
+                                  :crew            crew
+                                  :effort          effort
+                                  :guidance        guidance
+                                  :model           model
+                                  :nonce           nonce
+                                  :origin          origin
+                                  :rules-text      rules-text
+                                  :session-name    session-key
+                                  :skill-menu-text skill-menu-text
+                                  :soul            soul
+                                  :transcript      transcript
+                                  :tools           tools})))
+
+(defn- maybe-mid-turn-compact!
+  "After tools persist, compact the disk transcript if needed and rebuild
+   the next LLM request from the post-compaction active transcript.
+   Returns the next request, or a :context-exhausted unavailable map."
+  [session-key ctx request current-request]
+  (let [opts           (mid-turn-compaction-opts ctx)
+        context-window (:context-window (:charge ctx))
+        config         (:config (:charge ctx))
+        before         (compaction/estimate-prompt-tokens session-key opts)]
+    (run-compaction-check! session-key opts 1 false)
+    (let [after      (compaction/estimate-prompt-tokens session-key opts)
+          guard-line (context-window-guard-line-tokens context-window)]
+      (cond
+        (and (pos? (or context-window 0))
+             (>= after guard-line)
+             (or (compaction-cannot-save-turn? session-key ctx)
+                 (>= after before)))
+        (context-exhausted-result (or config (nexus/get :config)) session-key after context-window)
+
+        (< after before)
+        (let [rebuilt (rebuild-chat-request session-key ctx)]
+          (reset! current-request rebuilt)
+          rebuilt)
+
+        :else
+        request))))
 
 ;; endregion ^^^^^ Context Compaction ^^^^^
 
@@ -958,8 +1030,9 @@
                             messages))
             result      (let [provider-name (api/display-name p)]
                           (-> (tool-loop/run chat-fn followup-fn request tool-fn
-                                             {:max-loops  tool-loop-max
-                                              :cancelled? #(bridge/cancelled? session-key)})
+                                             {:max-loops   tool-loop-max
+                                              :cancelled?  #(bridge/cancelled? session-key)
+                                              :after-tools #(maybe-mid-turn-compact! session-key ctx % current-request)})
                               (provider-wall/normalize config provider-name)
                               (final-loop-summary chat-fn @current-request)
                               (#(canned-loop-exhausted-message % input @current-request))

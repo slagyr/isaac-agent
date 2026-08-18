@@ -221,4 +221,62 @@
                 :output-tokens 6
                 :cache-read    9
                 :cache-write   11}
-               (:token-counts result)))))
+               (:token-counts result))))
+
+  (it "does not invoke after-tools when the first response has no tool-calls"
+    (let [after-calls (atom 0)
+          chat-fn     (fn [_] {:message {:role "assistant" :content "done"} :usage {}})
+          result      (sut/run chat-fn
+                               (recording-followup (atom []))
+                               {:messages []}
+                               (fn [_ _] "nope")
+                               {:after-tools (fn [req]
+                                               (swap! after-calls inc)
+                                               req)})]
+      (should= 0 @after-calls)
+      (should= "done" (get-in result [:response :message :content]))))
+
+  (it "uses the request returned by after-tools for the next chat call"
+    (let [requests (atom [])
+          queue    (atom [{:tool-calls [{:id "tc1" :name "read" :arguments {}}]
+                           :usage      {:input-tokens 1 :output-tokens 1}}
+                          {:message {:role "assistant" :content "done"}
+                           :usage   {:input-tokens 1 :output-tokens 1}}])
+          chat-fn  (fn [req]
+                     (swap! requests conj req)
+                     (let [resp (first @queue)]
+                       (swap! queue rest)
+                       resp))
+          result   (sut/run chat-fn
+                            (recording-followup (atom []))
+                            {:messages [{:role "user" :content "go"}]}
+                            (fn [_ _] "ok")
+                            {:after-tools (fn [req]
+                                            (assoc req :messages [{:role "user" :content "rebuilt"}]))})]
+      (should= 2 (count @requests))
+      (should= [{:role "user" :content "go"}] (:messages (first @requests)))
+      (should= [{:role "user" :content "rebuilt"}] (:messages (second @requests)))
+      (should= "done" (get-in result [:response :message :content]))))
+
+  (it "stops the loop without another chat call when after-tools returns unavailable"
+    (let [requests (atom [])
+          queue    (atom [{:tool-calls [{:id "tc1" :name "read" :arguments {}}]
+                           :usage      {:input-tokens 1 :output-tokens 1}}
+                          {:message {:role "assistant" :content "should-not-run"}
+                           :usage   {}}])
+          chat-fn  (fn [req]
+                     (swap! requests conj req)
+                     (let [resp (first @queue)]
+                       (swap! queue rest)
+                       resp))
+          result   (sut/run chat-fn
+                            (recording-followup (atom []))
+                            {:messages []}
+                            (fn [_ _] "ok")
+                            {:after-tools (fn [_]
+                                            {:unavailable? true :reason :context-exhausted})})]
+      (should= 1 (count @requests))
+      (should= true (:unavailable? result))
+      (should= :context-exhausted (:reason result))))
+
+  )

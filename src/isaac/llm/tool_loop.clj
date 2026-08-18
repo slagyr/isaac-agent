@@ -40,6 +40,9 @@
 
    Options:
      :max-loops     budget for tool cycles (default 100)
+     :after-tools   optional (fn [request] -> request-or-unavailable)
+                    after tools + followup, before the next chat-fn.
+                    A returned :unavailable? / :error map stops the loop.
 
    Returns on success:
      {:response       last LLM response
@@ -48,9 +51,10 @@
       :loop-request?  true when the budget was exhausted with tools still pending}
 
    Returns on error: the error response from chat-fn."
-  [chat-fn followup-fn request tool-fn & [{:keys [max-loops cancelled?]
-                                            :or   {max-loops  default-max-loops
-                                                   cancelled? (constantly false)}}]]
+  [chat-fn followup-fn request tool-fn & [{:keys [max-loops cancelled? after-tools]
+                                            :or   {max-loops   default-max-loops
+                                                   cancelled?  (constantly false)
+                                                   after-tools identity}}]]
   (loop [req          request
          all-tools    []
          token-counts {:input-tokens 0 :output-tokens 0 :cache-read 0 :cache-write 0}
@@ -69,11 +73,14 @@
             (if (and (seq tool-calls) budget-left?)
               (let [tool-results (mapv (fn [tc] (tool-fn (:name tc) (:arguments tc)))
                                        tool-calls)
-                    new-messages (followup-fn req response tool-calls tool-results)]
-                (recur (assoc req :messages new-messages)
-                       (into all-tools tool-calls)
-                       new-tokens
-                       (inc loops)))
+                    new-messages (followup-fn req response tool-calls tool-results)
+                    next-req     (after-tools (assoc req :messages new-messages))]
+                (if (or (:error next-req) (:unavailable? next-req))
+                  next-req
+                  (recur next-req
+                         (into all-tools tool-calls)
+                         new-tokens
+                         (inc loops))))
               {:response      response
                :tool-calls    all-tools
                :token-counts  new-tokens
