@@ -9,6 +9,7 @@
     [isaac.fs :as fs]
     [isaac.module.loader :as module-loader]
     [isaac.nexus :as nexus]
+    [isaac.session.session-steps :as session-steps]
     [isaac.slash.registry :as slash-registry]
     [isaac.tool.memory :as memory]))
 
@@ -74,18 +75,24 @@
                            commands)]
         (g/should matched?)))))
 
+(defn- await-reply-source! []
+  (session-steps/await-turn!))
+
 (defn reply-contains [expected]
+  (await-reply-source!)
   (let [expected (fcli/unescape-expected expected)
         output   (fcli/await-text current-reply #(str/includes? % expected))]
     (g/should (str/includes? output expected))))
 
 (defn reply-matches [table]
+  (await-reply-source!)
   (let [output   (or (current-reply) "")
         patterns (fcli/extract-patterns table)]
     (doseq [pattern patterns]
       (g/should (re-find (re-pattern pattern) output)))))
 
 (defn reply-does-not-contain [expected]
+  (await-reply-source!)
   (let [output   (current-reply)
         expected (fcli/unescape-expected expected)]
     (g/should-not (str/includes? (or output "") expected))))
@@ -106,8 +113,9 @@
    and module-declared) after lazy module activation.")
 
 (defthen "the reply contains {expected:string}" isaac.agent.module-steps/reply-contains
-  "Polls up to 1s for the user-visible reply (bridge/comm result or CLI
-   output) to contain the substring.")
+  "Awaits a pending in-process turn (if any), then polls up to 1s for the
+   user-visible reply (bridge/comm result or CLI output) to contain the
+   substring.")
 
 (defthen "the reply matches:" isaac.agent.module-steps/reply-matches
   "Comm-neutral regex match against the current reply text.")
