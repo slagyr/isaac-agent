@@ -96,6 +96,32 @@
         (should= 2 (count (:messages (first spans))))))
     )
 
+  (context "response-usage"
+    (it "reads ollama final-chunk counts"
+      (should= {:in 25 :out 12}
+               (#'sut/response-usage {:prompt_eval_count 25 :eval_count 12})))
+
+    (it "reads normalized kebab usage (responses API)"
+      (should= {:in 7 :out 3}
+               (#'sut/response-usage {:usage {:input-tokens 7 :output-tokens 3}})))
+
+    (it "reads snake_case usage shapes"
+      (should= {:in 5 :out 2}
+               (#'sut/response-usage {:usage {:input_tokens 5 :output_tokens 2}}))))
+
+  (context "stream-scene-lines!"
+    (it "accumulates ollama-shaped message content deltas"
+      (let [acc (atom "") buf (atom "")]
+        (with-out-str
+          (#'sut/stream-scene-lines! acc buf {:message {:content "1-2: topic\n"}}))
+        (should= "1-2: topic\n" @acc)))
+
+    (it "accumulates responses-API delta text chunks"
+      (let [acc (atom "") buf (atom "")]
+        (with-out-str
+          (#'sut/stream-scene-lines! acc buf {:delta {:text "1-2: topic\n"}}))
+        (should= "1-2: topic\n" @acc))))
+
   (context "segment-span!"
     (before
       (grover/install-test-fixture!)
@@ -112,7 +138,8 @@
             _ (grover/enqueue! [{:type "text" :content "1-2: topic"}])
             result (sut/segment-span! provider "gist" msgs nil)]
         (should (:ok result))
-        (should= "a" (:start-id (first (:ok result))))))
+        (should= "a" (:start-id (first (:ok result))))
+        (should= {:in 25 :out 12} (:usage result))))
 
     (it "surfaces provider errors without retry or flag"
       (let [provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})

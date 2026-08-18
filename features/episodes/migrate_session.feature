@@ -230,7 +230,8 @@ Feature: Episodes — migrate-session
       | gist  | text | still no boundaries here   |
       | gist  | text | 1-2: Fog bank logging      |
     When isaac is run with "episodes migrate-session foggy-strait"
-    Then the stderr contains "span 1"
+    Then the stdout contains "retrying span"
+    And the stderr contains "span 1"
     And the stderr contains "flagged"
     And the exit code is 1
     And an episode exists for crew "cordelia" matching:

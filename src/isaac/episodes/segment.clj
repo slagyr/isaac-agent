@@ -131,8 +131,10 @@
    generic :usage shapes as fallback."
   [response]
   (let [usage (or (:usage response) {})]
-    {:in  (or (:prompt_eval_count response) (:input_tokens usage) (:prompt_tokens usage) 0)
-     :out (or (:eval_count response) (:output_tokens usage) (:completion_tokens usage) 0)}))
+    {:in  (or (:prompt_eval_count response) (:input-tokens usage)
+              (:input_tokens usage) (:prompt_tokens usage) 0)
+     :out (or (:eval_count response) (:output-tokens usage)
+              (:output_tokens usage) (:completion_tokens usage) 0)}))
 
 (defn- sum-usage [a b]
   {:in  (+ (:in a 0) (:in b 0))
@@ -168,10 +170,14 @@
 (defn- stream-scene-lines!
   "Streaming on-chunk handler: accumulate content deltas into acc*, and print
    each completed boundary line as it arrives (live scene visibility).
-   Skips :done chunks — grover's final chunk repeats the full content."
+   Skips :done chunks — grover's final chunk repeats the full content.
+   Reads ollama-shaped [:message :content] deltas and responses-API
+   [:delta :text] chunks."
   [acc* line-buf* chunk]
   (when-not (:done chunk)
-    (let [delta (or (get-in chunk [:message :content]) "")]
+    (let [delta (or (get-in chunk [:message :content])
+                    (get-in chunk [:delta :text])
+                    "")]
       (when (seq delta)
         (swap! acc* str delta)
         (swap! line-buf* str delta)
@@ -230,7 +236,8 @@
       first-try
 
       :else
-      (let [second-try (attempt)
+      (let [_ (println "    retrying span: unparseable segmentation output")
+            second-try (attempt)
             usage (sum-usage (:usage first-try {}) (:usage second-try {}))]
         (cond
           (:ok second-try)
