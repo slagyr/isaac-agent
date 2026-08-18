@@ -1,25 +1,25 @@
 (ns isaac.session.cli
   (:require
-    [isaac.cli.api :as cli-api]
     [c3kit.apron.schema :as schema]
     [clojure.edn :as edn]
     [clojure.string :as str]
     [clojure.tools.cli :as tools-cli]
-    [isaac.cli.registry :as cli]
+    [isaac.agent.config.runtime :as runtime]
+    [isaac.bridge.status :as bridge]
+    [isaac.cli.api :as cli-api]
     [isaac.cli.common :as cli-common]
+    [isaac.cli.registry :as cli]
     [isaac.cli.table :as table]
-    [isaac.config.nav :as nav]
     [isaac.config.api :as config]
     [isaac.config.loader :as loader]
+    [isaac.config.nav :as nav]
     [isaac.config.root :as root]
-    [isaac.agent.config.runtime :as runtime]
     [isaac.fs :as fs]
-    [isaac.bridge.status :as bridge]
+    [isaac.nexus :as nexus]
     [isaac.session.context :as session-ctx]
     [isaac.session.schema :as session-schema]
-    [isaac.session.store.spi :as store]
     [isaac.session.store.impl-common :as store-common]
-    [isaac.nexus :as nexus]
+    [isaac.session.store.spi :as store]
     [isaac.tool.memory :as memory]
     [isaac.tool.registry :as tool-registry])
   (:import
@@ -134,9 +134,14 @@
    {:key :crew   :header "Crew"    :align :left}
    {:key :tags   :header "Tags"    :align :left}])
 
-(defn- transcript-size-bytes [entry session-store]
-  (let [transcript (store/get-transcript session-store (:id entry))]
-    (store-common/transcript-byte-offset transcript)))
+(defn- transcript-size-bytes [entry]
+  (let [root          (or (nexus/get :root) (loader/root))
+        session-file  (:session-file entry)
+        path          (when (and root session-file)
+                        (store-common/transcript-path root session-file))]
+    (if path
+      (fs/size (fs/instance) path)
+      0)))
 
 (defn- session->row [entry context-window session-store]
   (let [tokens (or (:last-input-tokens entry) 0)
@@ -145,7 +150,7 @@
         name   (or (:key entry) (:id entry))]
     {:name   (str name (when (store/in-flight? session-store (:id entry)) " ✈️"))
      :age    (if-let [ms (age-ms (:updated-at entry))] (format-age ms) "-")
-     :size   (transcript-size-bytes entry session-store)
+     :size   (transcript-size-bytes entry)
      :used   tokens
      :window context-window
      :pct    pct

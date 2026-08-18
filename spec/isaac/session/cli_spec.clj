@@ -46,6 +46,12 @@
       (should (re-find #"roomy-chat\s+\S+\s+\d+(\.\d)?K\s+0\s+32,768\s+\d+%\s+main" output))
       (should-not-contain "1,000,000" output)))
 
+  (it "does not parse transcripts when listing SIZE"
+    (helper/create-session! "/test/sessions" "joe" {:crew "main"})
+    (with-redefs [store/get-transcript (fn [& _] (throw (ex-info "list must not parse transcripts" {})))]
+      (let [output (with-out-str (should= 0 (sut/run-fn {:home "/test" :_raw-args ["list"]})))]
+        (should-contain "joe" output))))
+
   (it "renders show output as JSON"
     (helper/create-session! "/test/sessions" "joe" {:crew "main" :tags #{:project/x}})
     (helper/update-session! "/test/sessions" "joe" {:crew "alice" :tags #{:project/x}})
