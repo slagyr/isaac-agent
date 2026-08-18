@@ -235,6 +235,7 @@
     (.mkdirs f)
     (nexus/register! [:fs] fs*)
     (nexus/register! [:root] abs-dir)
+    (nexus/deregister! [:sessions])
     (g/assoc! :root abs-dir)))
 
 (defn- unescape-content [s]
