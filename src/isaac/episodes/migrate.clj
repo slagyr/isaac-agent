@@ -129,7 +129,9 @@
       {:exit 1 :status :error :message "session has no messages"}
 
       :else
-      (let [spans (segment/compaction-spans transcript size-cap)
+      (let [t-run (System/nanoTime)
+            tokens* (atom {:in 0 :out 0})
+            spans (segment/compaction-spans transcript size-cap)
             episode-id (or (:id existing)
                            (ids/timestamped-id (first-message-timestamp transcript)))
             ;; Map 1-based span number -> flagged record
@@ -161,7 +163,10 @@
                 (let [t0 (System/nanoTime)
                       result (segment/segment-span! provider model distilled
                                                     (:preceding-summary span))
-                      secs (/ (long (/ (- (System/nanoTime) t0) 100000000)) 10.0)]
+                      secs (/ (long (/ (- (System/nanoTime) t0) 100000000)) 10.0)
+                      usage (or (:usage result) {:in 0 :out 0})
+                      _ (swap! tokens* (fn [t] {:in  (+ (:in t) (:in usage 0))
+                                                :out (+ (:out t) (:out usage 0))}))]
                   (cond
                     (:ok result)
                     (let [sealed-scenes (segment/seal-scenes distilled (:ok result)
@@ -173,7 +178,7 @@
                       (println (str "  span " span-n "/" (count spans) ": "
                                     (count distilled) " messages -> "
                                     (count sealed-scenes) " scene" (when (not= 1 (count sealed-scenes)) "s")
-                                    " (" secs "s)"))
+                                    " (" secs "s, " (:in usage) " in, " (:out usage) " out)"))
                       (reset! scenes-acc (vec (concat kept sealed-scenes)))
                       (swap! flagged* dissoc span-n))
 
@@ -213,11 +218,13 @@
                             :else :closed)
                 counts (str (count spans) " span" (when (not= 1 (count spans)) "s")
                             ", " (count scenes) " scene" (when (not= 1 (count scenes)) "s"))
+                total-secs (/ (long (/ (- (System/nanoTime) t-run) 100000000)) 10.0)
+                totals (str "(" total-secs "s, " (:in @tokens*) " in, " (:out @tokens*) " out)")
                 msg (case status-kw
                       :partial (str "partial migration; flagged spans: "
-                                    (pr-str (mapv :span flagged-list)))
-                      :resumed (str "resumed: " counts)
-                      :closed  (str "migrated: " counts)
+                                    (pr-str (mapv :span flagged-list)) " " totals)
+                      :resumed (str "resumed: " counts " " totals)
+                      :closed  (str "migrated: " counts " " totals)
                       "migrated")]
             {:exit (if (= :partial status) 1 0)
              :status status-kw

@@ -126,6 +126,18 @@
       (:content response)
       ""))
 
+(defn- response-usage
+  "Token counts from a chat response — ollama final-chunk shape first,
+   generic :usage shapes as fallback."
+  [response]
+  (let [usage (or (:usage response) {})]
+    {:in  (or (:prompt_eval_count response) (:input_tokens usage) (:prompt_tokens usage) 0)
+     :out (or (:eval_count response) (:output_tokens usage) (:completion_tokens usage) 0)}))
+
+(defn- sum-usage [a b]
+  {:in  (+ (:in a 0) (:in b 0))
+   :out (+ (:out a 0) (:out b 0))})
+
 (defn- provider-error?
   "True when a chat response is a provider/API error map (not content)."
   [response]
@@ -204,8 +216,11 @@
                             scenes (parse-scenes text (count distilled-messages))]
                         (if (and (seq scenes)
                                  (valid-tiling? (count distilled-messages) scenes))
-                          {:ok (resolve-ordinals distilled-messages scenes) :raw text}
-                          {:error :bad-parse :raw text})))))
+                          {:ok    (resolve-ordinals distilled-messages scenes)
+                           :raw   text
+                           :usage (response-usage response)}
+                          {:error :bad-parse :raw text
+                           :usage (response-usage response)})))))
         first-try (attempt)]
     (cond
       (:ok first-try)
@@ -215,10 +230,11 @@
       first-try
 
       :else
-      (let [second-try (attempt)]
+      (let [second-try (attempt)
+            usage (sum-usage (:usage first-try {}) (:usage second-try {}))]
         (cond
           (:ok second-try)
-          second-try
+          (assoc second-try :usage usage)
 
           (= :provider-error (:error second-try))
           second-try
@@ -228,7 +244,8 @@
             (log/warn :episodes/segment-flagged
                       :raw (truncate-raw raw))
             {:error :flagged
-             :raw   raw}))))))
+             :raw   raw
+             :usage usage}))))))
 
 (defn seal-scenes
   "Build sealed scene records from resolved ordinal scenes + distilled msgs."

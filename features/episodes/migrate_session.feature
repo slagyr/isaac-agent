@@ -56,10 +56,10 @@ Feature: Episodes — migrate-session
       | pattern                                     |
       | migrating quiet-regatta -> episode          |
       | crew cordelia, 1 span, 4 messages           |
-      | span 1/1: 4 messages -> 2 scenes \(\d+\.\ds\) |
+      | span 1/1: 4 messages -> 2 scenes \(\d+\.\ds, 25 in, 12 out\) |
       | \s+1-2: Wine pairing for pheasant           |
       | \s+3-4: Regatta scheduling                  |
-      | migrated: 1 span, 2 scenes                  |
+      | migrated: 1 span, 2 scenes \(\d+\.\ds, 25 in, 12 out\) |
     And an episode exists for crew "cordelia" matching:
       | key           | value                          |
       | id            | #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" |
