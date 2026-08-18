@@ -4,6 +4,7 @@
     [isaac.episodes.store :as store]
     [isaac.fs :as fs]
     [isaac.llm.api.grover :as grover]
+    [isaac.llm.api.protocol :as api]
     [isaac.llm.provider :as llm-provider]
     [isaac.nexus :as nexus]
     [speclj.core :refer :all]))
@@ -17,6 +18,12 @@
   (around [example]
     (nexus/-with-nested-nexus {:fs (fs/mem-fs)}
       (example)))
+
+  (it "rebuilds the gist provider with :root so oauth token resolution works"
+    (let [p  (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+          p2 (#'sut/provider-with-root p "/isaac-root")]
+      (should= "/isaac-root" (:root (api/config p2)))
+      (should= "grover" (api/display-name p2))))
 
   (it "migrates a simple two-scene session (line format)"
     (let [mem (fs/instance)

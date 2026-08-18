@@ -6,6 +6,8 @@
     [isaac.episodes.ids :as ids]
     [isaac.episodes.segment :as segment]
     [isaac.episodes.store :as store]
+    [isaac.llm.api.protocol :as api]
+    [isaac.llm.provider :as llm-provider]
     [isaac.session.store.spi :as session-store]))
 
 (defn- first-message-timestamp [transcript]
@@ -97,6 +99,16 @@
     {:provider (:provider ctx)
      :model    (or (:model ctx) model-id "gist")
      :model-id model-id}))
+
+(defn- provider-with-root
+  "Rebuild a provider with :root merged into its config. OAuth token
+   resolution (auth.json) requires it — same augmentation the drive
+   turn path applies before dispatch."
+  [provider root]
+  (if (and provider root)
+    (llm-provider/make-provider (api/display-name provider)
+                                (merge (api/config provider) {:root root}))
+    provider))
 
 (defn- print-err! [msg]
   (binding [*out* *err*]
@@ -242,7 +254,8 @@
     (if-not session
       {:exit 1 :status :error :message (str "unknown session: " session-id)}
       (let [transcript (session-store/get-transcript ss session-id)
-            {:keys [provider model]} (resolve-gist-model cfg)]
+            {:keys [provider model]} (resolve-gist-model cfg)
+            provider (provider-with-root provider root)]
         (if-not provider
           {:exit 1 :status :error :message "no gist model/provider resolved — set :episodes {:gist-model ...} or :defaults :model"}
           (migrate-session!
