@@ -871,8 +871,8 @@
 (defn- record-tool-call!
   "Wrap a tool invocation with comm callbacks, cancellation tracking, and
    mid-loop transcript persist: toolCall before exec, toolResult after return.
-   Still accumulates into executed-tools for loop bookkeeping (not re-persist)."
-  [{:keys [session-key allowed-tools module-index executed-tools caps ctx] ch :comm} name arguments]
+   Increments tool-count for loop telemetry."
+  [{:keys [session-key allowed-tools module-index tool-count caps ctx] ch :comm} name arguments]
   (let [tc         {:id (str (java.util.UUID/randomUUID)) :name name :arguments arguments :type "toolCall"}
         tool-state (atom :pending)
         cancel!    #(when (compare-and-set! tool-state :pending :cancelled)
@@ -889,7 +889,7 @@
         (throw (ex-info "cancelled" {:type :cancelled})))
       (when (compare-and-set! tool-state :pending :completed)
         (persist-tool-result! ctx session-key tc result)
-        (swap! executed-tools conj [tc result])
+        (swap! tool-count inc)
         (comm/on-tool-result ch session-key tc result))
       result)))
 
@@ -941,13 +941,13 @@
                                      :tool-selection-reason tool-reason
                                      :request-keys (-> request keys sort vec))
           current-request (atom request)
-          executed-tools  (atom [])
+          tool-count      (atom 0)
           tool-fn         (partial record-tool-call! {:comm           ch
                                                       :session-key    session-key
                                                       :allowed-tools  allowed-tools
                                                       :module-index   module-index
                                                       :caps           caps
-                                                      :executed-tools executed-tools
+                                                      :tool-count     tool-count
                                                       :ctx            ctx})]
       (when-let [done (:compaction-llm-done (active-compaction-state session-key))]
         (deref done 5000 nil))
@@ -971,7 +971,7 @@
                    :error (:error result)
                    :assistant-content-chars (count (or (get-in result [:message :content]) ""))
                    :tool-calls-count (count (:tool-calls result))
-                   :executed-tools-count (count @executed-tools))
+                   :executed-tools-count @tool-count)
         (let [provider-name (api/display-name p)
               result        (provider-wall/normalize result config provider-name)]
           (cond

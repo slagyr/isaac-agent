@@ -242,7 +242,7 @@
 
     (it "records successful tool calls and emits call/result events"
       (let [events         (atom [])
-            executed-tools (atom [])
+            tool-count     (atom 0)
             registered     (atom nil)
             args-seen      (atom nil)]
         (with-redefs [bridge/on-cancel!      (fn [session-key cancel!]
@@ -256,19 +256,19 @@
           (let [result (#'sut/record-tool-call! {:comm           (memory-comm/channel events)
                                                  :session-key    "tool-success"
                                                  :allowed-tools  #{"search"}
-                                                 :executed-tools executed-tools}
+                                                 :tool-count     tool-count}
                                                "search"
                                                {"query" "logs"})]
             (should= {:result "ok"} result)
             (should= "search" (first @args-seen))
             (should= {"query" "logs" "session_key" "tool-success"} (second @args-seen))
             (should= "tool-success" (first @registered))
-            (should= 1 (count @executed-tools))
+            (should= 1 @tool-count)
             (should= ["tool-call" "tool-result"] (mapv :event @events)))))
 
     (it "cancels and throws when a tool reports cancellation"
       (let [events         (atom [])
-            executed-tools (atom [])
+            tool-count     (atom 0)
             registered     (atom nil)]
         (with-redefs [bridge/on-cancel!    (fn [session-key cancel!]
                                              (reset! registered [session-key cancel!])
@@ -283,11 +283,11 @@
                                                   :session-key    "tool-cancelled"
                                                   :allowed-tools  #{"search"}
                                                   :module-index   {:modules true}
-                                                  :executed-tools executed-tools}
+                                                  :tool-count     tool-count}
                                                 "search"
                                                 {"query" "logs"}))
           (should= "tool-cancelled" (first @registered))
-          (should= [] @executed-tools)
+          (should= 0 @tool-count)
           (should= ["tool-call" "tool-cancel"] (mapv :event @events))))))
 
 
@@ -301,7 +301,7 @@
     (it "writes the assistant toolCall before the tool runs"
       (helper/create-session! test-dir "mid-flush-call")
       (let [events         (atom [])
-            executed-tools (atom [])
+            tool-count     (atom 0)
             seen-mid       (atom nil)
             ctx            {:session-store (store/registered-store)}]
         (with-redefs [bridge/on-cancel!     (fn [_ _] nil)
@@ -317,19 +317,19 @@
           (#'sut/record-tool-call! {:comm           (memory-comm/channel events)
                                     :session-key    "mid-flush-call"
                                     :allowed-tools  #{"search"}
-                                    :executed-tools executed-tools
+                                    :tool-count     tool-count
                                     :ctx            ctx}
                                    "search"
                                    {"query" "logs"})
           (should-not-be-nil @seen-mid)
           (should= "search" (:name @seen-mid))
-          (should= (get-in (first @executed-tools) [0 :id]) (:id @seen-mid))
+          (should-not-be-nil (:id @seen-mid))
           (should= "toolCall" (:type @seen-mid)))))
 
     (it "writes the toolResult immediately after the tool returns"
       (helper/create-session! test-dir "mid-flush-result")
       (let [events         (atom [])
-            executed-tools (atom [])
+            tool-count     (atom 0)
             ctx            {:session-store (store/registered-store)}]
         (with-redefs [bridge/on-cancel!     (fn [_ _] nil)
                       tool-registry/tool-fn (fn [_ _ _]
@@ -337,17 +337,17 @@
           (#'sut/record-tool-call! {:comm           (memory-comm/channel events)
                                     :session-key    "mid-flush-result"
                                     :allowed-tools  #{"search"}
-                                    :executed-tools executed-tools
+                                    :tool-count     tool-count
                                     :ctx            ctx}
                                    "search"
                                    {"query" "logs"})
           (let [entries   (helper/get-transcript test-dir "mid-flush-result")
                 messages  (mapv :message entries)
                 last-two  (take-last 2 messages)
-                tc-id     (get-in (first @executed-tools) [0 :id])]
+                tc-id     (get-in (first last-two) [:content 0 :id])]
             (should= "assistant" (:role (first last-two)))
             (should= "toolCall" (get-in (first last-two) [:content 0 :type]))
-            (should= tc-id (get-in (first last-two) [:content 0 :id]))
+            (should-not-be-nil tc-id)
             (should= "toolResult" (:role (second last-two)))
             (should= tc-id (:id (second last-two)))
             (should= {:result "ok"} (:content (second last-two)))))))
@@ -355,7 +355,7 @@
     (it "leaves a dangling toolCall and no result when the tool reports cancelled"
       (helper/create-session! test-dir "mid-flush-cancel")
       (let [events         (atom [])
-            executed-tools (atom [])
+            tool-count     (atom 0)
             ctx            {:session-store (store/registered-store)}]
         (with-redefs [bridge/on-cancel!     (fn [_ _] nil)
                       tool-registry/tool-fn (fn [_ _ _]
@@ -365,7 +365,7 @@
                         (#'sut/record-tool-call! {:comm           (memory-comm/channel events)
                                                   :session-key    "mid-flush-cancel"
                                                   :allowed-tools  #{"search"}
-                                                  :executed-tools executed-tools
+                                                  :tool-count     tool-count
                                                   :ctx            ctx}
                                                 "search"
                                                 {"query" "logs"}))
@@ -376,12 +376,12 @@
     (it "does not double-write tool pairs after a two-tool turn"
       (helper/create-session! test-dir "mid-flush-two")
       (let [events         (atom [])
-            executed-tools (atom [])
+            tool-count     (atom 0)
             ctx            {:session-store (store/registered-store)}
             rec            {:comm           (memory-comm/channel events)
                             :session-key    "mid-flush-two"
                             :allowed-tools  #{"search" "lookup"}
-                            :executed-tools executed-tools
+                            :tool-count     tool-count
                             :ctx            ctx}]
         (with-redefs [bridge/on-cancel!     (fn [_ _] nil)
                       tool-registry/tool-fn (fn [_ _ _]
