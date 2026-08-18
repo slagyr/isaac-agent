@@ -26,6 +26,18 @@
 (defn- get-val [m k]
   (or (get m k) (get m (name k))))
 
+(defn- persist-transcript! [root session-file entries]
+  (when (and root session-file)
+    (let [path (c/transcript-path root session-file)
+          body (str (str/join "\n" (map pr-str entries)) "\n")]
+      (fs/mkdirs (fs/instance) (fs/parent path))
+      (fs/spit (fs/instance) path body))))
+
+(defn- append-transcript-line! [root session-file entry]
+  (when (and root session-file)
+    (let [path (c/transcript-path root session-file)]
+      (fs/spit (fs/instance) path (str (pr-str entry) "\n") :append true))))
+
 (defn- effective-config [passed-config]
   (or passed-config
       (loader/snapshot "session store config — ambient fallback when caller passes no :config")
@@ -98,7 +110,7 @@
                             (assoc-in [:sessions id] entry)
                             (assoc-in [:transcripts id] [header])))
           (when root
-            (c/write-transcript! root session-file [header] (fs/instance)))
+            (persist-transcript! root session-file [header]))
           (log/info :session/created :sessionId id)
           entry))))
 
@@ -150,7 +162,7 @@
                   new-path (c/transcript-path root (:session-file renamed))]
               (if (and old-path (fs/exists? (fs/instance) old-path))
                 (fs/move (fs/instance) old-path new-path)
-                (c/write-transcript! root (:session-file renamed) transcript (fs/instance)))))
+                (persist-transcript! root (:session-file renamed) transcript))))
           renamed))))
 
   (list-sessions [_]
@@ -220,7 +232,7 @@
                                         (get-val message :to)      (assoc :last-to (get-val message :to))
                                         resolved-agent             (assoc :crew resolved-agent)))))))
       (when (and root (:session-file session))
-        (c/append-entry! root (:session-file session) entry (fs/instance)))
+        (append-transcript-line! root (:session-file session) entry))
       entry))
 
   (append-error! [_ name error-entry]
@@ -243,8 +255,7 @@
                          (update-in [:transcripts id] (fnil conj []) entry)
                          (assoc-in [:sessions id :updated-at] now))))
       (when-let [session-file (get-in @state [:sessions id :session-file])]
-        (when root
-          (c/append-entry! root session-file entry (fs/instance))))
+        (append-transcript-line! root session-file entry))
       entry))
 
   (append-compaction! [_ name {:keys [summary firstKeptEntryId tokensBefore]}]
@@ -266,8 +277,7 @@
                          (update-in [:sessions id]
                                     #(-> % (assoc :updated-at now) (update :compaction-count inc))))))
       (when-let [session-file (get-in @state [:sessions id :session-file])]
-        (when root
-          (c/append-entry! root session-file entry (fs/instance))))
+        (append-transcript-line! root session-file entry))
       entry))
 
   (splice-compaction! [_ name {:keys [compactedEntryIds firstKeptEntryId summary tokensBefore]}]
@@ -323,8 +333,7 @@
                                                (dissoc entry :effective-history-offset))))
                                           (update :compaction-count inc))))))
       (when-let [session-file (get-in @state [:sessions id :session-file])]
-        (when root
-          (c/write-transcript! root session-file new-transcript (fs/instance))))
+        (persist-transcript! root session-file new-transcript))
       compaction-entry))
 
   (truncate-after-compaction! [_ name]
@@ -359,8 +368,7 @@
                                    transcript)]
           (swap! state assoc-in [:transcripts id] new-transcript)
           (when-let [session-file (get-in @state [:sessions id :session-file])]
-            (when root
-              (c/write-transcript! root session-file new-transcript (fs/instance))))))))
+            (persist-transcript! root session-file new-transcript))))))
 
   (record-turn-marker! [_ session-id marker]
     (swap! state assoc-in [:turn-markers (str session-id)]
@@ -381,7 +389,7 @@
     (swap! (.-state store) assoc-in [:transcripts id] (vec entries))
     (when-let [root (.-root store)]
       (when-let [session-file (get-in @(.-state store) [:sessions id :session-file])]
-        (c/write-transcript! root session-file (vec entries) (fs/instance))))))
+        (persist-transcript! root session-file (vec entries))))))
 
 (defn create-store
   ([]
