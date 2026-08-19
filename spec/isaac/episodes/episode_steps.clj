@@ -9,6 +9,7 @@
     [isaac.fs :as fs]
     [isaac.nexus :as nexus]
     [isaac.recall.index :as recall-index]
+    [isaac.recall.score :as score]
     [isaac.step-tables :as match]
     [isaac.tool.memory :as memory]))
 
@@ -196,6 +197,20 @@
         (store/write-episode! (mem-fs) (root-dir) episode scenes)
         (g/assoc! :current-episode (assoc episode :crew crew))))))
 
+(defn- vector-close?
+  "Normalize expected grover ints and compare to stored floats at 1e-6."
+  [expected actual]
+  (let [want (score/normalize-vector expected)
+        got  (if (score/float-array? actual)
+               actual
+               (score/normalize-vector actual))
+        n    (count want)]
+    (and (= n (count got))
+         (every? (fn [i]
+                   (< (Math/abs (- (double (nth want i)) (double (nth got i))))
+                      1.0e-6))
+                 (range n)))))
+
 (defn index-for-crew-has-rows [crew table]
   (with-feature-fs
     (fn []
@@ -214,7 +229,12 @@
         (doseq [[want got] (map vector expected rows)]
           (let [failures (keep (fn [[k v]]
                                  (let [actual (get got k)]
-                                   (when-not (= v actual)
+                                   (cond
+                                     (= :vector k)
+                                     (when-not (vector-close? v actual)
+                                       (str k ": expected ~" (pr-str (vec (score/normalize-vector v)))
+                                            ", got: " (pr-str (vec actual))))
+                                     (not= v actual)
                                      (str k ": expected " (pr-str v) ", got: " (pr-str actual)))))
                                want)]
             (g/should= [] (vec failures))))))))
@@ -231,9 +251,10 @@
 
 (defthen "the index for crew {crew:string} has rows:"
   isaac.episodes.episode-steps/index-for-crew-has-rows
-  "Reads episodes/<crew>/index.ednl and matches the EXACT row set
-   (count included), so rebuild scenarios prove deletion.")
+  "Reads the packed index via the READ API and matches the EXACT row set
+   (count included). Expected grover integer vectors are unit-normalized
+   and compared at 1e-6.")
 
 (defthen "no index exists for crew {crew:string}"
   isaac.episodes.episode-steps/no-index-exists-for-crew
-  "Asserts index.ednl is absent (no half-written file).")
+  "Asserts packed index.edn is absent (no half-written file).")

@@ -30,7 +30,6 @@ Feature: Episodes — index
 
   # isaac-74ls: scenario text unchanged; the rows step re-grounds on the packed
   # store (read API only, normalized expected vectors, tolerance 1e-6).
-  @wip
     Scenario: indexing a crew embeds gist and text rows per scene
     Given config file "isaac.edn" containing:
       """

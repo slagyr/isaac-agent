@@ -63,7 +63,7 @@
             ["Usage: isaac episodes index [options]"
              ""
              "Embed sealed scenes into the per-crew retrieval index"
-             "(<root>/episodes/<crew>/index.ednl)."
+             "(<root>/episodes/<crew>/index.edn + vectors.bin)."
              ""
              "Options:"
              "  --crew CREW  Crew to index (defaults to :defaults :crew, else all crews)"

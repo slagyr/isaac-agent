@@ -80,8 +80,8 @@
       (should-be-nil (:error r))
       (should= 2 (count hits))
       (should= "2026-03-01-1000-s1x1" (:scene-id (first hits)))
-      (should= 1.0 (:text (first hits)))
-      (should= 1.0 (:gist (first hits)))
+      (should (< (Math/abs (- 1.0 (:text (first hits)))) 1.0e-6))
+      (should (< (Math/abs (- 1.0 (:gist (first hits)))) 1.0e-6))
       (should= 1.0 (:lex (first hits)))
       (should= "wine" (:gist-text (first hits)))))
 
@@ -117,4 +117,42 @@
                           {:now "2026-03-10T12:00:00"})
           old  (first (filter #(= "2026-01-10-1000-oldx" (:scene-id %)) (:hits r)))]
       (should= 0.25 (:rec old))))
+
+  (it "attaches matched query terms on hits that contain them"
+    (write-closed! @mem "cordelia" "ep1"
+                   [{:id "s1" :gist "wine" :text "wine"
+                     :started-at "2026-03-01T10:00:00"
+                     :ended-at "2026-03-01T10:05:00"}
+                    {:id "s2" :gist "race" :text "dawn"
+                     :started-at "2026-03-01T10:06:00"
+                     :ended-at "2026-03-01T10:09:00"}])
+    (index/index-crew! @mem root "cordelia" cfg {})
+    (let [r    (sut/query @mem root "cordelia" "wine" cfg {})
+          hit1 (first (:hits r))
+          hit2 (second (:hits r))]
+      (should= ["wine"] (:terms hit1))
+      (should= [] (:terms hit2))))
+
+  (it "warns on a junk field and stays silent for a rare-term hit"
+    (write-closed! @mem "cordelia" "ep1"
+                   [{:id "s1" :gist "Reef charting" :text "soundings along the leeward passage"
+                     :started-at "2026-03-01T10:00:00" :ended-at "2026-03-01T10:01:00"}
+                    {:id "s2" :gist "Galley provisioning" :text "hardtack rations for the voyage"
+                     :started-at "2026-03-01T10:02:00" :ended-at "2026-03-01T10:03:00"}
+                    {:id "s3" :gist "Watch rotation" :text "night watch schedule dogged evenings"
+                     :started-at "2026-03-01T10:04:00" :ended-at "2026-03-01T10:05:00"}
+                    {:id "s4" :gist "Wine pairing" :text "a light pinot noir for the pheasant"
+                     :started-at "2026-03-01T10:06:00" :ended-at "2026-03-01T10:07:00"}
+                    {:id "s5" :gist "Signal flags" :text "two long flashes for the lighthouse"
+                     :started-at "2026-03-01T10:08:00" :ended-at "2026-03-01T10:09:00"}])
+    (index/index-crew! @mem root "cordelia" cfg {})
+    (let [junk (sut/query @mem root "cordelia" "whoville" cfg
+                          {:weights {:text 0 :gist 0 :recency 0}})
+          hit  (sut/query @mem root "cordelia" "lighthouse" cfg
+                          {:weights {:text 0 :gist 0 :recency 0}})]
+      (should (re-find #"weak matches — nothing stands out \(top z 0.0\)" (:warning junk)))
+      (should-be-nil (:error junk))
+      (should= 5 (count (:hits junk)))
+      (should-be-nil (:warning hit))
+      (should= ["lighthouse"] (:terms (first (:hits hit))))))
   )

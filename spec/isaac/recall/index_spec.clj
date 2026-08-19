@@ -4,7 +4,10 @@
     [isaac.fs :as fs]
     [isaac.recall.embedding :as embedding]
     [isaac.recall.index :as sut]
-    [speclj.core :refer [before context describe it should-not should= with]]))
+    [isaac.recall.score :as score]
+    [speclj.core :refer [before context describe it should should-not should= with]])
+  (:import
+    (java.nio ByteBuffer ByteOrder)))
 
 (def ^:private root "/tmp-recall-root")
 
@@ -27,17 +30,34 @@
   (before
     (fs/mkdirs @mem root))
 
-  (it "index path is episodes/<crew>/index.ednl"
-    (should= (str root "/episodes/cordelia/index.ednl")
+  (it "index path is episodes/<crew>/index.edn"
+    (should= (str root "/episodes/cordelia/index.edn")
              (sut/index-path root "cordelia")))
 
   (it "reads nothing when the index file is absent"
     (should= [] (sut/read-index @mem root "cordelia")))
 
-  (it "writes and reads EDNL rows"
-    (let [rows [{:episode-id "ep1" :scene-id "s1" :kind :gist :model "mini-embed" :vector [1 2 3 4]}]]
+  (it "writes and reads packed metadata + unit-normalized vectors"
+    (let [rows [{:episode-id "ep1" :scene-id "s1" :kind :gist :model "mini-embed" :vector [3.0 0.0 4.0]}]]
       (sut/write-index! @mem root "cordelia" rows)
-      (should= rows (sut/read-index @mem root "cordelia"))))
+      (let [got (sut/read-index @mem root "cordelia")]
+        (should= 1 (count got))
+        (should= "ep1" (:episode-id (first got)))
+        (should= :gist (:kind (first got)))
+        (should= [0.6 0.0 0.8] (mapv #(Double/parseDouble (format "%.1f" %))
+                                     (:vector (first got)))))))
+
+  (it "blob bytes match independently computed little-endian float32"
+    (let [rows [{:episode-id "ep1" :scene-id "s1" :kind :gist :model "mini-embed" :vector [3.0 0.0 4.0]}
+                {:episode-id "ep1" :scene-id "s2" :kind :text :model "mini-embed" :vector [0.0 5.0 0.0]}]
+          expected (let [bb (ByteBuffer/allocate (* 2 3 4))]
+                     (.order bb ByteOrder/LITTLE_ENDIAN)
+                     (doseq [v [[0.6 0.0 0.8] [0.0 1.0 0.0]]
+                             x v]
+                       (.putFloat bb (float x)))
+                     (.array bb))]
+      (sut/write-index! @mem root "cordelia" rows)
+      (should= (vec expected) (vec (sut/vectors-bytes @mem root "cordelia")))))
 
   (it "row-key is scene-id + kind + model"
     (should= ["s1" :gist "mini-embed"]
@@ -52,19 +72,14 @@
                          :ended-at "2026-03-01T10:05:00"
                          :gist "wine" :text "pinot"
                          :start-id "a" :end-id "b" :seal-reason :migrate}])
-        (let [result (sut/index-crew! @mem root "cordelia" cfg {})]
+        (let [result (sut/index-crew! @mem root "cordelia" cfg {})
+              rows   (sut/read-index @mem root "cordelia")
+              norm   (fn [text] (vec (score/normalize-vector (embedding/grover-vector text))))]
           (should= 2 (:new result))
-          (should= [{:episode-id "2026-03-01-1000-ab12"
-                     :scene-id   "2026-03-01-1000-s1x1"
-                     :kind       :gist
-                     :model      "mini-embed"
-                     :vector     (embedding/grover-vector "wine")}
-                    {:episode-id "2026-03-01-1000-ab12"
-                     :scene-id   "2026-03-01-1000-s1x1"
-                     :kind       :text
-                     :model      "mini-embed"
-                     :vector     (embedding/grover-vector "pinot")}]
-                   (sut/read-index @mem root "cordelia")))))
+          (should= ["2026-03-01-1000-ab12" "2026-03-01-1000-s1x1" :gist "mini-embed"]
+                   ((juxt :episode-id :scene-id :kind :model) (first rows)))
+          (should= (norm "wine") (vec (:vector (first rows))))
+          (should= (norm "pinot") (vec (:vector (second rows)))))))
 
     (it "is idempotent by (scene-id, kind, model)"
       (let [cfg {:embedding {:source :provider :provider "grover" :model "mini-embed"}}]
@@ -86,11 +101,11 @@
                        [{:id "s1" :gist "grog" :text "rum"
                          :started-at "2026-03-01T10:00:00"
                          :ended-at "2026-03-01T10:05:00"}])
-        (let [result (sut/index-crew! @mem root "cordelia" cfg {:rebuild? true})]
+        (let [result (sut/index-crew! @mem root "cordelia" cfg {:rebuild? true})
+              norm   (fn [text] (vec (score/normalize-vector (embedding/grover-vector text))))]
           (should= 2 (:new result))
-          (should= [(embedding/grover-vector "grog")
-                    (embedding/grover-vector "rum")]
-                   (mapv :vector (sut/read-index @mem root "cordelia"))))))
+          (should= [(norm "grog") (norm "rum")]
+                   (mapv (comp vec :vector) (sut/read-index @mem root "cordelia"))))))
 
     (it "returns :no-embedding without writing an index"
       (write-closed! @mem "cordelia" "ep1"

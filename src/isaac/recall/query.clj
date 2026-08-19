@@ -1,5 +1,5 @@
 (ns isaac.recall.query
-  "Hybrid retrieval over a crew's index.ednl."
+  "Hybrid retrieval over a crew's packed index."
   (:require
     [clojure.string :as str]
     [isaac.episodes.store :as store]
@@ -76,9 +76,10 @@
      :weights    CLI flag overrides {:text :gist :lex :recency}
      :half-life  days (default 30)
      :top        max hits (default all)
+     :floor      match-floor override (nil = resolve from config / default 2.5)
 
    Returns {:hits [...] :model ... :warning ...} or {:error ... :message ...}."
-  [fs* root crew query-text cfg {:keys [now weights half-life top]}]
+  [fs* root crew query-text cfg {:keys [now weights half-life top] :as opts}]
   (let [path (index/index-path root crew)]
     (if-not (fs/exists? fs* path)
       {:error   :no-index
@@ -98,9 +99,11 @@
            :message (str "no rows for model " model " — run isaac episodes index")}
           (let [t-embed (System/nanoTime)
                 embed   (embedding/embed-texts cfg [query-text])
-                qvec    (first (:vectors embed))
+                qvec    (when-let [raw (first (:vectors embed))]
+                          (score/normalize-vector raw))
                 embed-ms (quot (- (System/nanoTime) t-embed) 1000000)
                 w       (score/resolve-weights cfg (or weights {}))
+                floor*  (score/resolve-floor cfg (select-keys opts [:floor]))
                 hl      (or half-life (get-in cfg [:recall :half-life]) 30.0)
                 t-scenes (System/nanoTime)
                 scenes  (scene-lookup fs* root crew)
@@ -108,9 +111,14 @@
                 t-score (System/nanoTime)
                 grouped (rows-by-scene rows model)
                 stale   (group-stale rows model)
-                warning (when (seq stale)
-                          (let [parts (map (fn [[m n]] (str n " stale rows (" m ")")) stale)]
-                            (str (str/join ", " parts) " — run isaac episodes index --rebuild")))
+                stale-warning (when (seq stale)
+                                (let [parts (map (fn [[m n]] (str n " stale rows (" m ")")) stale)]
+                                  (str (str/join ", " parts) " — run isaac episodes index --rebuild")))
+                q-terms (score/tokenize query-text)
+                df      (score/document-frequency
+                          (map (fn [s] (str (:gist s) " " (:text s))) (vals scenes))
+                          q-terms)
+                n-scenes (count grouped)
                 hits
                 (for [[scene-id kind-rows] grouped
                       :let [scene (get scenes scene-id)
@@ -124,7 +132,8 @@
                                        (score/cosine qvec (:vector gist-row))
                                        0.0)
                             lex-hay  (str (:gist scene) " " (:text scene))
-                            lex      (score/lexical query-text lex-hay)
+                            lex      (score/lexical query-text lex-hay {:df df :n n-scenes})
+                            terms    (score/matched-terms query-text lex-hay)
                             rec      (score/recency (age-days (:ended-at scene) now) hl)
                             blended  (score/blend {:text text-cos :gist gist-cos
                                                    :lex lex :rec rec}
@@ -136,20 +145,33 @@
                    :gist       gist-cos
                    :lex        lex
                    :rec        rec
+                   :terms      terms
                    :gist-text  (:gist scene)})
                 ranked (->> hits
                             (sort-by (juxt (comp - :score) :scene-id))
                             vec)
+                scores (mapv :score ranked)
+                top-hit (first ranked)
+                z       (when top-hit (score/z-score (:score top-hit) scores))
+                floor-warning (when (and top-hit
+                                         (not (score/match? {:z (or z 0.0) :lex (:lex top-hit)} floor*)))
+                                (format "weak matches — nothing stands out (top z %.1f)" (or z 0.0)))
+                warning (str/join "\n" (remove str/blank? [stale-warning floor-warning]))
+                warning (when-not (str/blank? warning) warning)
                 ranked (if top (vec (take (long top) ranked)) ranked)
-                score-ms (quot (- (System/nanoTime) t-score) 1000000)]
+                score-ms (quot (- (System/nanoTime) t-score) 1000000)
+                vec-bytes (or (try (fs/size fs* (index/vectors-path root crew))
+                                   (catch Exception _ nil))
+                              0)
+                meta-bytes (or (try (fs/size fs* path)
+                                    (catch Exception _ nil))
+                               0)]
             (cond-> {:hits ranked :model model :scene-count (count grouped)
                      :timings {:index-ms index-ms
                                :scenes-ms scenes-ms
                                :embed-ms embed-ms
                                :score-ms score-ms}
                      :index-stats {:rows (count rows)
-                                   :file-bytes (or (try (fs/size fs* path)
-                                                        (catch Exception _ nil))
-                                                   0)
+                                   :file-bytes (+ vec-bytes meta-bytes)
                                    :heap-bytes heap-index}}
               warning (assoc :warning warning))))))))

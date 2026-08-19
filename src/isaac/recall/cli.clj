@@ -25,6 +25,8 @@
    [nil  "--w-recency W" "Recency-channel weight (parts)"
     :parse-fn #(Double/parseDouble %)]
    [nil  "--half-life DAYS" "Recency half-life in days"
+    :parse-fn #(Double/parseDouble %)]
+   [nil  "--floor Z" "Match-floor z-score (0 disables)"
     :parse-fn #(Double/parseDouble %)]])
 
 (def ^:private help-text
@@ -44,6 +46,7 @@
              "  --w-lex W           Lexical-channel weight (parts)"
              "  --w-recency W       Recency-channel weight (parts)"
              "  --half-life DAYS    Recency half-life in days (default 30)"
+             "  --floor Z           Match-floor z-score (default 2.5; 0 disables)"
              "  -h, --help          Show help"]))
 
 (defn- print-err! [msg]
@@ -73,6 +76,8 @@
        "  gist " (format-score (:gist hit))
        "  lex " (format-score (:lex hit))
        "  rec " (format-score (:rec hit))
+       (when (seq (:terms hit))
+         (str "  terms [" (str/join " " (:terms hit)) "]"))
        "\n  " (or (:gist-text hit) "")))
 
 (defn- flag-weights [options]
@@ -105,10 +110,12 @@
                        "main")
               q    (str/join " " arguments)
               result (query/query fs root crew q cfg
-                                  {:now       (memory/now)
-                                   :weights   (flag-weights options)
-                                   :half-life (:half-life options)
-                                   :top       (:top options)})]
+                                  (cond-> {:now       (memory/now)
+                                           :weights   (flag-weights options)
+                                           :half-life (:half-life options)
+                                           :top       (:top options)}
+                                    (contains? options :floor)
+                                    (assoc :floor (:floor options))))]
           (cond
             (:error result)
             (do (print-err! (:message result)) 1)

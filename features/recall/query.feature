@@ -35,7 +35,6 @@ Feature: Recall — query
 
   # ----- Hybrid ranking -----
 
-  @wip
     Scenario: ranked hits with per-channel score breakdown
     Given config file "isaac.edn" containing:
       """
@@ -54,7 +53,10 @@ Feature: Recall — query
       | \s+wine                                                                                          |
       | 2\. 2026-03-01-1006-s2x2\s+score \d\.\d+\s+text \d\.\d+\s+gist \d\.\d+\s+lex 0\.0\d*\s+rec \d\.\d+ |
       | \s+race                                                                                          |
-      | timing: index \d+ms \| scenes \d+ms \| embed \d+ms \| score \d+ms                                |
+      | timing: index \d+ms                                                                              |
+      | scenes \d+ms                                                                                     |
+      | embed \d+ms                                                                                      |
+      | score \d+ms                                                                                      |
       | index: 4 rows, \d+\.\d MB file, ~\d+\.\d MB heap                                                 |
     And the exit code is 0
 
@@ -174,7 +176,6 @@ Feature: Recall — query
 
   # ----- IDF lexical weighting (isaac-74ls) -----
 
-  @wip
     Scenario: rare terms outweigh common terms in the lexical channel
     Given config file "isaac.edn" containing:
       """
@@ -194,7 +195,6 @@ Feature: Recall — query
       | 3\. 2026-03-01-1010-s3x3\s+.*lex 0\.379\d*.*terms \[test\]           |
     And the exit code is 0
 
-  @wip
     Scenario: unknown query terms dilute the lexical score honestly
     Given config file "isaac.edn" containing:
       """
@@ -215,7 +215,6 @@ Feature: Recall — query
 
   # ----- Match floor (isaac-74ls) -----
 
-  @wip
     Scenario: junk queries warn that nothing stands out; real matches stay silent
     Given config file "isaac.edn" containing:
       """
@@ -239,7 +238,6 @@ Feature: Recall — query
       | 1\. 2026-03-01-1008-s5x5\s+.*terms \[lighthouse\] |
     And the exit code is 0
 
-  @wip
     Scenario: floor resolves defaults, then :recall config, then CLI flag; 0 disables
     Given config file "isaac.edn" containing:
       """
