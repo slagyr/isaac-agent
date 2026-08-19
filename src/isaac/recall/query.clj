@@ -83,17 +83,29 @@
     (if-not (fs/exists? fs* path)
       {:error   :no-index
        :message (str "no index for crew " crew " — run isaac episodes index")}
-      (let [rows  (index/read-index fs* root crew)
+      (let [heap-before (let [rt (Runtime/getRuntime)]
+                          (- (.totalMemory rt) (.freeMemory rt)))
+            t-index (System/nanoTime)
+            rows  (index/read-index fs* root crew)
+            index-ms (quot (- (System/nanoTime) t-index) 1000000)
+            heap-index (- (let [rt (Runtime/getRuntime)]
+                            (- (.totalMemory rt) (.freeMemory rt)))
+                          heap-before)
             model (configured-model cfg)
             matching (filter #(= model (:model %)) rows)]
         (if (empty? matching)
           {:error   :no-rows
            :message (str "no rows for model " model " — run isaac episodes index")}
-          (let [embed   (embedding/embed-texts cfg [query-text])
+          (let [t-embed (System/nanoTime)
+                embed   (embedding/embed-texts cfg [query-text])
                 qvec    (first (:vectors embed))
+                embed-ms (quot (- (System/nanoTime) t-embed) 1000000)
                 w       (score/resolve-weights cfg (or weights {}))
                 hl      (or half-life (get-in cfg [:recall :half-life]) 30.0)
+                t-scenes (System/nanoTime)
                 scenes  (scene-lookup fs* root crew)
+                scenes-ms (quot (- (System/nanoTime) t-scenes) 1000000)
+                t-score (System/nanoTime)
                 grouped (rows-by-scene rows model)
                 stale   (group-stale rows model)
                 warning (when (seq stale)
@@ -128,6 +140,16 @@
                 ranked (->> hits
                             (sort-by (juxt (comp - :score) :scene-id))
                             vec)
-                ranked (if top (vec (take (long top) ranked)) ranked)]
-            (cond-> {:hits ranked :model model :scene-count (count grouped)}
+                ranked (if top (vec (take (long top) ranked)) ranked)
+                score-ms (quot (- (System/nanoTime) t-score) 1000000)]
+            (cond-> {:hits ranked :model model :scene-count (count grouped)
+                     :timings {:index-ms index-ms
+                               :scenes-ms scenes-ms
+                               :embed-ms embed-ms
+                               :score-ms score-ms}
+                     :index-stats {:rows (count rows)
+                                   :file-bytes (or (try (fs/size fs* path)
+                                                        (catch Exception _ nil))
+                                                   0)
+                                   :heap-bytes heap-index}}
               warning (assoc :warning warning))))))))

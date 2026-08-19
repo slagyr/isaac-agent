@@ -122,6 +122,16 @@
                             ", " (:scene-count result) " scenes)"))
               (doseq [[i hit] (map-indexed vector (:hits result))]
                 (println (format-hit i hit)))
+              (when-let [t (:timings result)]
+                (let [s (:index-stats result)
+                      mb (fn [b] (format "%.1f" (/ (double (or b 0)) 1048576.0)))]
+                  (println (str "timing: index " (:index-ms t) "ms"
+                                " | scenes " (:scenes-ms t) "ms"
+                                " | embed " (:embed-ms t) "ms"
+                                " | score " (:score-ms t) "ms"))
+                  (println (str "index: " (:rows s) " rows, "
+                                (mb (:file-bytes s)) " MB file, ~"
+                                (mb (:heap-bytes s)) " MB heap"))))
               0)))
         (catch Exception e
           (print-err! (or (ex-message e) (.getMessage e)))
