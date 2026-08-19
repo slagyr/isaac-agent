@@ -35,6 +35,7 @@ Feature: Recall — query
 
   # ----- Hybrid ranking -----
 
+  @wip
     Scenario: ranked hits with per-channel score breakdown
     Given config file "isaac.edn" containing:
       """
@@ -49,10 +50,12 @@ Feature: Recall — query
     Then the stdout matches:
       | pattern                                                                                          |
       | recall "wine" \(crew cordelia, model mini-embed, 2 scenes\)                                      |
-      | 1\. 2026-03-01-1000-s1x1\s+score \d\.\d+\s+text 1\.0\d*\s+gist 1\.0\d*\s+lex 1\.0\d*\s+rec \d\.\d+ |
+      | 1\. 2026-03-01-1000-s1x1\s+score \d\.\d+\s+text 1\.0\d*\s+gist 1\.0\d*\s+lex 1\.0\d*\s+rec \d\.\d+\s+terms \[wine\] |
       | \s+wine                                                                                          |
       | 2\. 2026-03-01-1006-s2x2\s+score \d\.\d+\s+text \d\.\d+\s+gist \d\.\d+\s+lex 0\.0\d*\s+rec \d\.\d+ |
       | \s+race                                                                                          |
+      | timing: index \d+ms \| scenes \d+ms \| embed \d+ms \| score \d+ms                                |
+      | index: 4 rows, \d+\.\d MB file, ~\d+\.\d MB heap                                                 |
     And the exit code is 0
 
   # ----- Lexical channel -----
@@ -167,4 +170,98 @@ Feature: Recall — query
     And the stdout matches:
       | pattern                  |
       | 1\. 2026-03-01-1000-s1x1 |
+    And the exit code is 0
+
+  # ----- IDF lexical weighting (isaac-74ls) -----
+
+  @wip
+    Scenario: rare terms outweigh common terms in the lexical channel
+    Given config file "isaac.edn" containing:
+      """
+      {:embedding {:source :provider :provider "grover" :model "mini-embed"}}
+      """
+    And crew "cordelia" has a closed episode "2026-03-01-1000-ab12" with scenes:
+      | id                   | started-at          | ended-at            | gist                | text                                                   |
+      | 2026-03-01-1000-s1x1 | 2026-03-01T10:00:00 | 2026-03-01T10:05:00 | Reef chart repair   | resolved chart-7x2b test failures in the passage suite |
+      | 2026-03-01-1006-s2x2 | 2026-03-01T10:06:00 | 2026-03-01T10:09:00 | Galley provisioning | hardtack test rations for the voyage                   |
+      | 2026-03-01-1010-s3x3 | 2026-03-01T10:10:00 | 2026-03-01T10:12:00 | Watch rotation      | night watch test schedule dogged evenings              |
+    When isaac is run with "episodes index --crew cordelia"
+    When isaac is run with "recall chart-7x2b test --crew cordelia --w-text 0 --w-gist 0 --w-recency 0"
+    Then the stdout matches:
+      | pattern                                                              |
+      | 1\. 2026-03-01-1000-s1x1\s+.*lex 1\.0\d*.*terms \[chart-7x2b test\]  |
+      | 2\. 2026-03-01-1006-s2x2\s+.*lex 0\.379\d*.*terms \[test\]           |
+      | 3\. 2026-03-01-1010-s3x3\s+.*lex 0\.379\d*.*terms \[test\]           |
+    And the exit code is 0
+
+  @wip
+    Scenario: unknown query terms dilute the lexical score honestly
+    Given config file "isaac.edn" containing:
+      """
+      {:embedding {:source :provider :provider "grover" :model "mini-embed"}}
+      """
+    And crew "cordelia" has a closed episode "2026-03-01-1000-ab12" with scenes:
+      | id                   | started-at          | ended-at            | gist                | text                                      |
+      | 2026-03-01-1000-s1x1 | 2026-03-01T10:00:00 | 2026-03-01T10:05:00 | Galley provisioning | hardtack test rations for the voyage      |
+      | 2026-03-01-1006-s2x2 | 2026-03-01T10:06:00 | 2026-03-01T10:09:00 | Watch rotation      | night watch test schedule dogged evenings |
+      | 2026-03-01-1010-s3x3 | 2026-03-01T10:10:00 | 2026-03-01T10:12:00 | Reef charting       | test soundings along the leeward passage  |
+    When isaac is run with "episodes index --crew cordelia"
+    When isaac is run with "recall whoville test --crew cordelia --w-text 0 --w-gist 0 --w-recency 0"
+    Then the stdout matches:
+      | pattern                                                    |
+      | 1\. 2026-03-01-1000-s1x1\s+.*lex 0\.287\d*.*terms \[test\] |
+      | 3\. 2026-03-01-1010-s3x3\s+.*lex 0\.287\d*.*terms \[test\] |
+    And the exit code is 0
+
+  # ----- Match floor (isaac-74ls) -----
+
+  @wip
+    Scenario: junk queries warn that nothing stands out; real matches stay silent
+    Given config file "isaac.edn" containing:
+      """
+      {:embedding {:source :provider :provider "grover" :model "mini-embed"}}
+      """
+    And crew "cordelia" has a closed episode "2026-03-01-1000-ab12" with scenes:
+      | id                   | started-at          | ended-at            | gist                | text                                 |
+      | 2026-03-01-1000-s1x1 | 2026-03-01T10:00:00 | 2026-03-01T10:01:00 | Reef charting       | soundings along the leeward passage  |
+      | 2026-03-01-1002-s2x2 | 2026-03-01T10:02:00 | 2026-03-01T10:03:00 | Galley provisioning | hardtack rations for the voyage      |
+      | 2026-03-01-1004-s3x3 | 2026-03-01T10:04:00 | 2026-03-01T10:05:00 | Watch rotation      | night watch schedule dogged evenings |
+      | 2026-03-01-1006-s4x4 | 2026-03-01T10:06:00 | 2026-03-01T10:07:00 | Wine pairing        | a light pinot noir for the pheasant  |
+      | 2026-03-01-1008-s5x5 | 2026-03-01T10:08:00 | 2026-03-01T10:09:00 | Signal flags        | two long flashes for the lighthouse  |
+    When isaac is run with "episodes index --crew cordelia"
+    When isaac is run with "recall whoville --crew cordelia --w-text 0 --w-gist 0 --w-recency 0"
+    Then the stderr contains "weak matches — nothing stands out (top z 0.0)"
+    And the exit code is 0
+    When isaac is run with "recall lighthouse --crew cordelia --w-text 0 --w-gist 0 --w-recency 0"
+    Then the stderr does not contain "weak matches"
+    And the stdout matches:
+      | pattern                                           |
+      | 1\. 2026-03-01-1008-s5x5\s+.*terms \[lighthouse\] |
+    And the exit code is 0
+
+  @wip
+    Scenario: floor resolves defaults, then :recall config, then CLI flag; 0 disables
+    Given config file "isaac.edn" containing:
+      """
+      {:embedding {:source :provider :provider "grover" :model "mini-embed"}}
+      """
+    And crew "cordelia" has a closed episode "2026-03-01-1000-ab12" with scenes:
+      | id                   | started-at          | ended-at            | gist                | text                                 |
+      | 2026-03-01-1000-s1x1 | 2026-03-01T10:00:00 | 2026-03-01T10:01:00 | Reef charting       | soundings along the leeward passage  |
+      | 2026-03-01-1002-s2x2 | 2026-03-01T10:02:00 | 2026-03-01T10:03:00 | Galley provisioning | hardtack rations for the voyage      |
+      | 2026-03-01-1004-s3x3 | 2026-03-01T10:04:00 | 2026-03-01T10:05:00 | Watch rotation      | night watch schedule dogged evenings |
+      | 2026-03-01-1006-s4x4 | 2026-03-01T10:06:00 | 2026-03-01T10:07:00 | Wine pairing        | a light pinot noir for the pheasant  |
+      | 2026-03-01-1008-s5x5 | 2026-03-01T10:08:00 | 2026-03-01T10:09:00 | Signal flags        | two long flashes for the lighthouse  |
+    When isaac is run with "episodes index --crew cordelia"
+    When isaac is run with "recall whoville --crew cordelia --w-text 0 --w-gist 0 --w-recency 0"
+    Then the stderr contains "weak matches"
+    Given config file "isaac.edn" containing:
+      """
+      {:embedding {:source :provider :provider "grover" :model "mini-embed"}
+       :recall {:floor 0}}
+      """
+    When isaac is run with "recall whoville --crew cordelia --w-text 0 --w-gist 0 --w-recency 0"
+    Then the stderr does not contain "weak matches"
+    When isaac is run with "recall whoville --crew cordelia --w-text 0 --w-gist 0 --w-recency 0 --floor 3"
+    Then the stderr contains "weak matches"
     And the exit code is 0
