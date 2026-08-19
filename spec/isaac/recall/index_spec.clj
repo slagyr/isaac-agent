@@ -113,4 +113,26 @@
         (should= 2 (:new result))
         (should= 4 (count (sut/read-index @mem root "cordelia")))))
     )
+
+  (context "embed batching"
+    (it "embeds in bounded batches so corpus-scale runs cannot time out one request"
+      (let [cfg {:embedding {:source :provider :provider "grover" :model "mini-embed"}}
+            batch-sizes (atom [])
+            real-embed embedding/embed-texts
+            scenes (mapv (fn [i]
+                           {:id (format "2026-03-01-1000-s%03d" i)
+                            :started-at "2026-03-01T10:00:00"
+                            :ended-at   "2026-03-01T10:05:00"
+                            :gist (str "gist" i)
+                            :text (str "text" i)})
+                         (range 40))]
+        (write-closed! @mem "cordelia" "2026-03-01-1000-ab12" scenes)
+        (with-redefs [embedding/embed-texts
+                      (fn [cfg texts]
+                        (swap! batch-sizes conj (count texts))
+                        (real-embed cfg texts))]
+          (should= 80 (:new (sut/index-crew! @mem root "cordelia" cfg {}))))
+        ;; capability probe (1 text) + ceil(80/64) batches
+        (should= [1 64 16] @batch-sizes)))
+    )
   )

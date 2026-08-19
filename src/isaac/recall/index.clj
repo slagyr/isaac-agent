@@ -56,11 +56,27 @@
                    (store/list-scenes fs* root crew eid))))
           (store/list-episodes fs* root crew)))
 
-(defn- embed-or-error [cfg texts]
-  (let [result (embedding/embed-texts cfg texts)]
-    (if (:error result)
-      result
-      (:vectors result))))
+(def ^:private EMBED_BATCH 64)
+
+(defn- embed-batched
+  "Embed texts in EMBED_BATCH chunks — one corpus-sized request would blow
+   the embedder's HTTP timeout. Prints progress when more than one batch.
+   Returns a vector of vectors, or the error map from the failing batch."
+  [cfg texts]
+  (let [total (count texts)
+        verbose? (> total EMBED_BATCH)]
+    (loop [remaining texts
+           acc []]
+      (if (empty? remaining)
+        acc
+        (let [batch  (vec (take EMBED_BATCH remaining))
+              result (embedding/embed-texts cfg batch)]
+          (if (:error result)
+            result
+            (let [acc (into acc (:vectors result))]
+              (when verbose?
+                (println (str "  embedded " (count acc) "/" total)))
+              (recur (drop EMBED_BATCH remaining) acc))))))))
 
 (defn index-crew!
   "Embed sealed scenes into the per-crew index.
@@ -85,7 +101,7 @@
                         :model      model
                         :text       text})
             texts    (mapv :text needed)
-            vectors  (when (seq texts) (embed-or-error cfg texts))]
+            vectors  (when (seq texts) (embed-batched cfg texts))]
         (if (and (map? vectors) (:error vectors))
           vectors
           (let [fresh (mapv (fn [row v]
