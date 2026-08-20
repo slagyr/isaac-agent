@@ -98,12 +98,19 @@
       (Math/pow 0.5 (/ (double (or age-days 0.0)) half)))))
 
 (defn tokenize
-  "Lowercased runs of alphanumerics with internal hyphens/dots kept intact."
+  "Lowercased runs of alphanumerics with internal hyphens/dots kept intact.
+   Lowercases the whole string once (compiled) rather than per token —
+   per-token interop costs ~1s per query at corpus scale."
   [s]
-  (->> (re-seq #"[A-Za-z0-9]+(?:[-.][A-Za-z0-9]+)*" (or s ""))
-       (map #(.toLowerCase ^String %))
+  (->> (re-seq #"[a-z0-9]+(?:[-.][a-z0-9]+)*" (.toLowerCase ^String (str (or s ""))))
        distinct
        vec))
+
+(defn token-set
+  "Coerce a haystack (string or prebuilt token set) to a token set.
+   Callers scoring many scenes build each scene's set ONCE per query."
+  [s]
+  (if (set? s) s (set (tokenize s))))
 
 (defn idf
   "idf(t) = ln(1 + N/(df(t)+1))."
@@ -111,27 +118,26 @@
   (Math/log (+ 1.0 (/ (double n) (+ (double (or df 0)) 1.0)))))
 
 (defn document-frequency
-  "Live df: count of scenes whose token set contains each query term."
+  "Live df: count of scenes whose token set contains each query term.
+   `scenes` are haystack strings or prebuilt token sets."
   [scenes query-terms]
-  (let [haystacks (mapv #(set (tokenize %)) scenes)]
+  (let [haystacks (mapv token-set scenes)]
     (into {}
           (map (fn [t]
                  [t (count (filter #(% t) haystacks))])
                query-terms))))
 
-(defn- scene-tokens [scene]
-  (set (tokenize scene)))
-
 (defn lexical
   "IDF-weighted term overlap when :df/:n provided; else unweighted fraction.
-   lex = Σ idf(matched query terms) / Σ idf(all query terms)."
+   lex = Σ idf(matched query terms) / Σ idf(all query terms).
+   `scene` is a haystack string or a prebuilt token set."
   ([query scene]
    (lexical query scene nil))
   ([query scene {:keys [df n]}]
    (let [q (tokenize query)]
      (if (empty? q)
        0.0
-       (let [haystack (scene-tokens scene)]
+       (let [haystack (token-set scene)]
          (if (and df n)
            (let [denom (reduce + 0.0 (map #(idf n (get df % 0)) q))]
              (if (zero? denom)
@@ -143,9 +149,10 @@
              (double (/ hits (count q))))))))))
 
 (defn matched-terms
-  "Query terms found in the scene, in query order."
+  "Query terms found in the scene, in query order.
+   `scene` is a haystack string or a prebuilt token set."
   [query scene]
-  (let [haystack (scene-tokens scene)]
+  (let [haystack (token-set scene)]
     (vec (filter haystack (tokenize query)))))
 
 (defn blend

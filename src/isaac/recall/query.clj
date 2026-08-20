@@ -115,9 +115,11 @@
                                 (let [parts (map (fn [[m n]] (str n " stale rows (" m ")")) stale)]
                                   (str (str/join ", " parts) " — run isaac episodes index --rebuild")))
                 q-terms (score/tokenize query-text)
-                df      (score/document-frequency
-                          (map (fn [s] (str (:gist s) " " (:text s))) (vals scenes))
-                          q-terms)
+                tokensets (into {}
+                                (map (fn [[sid s]]
+                                       [sid (score/token-set (str (:gist s) " " (:text s)))]))
+                                scenes)
+                df      (score/document-frequency (vals tokensets) q-terms)
                 n-scenes (count grouped)
                 hits
                 (for [[scene-id kind-rows] grouped
@@ -131,7 +133,8 @@
                             gist-cos (if (and qvec (:vector gist-row))
                                        (score/cosine qvec (:vector gist-row))
                                        0.0)
-                            lex-hay  (str (:gist scene) " " (:text scene))
+                            lex-hay  (or (get tokensets scene-id)
+                                         (str (:gist scene) " " (:text scene)))
                             lex      (score/lexical query-text lex-hay {:df df :n n-scenes})
                             terms    (score/matched-terms query-text lex-hay)
                             rec      (score/recency (age-days (:ended-at scene) now) hl)
