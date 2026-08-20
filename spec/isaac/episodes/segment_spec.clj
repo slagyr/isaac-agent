@@ -47,6 +47,13 @@
 
     (it "drops open-ended boundaries when n is unknown"
       (should= [] (sut/parse-scenes "3-present: wrap up")))
+
+    (it "strips a leading ~ from the gist and marks routine?"
+      (should= [{:start 1 :end 2 :gist "Loading the rigging checklist skill" :routine? true}
+                {:start 3 :end 4 :gist "Diagnosed mainstay fraying: chafe guard mounted backwards"}]
+               (sut/parse-scenes
+                 (str "1-2: ~ Loading the rigging checklist skill\n"
+                      "3-4: Diagnosed mainstay fraying: chafe guard mounted backwards\n"))))
     )
 
   (context "validate-tiling"
@@ -69,6 +76,14 @@
             scenes [{:start 1 :end 2 :gist "Wine"} {:start 3 :end 4 :gist "Regatta"}]]
         (should= [{:start-id "a" :end-id "b" :gist "Wine" :start-ord 1 :end-ord 2}
                   {:start-id "c" :end-id "d" :gist "Regatta" :start-ord 3 :end-ord 4}]
+                 (sut/resolve-ordinals msgs scenes))))
+
+    (it "carries routine? onto resolved scenes"
+      (let [msgs [{:id "a"} {:id "b"} {:id "c"} {:id "d"}]
+            scenes [{:start 1 :end 2 :gist "Loading skill" :routine? true}
+                    {:start 3 :end 4 :gist "Diagnosed fraying"}]]
+        (should= [{:start-id "a" :end-id "b" :gist "Loading skill" :start-ord 1 :end-ord 2 :routine? true}
+                  {:start-id "c" :end-id "d" :gist "Diagnosed fraying" :start-ord 3 :end-ord 4}]
                  (sut/resolve-ordinals msgs scenes))))
     )
 
@@ -163,5 +178,32 @@
             result (sut/segment-span! provider "gist" msgs nil)]
         (should= :flagged (:error result))
         (should= "still garbage" (:raw result))))
+    )
+
+  (context "seal-scenes"
+    (it "writes :routine true when the gist was tilde-marked"
+      (let [msgs [{:id "a" :timestamp "t1" :text "Load the skill." :dropped? false}
+                  {:id "b" :timestamp "t2" :text "Loaded." :dropped? false}
+                  {:id "c" :timestamp "t3" :text "Why fray?" :dropped? false}
+                  {:id "d" :timestamp "t4" :text "Chafe guard backwards." :dropped? false}]
+            resolved [{:start-id "a" :end-id "b" :gist "Loading the skill" :start-ord 1 :end-ord 2 :routine? true}
+                      {:start-id "c" :end-id "d" :gist "Diagnosed fraying" :start-ord 3 :end-ord 4}]
+            scenes (sut/seal-scenes msgs resolved :migrate)]
+        (should= true (:routine (first scenes)))
+        (should-not (contains? (second scenes) :routine))
+        (should= "Loading the skill" (:gist (first scenes)))))
+
+    (it "auto-marks a markers-only slice as routine without LLM judgment"
+      (let [msgs [{:id "a" :timestamp "t1" :text "Check the pump." :dropped? false}
+                  {:id "b" :timestamp "t2" :text "(tool exec command=pump --status)" :dropped? false}
+                  {:id "c" :timestamp "t3" :text nil :dropped? true}
+                  {:id "d" :timestamp "t4" :text "Pump is nominal." :dropped? false}]
+            resolved [{:start-id "a" :end-id "a" :gist "Bilge pump status request" :start-ord 1 :end-ord 1}
+                      {:start-id "b" :end-id "c" :gist "Pump tooling" :start-ord 2 :end-ord 3}
+                      {:start-id "d" :end-id "d" :gist "Pump nominal report" :start-ord 4 :end-ord 4}]
+            scenes (sut/seal-scenes msgs resolved :migrate)]
+        (should-not (contains? (first scenes) :routine))
+        (should= true (:routine (second scenes)))
+        (should-not (contains? (nth scenes 2) :routine))))
     )
   )

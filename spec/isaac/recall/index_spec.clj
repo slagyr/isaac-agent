@@ -122,6 +122,21 @@
                                     {})]
         (should= 2 (:new result))
         (should= 4 (count (sut/read-index @mem root "cordelia")))))
+
+    (it "skips routine scenes and reports the skip count"
+      (let [cfg {:embedding {:source :provider :provider "grover" :model "mini-embed"}}]
+        (write-closed! @mem "cordelia" "ep1"
+                       [{:id "s1" :gist "wine" :text "pinot"
+                         :started-at "2026-03-01T10:00:00"
+                         :ended-at "2026-03-01T10:05:00"}
+                        {:id "s2" :gist "drill" :text "rig" :routine true
+                         :started-at "2026-03-01T10:06:00"
+                         :ended-at "2026-03-01T10:09:00"}])
+        (let [result (sut/index-crew! @mem root "cordelia" cfg {})
+              rows   (sut/read-index @mem root "cordelia")]
+          (should= 2 (:new result))
+          (should= 1 (:skipped-routine result))
+          (should= ["s1"] (distinct (mapv :scene-id rows))))))
     )
 
   (context "embed batching"

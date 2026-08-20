@@ -94,7 +94,7 @@
                           heap-before)
             model (configured-model cfg)
             matching (filter #(= model (:model %)) rows)]
-        (if (empty? matching)
+        (if (and (seq rows) (empty? matching))
           {:error   :no-rows
            :message (str "no rows for model " model " — run isaac episodes index")}
           (let [t-embed (System/nanoTime)
@@ -120,10 +120,10 @@
                                        [sid (score/token-set (str (:gist s) " " (:text s)))]))
                                 scenes)
                 df      (score/document-frequency (vals tokensets) q-terms)
-                n-scenes (count grouped)
+                n-scenes (count scenes)
                 hits
-                (for [[scene-id kind-rows] grouped
-                      :let [scene (get scenes scene-id)
+                (for [[scene-id scene] scenes
+                      :let [kind-rows (get grouped scene-id)
                             by-kind (into {} (map (juxt :kind identity) kind-rows))
                             text-row (get by-kind :text)
                             gist-row (get by-kind :gist)
@@ -140,7 +140,8 @@
                             rec      (score/recency (age-days (:ended-at scene) now) hl)
                             blended  (score/blend {:text text-cos :gist gist-cos
                                                    :lex lex :rec rec}
-                                                  w)]]
+                                                  w)]
+                      :when (or (seq kind-rows) (pos? (double lex)))]
                   {:scene-id   scene-id
                    :episode-id (or (:episode-id scene) (:episode-id text-row) (:episode-id gist-row))
                    :score      blended
@@ -161,6 +162,7 @@
                                 (format "weak matches — nothing stands out (top z %.1f)" (or z 0.0)))
                 warning (str/join "\n" (remove str/blank? [stale-warning floor-warning]))
                 warning (when-not (str/blank? warning) warning)
+                scene-count (count ranked)
                 ranked (if top (vec (take (long top) ranked)) ranked)
                 score-ms (quot (- (System/nanoTime) t-score) 1000000)
                 vec-bytes (or (try (fs/size fs* (index/vectors-path root crew))
@@ -169,7 +171,7 @@
                 meta-bytes (or (try (fs/size fs* path)
                                     (catch Exception _ nil))
                                0)]
-            (cond-> {:hits ranked :model model :scene-count (count grouped)
+            (cond-> {:hits ranked :model model :scene-count scene-count
                      :timings {:index-ms index-ms
                                :scenes-ms scenes-ms
                                :embed-ms embed-ms

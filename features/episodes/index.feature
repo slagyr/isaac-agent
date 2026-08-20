@@ -122,7 +122,6 @@ Feature: Episodes — index
 
   # ----- Routine scenes (isaac-xl6h) -----
 
-  @wip
     Scenario: routine scenes earn no index rows
     Given config file "isaac.edn" containing:
       """

@@ -133,6 +133,33 @@
       (should= ["wine"] (:terms hit1))
       (should= [] (:terms hit2))))
 
+  (it "serves lex on a rowless all-routine index and returns no hits for junk"
+    (write-closed! @mem "cordelia" "ep1"
+                   [{:id "s1" :gist "Watch drill" :text "drill log entry alpha-9k2f" :routine true
+                     :started-at "2026-03-01T10:00:00" :ended-at "2026-03-01T10:05:00"}
+                    {:id "s2" :gist "Test suite run" :text "routine harness sweep" :routine true
+                     :started-at "2026-03-01T10:06:00" :ended-at "2026-03-01T10:09:00"}])
+    (index/index-crew! @mem root "cordelia" cfg {})
+    (let [junk (sut/query @mem root "cordelia" "pheasant" cfg {})
+          hit  (sut/query @mem root "cordelia" "alpha-9k2f" cfg {})]
+      (should-be-nil (:error junk))
+      (should= [] (:hits junk))
+      (should-be-nil (:error hit))
+      (should= ["s1"] (mapv :scene-id (:hits hit)))
+      (should= 1.0 (:lex (first (:hits hit))))
+      (should= 0.0 (:text (first (:hits hit))))
+      (should= 0.0 (:gist (first (:hits hit))))))
+
+  (it "still errors :no-rows on model mismatch, not emptiness"
+    (write-closed! @mem "cordelia" "ep1"
+                   [{:id "s1" :gist "wine" :text "pinot"
+                     :started-at "2026-03-01T10:00:00" :ended-at "2026-03-01T10:05:00"}])
+    (index/index-crew! @mem root "cordelia" cfg {})
+    (let [r (sut/query @mem root "cordelia" "wine"
+                       {:embedding {:source :provider :provider "grover" :model "maxi-embed"}}
+                       {})]
+      (should= :no-rows (:error r))))
+
   (it "warns on a junk field and stays silent for a rare-term hit"
     (write-closed! @mem "cordelia" "ep1"
                    [{:id "s1" :gist "Reef charting" :text "soundings along the leeward passage"

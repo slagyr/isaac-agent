@@ -136,7 +136,9 @@
             existing (if rebuild? [] (read-index fs* root crew))
             keyed    (into {} (map (juxt row-key identity) existing))
             pairs    (list-closed-scenes fs* root crew)
-            needed   (for [{:keys [episode-id scene]} pairs
+            skipped-routine (count (filter #(true? (get-in % [:scene :routine])) pairs))
+            indexable (remove #(true? (get-in % [:scene :routine])) pairs)
+            needed   (for [{:keys [episode-id scene]} indexable
                            {:keys [kind text]} (scene-payloads scene)
                            :let [k [(:id scene) kind model]]
                            :when (not (contains? keyed k))]
@@ -157,7 +159,8 @@
                             (or vectors []))
                 kept  (if rebuild? [] existing)
                 rows  (vec (concat kept fresh))]
-            (when (or rebuild? (seq fresh) (seq existing))
+            (when (or rebuild? (seq fresh) (seq existing) (pos? skipped-routine))
               (write-index! fs* root crew rows))
             {:new (count fresh)
+             :skipped-routine skipped-routine
              :rows rows}))))))

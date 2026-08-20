@@ -93,5 +93,10 @@
       (let [msgs [{:id "a" :role "user" :text "one" :dropped? false}]
             prompt (sut/format-span-prompt msgs nil)]
         (should (re-find #"Prefer several scenes" prompt))))
+
+    (it "instructs routine marking and what-not-how gists"
+      (let [msgs [{:id "a" :role "user" :text "one" :dropped? false}]
+            prompt (sut/format-span-prompt msgs nil)]
+        (should (re-find #"(?s)(?=.*routine)(?=.*~)(?=.*evidence, not the subject)(?=.*what was accomplished)" prompt))))
     )
   )

@@ -56,17 +56,20 @@
 (defn- cell-matches?
   "Match a table cell against an actual value. Regex cells use re-find
    (substring) because scene text is multi-line and features write focused
-   patterns like #\"(?s)pinot noir\"."
+   patterns like #\"(?s)pinot noir\". An empty cell asserts the key is
+   absent (or nil/false) — used for optional frontmatter like routine."
   [expected actual]
-  (let [expected (str expected)
-        actual   (str actual)]
+  (let [expected (str expected)]
     (cond
+      (str/blank? expected)
+      (or (nil? actual) (false? actual))
+
       (str/starts-with? expected "#\"")
       (let [[_ pattern] (re-matches #"#\"(.+)\"" expected)]
-        (boolean (re-find (re-pattern pattern) actual)))
+        (boolean (re-find (re-pattern pattern) (str actual))))
 
       :else
-      (= expected actual))))
+      (= expected (str actual)))))
 
 (defn- ensure-current-episode!
   "Prefer remembered episode; otherwise pick the only/most recent episode on disk."
@@ -178,15 +181,18 @@
       (let [headers (:headers table)
             rows    (:rows table)
             scenes  (mapv (fn [row]
-                            (let [m (zipmap (map keyword headers) row)]
-                              {:id         (:id m)
-                               :started-at (:started-at m)
-                               :ended-at   (:ended-at m)
-                               :gist       (:gist m)
-                               :text       (:text m)
-                               :start-id   (str (:id m) "-start")
-                               :end-id     (str (:id m) "-end")
-                               :seal-reason :migrate}))
+                            (let [m (zipmap (map keyword headers) row)
+                                  routine? (let [v (str (:routine m ""))]
+                                             (or (= "true" v) (= "True" v)))]
+                              (cond-> {:id         (:id m)
+                                       :started-at (:started-at m)
+                                       :ended-at   (:ended-at m)
+                                       :gist       (:gist m)
+                                       :text       (:text m)
+                                       :start-id   (str (:id m) "-start")
+                                       :end-id     (str (:id m) "-end")
+                                       :seal-reason :migrate}
+                                routine? (assoc :routine true))))
                           rows)
             episode {:id         episode-id
                      :crew       crew

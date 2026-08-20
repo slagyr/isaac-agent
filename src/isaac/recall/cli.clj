@@ -124,11 +124,14 @@
             (do
               (when-let [w (:warning result)]
                 (print-err! w))
-              (println (str "recall \"" q "\" (crew " crew
-                            ", model " (:model result)
-                            ", " (:scene-count result) " scenes)"))
-              (doseq [[i hit] (map-indexed vector (:hits result))]
-                (println (format-hit i hit)))
+              (if (empty? (:hits result))
+                (println "no hits")
+                (do
+                  (println (str "recall \"" q "\" (crew " crew
+                                ", model " (:model result)
+                                ", " (:scene-count result) " scenes)"))
+                  (doseq [[i hit] (map-indexed vector (:hits result))]
+                    (println (format-hit i hit)))))
               (when-let [t (:timings result)]
                 (let [s (:index-stats result)
                       mb (fn [b] (format "%.1f" (/ (double (or b 0)) 1048576.0)))]

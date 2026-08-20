@@ -38,9 +38,15 @@
                                   (re-matches #"\d+" b) (Long/parseLong b)
                                   :else              n)]
                       (when end
-                        {:start start
-                         :end   (long end)
-                         :gist  (str/trim gist)})))))
+                        (let [gist     (str/trim gist)
+                              routine? (str/starts-with? gist "~")
+                              gist     (if routine?
+                                         (str/trim (subs gist 1))
+                                         gist)]
+                          (cond-> {:start start
+                                   :end   (long end)
+                                   :gist  gist}
+                            routine? (assoc :routine? true))))))))
           vec))))
 
 (defn valid-tiling?
@@ -72,11 +78,12 @@
     (mapv (fn [s]
             (let [si (dec (:start s))
                   ei (dec (:end s))]
-              {:start-id  (nth ids si)
-               :end-id    (nth ids ei)
-               :gist      (:gist s)
-               :start-ord (:start s)
-               :end-ord   (:end s)}))
+              (cond-> {:start-id  (nth ids si)
+                       :end-id    (nth ids ei)
+                       :gist      (:gist s)
+                       :start-ord (:start s)
+                       :end-ord   (:end s)}
+                (:routine? s) (assoc :routine? true))))
           (sort-by :start scenes))))
 
 (defn- message-entry? [e]
@@ -254,8 +261,23 @@
              :raw   raw
              :usage usage}))))))
 
+(defn- drop-marker-text?
+  "True when distilled text is a tool-call marker (or blank)."
+  [text]
+  (or (str/blank? text)
+      (re-matches #"\(tool [^)]*\)" (str/trim text))))
+
+(defn- markers-only?
+  "True when every distilled message in the slice is dropped or a tool marker."
+  [slice]
+  (every? (fn [m]
+            (or (:dropped? m)
+                (drop-marker-text? (:text m))))
+          slice))
+
 (defn seal-scenes
-  "Build sealed scene records from resolved ordinal scenes + distilled msgs."
+  "Build sealed scene records from resolved ordinal scenes + distilled msgs.
+   Tilde-marked gists and marker-only slices seal with :routine true."
   [distilled-messages resolved-scenes seal-reason]
   (mapv (fn [s]
           (let [start-ord (:start-ord s)
@@ -264,13 +286,15 @@
                 texts     (->> slice (keep :text) (str/join "\n"))
                 start-ts  (:timestamp (first slice))
                 end-ts    (:timestamp (last slice))
-                scene-id  (ids/timestamped-id start-ts)]
-            {:id          scene-id
-             :start-id    (:start-id s)
-             :end-id      (:end-id s)
-             :started-at  start-ts
-             :ended-at    end-ts
-             :seal-reason seal-reason
-             :text        texts
-             :gist        (:gist s)}))
+                scene-id  (ids/timestamped-id start-ts)
+                routine?  (or (:routine? s) (markers-only? slice))]
+            (cond-> {:id          scene-id
+                     :start-id    (:start-id s)
+                     :end-id      (:end-id s)
+                     :started-at  start-ts
+                     :ended-at    end-ts
+                     :seal-reason seal-reason
+                     :text        texts
+                     :gist        (:gist s)}
+              routine? (assoc :routine true))))
         resolved-scenes))

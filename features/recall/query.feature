@@ -266,7 +266,6 @@ Feature: Recall — query
 
   # ----- Routine scenes (isaac-xl6h) -----
 
-  @wip
     Scenario: routine scenes surface via exact terms only
     Given config file "isaac.edn" containing:
       """
@@ -289,7 +288,6 @@ Feature: Recall — query
     And the stdout does not contain "2026-03-01-1006-s2x2"
     And the exit code is 0
 
-  @wip
     Scenario: zero-signal scenes never rank; a rowless index still serves lex
     Given config file "isaac.edn" containing:
       """

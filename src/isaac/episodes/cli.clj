@@ -70,6 +70,14 @@
              "  --rebuild    Drop existing rows and re-embed everything"
              "  -h, --help   Show help"]))
 
+(defn- format-index-summary [result]
+  (let [n (or (:new result) 0)
+        skipped (or (:skipped-routine result) 0)]
+    (if (pos? skipped)
+      (str n " new rows, " skipped " routine scene"
+           (when (not= 1 skipped) "s") " skipped")
+      (str n " new rows"))))
+
 (defn- default-crew [cfg]
   (get-in cfg [:defaults :crew]))
 
@@ -99,7 +107,7 @@
                   (print-err! (or (:message result) "no embedding configured"))
                   1)
                 (do
-                  (println (str (:new result) " new rows"))
+                  (println (format-index-summary result))
                   (recur (rest remaining)))))
             0))))
     (catch Exception e

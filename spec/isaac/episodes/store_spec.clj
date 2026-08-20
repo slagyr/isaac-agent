@@ -53,6 +53,34 @@
         (should= "2026-01-02-0304-s1" (:id read-back))
         (should= :migrate (:seal-reason read-back)))))
 
+  (it "writes routine: true only when the scene is routine"
+    (let [episode {:id "2026-01-02-0304-ab"
+                   :crew "cordelia"
+                   :status :closed
+                   :scene-ids ["s-routine" "s-substantive"]}
+          routine {:id "s-routine" :gist "Loading skill" :text "(tool exec)"
+                   :start-id "a" :end-id "b"
+                   :started-at "2026-01-02T03:04:05"
+                   :ended-at "2026-01-02T03:04:10"
+                   :seal-reason :migrate
+                   :routine true}
+          substantive {:id "s-substantive" :gist "Diagnosed fraying" :text "chafe guard"
+                       :start-id "c" :end-id "d"
+                       :started-at "2026-01-02T03:04:11"
+                       :ended-at "2026-01-02T03:04:20"
+                       :seal-reason :migrate}
+          mem (fs/mem-fs)]
+      (fs/mkdirs mem @root)
+      (sut/write-episode! mem @root episode [routine substantive])
+      (let [r-raw (fs/slurp mem (str (sut/episode-path @root "cordelia" "2026-01-02-0304-ab") "/s-routine.md"))
+            s-raw (fs/slurp mem (str (sut/episode-path @root "cordelia" "2026-01-02-0304-ab") "/s-substantive.md"))
+            r-back (sut/read-scene mem @root "cordelia" "2026-01-02-0304-ab" "s-routine")
+            s-back (sut/read-scene mem @root "cordelia" "2026-01-02-0304-ab" "s-substantive")]
+        (should (re-find #"(?m)^routine: true$" r-raw))
+        (should-not (re-find #"routine" s-raw))
+        (should= true (:routine r-back))
+        (should-not (contains? s-back :routine)))))
+
   (it "finds episode by migrated-from session id"
     (let [mem (fs/mem-fs)
           episode {:id "ep1" :crew "cordelia" :migrated-from "calm-lagoon"

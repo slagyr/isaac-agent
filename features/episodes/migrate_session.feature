@@ -299,7 +299,6 @@ Feature: Episodes — migrate-session
 
   # ----- Recall-worthiness at seal (isaac-xl6h) -----
 
-  @wip
     Scenario: tilde-marked scenes seal as routine
     Given the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
@@ -328,7 +327,6 @@ Feature: Episodes — migrate-session
       | Loading the rigging checklist skill                       | true    |
       | Diagnosed mainstay fraying: chafe guard mounted backwards |         |
 
-  @wip
     Scenario: marker-only scenes are auto-marked routine
     Given the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
@@ -358,7 +356,6 @@ Feature: Episodes — migrate-session
       | Pump tooling              | true    |
       | Pump nominal report       |         |
 
-  @wip
     Scenario: segmentation prompt instructs routine marking and what-not-how gists
     Given the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
