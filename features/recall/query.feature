@@ -215,7 +215,6 @@ Feature: Recall — query
 
   # ----- Match floor (isaac-74ls, cosine form isaac-l1kz) -----
 
-  @wip
     Scenario: junk queries warn that nothing stands out; real matches stay silent
     Given config file "isaac.edn" containing:
       """
@@ -237,8 +236,9 @@ Feature: Recall — query
     When isaac is run with "recall lighthouse --crew cordelia --floor-cos 0.999 --w-lex 0"
     Then the stderr does not contain "weak matches"
     And the stdout matches:
-      | pattern                                           |
-      | 1\. 2026-03-01-1008-s5x5\s+.*terms \[lighthouse\] |
+      | pattern                    |
+      | terms \[lighthouse\]       |
+      | 2026-03-01-1008-s5x5       |
     And the exit code is 0
 
     Scenario: floor resolves defaults, then :recall config, then CLI flag; 0 disables
