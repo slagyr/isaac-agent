@@ -263,3 +263,50 @@ Feature: Recall — query
     When isaac is run with "recall whoville --crew cordelia --w-text 0 --w-gist 0 --w-recency 0 --floor 3"
     Then the stderr contains "weak matches"
     And the exit code is 0
+
+  # ----- Routine scenes (isaac-xl6h) -----
+
+  @wip
+    Scenario: routine scenes surface via exact terms only
+    Given config file "isaac.edn" containing:
+      """
+      {:embedding {:source :provider :provider "grover" :model "mini-embed"}}
+      """
+    And crew "cordelia" has a closed episode "2026-03-01-1000-ab12" with scenes:
+      | id                   | started-at          | ended-at            | gist                      | text                                           | routine |
+      | 2026-03-01-1000-s1x1 | 2026-03-01T10:00:00 | 2026-03-01T10:05:00 | Wine pairing for pheasant | a light pinot noir                             |         |
+      | 2026-03-01-1006-s2x2 | 2026-03-01T10:06:00 | 2026-03-01T10:09:00 | Test suite run            | pump-7q3z assertion failed during the dawn run | true    |
+    When isaac is run with "episodes index --crew cordelia"
+    When isaac is run with "recall pump-7q3z --crew cordelia --w-text 0 --w-gist 0"
+    Then the stdout matches:
+      | pattern                                                                                        |
+      | 1\. 2026-03-01-1006-s2x2\s+.*text 0\.0\d*\s+gist 0\.0\d*\s+lex 1\.0\d*.*terms \[pump-7q3z\] |
+    And the exit code is 0
+    When isaac is run with "recall wine --crew cordelia"
+    Then the stdout matches:
+      | pattern                  |
+      | 1\. 2026-03-01-1000-s1x1 |
+    And the stdout does not contain "2026-03-01-1006-s2x2"
+    And the exit code is 0
+
+  @wip
+    Scenario: zero-signal scenes never rank; a rowless index still serves lex
+    Given config file "isaac.edn" containing:
+      """
+      {:embedding {:source :provider :provider "grover" :model "mini-embed"}}
+      """
+    And crew "cordelia" has a closed episode "2026-03-01-1000-ab12" with scenes:
+      | id                   | started-at          | ended-at            | gist           | text                       | routine |
+      | 2026-03-01-1000-s1x1 | 2026-03-01T10:00:00 | 2026-03-01T10:05:00 | Watch drill    | drill log entry alpha-9k2f | true    |
+      | 2026-03-01-1006-s2x2 | 2026-03-01T10:06:00 | 2026-03-01T10:09:00 | Test suite run | routine harness sweep      | true    |
+    When isaac is run with "episodes index --crew cordelia"
+    Then the stdout contains "0 new rows, 2 routine scenes skipped"
+    When isaac is run with "recall pheasant --crew cordelia"
+    Then the stdout contains "no hits"
+    And the stdout does not contain "1. "
+    And the exit code is 0
+    When isaac is run with "recall alpha-9k2f --crew cordelia"
+    Then the stdout matches:
+      | pattern                                                        |
+      | 1\. 2026-03-01-1000-s1x1\s+.*lex 1\.0\d*.*terms \[alpha-9k2f\] |
+    And the exit code is 0

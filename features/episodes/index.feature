@@ -119,3 +119,23 @@ Feature: Episodes — index
       | 2026-03-01-1000-ab12 | 2026-03-01-1000-s1x1 | text | mini-embed | [5 554 112 116] |
       | 2026-03-01-1000-ab12 | 2026-03-01-1000-s1x1 | gist | maxi-embed | [4 435 119 101] |
       | 2026-03-01-1000-ab12 | 2026-03-01-1000-s1x1 | text | maxi-embed | [5 554 112 116] |
+
+  # ----- Routine scenes (isaac-xl6h) -----
+
+  @wip
+    Scenario: routine scenes earn no index rows
+    Given config file "isaac.edn" containing:
+      """
+      {:embedding {:source :provider :provider "grover" :model "mini-embed"}}
+      """
+    And crew "cordelia" has a closed episode "2026-03-01-1000-ab12" with scenes:
+      | id                   | started-at          | ended-at            | gist  | text  | routine |
+      | 2026-03-01-1000-s1x1 | 2026-03-01T10:00:00 | 2026-03-01T10:05:00 | wine  | pinot |         |
+      | 2026-03-01-1006-s2x2 | 2026-03-01T10:06:00 | 2026-03-01T10:09:00 | drill | rig   | true    |
+    When isaac is run with "episodes index --crew cordelia"
+    Then the stdout contains "2 new rows, 1 routine scene skipped"
+    And the exit code is 0
+    And the index for crew "cordelia" has rows:
+      | episode-id           | scene-id             | kind | model      | vector          |
+      | 2026-03-01-1000-ab12 | 2026-03-01-1000-s1x1 | gist | mini-embed | [4 435 119 101] |
+      | 2026-03-01-1000-ab12 | 2026-03-01-1000-s1x1 | text | mini-embed | [5 554 112 116] |

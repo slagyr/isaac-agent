@@ -296,3 +296,90 @@ Feature: Episodes — migrate-session
     And the stderr contains "ghost-ship"
     And the stderr does not contain "Exception"
     And the exit code is 1
+
+  # ----- Recall-worthiness at seal (isaac-xl6h) -----
+
+  @wip
+    Scenario: tilde-marked scenes seal as routine
+    Given the isaac EDN file "config/models/gist.edn" exists with:
+      | path     | value  |
+      | model    | gist   |
+      | provider | grover |
+    And config file "isaac.edn" containing:
+      """
+      {:episodes {:gist-model :gist}}
+      """
+    And the following sessions exist:
+      | name         | crew     |
+      | tidy-rigging | cordelia |
+    And session "tidy-rigging" has transcript:
+      | type    | message.role | message.content                       |
+      | message | user         | Load the rigging checklist skill.     |
+      | message | assistant    | Checklist skill loaded.               |
+      | message | user         | Why does the mainstay keep fraying?   |
+      | message | assistant    | The chafe guard is mounted backwards. |
+    And the following model responses are queued:
+      | model | type | content                                                                                                    |
+      | gist  | text | 1-2: ~ Loading the rigging checklist skill\n3-4: Diagnosed mainstay fraying: chafe guard mounted backwards |
+    When isaac is run with "episodes migrate-session tidy-rigging"
+    Then the exit code is 0
+    And that episode has scenes matching:
+      | gist                                                      | routine |
+      | Loading the rigging checklist skill                       | true    |
+      | Diagnosed mainstay fraying: chafe guard mounted backwards |         |
+
+  @wip
+    Scenario: marker-only scenes are auto-marked routine
+    Given the isaac EDN file "config/models/gist.edn" exists with:
+      | path     | value  |
+      | model    | gist   |
+      | provider | grover |
+    And config file "isaac.edn" containing:
+      """
+      {:episodes {:gist-model :gist}}
+      """
+    And the following sessions exist:
+      | name        | crew     |
+      | quiet-bilge | cordelia |
+    And session "quiet-bilge" has transcript:
+      | type    | message.role | message.toolCallId | message.content                                                                           |
+      | message | user         |                    | Check the bilge pump status.                                                              |
+      | message | assistant    |                    | [{"type":"toolCall","id":"call_1","name":"exec","arguments":{"command":"pump --status"}}] |
+      | message | toolResult   | call_1             | pump nominal, 12 liters cleared                                                           |
+      | message | assistant    |                    | Bilge pump is nominal.                                                                    |
+    And the following model responses are queued:
+      | model | type | content                                                                     |
+      | gist  | text | 1-1: Bilge pump status request\n2-3: Pump tooling\n4-4: Pump nominal report |
+    When isaac is run with "episodes migrate-session quiet-bilge"
+    Then the exit code is 0
+    And that episode has scenes matching:
+      | gist                      | routine |
+      | Bilge pump status request |         |
+      | Pump tooling              | true    |
+      | Pump nominal report       |         |
+
+  @wip
+    Scenario: segmentation prompt instructs routine marking and what-not-how gists
+    Given the isaac EDN file "config/models/gist.edn" exists with:
+      | path     | value  |
+      | model    | gist   |
+      | provider | grover |
+    And config file "isaac.edn" containing:
+      """
+      {:episodes {:gist-model :gist}}
+      """
+    And the following sessions exist:
+      | name        | crew     |
+      | calm-strait | cordelia |
+    And session "calm-strait" has transcript:
+      | type    | message.role | message.content          |
+      | message | user         | Chart the reef passage.  |
+      | message | assistant    | Marked; keep to leeward. |
+    And the following model responses are queued:
+      | model | type | content                    |
+      | gist  | text | 1-2: Reef passage charting |
+    When isaac is run with "episodes migrate-session calm-strait"
+    Then the exit code is 0
+    And the last LLM request matches:
+      | key      | value                                                                                   |
+      | messages | #"(?s)(?=.*routine)(?=.*~)(?=.*evidence, not the subject)(?=.*what was accomplished).*" |
