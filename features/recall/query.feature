@@ -213,8 +213,9 @@ Feature: Recall — query
       | 3\. 2026-03-01-1010-s3x3\s+.*lex 0\.287\d*.*terms \[test\] |
     And the exit code is 0
 
-  # ----- Match floor (isaac-74ls) -----
+  # ----- Match floor (isaac-74ls, cosine form isaac-l1kz) -----
 
+  @wip
     Scenario: junk queries warn that nothing stands out; real matches stay silent
     Given config file "isaac.edn" containing:
       """
@@ -228,40 +229,40 @@ Feature: Recall — query
       | 2026-03-01-1006-s4x4 | 2026-03-01T10:06:00 | 2026-03-01T10:07:00 | Wine pairing        | a light pinot noir for the pheasant  |
       | 2026-03-01-1008-s5x5 | 2026-03-01T10:08:00 | 2026-03-01T10:09:00 | Signal flags        | two long flashes for the lighthouse  |
     When isaac is run with "episodes index --crew cordelia"
-    When isaac is run with "recall whoville --crew cordelia --w-text 0 --w-gist 0 --w-recency 0"
-    Then the stderr contains "weak matches — nothing stands out (top z 0.0)"
+    When isaac is run with "recall grog --crew cordelia --floor-cos 0.999"
+    Then the stderr contains "weak matches — nothing stands out (best cos 0.9"
     And the exit code is 0
-    When isaac is run with "recall lighthouse --crew cordelia --w-text 0 --w-gist 0 --w-recency 0"
+    When isaac is run with "recall \"two long flashes for the lighthouse\" --crew cordelia --floor-cos 0.999"
+    Then the stderr does not contain "weak matches"
+    When isaac is run with "recall lighthouse --crew cordelia --floor-cos 0.999 --w-lex 0"
     Then the stderr does not contain "weak matches"
     And the stdout matches:
       | pattern                                           |
       | 1\. 2026-03-01-1008-s5x5\s+.*terms \[lighthouse\] |
     And the exit code is 0
 
+  @wip
     Scenario: floor resolves defaults, then :recall config, then CLI flag; 0 disables
     Given config file "isaac.edn" containing:
       """
       {:embedding {:source :provider :provider "grover" :model "mini-embed"}}
       """
     And crew "cordelia" has a closed episode "2026-03-01-1000-ab12" with scenes:
-      | id                   | started-at          | ended-at            | gist                | text                                 |
-      | 2026-03-01-1000-s1x1 | 2026-03-01T10:00:00 | 2026-03-01T10:01:00 | Reef charting       | soundings along the leeward passage  |
-      | 2026-03-01-1002-s2x2 | 2026-03-01T10:02:00 | 2026-03-01T10:03:00 | Galley provisioning | hardtack rations for the voyage      |
-      | 2026-03-01-1004-s3x3 | 2026-03-01T10:04:00 | 2026-03-01T10:05:00 | Watch rotation      | night watch schedule dogged evenings |
-      | 2026-03-01-1006-s4x4 | 2026-03-01T10:06:00 | 2026-03-01T10:07:00 | Wine pairing        | a light pinot noir for the pheasant  |
-      | 2026-03-01-1008-s5x5 | 2026-03-01T10:08:00 | 2026-03-01T10:09:00 | Signal flags        | two long flashes for the lighthouse  |
+      | id                   | started-at          | ended-at            | gist                | text                                |
+      | 2026-03-01-1000-s1x1 | 2026-03-01T10:00:00 | 2026-03-01T10:01:00 | Reef charting       | soundings along the leeward passage |
+      | 2026-03-01-1002-s2x2 | 2026-03-01T10:02:00 | 2026-03-01T10:03:00 | Galley provisioning | hardtack rations for the voyage     |
     When isaac is run with "episodes index --crew cordelia"
-    When isaac is run with "recall whoville --crew cordelia --w-text 0 --w-gist 0 --w-recency 0"
-    Then the stderr contains "weak matches"
+    When isaac is run with "recall grog --crew cordelia"
+    Then the stderr does not contain "weak matches"
     Given config file "isaac.edn" containing:
       """
       {:embedding {:source :provider :provider "grover" :model "mini-embed"}
-       :recall {:floor 0}}
+       :recall {:floor-cos 0.999}}
       """
-    When isaac is run with "recall whoville --crew cordelia --w-text 0 --w-gist 0 --w-recency 0"
-    Then the stderr does not contain "weak matches"
-    When isaac is run with "recall whoville --crew cordelia --w-text 0 --w-gist 0 --w-recency 0 --floor 3"
+    When isaac is run with "recall grog --crew cordelia"
     Then the stderr contains "weak matches"
+    When isaac is run with "recall grog --crew cordelia --floor-cos 0"
+    Then the stderr does not contain "weak matches"
     And the exit code is 0
 
   # ----- Routine scenes (isaac-xl6h) -----
