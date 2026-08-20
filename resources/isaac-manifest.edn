@@ -680,12 +680,12 @@
      {:half-life
       {:type :int,
        :description "Recency half-life in days (default 30)"},
-      :floor
+      :floor-cos
       {:type :double,
-       :description "Match-floor z-score (default 2.5; 0 disables)"},
+       :description "Match-floor cosine (default 0.47; 0 disables)"},
       :weights
       {:type :map,
-       :description "Channel weights as parts multipliers (defaults 1 each)",
+       :description "Channel weights as parts multipliers (defaults 1, recency 0.5)",
        :schema
        {:text    {:type :double, :description "Text-vector cosine weight"},
         :gist    {:type :double, :description "Gist-vector cosine weight"},

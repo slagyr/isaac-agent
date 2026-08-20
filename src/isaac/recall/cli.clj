@@ -26,7 +26,7 @@
     :parse-fn #(Double/parseDouble %)]
    [nil  "--half-life DAYS" "Recency half-life in days"
     :parse-fn #(Double/parseDouble %)]
-   [nil  "--floor Z" "Match-floor z-score (0 disables)"
+   [nil  "--floor-cos C" "Match-floor cosine (0 disables)"
     :parse-fn #(Double/parseDouble %)]])
 
 (def ^:private help-text
@@ -46,7 +46,7 @@
              "  --w-lex W           Lexical-channel weight (parts)"
              "  --w-recency W       Recency-channel weight (parts)"
              "  --half-life DAYS    Recency half-life in days (default 30)"
-             "  --floor Z           Match-floor z-score (default 2.5; 0 disables)"
+             "  --floor-cos C       Match-floor cosine (default 0.47; 0 disables)"
              "  -h, --help          Show help"]))
 
 (defn- print-err! [msg]
@@ -114,8 +114,8 @@
                                            :weights   (flag-weights options)
                                            :half-life (:half-life options)
                                            :top       (:top options)}
-                                    (contains? options :floor)
-                                    (assoc :floor (:floor options))))]
+                                    (contains? options :floor-cos)
+                                    (assoc :floor-cos (:floor-cos options))))]
           (cond
             (:error result)
             (do (print-err! (:message result)) 1)

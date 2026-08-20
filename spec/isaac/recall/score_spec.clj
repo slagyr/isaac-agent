@@ -117,14 +117,14 @@
     )
 
   (context "default weights"
-    (it "uses one part per channel"
-      (should= {:text 1.0 :gist 1.0 :lex 1.0 :recency 1.0}
+    (it "uses one part per channel except recency at half a part"
+      (should= {:text 1.0 :gist 1.0 :lex 1.0 :recency 0.5}
                sut/default-weights))
     )
 
   (context "resolve-weights"
     (it "starts from hardcoded defaults"
-      (should= {:text 1.0 :gist 1.0 :lex 1.0 :recency 1.0}
+      (should= {:text 1.0 :gist 1.0 :lex 1.0 :recency 0.5}
                (sut/resolve-weights {} {})))
 
     (it "overlays :recall config weights"
@@ -137,37 +137,24 @@
                                     {:recency 1})))
     )
 
-  (context "z-score"
-    (it "is (value - mean) / sample-stddev on a synthetic spread"
-      (let [xs [1.0 2.0 3.0 4.0 5.0]]
-        (should (approx 1.264911 (sut/z-score 5.0 xs)))
-        (should (approx 0.0 (sut/z-score 3.0 xs)))))
-
-    (it "uses leave-one-out mean and sample-stddev when :leave-one-out?"
-      (let [xs [1.0 2.0 3.0 4.0 10.0]]
-        (should (approx 5.809475 (sut/z-score 10.0 xs {:leave-one-out? true})))))
-
-    (it "returns 0.0 when sigma is degenerate"
-      (should= 0.0 (sut/z-score 4.0 [4.0 4.0 4.0 4.0 4.0])))
-
-    (it "does not activate below 5 candidates"
-      (should-be-nil (sut/z-score 9.0 [1.0 2.0 3.0 9.0])))
-    )
-
   (context "match floor"
-    (it "defaults to 2.5"
-      (should= 2.5 (sut/resolve-floor {} {})))
+    (it "defaults to 0.47"
+      (should= 0.47 (sut/resolve-floor {} {})))
 
-    (it "overlays :recall config then CLI flag; 0 disables"
-      (should= 0.0 (sut/resolve-floor {:recall {:floor 0}} {}))
-      (should= 3.0 (sut/resolve-floor {:recall {:floor 0}} {:floor 3})))
+    (it "overlays :recall {:floor-cos} then CLI :floor-cos; 0 disables"
+      (should= 0.0 (sut/resolve-floor {:recall {:floor-cos 0}} {}))
+      (should= 0.999 (sut/resolve-floor {:recall {:floor-cos 0}} {:floor-cos 0.999})))
 
-    (it "matches when z meets the floor or lex is a rare-term anchor"
-      (should (sut/match? {:z 2.6 :lex 0.1} 2.5))
-      (should (sut/match? {:z 1.0 :lex 0.5} 2.5))
-      (should-not (sut/match? {:z 1.8 :lex 0.1} 2.5)))
+    (it "matches when best-cos meets the floor or lex is a rare-term anchor"
+      (should (sut/match? {:best-cos 0.47 :lex 0.1} 0.47))
+      (should (sut/match? {:best-cos 0.2 :lex 0.5} 0.47))
+      (should-not (sut/match? {:best-cos 0.41 :lex 0.1} 0.47)))
+
+    (it "evaluates raw cosines and lex, independent of channel weights"
+      (should (sut/match? {:best-cos 1.0 :lex 0.0} 0.999))
+      (should (sut/match? {:best-cos 0.2 :lex 0.5} 0.999)))
 
     (it "disables the floor at 0"
-      (should (sut/match? {:z 0.0 :lex 0.0} 0.0)))
+      (should (sut/match? {:best-cos 0.0 :lex 0.0} 0.0)))
     )
   )

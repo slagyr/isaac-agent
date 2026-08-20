@@ -2,9 +2,9 @@
   "Hybrid retrieval scoring: cosine, IDF lexical, recency, blended parts, match floor.")
 
 (def default-weights
-  {:text 1.0 :gist 1.0 :lex 1.0 :recency 1.0})
+  {:text 1.0 :gist 1.0 :lex 1.0 :recency 0.5})
 
-(def default-floor 2.5)
+(def default-floor 0.47)
 
 (def rare-term-lex 0.5)
 
@@ -198,54 +198,21 @@
     (merge default-weights from-cfg from-flags)))
 
 (defn resolve-floor
-  "defaults (2.5) → :recall {:floor} → CLI :floor. 0 disables."
+  "defaults (0.47) → :recall {:floor-cos} → CLI :floor-cos. 0 disables."
   [cfg flags]
-  (let [from-cfg (as-number (get-in cfg [:recall :floor]))
-        from-flag (as-number (get flags :floor))]
+  (let [from-cfg (as-number (get-in cfg [:recall :floor-cos]))
+        from-flag (as-number (get flags :floor-cos))]
     (cond
       (some? from-flag) from-flag
       (some? from-cfg)  from-cfg
       :else             default-floor)))
 
-(defn- mean [xs]
-  (/ (reduce + 0.0 xs) (count xs)))
-
-(defn- sample-stddev [xs m]
-  (let [n (count xs)]
-    (if (< n 2)
-      0.0
-      (Math/sqrt (/ (reduce + 0.0 (map (fn [x]
-                                         (let [d (- x m)]
-                                           (* d d)))
-                                       xs))
-                    (dec n))))))
-
-(defn z-score
-  "z = (value − mean) / stddev. Nil when <5 candidates (floor inactive).
-   Degenerate sigma → 0.0. Optional :leave-one-out? excludes value from stats."
-  ([value xs]
-   (z-score value xs nil))
-  ([value xs {:keys [leave-one-out?]}]
-   (let [xs (mapv double xs)]
-     (when (>= (count xs) 5)
-       (let [sample (if leave-one-out?
-                      (let [idx (.indexOf xs (double value))]
-                        (if (neg? idx)
-                          xs
-                          (vec (concat (subvec xs 0 idx) (subvec xs (inc idx))))))
-                      xs)
-             m      (mean sample)
-             sigma  (sample-stddev sample m)]
-         (if (zero? sigma)
-           0.0
-           (/ (- (double value) m) sigma)))))))
-
 (defn match?
-  "True when z ≥ floor OR lex ≥ 0.5 (rare-term anchor). Floor 0 disables."
-  [{:keys [z lex]} floor]
-  (let [floor (double (or floor 0.0))
-        z     (double (or z 0.0))
-        lex   (double (or lex 0.0))]
+  "True when best-cos ≥ floor-cos OR lex ≥ 0.5 (rare-term anchor). Floor 0 disables."
+  [{:keys [best-cos lex]} floor]
+  (let [floor    (double (or floor 0.0))
+        best-cos (double (or best-cos 0.0))
+        lex      (double (or lex 0.0))]
     (or (zero? floor)
-        (>= z floor)
+        (>= best-cos floor)
         (>= lex rare-term-lex))))

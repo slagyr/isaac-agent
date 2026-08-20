@@ -174,12 +174,16 @@
                      :started-at "2026-03-01T10:08:00" :ended-at "2026-03-01T10:09:00"}])
     (index/index-crew! @mem root "cordelia" cfg {})
     (let [junk (sut/query @mem root "cordelia" "whoville" cfg
-                          {:weights {:text 0 :gist 0 :recency 0}})
+                          {:floor-cos 0.999})
           hit  (sut/query @mem root "cordelia" "lighthouse" cfg
-                          {:weights {:text 0 :gist 0 :recency 0}})]
-      (should (re-find #"weak matches — nothing stands out \(top z 0.0\)" (:warning junk)))
+                          {:weights {:lex 0}
+                           :floor-cos 0.999})
+          verbatim (sut/query @mem root "cordelia" "two long flashes for the lighthouse" cfg
+                              {:floor-cos 0.999})]
+      (should (re-find #"weak matches — nothing stands out \(best cos \d\.\d+\)" (:warning junk)))
       (should-be-nil (:error junk))
       (should= 5 (count (:hits junk)))
       (should-be-nil (:warning hit))
-      (should= ["lighthouse"] (:terms (first (:hits hit))))))
+      (should (some #(= ["lighthouse"] (:terms %)) (:hits hit)))
+      (should-be-nil (:warning verbatim))))
   )

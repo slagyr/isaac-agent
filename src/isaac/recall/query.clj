@@ -76,7 +76,7 @@
      :weights    CLI flag overrides {:text :gist :lex :recency}
      :half-life  days (default 30)
      :top        max hits (default all)
-     :floor      match-floor override (nil = resolve from config / default 2.5)
+     :floor-cos  cosine match-floor override (nil = resolve from config / default 0.47)
 
    Returns {:hits [...] :model ... :warning ...} or {:error ... :message ...}."
   [fs* root crew query-text cfg {:keys [now weights half-life top] :as opts}]
@@ -103,7 +103,7 @@
                           (score/normalize-vector raw))
                 embed-ms (quot (- (System/nanoTime) t-embed) 1000000)
                 w       (score/resolve-weights cfg (or weights {}))
-                floor*  (score/resolve-floor cfg (select-keys opts [:floor]))
+                floor*  (score/resolve-floor cfg (select-keys opts [:floor-cos]))
                 hl      (or half-life (get-in cfg [:recall :half-life]) 30.0)
                 t-scenes (System/nanoTime)
                 scenes  (scene-lookup fs* root crew)
@@ -154,12 +154,16 @@
                 ranked (->> hits
                             (sort-by (juxt (comp - :score) :scene-id))
                             vec)
-                scores (mapv :score ranked)
                 top-hit (first ranked)
-                z       (when top-hit (score/z-score (:score top-hit) scores))
+                best-cos (when (seq ranked)
+                           (apply max (map (fn [h] (max (double (or (:text h) 0.0))
+                                                        (double (or (:gist h) 0.0))))
+                                           ranked)))
                 floor-warning (when (and top-hit
-                                         (not (score/match? {:z (or z 0.0) :lex (:lex top-hit)} floor*)))
-                                (format "weak matches — nothing stands out (top z %.1f)" (or z 0.0)))
+                                         (not (score/match? {:best-cos (or best-cos 0.0)
+                                                             :lex (:lex top-hit)}
+                                                            floor*)))
+                                (format "weak matches — nothing stands out (best cos %.2f)" (or best-cos 0.0)))
                 warning (str/join "\n" (remove str/blank? [stale-warning floor-warning]))
                 warning (when-not (str/blank? warning) warning)
                 scene-count (count ranked)
