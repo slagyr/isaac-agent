@@ -19,6 +19,13 @@
       (should= 0.0 (sut/cosine [] [1.0]))
       (should= 0.0 (sut/cosine [0.0 0.0] [1.0 2.0])))
 
+    (it "scales quantized int vectors back to cosine"
+      (let [u  (sut/normalize-vector [3.0 0.0 4.0])
+            qv (sut/quantize-vector u)]
+        (should (sut/int-array? qv))
+        (should= [6000 0 8000] (vec qv))
+        (should (approx 1.0 (sut/cosine u qv)))))
+
     (it "dots unit-normalized float arrays as cosine"
       (let [a (sut/normalize-vector [3.0 0.0 4.0])
             b (sut/normalize-vector [3.0 0.0 4.0])]

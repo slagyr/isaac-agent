@@ -13,6 +13,23 @@
   [v]
   (instance? (Class/forName "[F") v))
 
+(def VECTOR_SCALE
+  "Stored vectors are unit vectors quantized to ints at this scale
+   (cosine error ≤ ~1e-4). Ints parse and multiply through compiled
+   core fns; the scale divides out once per dot."
+  10000.0)
+
+(defn int-array?
+  "True when v is a primitive int[]. SCI-safe."
+  [v]
+  (instance? (Class/forName "[I") v))
+
+(defn quantize-vector
+  "Unit float vector → primitive int[] scaled by VECTOR_SCALE."
+  [v]
+  (int-array (map (fn [x] (Math/round (* VECTOR_SCALE (double x))))
+                  (or (seq v) []))))
+
 (defn normalize-vector
   "Unit-normalize a numeric vector into a primitive float array. Zero → zeros."
   [v]
@@ -35,31 +52,27 @@
               (aset xs j (float (/ (nth xs j) norm))))
             xs))))))
 
-(defn- as-floats [v]
-  (if (float-array? v)
-    v
-    (float-array (map float (or v [])))))
-
 (defn dot
-  "Dot product of two primitive float arrays (or seqs). Length mismatch / empty → 0.0.
-   Hot path uses count/nth so babashka SCI never reflects RT.alength on float[]."
+  "Dot product of two numeric vectors (primitive arrays or seqs).
+   Length mismatch / empty → 0.0. The per-element work rides compiled
+   core fns (reduce/map/*) — interpreted loops here cost seconds at
+   corpus scale (the 0.1.30 38s-load lesson)."
   [a b]
-  (let [aa (as-floats a)
-        bb (as-floats b)
-        n  (count aa)]
-    (if (or (zero? n) (not= n (count bb)))
+  (let [n (count a)]
+    (if (or (zero? n) (not= n (count b)))
       0.0
-      (loop [i 0 acc 0.0]
-        (if (< i n)
-          (recur (inc i) (+ acc (* (nth aa i) (nth bb i))))
-          acc)))))
+      (double (reduce + 0.0 (map * a b))))))
+
+(defn- unit-scale [v]
+  (if (int-array? v) VECTOR_SCALE 1.0))
 
 (defn cosine
-  "Cosine similarity of two numeric vectors. Empty/zero vectors → 0.0.
-   Pre-normalized float arrays reduce to a compiled-core-friendly dot."
+  "Cosine similarity. Unit float arrays and/or quantized int arrays
+   reduce to a scaled dot; generic seqs get the full normalized form.
+   Empty/zero vectors → 0.0."
   [a b]
-  (if (and (float-array? a) (float-array? b))
-    (let [d (dot a b)]
+  (if (or (float-array? a) (int-array? a) (float-array? b) (int-array? b))
+    (let [d (/ (dot a b) (* (unit-scale a) (unit-scale b)))]
       (cond
         (Double/isNaN d) 0.0
         (> d 1.0)        1.0

@@ -198,17 +198,19 @@
         (g/assoc! :current-episode (assoc episode :crew crew))))))
 
 (defn- vector-close?
-  "Normalize expected grover ints and compare to stored floats at 1e-6."
+  "Normalize expected grover ints and compare to the stored vector at 1e-4
+   (stored vectors are unit vectors quantized to ints at score/VECTOR_SCALE)."
   [expected actual]
   (let [want (score/normalize-vector expected)
-        got  (if (score/float-array? actual)
-               actual
-               (score/normalize-vector actual))
+        got  (cond
+               (score/int-array? actual)   (mapv #(/ % score/VECTOR_SCALE) actual)
+               (score/float-array? actual) (vec actual)
+               :else                       (vec (score/normalize-vector actual)))
         n    (count want)]
     (and (= n (count got))
          (every? (fn [i]
                    (< (Math/abs (- (double (nth want i)) (double (nth got i))))
-                      1.0e-6))
+                      1.0e-4))
                  (range n)))))
 
 (defn index-for-crew-has-rows [crew table]
@@ -253,7 +255,7 @@
   isaac.episodes.episode-steps/index-for-crew-has-rows
   "Reads the packed index via the READ API and matches the EXACT row set
    (count included). Expected grover integer vectors are unit-normalized
-   and compared at 1e-6.")
+   and compared at 1e-4 (int-quantized store).")
 
 (defthen "no index exists for crew {crew:string}"
   isaac.episodes.episode-steps/no-index-exists-for-crew

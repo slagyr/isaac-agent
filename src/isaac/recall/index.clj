@@ -1,117 +1,84 @@
 (ns isaac.recall.index
-  "Per-crew retrieval index: <root>/episodes/<crew>/index.edn + vectors.bin.
+  "Per-crew retrieval index: <root>/episodes/<crew>/index.edn + vectors.json.
 
-   Metadata {:dims :model :rows [{:episode-id :scene-id :kind :model} ...]}.
-   Row order = blob order. Vectors are unit-normalized float32 LE.
-   Legacy index.ednl is ignored. Derived data — always rebuildable."
+   Metadata {:dims :model :scale :rows [{:episode-id :scene-id :kind :model} ...]}.
+   Row order = vectors.json order. Vectors are unit-normalized then
+   quantized to ints at score/VECTOR_SCALE — JSON ints load through
+   compiled cheshire + int-array coercion (~100ms at corpus scale; every
+   byte-level or per-element alternative measured seconds in bb).
+   Legacy index.ednl / vectors.bin are ignored. Derived — always rebuildable."
   (:require
+    [cheshire.core :as json]
     [clojure.edn :as edn]
     [isaac.episodes.store :as store]
     [isaac.fs :as fs]
     [isaac.recall.embedding :as embedding]
     [isaac.recall.score :as score]
-    [isaac.session.store.impl-common :as impl])
-  (:import
-    (java.nio ByteBuffer ByteOrder)
-    (java.nio.file Files OpenOption Paths)))
+    [isaac.session.store.impl-common :as impl]))
 
 (defn index-path [root crew]
   (str (store/crew-dir root crew) "/index.edn"))
 
 (defn vectors-path [root crew]
-  (str (store/crew-dir root crew) "/vectors.bin"))
+  (str (store/crew-dir root crew) "/vectors.json"))
 
-(defn- real-fs? [fs*]
-  (instance? isaac.fs.RealFs fs*))
-
-(defn- write-blob! [fs* path ^bytes ba]
-  (fs/mkdirs fs* (or (fs/parent path) "/"))
-  (if (real-fs? fs*)
-    (Files/write (Paths/get path (into-array String []))
-                 ba
-                 (into-array OpenOption []))
-    (fs/spit fs* path ba)))
-
-(defn- read-blob [fs* path]
-  (when (fs/exists? fs* path)
-    (if (real-fs? fs*)
-      (Files/readAllBytes (Paths/get path (into-array String [])))
-      (let [c (fs/slurp fs* path)]
-        (if (bytes? c) c (byte-array 0))))))
-
-(defn vectors-bytes
-  "Raw vectors.bin contents, or empty byte-array when absent."
+(defn vectors-raw
+  "Raw vectors.json contents, or nil when absent."
   [fs* root crew]
-  (or (read-blob fs* (vectors-path root crew)) (byte-array 0)))
+  (let [path (vectors-path root crew)]
+    (when (fs/exists? fs* path)
+      (fs/slurp fs* path))))
 
-(defn- floats->bytes [float-rows]
-  (let [n (reduce + 0 (map count float-rows))
-        bb (ByteBuffer/allocate (* n 4))]
-    (.order bb ByteOrder/LITTLE_ENDIAN)
-    (doseq [xs float-rows]
-      (dotimes [i (count xs)]
-        (.putFloat bb (float (nth xs i)))))
-    (.array bb)))
-
-(defn- bytes->floats
-  "Decode `n` little-endian float32 values starting at `offset` bytes."
-  [^bytes ba offset n]
-  (let [bb (ByteBuffer/wrap ba)
-        _  (.order bb ByteOrder/LITTLE_ENDIAN)
-        _  (.position bb (int offset))
-        xs (float-array n)]
-    (dotimes [i n]
-      (aset xs i (.getFloat bb)))
-    xs))
-
-(defn- ->floats [v]
-  (if (score/float-array? v)
-    v
-    (score/normalize-vector v)))
+(defn- ->packed
+  "Coerce a row vector to quantized ints (idempotent for int arrays)."
+  [v]
+  (cond
+    (score/int-array? v)   v
+    (score/float-array? v) (score/quantize-vector v)
+    :else                  (score/quantize-vector (score/normalize-vector v))))
 
 (defn write-index!
-  "Overwrite packed index.edn + vectors.bin. Vectors unit-normalized at write."
+  "Overwrite packed index.edn + vectors.json. Vectors unit-normalized and
+   quantized at write."
   [fs* root crew rows]
-  (let [normalized (mapv (fn [row]
-                           (assoc row :vector (->floats (:vector row))))
-                         rows)
-        dims       (if (seq normalized)
-                     (count (:vector (first normalized)))
-                     0)
-        model      (or (:model (last normalized)) "")
-        meta       {:dims  dims
-                    :model model
-                    :rows  (mapv #(select-keys % [:episode-id :scene-id :kind :model])
-                                 normalized)}
-        blob       (floats->bytes (mapv :vector normalized))
-        meta-path  (index-path root crew)
-        vec-path   (vectors-path root crew)]
+  (let [packed    (mapv (fn [row]
+                          (assoc row :vector (->packed (:vector row))))
+                        rows)
+        dims      (if (seq packed)
+                    (count (:vector (first packed)))
+                    0)
+        model     (or (:model (last packed)) "")
+        meta      {:dims  dims
+                   :model model
+                   :scale (long score/VECTOR_SCALE)
+                   :rows  (mapv #(select-keys % [:episode-id :scene-id :kind :model])
+                                packed)}
+        meta-path (index-path root crew)
+        vec-path  (vectors-path root crew)]
     (fs/mkdirs fs* (or (fs/parent meta-path) "/"))
     (fs/spit fs* meta-path (impl/write-edn meta))
-    (write-blob! fs* vec-path blob)
-    normalized))
+    (fs/spit fs* vec-path (json/generate-string (mapv (comp vec seq :vector) packed)))
+    packed))
 
 (defn read-index
-  "Packed rows with :vector as a primitive float array, or [] when absent.
-   Legacy index.ednl is ignored."
+  "Packed rows with :vector as a primitive int array, or [] when absent
+   or unreadable (row/vector count mismatch, missing :scale — treated as
+   no index so `episodes index` re-embeds). Legacy formats are ignored."
   [fs* root crew]
   (let [path (index-path root crew)]
     (if-not (fs/exists? fs* path)
       []
       (let [meta (edn/read-string (or (fs/slurp fs* path) "{}"))
-            dims (int (or (:dims meta) 0))
-            blob (vectors-bytes fs* root crew)
             rows (vec (or (:rows meta) []))
-            blob-n (count blob)]
-        (mapv (fn [row i]
-                (let [offset (* i dims 4)
-                      vec*   (if (and (pos? dims)
-                                      (<= (+ offset (* dims 4)) blob-n))
-                               (bytes->floats blob offset dims)
-                               (float-array 0))]
-                  (assoc row :vector vec*)))
-              rows
-              (range (count rows)))))))
+            raw  (vectors-raw fs* root crew)
+            vecs (when raw
+                   (try (mapv int-array (json/parse-string raw))
+                        (catch Exception _ nil)))]
+        (if (or (nil? (:scale meta))
+                (nil? vecs)
+                (not= (count rows) (count vecs)))
+          []
+          (mapv (fn [row v] (assoc row :vector v)) rows vecs))))))
 
 (defn row-key [row]
   [(:scene-id row) (:kind row) (:model row)])

@@ -5,9 +5,7 @@
     [isaac.recall.embedding :as embedding]
     [isaac.recall.index :as sut]
     [isaac.recall.score :as score]
-    [speclj.core :refer [before context describe it should should-not should= with]])
-  (:import
-    (java.nio ByteBuffer ByteOrder)))
+    [speclj.core :refer [before context describe it should should-not should= with]]))
 
 (def ^:private root "/tmp-recall-root")
 
@@ -37,27 +35,24 @@
   (it "reads nothing when the index file is absent"
     (should= [] (sut/read-index @mem root "cordelia")))
 
-  (it "writes and reads packed metadata + unit-normalized vectors"
+  (it "writes and reads packed metadata + quantized unit vectors"
     (let [rows [{:episode-id "ep1" :scene-id "s1" :kind :gist :model "mini-embed" :vector [3.0 0.0 4.0]}]]
       (sut/write-index! @mem root "cordelia" rows)
       (let [got (sut/read-index @mem root "cordelia")]
         (should= 1 (count got))
         (should= "ep1" (:episode-id (first got)))
         (should= :gist (:kind (first got)))
-        (should= [0.6 0.0 0.8] (mapv #(Double/parseDouble (format "%.1f" %))
-                                     (:vector (first got)))))))
+        (should (score/int-array? (:vector (first got))))
+        (should= [6000 0 8000] (vec (:vector (first got)))))))
 
-  (it "blob bytes match independently computed little-endian float32"
+  (it "vectors.json matches independently computed quantized ints"
+    ;; Independent of the writer's own serialization path (decision 8):
+    ;; 3-4-5 unit → [0.6 0 0.8] → ×10000; 0-5-0 unit → [0 1 0] → ×10000.
     (let [rows [{:episode-id "ep1" :scene-id "s1" :kind :gist :model "mini-embed" :vector [3.0 0.0 4.0]}
-                {:episode-id "ep1" :scene-id "s2" :kind :text :model "mini-embed" :vector [0.0 5.0 0.0]}]
-          expected (let [bb (ByteBuffer/allocate (* 2 3 4))]
-                     (.order bb ByteOrder/LITTLE_ENDIAN)
-                     (doseq [v [[0.6 0.0 0.8] [0.0 1.0 0.0]]
-                             x v]
-                       (.putFloat bb (float x)))
-                     (.array bb))]
+                {:episode-id "ep1" :scene-id "s2" :kind :text :model "mini-embed" :vector [0.0 5.0 0.0]}]]
       (sut/write-index! @mem root "cordelia" rows)
-      (should= (vec expected) (vec (sut/vectors-bytes @mem root "cordelia")))))
+      (should= "[[6000,0,8000],[0,10000,0]]"
+               (sut/vectors-raw @mem root "cordelia"))))
 
   (it "row-key is scene-id + kind + model"
     (should= ["s1" :gist "mini-embed"]
@@ -74,7 +69,7 @@
                          :start-id "a" :end-id "b" :seal-reason :migrate}])
         (let [result (sut/index-crew! @mem root "cordelia" cfg {})
               rows   (sut/read-index @mem root "cordelia")
-              norm   (fn [text] (vec (score/normalize-vector (embedding/grover-vector text))))]
+              norm   (fn [text] (vec (score/quantize-vector (score/normalize-vector (embedding/grover-vector text)))))]
           (should= 2 (:new result))
           (should= ["2026-03-01-1000-ab12" "2026-03-01-1000-s1x1" :gist "mini-embed"]
                    ((juxt :episode-id :scene-id :kind :model) (first rows)))
@@ -102,7 +97,7 @@
                          :started-at "2026-03-01T10:00:00"
                          :ended-at "2026-03-01T10:05:00"}])
         (let [result (sut/index-crew! @mem root "cordelia" cfg {:rebuild? true})
-              norm   (fn [text] (vec (score/normalize-vector (embedding/grover-vector text))))]
+              norm   (fn [text] (vec (score/quantize-vector (score/normalize-vector (embedding/grover-vector text)))))]
           (should= 2 (:new result))
           (should= [(norm "grog") (norm "rum")]
                    (mapv (comp vec :vector) (sut/read-index @mem root "cordelia"))))))

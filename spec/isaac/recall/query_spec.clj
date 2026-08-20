@@ -80,8 +80,8 @@
       (should-be-nil (:error r))
       (should= 2 (count hits))
       (should= "2026-03-01-1000-s1x1" (:scene-id (first hits)))
-      (should (< (Math/abs (- 1.0 (:text (first hits)))) 1.0e-6))
-      (should (< (Math/abs (- 1.0 (:gist (first hits)))) 1.0e-6))
+      (should (< (Math/abs (- 1.0 (:text (first hits)))) 1.0e-4))
+      (should (< (Math/abs (- 1.0 (:gist (first hits)))) 1.0e-4))
       (should= 1.0 (:lex (first hits)))
       (should= "wine" (:gist-text (first hits)))))
 
