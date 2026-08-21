@@ -129,4 +129,28 @@
               (should= (:id opened) (get-in resolved [:episode :parent-episode]))
               (should= :open (get-in resolved [:episode :status]))
               (should= :closed (:status (store/read-episode @mem @root "cordelia" (:id opened))))))))))
+
+  (it "compact-close seeds the successor transcript with the summary"
+    (with-redefs [isaac.episodes.ids/chaos-suffix (constantly "mn34")]
+      (binding [memory/*now* (java.time.Instant/parse "2026-03-01T10:00:00Z")]
+        (let [opened (sut/open-episode! {:fs @mem :root @root :crew "cordelia"
+                                         :thread "reef-chat" :session-store @ss})
+              _ (session-store/append-message! @ss (:id opened) {:role "user" :content "Please summarize the logging work."})
+              _ (session-store/append-message! @ss (:id opened) {:role "assistant" :content "We discussed sinks and the tool loop."})
+              provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+              _ (grover/enqueue! [{:type "text" :content "1-2: Logging retrospective"}])]
+          (binding [memory/*now* (java.time.Instant/parse "2026-03-01T10:30:00Z")]
+            (let [result (sut/compact-close! {:fs @mem :root @root :crew "cordelia"
+                                              :thread "reef-chat" :session-store @ss
+                                              :summary "Summary so far"
+                                              :provider provider :model "gist"})
+                  successor (:episode result)
+                  entries (->> (session-store/get-transcript @ss (:id successor))
+                               (remove #(= "session" (:type %)))
+                               vec)]
+              (should= :chained (:action result))
+              (should= (:id opened) (:parent-episode successor))
+              (should= "compaction" (:type (first entries)))
+              (should= "Summary so far" (:summary (first entries)))
+              (should= :closed (:status (store/read-episode @mem @root "cordelia" (:id opened))))))))))
   )

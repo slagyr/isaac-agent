@@ -183,10 +183,10 @@
 
 (defn- chain-successor!
   "Close the open episode and open a successor on the same thread."
-  [{:keys [fs root crew thread session-store cfg provider model cwd origin compaction seed-compaction]
+  [{:keys [fs root crew thread session-store cwd origin compaction seed-compaction]
     :as opts}
    open-ep]
-  (let [closed (close-episode! (assoc opts :episode-id (:id open-ep)))
+  (let [closed    (close-episode! (assoc opts :episode-id (:id open-ep)))
         successor (open-episode! {:fs fs :root root :crew crew :thread thread
                                   :session-store session-store
                                   :parent-episode (:id open-ep)
