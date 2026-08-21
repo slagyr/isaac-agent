@@ -802,7 +802,60 @@
                       sut/process-response! (fn [& _] nil)]
           (sut/run-turn! charge)
           (sut/run-turn! (assoc charge :input "second")))
-        (should= 0 @register-calls))))
+        (should= 0 @register-calls)))
+
+    (it "records a closing error and does not rethrow when the LLM throws"
+      (helper/create-session! test-dir "crashy" {:crew "main"})
+      (let [provider (->TestProvider marigold/quantum-anvil {:api marigold/anvil-api})
+            charge   {:charge/type    :charge
+                      :session-key    "crashy"
+                      :input          "next thing"
+                      :root           test-dir
+                      :session-store  (store/registered-store)
+                      :comm           null-comm/channel
+                      :crew           "main"
+                      :model          "test-model"
+                      :provider       provider
+                      :soul           "You are Isaac."
+                      :context-window 4096}]
+        (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+                      tool-loop/run         (fn [& _] (throw (Exception. "wire format mismatch")))
+                      sut/process-response! (fn [& _] nil)]
+          (log/capture-logs
+            (let [result (sut/run-turn! charge)
+                  entry  (first (filter #(= :session/turn-failed (:event %)) @log/captured-logs))
+                  last-e (last (helper/get-transcript test-dir "crashy"))]
+              (should= :exception (:error result))
+              (should= "wire format mismatch" (:message result))
+              (should-not-be-nil entry)
+              (should= :error (:level entry))
+              (should= "crashy" (:session entry))
+              (should= "error" (:type last-e))
+              (should= "wire format mismatch" (:content last-e)))))))
+
+    (it "records a closing error when a non-Exception Throwable escapes the turn"
+      (helper/create-session! test-dir "crashy-err" {:crew "main"})
+      (let [provider (->TestProvider marigold/quantum-anvil {:api marigold/anvil-api})
+            charge   {:charge/type    :charge
+                      :session-key    "crashy-err"
+                      :input          "next thing"
+                      :root           test-dir
+                      :session-store  (store/registered-store)
+                      :comm           null-comm/channel
+                      :crew           "main"
+                      :model          "test-model"
+                      :provider       provider
+                      :soul           "You are Isaac."
+                      :context-window 4096}]
+        (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+                      tool-loop/run         (fn [& _] (throw (Error. "stack overflow")))
+                      sut/process-response! (fn [& _] nil)]
+          (let [result (sut/run-turn! charge)
+                last-e (last (helper/get-transcript test-dir "crashy-err"))]
+            (should= :exception (:error result))
+            (should= "stack overflow" (:message result))
+            (should= "error" (:type last-e))
+            (should= "stack overflow" (:content last-e)))))))
 
   (describe "logging"
     #_{:clj-kondo/ignore [:unresolved-symbol]}

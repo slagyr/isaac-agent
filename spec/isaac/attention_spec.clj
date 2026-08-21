@@ -22,4 +22,17 @@
       (should= 1 (count pending))
       (should= :discord (:comm (first pending)))
       (should= "boiler-room" (:target (first pending)))
-      (should (str/includes? (:content (first pending)) "Compaction disabled")))))
+      (should (str/includes? (:content (first pending)) "Compaction disabled"))))
+
+  (it "enqueues turn-failed attention when notify is configured"
+    (sut/clear-throttle!)
+    (sut/maybe-notify-turn-failed!
+     {:attention {:notify {:comm :discord :target "boiler-room"}}}
+     "crashy"
+     {:message "wire format mismatch"})
+    (let [pending (queue/list-pending)]
+      (should= 1 (count pending))
+      (should= :discord (:comm (first pending)))
+      (should= "boiler-room" (:target (first pending)))
+      (should (str/includes? (:content (first pending)) "crashy"))
+      (should (str/includes? (:content (first pending)) "wire format mismatch")))))

@@ -38,3 +38,12 @@
   "Reserved; hail deferral posts context-exhausted attention (isaac-dark)."
   [_cfg _session-key _payload _now-ms]
   nil)
+
+(defn maybe-notify-turn-failed!
+  "Post attention when a turn dies with an uncaught throwable."
+  [cfg session-key {:keys [message]}]
+  (let [content (str/join " "
+                          (remove str/blank?
+                                  [(str "Turn failed for session " session-key)
+                                   (when message (str "error " message))]))]
+    (enqueue-attention! cfg content)))

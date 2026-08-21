@@ -1111,7 +1111,13 @@
                                     :error    "exception"
                                     :ex-class (.getName (class e))
                                     :model    model
-                                    :provider (when provider (api/display-name provider))})))
+                                    :provider (when provider (api/display-name provider))})
+    (log/error :session/turn-failed :session session-key :error (.getMessage e) :ex-class (.getName (class e)))
+    (attention/maybe-notify-turn-failed!
+      (or (get-in ctx [:charge :config]) (loader/snapshot "turn-failed attention"))
+      session-key
+      {:message (.getMessage e)})
+    {:error :exception :message (.getMessage e) :ex-class (.getName (class e))}))
 
 (defn run-turn!
   "Drives a single turn from a resolved charge. The bridge rejects unresolved
@@ -1129,11 +1135,15 @@
       (catch ExceptionInfo e
         (if (= :cancelled (:type (ex-data e)))
           (finish! (suspend/interrupt-result session-key))
-          (do (record-exception! session-key e ctx) (throw e))))
+          (finish! (record-exception! session-key e ctx))))
       (catch Exception e
         (if (bridge/cancelled? session-key)
           (finish! (suspend/interrupt-result session-key))
-          (do (record-exception! session-key e ctx) (throw e))))
+          (finish! (record-exception! session-key e ctx))))
+      (catch Throwable t
+        (if (bridge/cancelled? session-key)
+          (finish! (suspend/interrupt-result session-key))
+          (finish! (record-exception! session-key t ctx))))
       (finally
         (bridge/end-turn! session-key turn-id)))))
 

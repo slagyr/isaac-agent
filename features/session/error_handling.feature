@@ -19,7 +19,6 @@ Feature: Error Entry Handling
       | error |
     And session "error-test" has no transcript entries with role "error"
 
-  @wip
   Scenario: uncaught exception during a turn lands a closing error entry
     Given the following sessions exist:
       | name   |

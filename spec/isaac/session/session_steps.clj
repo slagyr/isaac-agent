@@ -601,6 +601,10 @@
 (defn llm-response-delayed [_seconds]
   (grover/enable-delay!))
 
+(defn llm-throws-exception [message]
+  (grover/reset-queue!)
+  (grover/enqueue! [{:type "exception" :content message}]))
+
 ;; endregion ^^^^^ Given: Infrastructure ^^^^^
 
 ;; region ----- Given: Sessions & Transcripts -----
@@ -1587,6 +1591,10 @@
 (defgiven "crew {crew:string} has quarters" isaac.session.session-steps/crew-has-quarters)
 
 (defgiven "the LLM response is delayed by {int} seconds" isaac.session.session-steps/llm-response-delayed)
+
+(defgiven "the LLM throws an exception with message {message:string}" isaac.session.session-steps/llm-throws-exception
+  "Queues a grover :type exception response so the next chat call throws
+   with that message. Exercises run-turn! closing-error recording.")
 
 (defthen #"a turn marker exists for session \"([^\"]+)\" with:" isaac.session.session-steps/turn-marker-matches
   "Asserts a durable turn marker is present for the session and matches the
