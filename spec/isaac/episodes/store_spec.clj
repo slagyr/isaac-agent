@@ -127,4 +127,16 @@
       (sut/write-episode! mem @root ep scenes)
       (should= ["s-a" "s-b"] (sut/list-scene-ids mem @root "cordelia" "epy"))
       (should= ["A" "B"] (mapv :gist (sut/list-scenes mem @root "cordelia" "epy")))))
+
+  (it "finds the open episode on a thread"
+    (let [mem (fs/mem-fs)]
+      (fs/mkdirs mem @root)
+      (sut/write-episode! mem @root {:id "closed-ep" :crew "cordelia" :status :closed
+                                     :thread "reef-chat" :scene-ids []} [])
+      (sut/write-episode! mem @root {:id "open-ep" :crew "cordelia" :status :open
+                                     :thread "reef-chat" :scene-ids []} [])
+      (sut/write-episode! mem @root {:id "other-thread" :crew "cordelia" :status :open
+                                     :thread "galley" :scene-ids []} [])
+      (should= "open-ep" (:id (sut/find-open-on-thread mem @root "cordelia" "reef-chat")))
+      (should-be-nil (sut/find-open-on-thread mem @root "cordelia" "missing"))))
   )

@@ -176,6 +176,15 @@
                  (assoc ep :id (or (:id ep) id)))))
        vec))
 
+(defn find-open-on-thread
+  "Return the open episode whose :thread equals thread, if any."
+  [fs* root crew thread]
+  (some (fn [ep]
+          (when (and (= :open (:status ep))
+                     (= thread (:thread ep)))
+            ep))
+        (list-episodes fs* root crew)))
+
 (defn find-by-migrated-from
   "Return the episode whose :migrated-from equals session-id, if any."
   [fs* root crew session-id]
