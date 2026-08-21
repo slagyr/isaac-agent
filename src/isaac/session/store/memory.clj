@@ -9,7 +9,8 @@
     [isaac.nexus :as nexus]
     [isaac.session.schema :as session-schema]
     [isaac.session.store.impl-common :as c]
-    [isaac.session.store.spi :as store])
+    [isaac.session.store.spi :as store]
+    [isaac.tool.memory :as memory])
   (:import
     (java.time Instant ZoneOffset)
     (java.time.format DateTimeFormatter)))
@@ -20,7 +21,7 @@
   (DateTimeFormatter/ofPattern "yyyy-MM-dd'T'HH:mm:ss"))
 
 (defn- now-iso []
-  (.format ts-formatter (.atOffset (Instant/now) ZoneOffset/UTC)))
+  (.format ts-formatter (.atOffset (memory/now) ZoneOffset/UTC)))
 
 
 (defn- get-val [m k]

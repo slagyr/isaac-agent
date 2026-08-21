@@ -4,7 +4,8 @@
     [clojure.edn :as edn]
     [isaac.fs :as fs]
     [isaac.session.store.spi :as store]
-    [isaac.session.store.impl-common :as c])
+    [isaac.session.store.impl-common :as c]
+    [isaac.tool.memory :as memory])
   (:import
     (java.time Instant ZoneOffset)
     (java.time.format DateTimeFormatter)))
@@ -15,7 +16,7 @@
   (DateTimeFormatter/ofPattern "yyyy-MM-dd'T'HH:mm:ss"))
 
 (defn- now-iso []
-  (.format ts-formatter (.atOffset (Instant/now) ZoneOffset/UTC)))
+  (.format ts-formatter (.atOffset (memory/now) ZoneOffset/UTC)))
 
 (defn- ms->iso [ms]
   (.format ts-formatter (.atOffset (Instant/ofEpochMilli ms) ZoneOffset/UTC)))

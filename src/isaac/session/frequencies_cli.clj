@@ -61,8 +61,8 @@
   [opts]
   (cond-> []
     (and (:session opts)
-         (or (:crew opts) (has-session-tag? opts) (contains? opts :create)))
-    (conj "--session is mutually exclusive with --crew, --session-tag, and --create")
+         (or (has-session-tag? opts) (contains? opts :create)))
+    (conj "--session is mutually exclusive with --session-tag and --create")
 
     (and (:resume opts)
          (or (:session opts) (:crew opts) (has-session-tag? opts) (contains? opts :create)))

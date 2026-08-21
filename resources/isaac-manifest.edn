@@ -419,7 +419,12 @@
       :model
       {:type :id,
        :description "ID of the model this crew member uses.",
-       :validations [:model-exists?]}}}}},
+       :validations [:model-exists?]},
+      :conversation
+      {:type :keyword,
+       :description
+       "Conversation container: :episodes for managed episode sessions (absent = plain sessions)",
+       :validations [[:one-of? :episodes]]}}}}},
   :prompt-paths
   {:schema
    {:type :seq,
@@ -670,7 +675,10 @@
      :schema
      {:gist-model
       {:type :id,
-       :description "Chat model ref used for scene segmentation + gisting (defaults to :defaults :model)"}}}},
+       :description "Chat model ref used for scene segmentation + gisting (defaults to :defaults :model)"},
+      :ttl-minutes
+      {:type :int,
+       :description "Warm-episode TTL in minutes (default 60)"}}}},
    :recall
    {:schema
     {:name :recall,

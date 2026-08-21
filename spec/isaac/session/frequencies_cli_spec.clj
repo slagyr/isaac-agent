@@ -7,10 +7,8 @@
 
   (describe "validate-frequencies-options"
 
-    (it "rejects --session combined with --crew"
-      (let [errors (sut/validate-frequencies-options {:session "bridge" :crew "main"})]
-        (should (pos? (count errors)))
-        (should (re-find #"--session" (first errors)))))
+    (it "accepts --session combined with --crew"
+      (should= [] (sut/validate-frequencies-options {:session "bridge" :crew "main"})))
 
     (it "rejects --session combined with --session-tag"
       (let [errors (sut/validate-frequencies-options {:session "bridge" :session-tag ["wip"]})]

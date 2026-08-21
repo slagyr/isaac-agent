@@ -245,8 +245,8 @@ Feature: Prompt single-turn command
       | type    | message.model | message.crew |
       | message | echo-alt      | ketch        |
 
-  Scenario: --session with selection flags errors clearly
-    When isaac is run with "prompt --session bridge --crew main -m 'Hi'"
+  Scenario: --session with --session-tag errors clearly
+    When isaac is run with "prompt --session bridge --session-tag wip -m 'Hi'"
     Then the stderr contains "mutually exclusive"
     And the exit code is 1
 
