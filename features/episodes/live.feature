@@ -1,0 +1,282 @@
+Feature: Episodes — live (router + lifecycle)
+  Crews with :conversation :episodes get episode-managed conversations:
+  the inbound --session name is the THREAD handle; the router maps it to
+  the current open episode, whose backing session is named by the episode
+  id (episodes as managed sessions — isaac-51xy decision 26). Warm
+  prompts append (no recall, no reseal); cold prompts (past :episodes
+  {:ttl-minutes 60}) close-and-chain with :parent-episode lineage;
+  compaction closes the episode and seeds the successor's transcript
+  with its summary. Sealing at close reuses the migration segmentation
+  pipeline. Sessions are untouched for crews without the switch.
+
+  Background:
+    Given default Grover setup
+
+  # ----- Open -----
+
+  @wip
+    Scenario: first prompt on an episode crew opens an episode
+    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path         | value            |
+      | model        | echo             |
+      | soul         | You are Cordelia |
+      | conversation | episodes         |
+    And the following model responses are queued:
+      | type | content            | model |
+      | text | Charted, keep west | echo  |
+    When isaac is run with "prompt -m 'Chart the reef passage' --session reef-chat --crew cordelia"
+    Then the stdout contains "Charted, keep west"
+    And the exit code is 0
+    And an episode exists for crew "cordelia" matching:
+      | key    | value                          |
+      | id     | #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" |
+      | status | open                           |
+      | thread | reef-chat                      |
+    And the following sessions match:
+      | id                             |
+      | #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" |
+    And that episode's backing session has transcript matching:
+      | type    | message.role | message.content        |
+      | message | user         | Chart the reef passage |
+      | message | assistant    | Charted, keep west     |
+
+  # ----- Warm append -----
+
+  @wip
+    Scenario: warm prompts append to the open episode
+    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path         | value            |
+      | model        | echo             |
+      | soul         | You are Cordelia |
+      | conversation | episodes         |
+    And the current time is "2026-03-01T10:00:00"
+    And the following model responses are queued:
+      | type | content            | model |
+      | text | Charted, keep west | echo  |
+      | text | Buoys marked       | echo  |
+    When isaac is run with "prompt -m 'Chart the reef passage' --session reef-chat --crew cordelia"
+    Given the current time is "2026-03-01T10:10:00"
+    When isaac is run with "prompt -m 'Mark the buoys' --session reef-chat --crew cordelia"
+    Then the exit code is 0
+    And crew "cordelia" has 1 episode
+    And an episode exists for crew "cordelia" matching:
+      | key    | value     |
+      | status | open      |
+      | thread | reef-chat |
+    And that episode's backing session has transcript matching:
+      | type    | message.role | message.content        |
+      | message | user         | Chart the reef passage |
+      | message | assistant    | Charted, keep west     |
+      | message | user         | Mark the buoys         |
+      | message | assistant    | Buoys marked           |
+
+  # ----- Cold continuation -----
+
+  @wip
+    Scenario: cold prompts close the episode and chain a successor
+    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path         | value            |
+      | model        | echo             |
+      | soul         | You are Cordelia |
+      | conversation | episodes         |
+    And the isaac EDN file "config/models/gist.edn" exists with:
+      | path     | value  |
+      | model    | gist   |
+      | provider | grover |
+    And config file "isaac.edn" containing:
+      """
+      {:episodes {:gist-model :gist}}
+      """
+    And the current time is "2026-03-01T10:00:00"
+    And the following model responses are queued:
+      | type | content            | model |
+      | text | Charted, keep west | echo  |
+      | text | 1-2: Reef charting | gist  |
+      | text | Watches dogged     | echo  |
+    When isaac is run with "prompt -m 'Chart the reef passage' --session reef-chat --crew cordelia"
+    Given the current time is "2026-03-01T11:45:00"
+    When isaac is run with "prompt -m 'Set the watch rotation' --session reef-chat --crew cordelia"
+    Then the exit code is 0
+    And crew "cordelia" has 2 episodes
+    And an episode exists for crew "cordelia" matching:
+      | key            | value                          |
+      | status         | open                           |
+      | thread         | reef-chat                      |
+      | parent-episode | #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" |
+    And the episodes for crew "cordelia" on thread "reef-chat" chain by lineage
+    And that episode's backing session has transcript matching:
+      | type    | message.role | message.content        |
+      | message | user         | Set the watch rotation |
+      | message | assistant    | Watches dogged         |
+
+  # ----- Seal at close -----
+
+  @wip
+    Scenario: closing seals the episode's transcript into scenes
+    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path         | value            |
+      | model        | echo             |
+      | soul         | You are Cordelia |
+      | conversation | episodes         |
+    And the isaac EDN file "config/models/gist.edn" exists with:
+      | path     | value  |
+      | model    | gist   |
+      | provider | grover |
+    And config file "isaac.edn" containing:
+      """
+      {:episodes {:gist-model :gist}}
+      """
+    And the current time is "2026-03-01T10:00:00"
+    And the following model responses are queued:
+      | type | content                                        | model |
+      | text | Charted, keep west                             | echo  |
+      | text | Buoys marked with the tool                     | echo  |
+      | text | 1-2: Reef passage charted\n3-4: ~ Buoy tooling | gist  |
+      | text | Watches dogged                                 | echo  |
+    When isaac is run with "prompt -m 'Chart the reef passage' --session reef-chat --crew cordelia"
+    Given the current time is "2026-03-01T10:10:00"
+    When isaac is run with "prompt -m 'Mark the buoys' --session reef-chat --crew cordelia"
+    Given the current time is "2026-03-01T11:55:00"
+    When isaac is run with "prompt -m 'Set the watch rotation' --session reef-chat --crew cordelia"
+    Then the exit code is 0
+    And an episode exists for crew "cordelia" matching:
+      | key    | value  |
+      | status | closed |
+    And that episode has scenes matching:
+      | gist                 | text                | routine |
+      | Reef passage charted | #"(?s)keep west"    |         |
+      | Buoy tooling         | #"(?s)Buoys marked" | true    |
+
+  # ----- Compaction closes -----
+
+  @wip
+    Scenario: compaction closes the episode and seeds the successor
+    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path         | value            |
+      | model        | echo             |
+      | soul         | You are Cordelia |
+      | conversation | episodes         |
+    And the isaac EDN file "config/models/echo.edn" exists with:
+      | path           | value  |
+      | model          | echo   |
+      | provider       | grover |
+      | context-window | 200    |
+    And the isaac EDN file "config/models/gist.edn" exists with:
+      | path     | value  |
+      | model    | gist   |
+      | provider | grover |
+    And config file "isaac.edn" containing:
+      """
+      {:episodes {:gist-model :gist}}
+      """
+    And crew "cordelia" has an open episode on thread "reef-chat" with:
+      | compaction.head | 0.1 |
+    And that episode's backing session has transcript:
+      | type    | message.role | message.content                                                              |
+      | message | user         | Please summarize the work we did on the logging subsystem and the tool loop  |
+      | message | assistant    | We discussed logging output sinks, the compaction trigger, and tool dispatch |
+      | message | user         | And what about the retry behavior we changed in the dispatcher last week     |
+      | message | assistant    | We made the dispatcher retry idempotent and added backoff between attempts   |
+    And the following model responses are queued:
+      | type | content                                   | model |
+      | text | Summary so far                            | echo  |
+      | text | 1-4: Logging and dispatcher retrospective | gist  |
+      | text | here is the answer                        | echo  |
+    When isaac is run with "prompt -m 'next' --session reef-chat --crew cordelia"
+    Then the stdout contains "here is the answer"
+    And crew "cordelia" has 2 episodes
+    And the episodes for crew "cordelia" on thread "reef-chat" chain by lineage
+    And an episode exists for crew "cordelia" matching:
+      | key    | value |
+      | status | open  |
+    And that episode's backing session has transcript matching:
+      | type       | summary        | message.role | message.content    |
+      | compaction | Summary so far |              |                    |
+      | message    |                | user         | next               |
+      | message    |                | assistant    | here is the answer |
+
+  # ----- Explicit close -----
+
+  @wip
+    Scenario: explicit close seals now; the next prompt chains
+    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path         | value            |
+      | model        | echo             |
+      | soul         | You are Cordelia |
+      | conversation | episodes         |
+    And the isaac EDN file "config/models/gist.edn" exists with:
+      | path     | value  |
+      | model    | gist   |
+      | provider | grover |
+    And config file "isaac.edn" containing:
+      """
+      {:episodes {:gist-model :gist}}
+      """
+    And the current time is "2026-03-01T10:00:00"
+    And the following model responses are queued:
+      | type | content            | model |
+      | text | Charted, keep west | echo  |
+      | text | 1-2: Reef charting | gist  |
+      | text | Fresh start        | echo  |
+    When isaac is run with "prompt -m 'Chart the reef passage' --session reef-chat --crew cordelia"
+    When isaac is run with "episodes close --crew cordelia"
+    Then the stdout contains "closed 1 episode"
+    And the exit code is 0
+    And an episode exists for crew "cordelia" matching:
+      | key    | value  |
+      | status | closed |
+    And that episode has scenes matching:
+      | gist          | text             |
+      | Reef charting | #"(?s)keep west" |
+    Given the current time is "2026-03-01T10:05:00"
+    When isaac is run with "prompt -m 'Begin again' --session reef-chat --crew cordelia"
+    Then crew "cordelia" has 2 episodes
+    And the episodes for crew "cordelia" on thread "reef-chat" chain by lineage
+
+  # ----- Non-episode crews -----
+
+  @wip
+    Scenario: crews without the switch keep plain sessions
+    Given the following model responses are queued:
+      | type | content | model |
+      | text | Aye     | echo  |
+    When isaac is run with "prompt -m 'Status?' --session plain-chat"
+    Then the stdout contains "Aye"
+    And the exit code is 0
+    And the following sessions match:
+      | id         |
+      | plain-chat |
+    And crew "main" has 0 episodes
+
+  # ----- Operator visibility -----
+
+  @wip
+    Scenario: episodes list shows the crew's chain
+    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path         | value            |
+      | model        | echo             |
+      | soul         | You are Cordelia |
+      | conversation | episodes         |
+    And the isaac EDN file "config/models/gist.edn" exists with:
+      | path     | value  |
+      | model    | gist   |
+      | provider | grover |
+    And config file "isaac.edn" containing:
+      """
+      {:episodes {:gist-model :gist}}
+      """
+    And the current time is "2026-03-01T10:00:00"
+    And the following model responses are queued:
+      | type | content            | model |
+      | text | Charted, keep west | echo  |
+      | text | 1-2: Reef charting | gist  |
+      | text | Watches dogged     | echo  |
+    When isaac is run with "prompt -m 'Chart the reef passage' --session reef-chat --crew cordelia"
+    Given the current time is "2026-03-01T11:45:00"
+    When isaac is run with "prompt -m 'Set the watch rotation' --session reef-chat --crew cordelia"
+    When isaac is run with "episodes list --crew cordelia"
+    Then the stdout matches:
+      | pattern                                                     |
+      | \d{4}-\d{2}-\d{2}-\d{4}-\w+\s+closed\s+reef-chat\s+1 scene |
+      | \d{4}-\d{2}-\d{2}-\d{4}-\w+\s+open\s+reef-chat\s+0 scenes  |
+    And the exit code is 0

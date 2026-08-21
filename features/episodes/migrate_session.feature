@@ -18,6 +18,8 @@ Feature: Episodes — migrate-session
 
   # ----- Help -----
 
+  # isaac-qxvl: gains close + list rows
+  @wip
   Scenario: episodes command is registered and has help
     When isaac is run with "help episodes"
     Then the stdout matches:
@@ -25,6 +27,8 @@ Feature: Episodes — migrate-session
       | Usage: isaac episodes \[subcommand\] \[options\]                           |
       | Subcommands:                                                               |
       | migrate-session <session-id>\s+Materialize a session as a closed episode   |
+      | close\s+Close open episodes now \(seal scenes\)                            |
+      | list\s+List a crew's episodes                                              |
     And the exit code is 0
 
   # ----- Migration -----
