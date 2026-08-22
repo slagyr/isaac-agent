@@ -18,7 +18,7 @@
       (let [s     (sut/create-store)
             entry (store/open-session! s "friday-debug" {:crew "main"})]
         (should= "friday-debug" (:id entry))
-        (should= "friday-debug.jsonl" (:session-file entry))
+        (should-not (contains? entry :session-file))
         (should= {:kind :cli} (:origin entry))
         (should= :retain (:history-retention entry))
         (should= 0 (:compaction-count entry))
@@ -136,8 +136,8 @@
                                                 :tokensBefore 20
                                                 :compactedEntryIds [(:id m1) (:id m2)]})
           (let [transcript (store/get-transcript s "chat")]
-            (should= ["session" "compaction" "message"] (mapv :type transcript))
-            (should= (:id m3) (:id (nth transcript 2)))))))
+            (should= ["compaction" "message"] (mapv :type transcript))
+            (should= (:id m3) (:id (nth transcript 1)))))))
 
     (it "retains compacted entries physically by default while exposing only the active view"
       (let [s (sut/create-store)]
@@ -152,8 +152,8 @@
           (let [transcript (store/get-transcript s "chat")
                 active     (store/active-transcript s "chat")
                 session    (store/get-session s "chat")]
-            (should= ["session" "message" "message" "compaction" "message"] (mapv :type transcript))
-            (should= ["compaction" "message"] (mapv :type active))
-            (should= 3 (:effective-history-offset session))))))
+            (should= ["compaction" "message"] (mapv :type transcript))
+            (should= transcript active)
+            (should= 1 (:segment session))))))
 
   ))

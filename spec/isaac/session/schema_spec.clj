@@ -32,7 +32,6 @@
                       :key                 "alpha"
                       :name                "Alpha"
                      :sessionId           "hdr-1"
-                     :session-file        "alpha.jsonl"
                       :origin              {:kind :cli}
                       :crew                "main"
                       :tags                #{:project/chess :wip}
@@ -47,7 +46,7 @@
                       :compaction-disabled false
                       :compaction          {:consecutive-failures 0}
                       :history-retention   :retain
-                      :effective-history-offset 128
+                      :segment             2
                       :input-tokens        1
                       :output-tokens       2
                      :total-tokens        3

@@ -129,7 +129,7 @@
         crew    (or crew "main")
         existing (store/read-episode fs* root crew episode-id)
         session  (when ss (session-store/get-session ss episode-id))
-        transcript (when ss (session-store/get-transcript ss episode-id))
+        transcript (when ss (session-store/chronicle-transcript ss episode-id))
         {:keys [provider model]} (gist-provider+model (or cfg {}) root provider model)]
     (cond
       (nil? existing)
@@ -231,7 +231,7 @@
          :action      (if prior :chained :opened)})
 
       :else
-      (let [transcript (when ss (session-store/get-transcript ss (:id open)))]
+      (let [transcript (when ss (session-store/chronicle-transcript ss (:id open)))]
         (if (warm? transcript ttl)
           {:session-key (:id open) :episode open :action :warm}
           (chain-successor! (assoc opts :fs fs* :root root :crew crew

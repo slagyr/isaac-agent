@@ -28,7 +28,10 @@
         (.delete f)))))
 
 (defn- sidecar-path [id]
-  (str test-dir "/sessions/" id ".edn"))
+  (c/session-edn-path test-dir id))
+
+(defn- current-path [id]
+  (c/current-transcript-path test-dir id))
 
 (defn- read-sidecar [id]
   (edn/read-string (fs/slurp (nexus/get :fs) (sidecar-path id))))
@@ -36,7 +39,7 @@
 (defn- seed-transcript! [opts messages]
   (let [session      (sut/create-session! test-dir test-key opts)
         session-id   (:sessionId session)
-        session-file (:session-file session)
+        id           (:id session)
         fs*          (nexus/get :fs)
         header       {:type      "session"
                       :id        session-id
@@ -52,7 +55,7 @@
                                       :message   (c/normalize-message message)}]
                            (recur (next remaining) (:id entry) (conj out entry)))
                          out))]
-    (c/write-transcript! test-dir session-file (into [header] entries) fs*)
+    (c/write-transcript! test-dir id (into [header] entries) fs*)
     {:session session :entries entries}))
 
 (defn- seeded-entry [parent-id spec]
@@ -66,15 +69,15 @@
              :message (c/normalize-message spec)))))
 
 (defn- append-seeded-entries! [session specs]
-  (let [fs*          (nexus/get :fs)
-        session-file (:session-file session)
-        transcript   (c/read-transcript-raw test-dir session-file fs*)
-        additions    (loop [remaining specs parent-id (:id (last transcript)) out []]
-                       (if-let [spec (first remaining)]
-                         (let [entry (seeded-entry parent-id spec)]
-                           (recur (next remaining) (:id entry) (conj out entry)))
-                         out))]
-    (c/write-transcript! test-dir session-file (into transcript additions) fs*)
+  (let [fs*        (nexus/get :fs)
+        id         (:id session)
+        transcript (c/read-transcript-raw test-dir id fs*)
+        additions  (loop [remaining specs parent-id (:id (last transcript)) out []]
+                     (if-let [spec (first remaining)]
+                       (let [entry (seeded-entry parent-id spec)]
+                         (recur (next remaining) (:id entry) (conj out entry)))
+                       out))]
+    (c/write-transcript! test-dir id (into transcript additions) fs*)
     additions))
 
 (describe "Session Storage"
@@ -84,24 +87,6 @@
     (nexus/-with-nexus {:fs (fs/mem-fs)}
       (example)))
 
-  (describe "normalize-index-store"
-
-    (it "normalizes map stores with keyword keys and non-map entries"
-      (let [result (#'sut/normalize-index-store {:alpha {:session-file "a.jsonl"}
-                                                 :beta  "not-a-map"})]
-        (should= #{{:id "alpha" :key "alpha" :session-file "a.jsonl"}
-                   {:id "beta" :key "beta"}}
-                 (set (map #(select-keys % [:id :key :session-file]) (vals result))))))
-
-    (it "normalizes sequential stores and skips blank ids"
-      (let [result (#'sut/normalize-index-store [{:key "alpha" :session-file "a.jsonl"}
-                                                 {:id "beta" :session-file "b.jsonl"}
-                                                 {:id ""}
-                                                 "not-a-map"])]
-        (should= #{{:id "alpha" :key "alpha" :session-file "a.jsonl"}
-                   {:id "beta" :key "beta" :session-file "b.jsonl"}}
-                 (set (map #(select-keys % [:id :key :session-file]) (vals result)))))))
-
   ;; region ----- create-session! -----
 
   (describe "create-session!"
@@ -110,7 +95,9 @@
       (let [entry (sut/create-session! test-dir test-key)]
         (should= "user1" (:key entry))
         (should (string? (:sessionId entry)))
-        (should (string? (:session-file entry)))
+        (should-not (contains? entry :session-file))
+        (should (fs/exists? (nexus/get :fs) (current-path test-key)))
+        (should (fs/exists? (nexus/get :fs) (sidecar-path test-key)))
         (should-be-nil (:channel entry))
         (should-be-nil (:chat-type entry))
         (should-not (contains? entry :chatType))
@@ -181,8 +168,8 @@
 
     (it "creates a fresh session when the sidecar exists but its transcript is missing"
       (let [first  (sut/create-session! test-dir test-key)
-             _      (fs/delete (nexus/get :fs) (str test-dir "/sessions/" (:session-file first)))
-             second (sut/create-session! test-dir test-key)]
+            _      (fs/delete (nexus/get :fs) (current-path test-key))
+            second (sut/create-session! test-dir test-key)]
         (should-not= (:sessionId first) (:sessionId second))
         (should= 1 (count (store/list-sessions-by-agent (s) "main")))))
 
@@ -221,44 +208,26 @@
       (sut/create-session! test-dir "user2")
       (should= 2 (count (store/list-sessions-by-agent (s) "main"))))
 
-    (it "lists sessions without migrating transcripts"
+    (it "lists sessions without reading transcripts"
       (sut/create-session! test-dir test-key)
-      (let [migrations (atom 0)]
-        (with-redefs [c/migrate-transcript! (fn [& _]
-                                              (swap! migrations inc)
-                                              [])]
-          (should= 1 (count (store/list-sessions-by-agent (s) "main"))))
-        (should= 0 @migrations)))
+      (should= 1 (count (store/list-sessions-by-agent (s) "main"))))
 
     (it "writes sidecar files keyed by session id"
       (let [entry      (sut/create-session! test-dir "Friday Debug!")
             entry-map   (read-sidecar "friday-debug")]
         (should= "Friday Debug!" (:name entry-map))
-        (should= (:session-file entry) (:session-file entry-map))))
+        (should (fs/exists? (nexus/get :fs) (current-path "friday-debug")))))
 
-    (it "migrates a legacy index entry into a sidecar on read"
-      (let [session-file "legacy.jsonl"
-            index-path    (str test-dir "/sessions/index.edn")]
-        (fs/mkdirs (nexus/get :fs) (str test-dir "/sessions"))
-        (fs/spit (nexus/get :fs) index-path (pr-str {"legacy" {:id           "legacy"
-                                                :key          "legacy"
-                                                :name         "Legacy"
-                                                :session-file session-file
-                                                :createdAt    "2026-05-08T10:00:00"
-                                                :updated-at   "2026-05-08T10:00:00"
-                                                :chatType     "direct"}}))
-        (fs/spit (nexus/get :fs) (str test-dir "/sessions/" session-file)
-                 (str (json/generate-string {:type "session"
-                                             :id "header1"
-                                             :timestamp "2026-05-08T10:00:00"
-                                             :version 3
-                                             :cwd test-dir}) "\n"))
-        (let [entry (store/get-session (s) "legacy")]
-          (should= "2026-05-08T10:00:00" (:created-at entry))
-          (should= "direct" (:chat-type entry))
-          (should (fs/exists? (nexus/get :fs) (sidecar-path "legacy")))
-          (should-not (contains? entry :createdAt))
-          (should-not (contains? entry :chatType))))))
+    (it "errors when opening an unmigrated jsonl session"
+      (let [fs* (nexus/get :fs)]
+        (fs/mkdirs fs* (str test-dir "/sessions"))
+        (fs/spit fs* (str test-dir "/sessions/legacy.jsonl")
+                 "{\"type\":\"session\",\"id\":\"h1\"}\n")
+        (try
+          (store/get-session (s) "legacy")
+          (should-fail "expected unmigrated error")
+          (catch clojure.lang.ExceptionInfo e
+            (should= :unmigrated (:reason (ex-data e))))))))
 
   ;; endregion ^^^^^ list-sessions ^^^^^
 
@@ -364,8 +333,8 @@
         (should-be-nil (store/get-session (s) test-key))
         (should-not (fs/exists? fs* (sidecar-path test-key)))
         (should (fs/exists? fs* (sidecar-path "skipper")))
-        (should-not (fs/exists? fs* (str test-dir "/sessions/" test-key ".jsonl")))
-        (should (fs/exists? fs* (str test-dir "/sessions/skipper.jsonl")))
+        (should-not (fs/exists? fs* (current-path test-key)))
+        (should (fs/exists? fs* (current-path "skipper")))
         (should= 2 (count (store/get-transcript (s) "skipper")))))
 
     (it "refuses a collision without clobbering the target"
@@ -455,12 +424,11 @@
                                    :tokensBefore     50
                                    :compactedEntryIds [(:id first-msg) (:id second-msg)]})
         (let [result         (store/get-transcript (s) test-key)
-              compaction     (nth result 1)
-              kept-msg       (nth result 2)
-              kept-assistant (nth result 3)
-              surviving-msg  (nth result 4)]
-          (should= 5 (count result))
-          (should= "session" (:type (first result)))
+              compaction     (nth result 0)
+              kept-msg       (nth result 1)
+              kept-assistant (nth result 2)
+              surviving-msg  (nth result 3)]
+          (should= 4 (count result))
           (should= "compaction" (:type compaction))
           (should= session-id (:parentId compaction))
           (should= "message" (:type kept-msg))
@@ -483,9 +451,9 @@
                                    :tokensBefore     50
                                    :compactedEntryIds [(:id first-msg) (:id second-msg)]})
         (let [result     (store/get-transcript (s) test-key)
-              compaction (nth result 1)
-              kept-msg   (nth result 2)]
-          (should= 3 (count result))
+              compaction (nth result 0)
+              kept-msg   (nth result 1)]
+          (should= 2 (count result))
           (should= session-id (:parentId compaction))
           (should= (:id compaction) (:parentId kept-msg))
           (should= (:id later-msg) (:id kept-msg)))))
@@ -515,7 +483,7 @@
           (should= (:id first-summary) (:parentId second-summary))
           (should= "Summary two" (:summary second-summary)))))
 
-    (it "creates a .bak.jsonl backup before rewriting the transcript"
+    (it "does not freeze a segment under prune"
       (let [{:keys [entries]} (seed-transcript! {:history-retention :prune}
                                                 [{:role "user" :content "Hello"}
                                                  {:role "assistant" :content "Hi"}])
@@ -525,37 +493,8 @@
                                    :firstKeptEntryId  nil
                                    :tokensBefore      10
                                    :compactedEntryIds [(:id first-msg) (:id second-msg)]})
-        (let [sessions-dir (str test-dir "/sessions")
-              session-file (:session-file (store/get-session (s) test-key))
-              session-base (subs session-file 0 (- (count session-file) (count ".jsonl")))
-              backups      (->> (fs/children (nexus/get :fs) sessions-dir)
-                                (filter #(and (str/starts-with? % session-base)
-                                              (str/ends-with? % ".bak.jsonl"))))]
-          (should= 1 (count backups)))))
-
-    (it "backup file contains the pre-splice transcript"
-      (let [{:keys [entries]} (seed-transcript! {:history-retention :prune}
-                                                [{:role "user" :content "Hello"}
-                                                 {:role "assistant" :content "Hi"}])
-            [first-msg second-msg] entries
-            pre-splice             (store/get-transcript (s) test-key)]
-        (store/splice-compaction! (s) test-key
-                                  {:summary           "Compacted"
-                                   :firstKeptEntryId  nil
-                                   :tokensBefore      10
-                                   :compactedEntryIds [(:id first-msg) (:id second-msg)]})
-        (let [sessions-dir (str test-dir "/sessions")
-              session-file (:session-file (store/get-session (s) test-key))
-              session-base (subs session-file 0 (- (count session-file) (count ".jsonl")))
-              bak-name     (->> (fs/children (nexus/get :fs) sessions-dir)
-                                (filter #(and (str/starts-with? % session-base)
-                                              (str/ends-with? % ".bak.jsonl")))
-                                first)
-              bak-content  (->> (str/split-lines (fs/slurp (nexus/get :fs) (str sessions-dir "/" bak-name)))
-                                  (remove str/blank?)
-                                  (mapv #(json/parse-string % true)))]
-          (should= (count pre-splice) (count bak-content))
-          (should= (mapv :id pre-splice) (mapv :id bak-content)))))
+        (should-not (fs/exists? (nexus/get :fs) (c/frozen-transcript-path test-dir test-key 0)))
+        (should (fs/exists? (nexus/get :fs) (current-path test-key)))))
 
     (it "does not log splice diagnostics"
       (let [{:keys [entries]} (seed-transcript! {} [{:role "user" :content "Hello"}
@@ -621,23 +560,23 @@
           (should-contain "one sad lemon" rendered)
           (should-contain "The fridge has a lemon." rendered))))
 
-    (it "keeps only the 8 most recent backups after pruning"
-      (with-redefs [c/max-backup-count 2]
-        (sut/create-session! test-dir test-key)
-        (let [session-file (:session-file (store/get-session (s) test-key))
-              session-base (subs session-file 0 (- (count session-file) (count ".jsonl")))
-              sessions-dir (str test-dir "/sessions")]
-          (doseq [i (range 3)]
-            (let [msg (store/append-message! (s) test-key {:role "user" :content (str "msg-" i)})]
-              (store/splice-compaction! (s) test-key
-                                        {:summary           (str "Summary " i)
-                                         :firstKeptEntryId  nil
-                                         :tokensBefore      10
-                                         :compactedEntryIds [(:id msg)]})))
-          (let [backups (->> (fs/children (nexus/get :fs) sessions-dir)
-                             (filter #(and (str/starts-with? % session-base)
-                                           (str/ends-with? % ".bak.jsonl"))))]
-            (should= 2 (count backups)))))))
+    (it "freezes current.ednl as 0.ednl under retain"
+      (let [{:keys [entries]} (seed-transcript! {:history-retention :retain}
+                                                [{:role "user" :content "First"}
+                                                 {:role "assistant" :content "Second"}
+                                                 {:role "user" :content "Third"}])
+            [first-msg second-msg third-msg] entries]
+        (store/splice-compaction! (s) test-key
+                                  {:summary           "Summary"
+                                   :firstKeptEntryId  (:id third-msg)
+                                   :tokensBefore      20
+                                   :compactedEntryIds [(:id first-msg) (:id second-msg)]})
+        (should (fs/exists? (nexus/get :fs) (c/frozen-transcript-path test-dir test-key 0)))
+        (let [frozen  (c/read-ednl (nexus/get :fs) (c/frozen-transcript-path test-dir test-key 0))
+              current (store/get-transcript (s) test-key)]
+          (should-contain "First" (pr-str frozen))
+          (should= ["compaction" "message"] (mapv :type current))
+          (should= 1 (:segment (store/get-session (s) test-key))))))))
 
   ;; endregion ^^^^^ splice-compaction! ^^^^^
 
@@ -746,23 +685,4 @@
     )
 
   ;; endregion ^^^^^ Logging ^^^^^
-
-    (it "retains compacted entries on disk and records an effective history offset"
-      (let [{:keys [entries]} (seed-transcript! {:history-retention :retain}
-                                                [{:role "user" :content "First"}
-                                                 {:role "assistant" :content "Second"}
-                                                 {:role "user" :content "Third"}])
-            [first-msg second-msg third-msg] entries]
-        (store/splice-compaction! (s) test-key
-                                  {:summary           "Summary"
-                                   :firstKeptEntryId  (:id third-msg)
-                                   :tokensBefore      20
-                                   :compactedEntryIds [(:id first-msg) (:id second-msg)]})
-        (let [transcript (store/get-transcript (s) test-key)
-              active     (store/active-transcript (s) test-key)
-              session    (store/get-session (s) test-key)]
-          (should= ["session" "message" "message" "compaction" "message"] (mapv :type transcript))
-          (should= ["compaction" "message"] (mapv :type active))
-          (should (integer? (:effective-history-offset session)))))
-
-  )))
+  )

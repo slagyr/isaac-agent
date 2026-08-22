@@ -1,9 +1,8 @@
 Feature: Compaction history retention policy
-  After compaction, retention determines whether the compacted entries
-  remain on disk. Under :retain (default), they stay in the transcript
-  file and the session sidecar records the post-compaction offset so
-  the prompt-build read path can seek past them. Under :prune, current
-  behavior is preserved: compacted entries are removed.
+  After compaction, retention determines whether the previous current
+  transcript is frozen. Under :retain (default), current.ednl is copied
+  to n.ednl and replaced with the compaction + kept tail. Under :prune,
+  current.ednl is replaced and no frozen segment is written.
 
   Retention is resolved once at session creation (cascade:
   explicit create-time override > crew > model > provider > :defaults
@@ -16,7 +15,7 @@ Feature: Compaction history retention policy
   Background:
     Given an empty Isaac root at "/test"
 
-  Scenario: Under :retain, compacted entries remain in the transcript file
+  Scenario: Under :retain, compacted entries remain in a frozen segment
     Given the isaac EDN file isaac.edn exists with:
       | path                       | value   |
       | defaults.history-retention | :retain |
@@ -36,14 +35,15 @@ Feature: Compaction history retention policy
       | compactedIndexes | [0, 1]               |
       | tokensBefore     | 20                   |
     Then session "retain-keep" has transcript matching:
-      | type    | message.content  |
-      | message | Earlier question |
-      | message | Earlier answer   |
-      | message | Recent question  |
-      | message | Recent answer    |
-    And session "retain-keep" has transcript matching:
       | type       | summary              |
       | compaction | Caught up the model. |
+    And session "retain-keep" has transcript matching:
+      | type    | message.content  |
+      | message | Recent question  |
+      | message | Recent answer    |
+    And session "retain-keep" has transcript not matching:
+      | type    | message.content  |
+      | message | Earlier question |
 
   Scenario: Under :prune, compacted entries are removed from the transcript file
     Given the isaac EDN file isaac.edn exists with:

@@ -18,6 +18,7 @@
     [isaac.nexus :as nexus]
     [isaac.session.context :as session-ctx]
     [isaac.session.schema :as session-schema]
+    [isaac.session.migrate :as migrate]
     [isaac.session.store.impl-common :as store-common]
     [isaac.session.store.spi :as store]
     [isaac.tool.memory :as memory]
@@ -135,12 +136,11 @@
    {:key :tags   :header "Tags"    :align :left}])
 
 (defn- transcript-size-bytes [entry]
-  (let [root          (or (nexus/get :root) (loader/root))
-        session-file  (:session-file entry)
-        path          (when (and root session-file)
-                        (store-common/transcript-path root session-file))]
+  (let [root (or (nexus/get :root) (loader/root))
+        path (when (and root (:id entry))
+               (store-common/current-transcript-path root (:id entry)))]
     (if path
-      (fs/size (fs/instance) path)
+      (or (fs/size (fs/instance) path) 0)
       0)))
 
 (defn- session->row [entry context-window session-store]
@@ -281,6 +281,26 @@
 (defn- print-rename-reminder! [old-id new-id]
   (println (str "renamed: " old-id " -> " new-id))
   (println "Reminder: update any Discord :discord/channels :session mappings and pinned --session scripts that still reference the old key."))
+
+(defn- print-migrate-result! [{:keys [status id]}]
+  (case status
+    :migrated (println (str "migrated: " id))
+    :skipped  (println (str "already migrated: " id))
+    :missing  (println (str "session not found: " id))
+    (println (str status ": " id))))
+
+(defn- run-migrate [opts session-id]
+  (let [{:keys [root]} (install-cli! opts)
+        fs*            (fs/instance)]
+    (if (str/blank? session-id)
+      (let [results (migrate/migrate-all! root fs*)]
+        (if (seq results)
+          (doseq [r results] (print-migrate-result! r))
+          (println "no leftover jsonl sessions"))
+        (if (some #(= :missing (:status %)) results) 1 0))
+      (let [result (migrate/migrate-session! root session-id fs*)]
+        (print-migrate-result! result)
+        (if (= :missing (:status result)) 1 0)))))
 
 (defn- run-rename [opts old-id new-id]
   (cond
@@ -443,7 +463,9 @@
 (def ^:private unset-help  ["Usage: isaac sessions unset <id>.<path>" "Clear a value on a session field."])
 (def ^:private show-help   ["Usage: isaac sessions show <id>" "Show full detail for one session."])
 (def ^:private delete-help ["Usage: isaac sessions delete <id>" "Delete a session."])
-(def ^:private rename-help ["Usage: isaac sessions rename <old-id> <new-id>" "Rename a session key, preserving transcript and metadata."])
+(def ^:private rename-help  ["Usage: isaac sessions rename <old-id> <new-id>" "Rename a session key, preserving transcript and metadata."])
+(def ^:private migrate-help ["Usage: isaac sessions migrate [session-id]"
+                             "Convert leftover jsonl sessions into sessions/<id>/current.ednl. No id migrates every leftover session."])
 
 (defn- run-list [opts list-args]
   (let [{:keys [options errors]} (parse-option-map list-args)]
@@ -482,6 +504,11 @@
       (if (help-requested? (rest raw-args))
         (apply print-subcommand-help! rename-help)
         (run-rename opts (second raw-args) (nth raw-args 2 nil)))
+
+      (= "migrate" subcmd)
+      (if (help-requested? (rest raw-args))
+        (apply print-subcommand-help! migrate-help)
+        (run-migrate opts (second raw-args)))
 
       (= "set" subcmd)
       (if (help-requested? (rest raw-args))
@@ -528,5 +555,6 @@
    {:name "show"   :summary "Show one session"}
    {:name "set"    :summary "Set a mutable field: sessions set <id>.<path> <value>"}
    {:name "unset"  :summary "Clear a mutable field: sessions unset <id>.<path>"}
-   {:name "rename" :summary "Rename a session key: sessions rename <old-id> <new-id>"}
-   {:name "delete" :summary "Delete a session"}])
+   {:name "rename"  :summary "Rename a session key: sessions rename <old-id> <new-id>"}
+   {:name "delete"  :summary "Delete a session"}
+   {:name "migrate" :summary "Convert leftover jsonl sessions to current.ednl directories"}])

@@ -54,7 +54,6 @@
             :key                 (immutable {:type :string})
             :name                (mutable {:type :string :required? true :validate schema/present? :message "must be present"})
             :sessionId           (immutable {:type :string})
-            :session-file        (immutable {:type :string})
             :nonce               (mutable {:type :string})
             :origin              (immutable {:type :map :schema (:schema Origin)})
             :crew                (mutable {:type :string
@@ -79,7 +78,7 @@
             :compaction-disabled (mutable {:type :boolean})
             :compaction          (mutable {:type :map :schema (:schema CompactionState)})
             :history-retention   (mutable {:type :keyword})
-            :effective-history-offset (system-managed {:type :long})
+            :segment             (system-managed {:type :int})
             :input-tokens        (system-managed {:type :int})
             :turn-input-tokens   (system-managed {:type :int})
             :output-tokens       (system-managed {:type :int})

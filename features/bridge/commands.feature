@@ -25,7 +25,7 @@ Feature: Bridge Commands
       | ─+                                           |
       | Model .* echo \(grover\)                     |
       | Session .* bridge-status                     |
-      | File .* bridge-status\.jsonl                 |
+      | File .* bridge-status/current\.ednl          |
       | Turns .* 4                                   |
       | Compactions .* 2                             |
       | Context .* 5,000 / 32,768 .*15%             |

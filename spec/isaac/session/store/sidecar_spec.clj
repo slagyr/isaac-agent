@@ -11,10 +11,10 @@
 (describe "sidecar session store"
 
   (it "uses the installed runtime fs without binding a thread-local fs"
-    (let [mem      (fs/mem-fs)
-          fs-store (nexus/-with-nexus {:fs mem}
-                     (sut/create-store test-dir))]
-      (store/open-session! fs-store "friday-debug" {:crew "main"})
-      (should= "friday-debug" (:id (store/get-session fs-store "friday-debug")))
-      (should (fs/exists? mem (str test-dir "/sessions/friday-debug.edn")))
-      (should (fs/exists? mem (str test-dir "/sessions/friday-debug.jsonl"))))))
+    (let [mem (fs/mem-fs)]
+      (nexus/-with-nexus {:fs mem}
+        (let [fs-store (sut/create-store test-dir)]
+          (store/open-session! fs-store "friday-debug" {:crew "main"})
+          (should= "friday-debug" (:id (store/get-session fs-store "friday-debug")))
+          (should (fs/exists? mem (str test-dir "/sessions/friday-debug/session.edn")))
+          (should (fs/exists? mem (str test-dir "/sessions/friday-debug/current.ednl"))))))))

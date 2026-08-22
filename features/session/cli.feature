@@ -26,6 +26,7 @@ Feature: Sessions Command
     And the stdout contains "list"
     And the stdout contains "show"
     And the stdout contains "rename"
+    And the stdout contains "migrate"
     And the exit code is 0
 
   Scenario: sessions set --help shows the set usage
@@ -41,6 +42,11 @@ Feature: Sessions Command
   Scenario: sessions show --help shows the show usage
     When isaac is run with "sessions show --help"
     Then the stdout contains "Usage: isaac sessions show <id>"
+    And the exit code is 0
+
+  Scenario: sessions migrate --help shows the migrate usage
+    When isaac is run with "sessions migrate --help"
+    Then the stdout contains "Usage: isaac sessions migrate [session-id]"
     And the exit code is 0
 
   Scenario: sessions delete --help shows the delete usage
@@ -203,6 +209,7 @@ Feature: Sessions Command
     Then the exit code is 0
     And session "design-chat" does not exist
     And the isaac file "sessions/design-chat.jsonl" does not exist
+    And the isaac file "sessions/design-chat/current.ednl" does not exist
 
   Scenario: sessions list output is colorized when --color always is set
     Given the following sessions exist:

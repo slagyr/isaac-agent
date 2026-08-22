@@ -99,7 +99,7 @@
      :provider       (ctx-provider-name ctx)
      :tags           (or (:tags entry) #{})
      :session-key    session-key
-     :session-file   (:session-file entry)
+     :session-file   (when (:id entry) (str (:id entry) "/current.ednl"))
      :turns          turns
      :compactions    (or (:compaction-count entry) 0)
      :tokens         tokens

@@ -21,6 +21,7 @@
   (get-session [this name])
   (get-transcript [this name])
   (active-transcript [this name])
+  (chronicle-transcript [this name])
   (update-session! [this name updates])
   (append-message! [this name message])
   (append-error! [this name error])
@@ -105,17 +106,16 @@
   [impl-kw factory]
   (swap! factories* assoc impl-kw factory))
 
-(def ^:private default-impl :jsonl-edn-sidecar)
+(def ^:private default-impl :ednl-dir)
 (def ^:private impl->ns
-  {:memory          'isaac.session.store.memory
-   :jsonl-edn-index 'isaac.session.store.index
-   default-impl     'isaac.session.store.sidecar})
+  {:memory            'isaac.session.store.memory
+   default-impl       'isaac.session.store.sidecar
+   :jsonl-edn-sidecar 'isaac.session.store.sidecar})
 
 (defn create
   "Create a SessionStore for the given state directory and impl keyword.
-   :memory            — in-memory store (ephemeral, fast)
-   :jsonl-edn-sidecar — file store with per-session EDN sidecar files (default)
-   :jsonl-edn-index   — file store with single combined index"
+   :memory   — in-memory store (ephemeral, fast)
+   :ednl-dir — directory store with current.ednl (default)"
   ([root] (create root default-impl))
   ([root impl]
     (let [factory (or (get @factories* impl)
@@ -180,7 +180,7 @@
   "Create a store and naming strategy from config and register them in the system under :sessions.
    Reads :sessions :store and :sessions :naming-strategy from cfg."
   [cfg root]
-  (let [impl     (get-in cfg [:sessions :store] :jsonl-edn-sidecar)
+  (let [impl     (get-in cfg [:sessions :store] default-impl)
         fs*      (fs/instance)
         store    (create root impl)
         strategy (make-naming-strategy cfg root store fs*)]

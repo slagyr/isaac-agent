@@ -253,7 +253,7 @@
         session (when ss (session-store/get-session ss session-id))]
     (if-not session
       {:exit 1 :status :error :message (str "unknown session: " session-id)}
-      (let [transcript (session-store/get-transcript ss session-id)
+      (let [transcript (session-store/chronicle-transcript ss session-id)
             {:keys [provider model]} (resolve-gist-model cfg)
             provider (provider-with-root provider root)]
         (if-not provider

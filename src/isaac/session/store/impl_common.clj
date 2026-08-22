@@ -1,6 +1,5 @@
 (ns isaac.session.store.impl-common
   (:require
-    [cheshire.core :as json]
     [clojure.edn :as edn]
     [clojure.set :as set]
     [clojure.string :as str]
@@ -13,8 +12,6 @@
     [isaac.session.store.spi :as session-store])
   (:import
     (java.nio.charset StandardCharsets)
-    (java.time Instant ZoneOffset)
-    (java.time.format DateTimeFormatter)
     (java.util UUID)))
 
 ;; region ----- Helpers -----
@@ -36,40 +33,29 @@
     (string? ts) (if-let [n (parse-long-safe ts)] (ms->iso-fn n) ts)
     :else        ts))
 
-(defn read-json [s] (json/parse-string s true))
-
-(defn- json-escape [s]
-  (-> (str s)
-      (str/replace "\\" "\\\\")
-      (str/replace "\"" "\\\"")
-      (str/replace "\n" "\\n")
-      (str/replace "\r" "\\r")
-      (str/replace "\t" "\\t")))
-
-(defn- write-json-value [v]
-  (cond
-    (nil? v)     "null"
-    (true? v)    "true"
-    (false? v)   "false"
-    (number? v)  (str v)
-    (keyword? v) (str "\"" (json-escape (subs (str v) 1)) "\"")
-    (string? v)  (str "\"" (json-escape v) "\"")
-    (map? v)     (str "{"
-                      (->> v
-                           (map (fn [[k val]]
-                                  (str "\"" (json-escape (name k)) "\":" (write-json-value val))))
-                           (str/join ","))
-                      "}")
-    (or (sequential? v) (set? v))
-    (str "[" (str/join "," (map write-json-value v)) "]")
-    :else (str "\"" (json-escape v) "\"")))
-
-(defn write-json [v]
-  (write-json-value v))
-
 (defn write-edn [v]
   (binding [*print-namespace-maps* false]
     (str (pr-str v) "\n")))
+
+;; tonsky/fast-edn is JSON-speed on the JVM (Java parser). Native bb has no
+;; EdnParser class — fall back to clojure.edn there.
+(def ^:private fast-read-string
+  (try (requiring-resolve 'fast-edn.core/read-string)
+       (catch Throwable _ nil)))
+
+(def ^:private fast-parser
+  (try (requiring-resolve 'fast-edn.core/parser)
+       (catch Throwable _ nil)))
+
+(def ^:private fast-read-next
+  (try (requiring-resolve 'fast-edn.core/read-next)
+       (catch Throwable _ nil)))
+
+(defn read-edn-line [s]
+  (if fast-read-string
+    (fast-read-string s)
+    (binding [*read-eval* false]
+      (edn/read-string s))))
 
 (defn keywordize-map [m]
   (into {} (map (fn [[k v]] [(if (keyword? k) k (keyword k)) v]) m)))
@@ -93,24 +79,6 @@
   (let [role (:role message)]
     (cond-> (assoc message :content (normalize-message-content role (:content message)))
       (keyword? (:error message)) (update :error str))))
-
-(defn- normalize-existing-id [id id-map]
-  (if (and (string? id) (re-matches #"[a-f0-9]{8}" id))
-    [id id-map false]
-    (if-let [mapped (get id-map id)]
-      [mapped id-map true]
-      (let [new (new-id)]
-        [new (assoc id-map id new) true]))))
-
-(defn normalized-id [id id-map]
-  (if (nil? id)
-    (let [new (new-id)] [new id-map true])
-    (normalize-existing-id id id-map)))
-
-(defn normalized-parent-id [parent-id id-map]
-  (if (nil? parent-id)
-    [nil id-map false]
-    (normalize-existing-id parent-id id-map)))
 
 (defn slugify [s]
   (let [slug (-> (or s "")
@@ -153,6 +121,22 @@
 (defn mkdirs*! [fs path] (fs/mkdirs fs path))
 (defn delete*! [fs path] (fs/delete fs path))
 
+(defn delete-tree! [fs path]
+  (when (exists?* fs path)
+    (doseq [child (or (children* fs path) [])]
+      (delete-tree! fs (str path "/" child)))
+    (delete*! fs path)))
+
+(defn move-tree! [fs source destination]
+  (when (exists?* fs source)
+    (if-let [kids (seq (or (children* fs source) []))]
+      (do
+        (mkdirs*! fs destination)
+        (doseq [child kids]
+          (move-tree! fs (str source "/" child) (str destination "/" child)))
+        (delete-tree! fs source))
+      (fs/move fs source destination))))
+
 ;; endregion ^^^^^ Helpers ^^^^^
 
 ;; region ----- Paths -----
@@ -160,24 +144,45 @@
 (defn sessions-dir [root]
   (str root "/sessions"))
 
+(defn session-dir [root session-id]
+  (str (sessions-dir root) "/" session-id))
+
+(defn session-edn-path [root session-id]
+  (str (session-dir root session-id) "/session.edn"))
+
 (defn sidecar-path [root session-id]
-  (str (sessions-dir root) "/" session-id ".edn"))
+  (session-edn-path root session-id))
+
+(defn current-transcript-path [root session-id]
+  (str (session-dir root session-id) "/current.ednl"))
+
+(defn frozen-transcript-path [root session-id n]
+  (str (session-dir root session-id) "/" n ".ednl"))
+
+(defn transcript-path [root session-id]
+  (current-transcript-path root session-id))
 
 (defn index-path [root]
   (str (sessions-dir root) "/index.edn"))
 
-(defn transcript-path [root session-file]
-  (str (sessions-dir root) "/" session-file))
+(defn flat-jsonl-path [root session-id]
+  (str (sessions-dir root) "/" session-id ".jsonl"))
+
+(defn flat-sidecar-path [root session-id]
+  (str (sessions-dir root) "/" session-id ".edn"))
 
 (defn turns-dir [root]
   (str (sessions-dir root) "/turns"))
 
 (defn turn-marker-path [root session-id]
+  (str (session-dir root session-id) "/turn.edn"))
+
+(defn legacy-turn-marker-path [root session-id]
   (str (turns-dir root) "/" session-id ".edn"))
 
 ;; endregion ^^^^^ Paths ^^^^^
 
-;; region ----- Turn markers (isaac-7li9) -----
+;; region ----- Turn markers -----
 
 (defn record-turn-marker!* [root session-id marker fs]
   (let [path (turn-marker-path root session-id)]
@@ -193,14 +198,14 @@
       (edn/read-string (slurp* fs path)))))
 
 (defn turn-markers* [root fs]
-  (let [dir (turns-dir root)]
+  (let [dir (sessions-dir root)]
     (if-let [children (children* fs dir)]
       (->> children
-           (filter #(str/ends-with? % ".edn"))
-           (keep (fn [file]
-                   (let [session-id (subs file 0 (- (count file) 4))]
-                     (some-> (edn/read-string (slurp* fs (str dir "/" file)))
-                             (assoc :session-id session-id)))))
+           (keep (fn [name]
+                   (let [path (turn-marker-path root name)]
+                     (when (exists?* fs path)
+                       (some-> (edn/read-string (slurp* fs path))
+                               (assoc :session-id name))))))
            vec)
       [])))
 
@@ -208,89 +213,67 @@
 
 ;; region ----- Transcript -----
 
-(defn read-transcript-raw [root session-file fs]
-  (let [path (transcript-path root session-file)]
-    (if (exists?* fs path)
-      (->> (str/split-lines (slurp* fs path))
-           (remove str/blank?)
-           (mapv read-json))
-      [])))
-
-(defn write-transcript! [root session-file entries fs]
-  (let [path (transcript-path root session-file)]
-    (mkdirs*! fs (fs/parent path))
-    (spit*! fs path (str (str/join "\n" (map write-json entries)) "\n"))))
-
-(defn transcript-byte-offset [entries]
-  (->> entries
-       (map #(str (write-json %) "\n"))
-       (map #(.getBytes ^String % StandardCharsets/UTF_8))
-       (reduce (fn [total bytes] (+ total (alength bytes))) 0)))
-
-(declare drop-orphan-toolresults)
-
-(defn- snap-to-line-start
-  "Snap a raw byte offset back to the start of the transcript line it lands in —
-   the byte after the preceding newline, or 0. A stored effective-history-offset
-   can drift a few bytes mid-entry; reading from a mid-line byte would parse a
-   partial JSON fragment and throw (JsonParseException), permanently bricking the
-   session (isaac-63f3). Snapping back keeps the whole line and never parses a
-   partial one."
-  [^bytes bytes offset]
-  (let [offset (min (max 0 (long offset)) (alength bytes))]
-    (loop [i offset]
-      (if (or (zero? i) (= (aget bytes (dec i)) (byte 10)))
-        i
-        (recur (dec i))))))
-
-(defn read-transcript-from-offset [root session-file offset fs]
-  (let [path (transcript-path root session-file)]
-    (if (exists?* fs path)
-      (let [bytes  (.getBytes ^String (slurp* fs path) StandardCharsets/UTF_8)
-            offset (snap-to-line-start bytes offset)
-            text   (String. bytes offset (- (alength bytes) offset) StandardCharsets/UTF_8)]
-        (->> (str/split-lines text)
+(defn read-ednl [fs path]
+  (if-not (exists?* fs path)
+    []
+    (let [s (or (slurp* fs path) "")]
+      (if (and fast-parser fast-read-next (seq s))
+        (let [eof ::eof
+              p   (fast-parser {:eof eof} s)]
+          (into [] (take-while #(not= eof %) (repeatedly #(fast-read-next p)))))
+        (->> (str/split-lines s)
              (remove str/blank?)
-             (mapv read-json)
-             drop-orphan-toolresults))
-      [])))
+             (mapv read-edn-line))))))
 
-(defn append-entry! [root session-file entry fs]
-  (let [path (transcript-path root session-file)]
-    (spit*! fs path (str (write-json entry) "\n") :append true)))
+(defn write-ednl! [fs path entries]
+  (mkdirs*! fs (fs/parent path))
+  (spit*! fs path (apply str (map write-edn entries))))
 
-(defn normalize-transcript-entry [normalize-ts entry id-map]
-  (let [[id id-map id-changed?]            (normalized-id (:id entry) id-map)
-        [parent-id id-map parent-changed?] (normalized-parent-id (:parentId entry) id-map)
-        ts                                 (normalize-ts (:timestamp entry))
-        ts-changed?                        (not= ts (:timestamp entry))
-        base                               (-> entry
-                                               (assoc :id id :parentId parent-id :timestamp ts))
-        normalized                         (case (:type base)
-                                             "session" (-> base
-                                                           (assoc :version (or (:version base) 3))
-                                                           (assoc :cwd (or (:cwd base) (System/getProperty "user.dir"))))
-                                             "message" (update base :message normalize-message)
-                                             base)]
-    [normalized id-map (or id-changed? parent-changed? ts-changed? (not= normalized entry))]))
+(defn read-transcript-raw [root session-id fs]
+  (read-ednl fs (current-transcript-path root session-id)))
 
-(defn normalize-transcript [normalize-ts entries]
-  (loop [remaining entries id-map {} out [] changed? false]
-    (if (empty? remaining)
-      [out changed?]
-      (let [[normalized next-id-map entry-changed?] (normalize-transcript-entry normalize-ts (first remaining) id-map)]
-        (recur (rest remaining) next-id-map (conj out normalized) (or changed? entry-changed?))))))
+(defn write-transcript! [root session-id entries fs]
+  (write-ednl! fs (current-transcript-path root session-id) entries))
 
-(defn migrate-transcript! [normalize-ts root session-file fs]
-  (let [raw                   (read-transcript-raw root session-file fs)
-        [normalized changed?] (normalize-transcript normalize-ts raw)]
-    (when changed?
-      (write-transcript! root session-file normalized fs))
-    normalized))
+(defn last-transcript-entry
+  "Last EDNL object, reading only a tail window."
+  [fs path]
+  (let [size (or (fs/size fs path) 0)]
+    (when (pos? size)
+      (loop [window 4096]
+        (let [start    (max 0 (- size window))
+              bytes    (or (fs/read-bytes fs path start (- size start)) (byte-array 0))
+              text     (String. ^bytes bytes StandardCharsets/UTF_8)
+              lines    (str/split-lines text)
+              complete (if (pos? start) (rest lines) lines)
+              kept     (vec (remove str/blank? complete))]
+          (cond
+            (seq kept)      (read-edn-line (peek kept))
+            (zero? start)   nil
+            :else           (recur (* 2 window))))))))
+
+(defn append-entry! [root session-id entry fs]
+  (let [path (current-transcript-path root session-id)]
+    (mkdirs*! fs (fs/parent path))
+    (spit*! fs path (write-edn entry) :append true)))
+
+(defn frozen-segment-ns [root session-id fs]
+  (->> (or (children* fs (session-dir root session-id)) [])
+       (keep (fn [name]
+               (when (re-matches #"\d+\.ednl" name)
+                 (Long/parseLong (subs name 0 (- (count name) 5))))))
+       sort
+       vec))
+
+(defn read-chronicle [root session-id fs]
+  (let [frozen  (mapcat #(read-ednl fs (frozen-transcript-path root session-id %))
+                        (frozen-segment-ns root session-id fs))
+        current (read-transcript-raw root session-id fs)]
+    (vec (concat frozen current))))
 
 ;; endregion ^^^^^ Transcript ^^^^^
 
-;; region ----- Session defaults & index helpers -----
+;; region ----- Session defaults & store helpers -----
 
 (defn with-session-defaults [now-fn normalize-ts-fn entry]
   (let [entry (session-schema/conform-read entry)
@@ -306,33 +289,43 @@
           (update :tags #(or % #{}))
           (update :compaction-disabled #(if (nil? %) false %))
           (update :compaction-count #(or % 0))
+          (update :segment #(or % 0))
           (update :input-tokens #(or % 0))
           (update :turn-input-tokens #(or % 0))
           (update :last-input-tokens #(or % 0))
           (update :output-tokens #(or % 0))
           (update :total-tokens #(or % 0))))))
 
-(defn sidecar-session-id [file-name]
-  (subs file-name 0 (- (count file-name) (count ".edn"))))
+(defn unmigrated-error [id]
+  (ex-info (str "session '" id "' is in the old jsonl layout; run `isaac sessions migrate"
+                (when id (str " " id)) "`")
+           {:reason :unmigrated :id id}))
 
-(defn read-sidecar-entry [with-session-defaults-fn root file-name fs]
-  (let [sid   (sidecar-session-id file-name)
-        path  (sidecar-path root sid)
+(defn leftover-flat? [root session-id fs]
+  (or (exists?* fs (flat-jsonl-path root session-id))
+      (exists?* fs (flat-sidecar-path root session-id))))
+
+(defn assert-migrated! [root session-id fs]
+  (when (and session-id
+             (not (exists?* fs (session-edn-path root session-id)))
+             (leftover-flat? root session-id fs))
+    (throw (unmigrated-error session-id))))
+
+(defn read-session-entry [with-session-defaults-fn root session-id fs]
+  (let [path  (session-edn-path root session-id)
         raw   (edn/read-string (slurp* fs path))
         entry (if (map? raw) (keywordize-map raw) {})]
-    [sid (with-session-defaults-fn (assoc entry :id sid))]))
+    [session-id (with-session-defaults-fn (assoc entry :id session-id))]))
 
 (defn read-sidecar-store [with-session-defaults-fn root fs]
   (let [dir (sessions-dir root)]
     (->> (or (children* fs dir) [])
-         (filter #(str/ends-with? % ".edn"))
-         (remove #(= "index.edn" %))
-         (map #(read-sidecar-entry with-session-defaults-fn root % fs))
+         (filter #(exists?* fs (session-edn-path root %)))
+         (map #(read-session-entry with-session-defaults-fn root % fs))
          (into {}))))
 
 (defn normalize-index-store [with-session-defaults-fn raw]
-  (cond
-    (map? raw)
+  (if (map? raw)
     (reduce-kv (fn [store key-str entry]
                  (let [id         (if (keyword? key-str) (name key-str) (str key-str))
                        entry      (if (map? entry) (keywordize-map entry) {})
@@ -340,19 +333,6 @@
                    (assoc store id normalized)))
                {}
                raw)
-
-    (sequential? raw)
-    (reduce (fn [store entry]
-              (let [entry      (if (map? entry) (keywordize-map entry) {})
-                    id         (or (:id entry) (:key entry))
-                    normalized (with-session-defaults-fn (assoc entry :id id))]
-                (if (str/blank? id)
-                  store
-                  (assoc store id normalized))))
-            {}
-            raw)
-
-    :else
     {}))
 
 (defn resolve-entry-id [store identifier]
@@ -361,30 +341,16 @@
     (contains? store identifier) identifier
     :else (let [id (session-id identifier)] (when (contains? store id) id))))
 
-(defn- move-if-exists! [fs source destination]
-  (when (and source destination (exists?* fs source))
-    (mkdirs*! fs (fs/parent destination))
-    (fs/move fs source destination)))
-
 (defn rename-session!
-  "Atomically rename a stored session. Shared by sidecar + index stores.
-
-  `read-session-fn`  — (fn [root fs] store-map)
-  `commit-fn`        — (fn [store old-id new-entry] ...) persist the renamed entry
-                       and drop the old id from the store map / sidecars
-  `now-iso-fn`       — () -> ISO timestamp
-  `in-flight-check`  — (fn [old-id] truthy when a turn is in progress)
-
-  Returns the renamed entry, nil when the source is missing, or throws
-  ex-info with :reason :in-flight / :collision."
   [read-session-fn commit-fn now-iso-fn in-flight-check root old-name new-name fs]
-  (let [store   (read-session-fn root fs)
-        old-id  (resolve-entry-id store old-name)
-        new-id  (session-id new-name)
-        entry   (when old-id (get store old-id))]
+  (let [store  (read-session-fn root fs)
+        old-id (resolve-entry-id store old-name)
+        new-id (session-id new-name)
+        entry  (when old-id (get store old-id))]
     (cond
       (nil? entry)
-      nil
+      (do (when old-name (assert-migrated! root (session-id old-name) fs))
+          nil)
 
       (in-flight-check old-id)
       (throw (ex-info (str "cannot rename in-flight session '" old-name
@@ -400,44 +366,36 @@
       entry
 
       :else
-      (let [old-session-file (:session-file entry)
-            new-session-file (str new-id ".jsonl")
-            renamed          (conform-session!
-                               (-> entry
-                                   (assoc :id new-id
-                                          :key new-id
-                                          :name (or new-name new-id)
-                                          :session-file new-session-file
-                                          :updated-at (now-iso-fn))))]
-        (move-if-exists! fs
-                         (when old-session-file (transcript-path root old-session-file))
-                         (transcript-path root new-session-file))
-        (move-if-exists! fs (sidecar-path root old-id) (sidecar-path root new-id))
-        (move-if-exists! fs (turn-marker-path root old-id) (turn-marker-path root new-id))
+      (let [renamed (conform-session!
+                      (-> entry
+                          (assoc :id new-id
+                                 :key new-id
+                                 :name (or new-name new-id)
+                                 :updated-at (now-iso-fn))
+                          (dissoc :session-file :effective-history-offset)))]
+        (move-tree! fs (session-dir root old-id) (session-dir root new-id))
         (commit-fn store old-id renamed)
         renamed))))
 
 (defn create-session! [read-session-fn write-fn now-iso-fn normalize-ts-fn root identifier opts fs]
-  (let [opts               (entry-defaults opts)
-        store              (read-session-fn root fs)
-        name               (or identifier (naming/generate (session-store/ensure-naming-strategy! root fs)))
-        id                 (session-id name)
-        existing           (get store id)
-        transcript-exists? (when (and existing (:session-file existing))
-                             (exists?* fs (transcript-path root (:session-file existing))))]
+  (let [opts     (entry-defaults opts)
+        store    (read-session-fn root fs)
+        name     (or identifier (naming/generate (session-store/ensure-naming-strategy! root fs)))
+        id       (session-id name)
+        existing (get store id)]
+    (assert-migrated! root id fs)
     (cond
-      (and existing transcript-exists? (not= name (:name existing)))
+      (and existing (exists?* fs (current-transcript-path root id)) (not= name (:name existing)))
       (throw (ex-info (str "session already exists: " id)
                       {:name name :session-id id}))
 
-      (and existing transcript-exists?)
+      (and existing (exists?* fs (current-transcript-path root id)))
       (do
         (log/info :session/opened :sessionId id)
         existing)
 
       :else
-      (let [session-file  (str id ".jsonl")
-            now           (or (normalize-ts-fn (:updated-at opts)) (now-iso-fn))
+      (let [now           (or (normalize-ts-fn (:updated-at opts)) (now-iso-fn))
             retention     (resolve-history-retention opts)
             transcript-id (new-id)
             header        {:type      "session"
@@ -451,7 +409,6 @@
                              :name              name
                              :nonce             (or (:nonce opts) (new-nonce))
                              :sessionId         transcript-id
-                             :session-file      session-file
                              :origin            (:origin opts)
                              :history-retention retention
                              :created-at        now
@@ -462,46 +419,19 @@
                              :channel           (:channel opts)
                              :chat-type         (or (:chat-type opts) (:chatType opts))
                              :compaction-count  0
+                             :segment           0
                              :input-tokens      0
                              :turn-input-tokens 0
                              :last-input-tokens 0
                              :output-tokens     0
                              :total-tokens      0})]
-        (write-transcript! root session-file [header] fs)
-        (write-fn store id (conform-session! entry))
+        (mkdirs*! fs (session-dir root id))
+        (write-transcript! root id [header] fs)
+        (write-fn store id (conform-session! (dissoc entry :session-file :effective-history-offset)))
         (log/info :session/created :sessionId id)
         entry))))
 
-;; endregion ^^^^^ Session defaults & index helpers ^^^^^
-
-;; region ----- Backup -----
-
-(def ^:private bak-ts-formatter
-  (DateTimeFormatter/ofPattern "yyyy-MM-dd'T'HH:mm:ss.SSS"))
-
-(def max-backup-count 8)
-
-(defn session-base [session-file]
-  (subs session-file 0 (- (count session-file) (count ".jsonl"))))
-
-(defn backup-transcript! [root session-file fs]
-  (let [path     (transcript-path root session-file)
-        dir      (sessions-dir root)
-        base     (session-base session-file)
-        ts       (.format bak-ts-formatter (.atOffset (Instant/now) ZoneOffset/UTC))
-        bak-path (str dir "/" base "." ts ".bak.jsonl")]
-    (when (exists?* fs path)
-      (spit*! fs bak-path (slurp* fs path))
-      (let [backups (->> (children* fs dir)
-                         (filter #(and (str/starts-with? % (str base "."))
-                                       (str/ends-with? % ".bak.jsonl")))
-                         sort
-                         reverse
-                         (drop max-backup-count))]
-        (doseq [name backups]
-          (delete*! fs (str dir "/" name)))))))
-
-;; endregion ^^^^^ Backup ^^^^^
+;; endregion ^^^^^ Session defaults & store helpers ^^^^^
 
 ;; region ----- Toolcall helpers -----
 
@@ -527,10 +457,6 @@
         (:id entry))))
 
 (defn drop-orphan-toolresults
-  "Drop toolResult entries whose matching toolCall is not in this transcript
-   slice. An effective-history-offset can begin after a toolResult while its
-   originating toolCall sits before the boundary — codex Responses rejects the
-   dangling function_call_output (isaac-0h7b / isaac-63f3)."
   [transcript]
   (let [tool-call-ids (->> transcript
                            (filter #(= "message" (:type %)))
@@ -595,23 +521,26 @@
 
 (defn get-session [read-store-fn root identifier fs]
   (let [store (read-store-fn root fs)]
-    (when-let [id (resolve-entry-id store identifier)]
-      (get store id))))
+    (if-let [id (resolve-entry-id store identifier)]
+      (get store id)
+      (when identifier
+        (assert-migrated! root (session-id identifier) fs)
+        nil))))
 
-(defn get-transcript [get-session-fn migrate-fn root identifier fs]
+(defn get-transcript [get-session-fn root identifier fs]
   (when-let [entry (get-session-fn root identifier fs)]
-    (migrate-fn root (:session-file entry) fs)))
+    (read-transcript-raw root (:id entry) fs)))
 
-(defn active-transcript [get-session-fn migrate-fn root identifier fs]
+(defn active-transcript [get-session-fn root identifier fs]
+  (get-transcript get-session-fn root identifier fs))
+
+(defn chronicle-transcript [get-session-fn root identifier fs]
   (when-let [entry (get-session-fn root identifier fs)]
-    (migrate-fn root (:session-file entry) fs)
-    (if-let [offset (:effective-history-offset entry)]
-      (read-transcript-from-offset root (:session-file entry) offset fs)
-      (read-transcript-raw root (:session-file entry) fs))))
+    (read-chronicle root (:id entry) fs)))
 
 (defn truncate-after-compaction! [get-session-fn root identifier fs]
   (let [entry      (get-session-fn root identifier fs)
-        transcript (read-transcript-raw root (:session-file entry) fs)
+        transcript (read-transcript-raw root (:id entry) fs)
         compaction (->> transcript (filter #(= "compaction" (:type %))) last)]
     (when compaction
       (let [first-kept-id  (:firstKeptEntryId compaction)
@@ -640,7 +569,7 @@
                                              e))))
                                  transcript)]
         (when (pos? (count removed-ids))
-          (write-transcript! root (:session-file entry) new-transcript fs)
+          (write-transcript! root (:id entry) new-transcript fs)
           (count removed-ids))))))
 
 (defn update-session! [update-entry-fn normalize-ts-fn root identifier updates fs]
@@ -651,13 +580,14 @@
                                      updates)]
                        (-> (merge entry updates)
                            (assoc :key (:id entry))
+                           (dissoc :session-file :effective-history-offset)
                            (update :updated-at normalize-ts-fn))))
                    fs))
 
-(defn append-message! [get-session-fn migrate-fn update-entry-fn now-fn root identifier message fs]
+(defn append-message! [get-session-fn update-entry-fn now-fn root identifier message fs]
   (let [entry            (get-session-fn root identifier fs)
-        transcript       (migrate-fn root (:session-file entry) fs)
-        parent-id        (last-entry-id transcript)
+        id               (:id entry)
+        parent-id        (:id (last-transcript-entry fs (current-transcript-path root id)))
         msg-id           (new-id)
         now              (now-fn)
         resolved-agent   (or (:crew message)
@@ -665,13 +595,13 @@
                              (when (= "assistant" (:role message)) "main"))
         normalized-msg   (normalize-message (cond-> message
                                               resolved-agent (assoc :crew resolved-agent)))
-        transcript-entry (cond-> {:type     "message"
-                                  :id       msg-id
-                                  :parentId parent-id
+        transcript-entry (cond-> {:type      "message"
+                                  :id        msg-id
+                                  :parentId  parent-id
                                   :timestamp now
-                                  :message  normalized-msg}
+                                  :message   normalized-msg}
                            (:tokens message) (assoc :tokens (:tokens message)))]
-    (append-entry! root (:session-file entry) transcript-entry fs)
+    (append-entry! root id transcript-entry fs)
     (update-entry-fn root identifier
                      (fn [e]
                        (cond-> (assoc e :updated-at now)
@@ -681,10 +611,10 @@
                      fs)
     transcript-entry))
 
-(defn append-error! [get-session-fn migrate-fn update-entry-fn now-fn root identifier error-entry fs]
+(defn append-error! [get-session-fn update-entry-fn now-fn root identifier error-entry fs]
   (let [entry            (get-session-fn root identifier fs)
-        transcript       (migrate-fn root (:session-file entry) fs)
-        parent-id        (last-entry-id transcript)
+        id               (:id entry)
+        parent-id        (:id (last-transcript-entry fs (current-transcript-path root id)))
         error-id         (new-id)
         now              (now-fn)
         transcript-entry (cond-> {:type      "error"
@@ -696,14 +626,14 @@
                                   :model     (:model error-entry)
                                   :provider  (:provider error-entry)}
                            (:ex-class error-entry) (assoc :ex-class (:ex-class error-entry)))]
-    (append-entry! root (:session-file entry) transcript-entry fs)
+    (append-entry! root id transcript-entry fs)
     (update-entry-fn root identifier #(assoc % :updated-at now) fs)
     transcript-entry))
 
-(defn append-compaction! [get-session-fn migrate-fn update-entry-fn now-fn root identifier {:keys [summary firstKeptEntryId tokensBefore]} fs]
+(defn append-compaction! [get-session-fn update-entry-fn now-fn root identifier {:keys [summary firstKeptEntryId tokensBefore]} fs]
   (let [entry         (get-session-fn root identifier fs)
-        transcript    (migrate-fn root (:session-file entry) fs)
-        parent-id     (last-entry-id transcript)
+        id            (:id entry)
+        parent-id     (:id (last-transcript-entry fs (current-transcript-path root id)))
         compaction-id (new-id)
         now           (now-fn)
         compaction    {:type             "compaction"
@@ -713,7 +643,7 @@
                        :summary          summary
                        :firstKeptEntryId firstKeptEntryId
                        :tokensBefore     tokensBefore}]
-    (append-entry! root (:session-file entry) compaction fs)
+    (append-entry! root id compaction fs)
     (update-entry-fn root identifier
                      (fn [e]
                        (-> e
@@ -722,29 +652,25 @@
                      fs)
     compaction))
 
-(defn splice-compaction! [get-session-fn migrate-fn update-entry-fn now-fn root identifier {:keys [compactedEntryIds firstKeptEntryId summary tokensBefore]} fs]
-  (let [entry            (get-session-fn root identifier fs)
-        transcript       (migrate-fn root (:session-file entry) fs)
-        retention        (or (:history-retention entry) resolve/default-history-retention)
-        compacted-ids    (set compactedEntryIds)
+(defn compacted-current
+  "New current-view transcript: compaction entry + kept tail."
+  [transcript compactedEntryIds firstKeptEntryId summary tokensBefore now]
+  (let [compacted-ids    (set compactedEntryIds)
         removable-ids    (->> transcript
-                               (filter #(and (= "message" (:type %))
-                                             (contains? compacted-ids (:id %))))
-                               (map :id)
-                               set)
+                              (filter #(and (= "message" (:type %))
+                                            (contains? compacted-ids (:id %))))
+                              (map :id)
+                              set)
         first-kept-index (when firstKeptEntryId
                            (some (fn [[idx e]]
                                    (when (= firstKeptEntryId (:id e)) idx))
                                  (map-indexed vector transcript)))
-        insert-at        (case retention
-                           :retain (or first-kept-index (count transcript))
-                           (or (some (fn [[idx e]]
-                                       (when (contains? removable-ids (:id e)) idx))
-                                     (map-indexed vector transcript))
-                               (count transcript)))
+        insert-at        (or (some (fn [[idx e]]
+                                     (when (contains? removable-ids (:id e)) idx))
+                                   (map-indexed vector transcript))
+                             (or first-kept-index (count transcript)))
         before           (subvec transcript 0 insert-at)
         compaction-id    (new-id)
-        now              (now-fn)
         compaction-entry {:type             "compaction"
                           :id               compaction-id
                           :parentId         (:id (last before))
@@ -753,31 +679,33 @@
                           :firstKeptEntryId firstKeptEntryId
                           :tokensBefore     tokensBefore}
         after            (->> (subvec transcript (or first-kept-index (count transcript)))
-                              ((fn [entries]
-                                 (if (= :retain retention)
-                                   entries
-                                   (remove #(contains? removable-ids (:id %)) entries))))
+                              (remove #(contains? removable-ids (:id %)))
                               (mapv (fn [e]
                                       (if (contains? removable-ids (:parentId e))
                                         (assoc e :parentId compaction-id)
-                                        e))))
-        new-transcript   (drop-orphan-toolcalls (into before (cons compaction-entry after)))]
-    (backup-transcript! root (:session-file entry) fs)
-    (write-transcript! root (:session-file entry) new-transcript fs)
+                                        e))))]
+    [compaction-entry (drop-orphan-toolcalls (into [compaction-entry] after))]))
+
+(defn splice-compaction! [get-session-fn update-entry-fn now-fn root identifier {:keys [compactedEntryIds firstKeptEntryId summary tokensBefore]} fs]
+  (let [entry      (get-session-fn root identifier fs)
+        id         (:id entry)
+        transcript (read-transcript-raw root id fs)
+        retention  (or (:history-retention entry) resolve/default-history-retention)
+        now        (now-fn)
+        [compaction-entry new-current] (compacted-current transcript compactedEntryIds firstKeptEntryId summary tokensBefore now)
+        n          (or (:segment entry) 0)
+        current-path (current-transcript-path root id)]
+    (when (= :retain retention)
+      (fs/copy fs current-path (frozen-transcript-path root id n)))
+    (let [tmp (str current-path ".tmp")]
+      (write-ednl! fs tmp new-current)
+      (fs/move fs tmp current-path))
     (update-entry-fn root identifier
                      (fn [e]
                        (-> e
                            (assoc :updated-at now)
-                           ((fn [entry]
-                              (if (= :retain retention)
-                                ;; Measure the offset over the ACTUAL written prefix (up to the
-                                ;; compaction entry), not the raw `before`: drop-orphan-toolcalls
-                                ;; and parentId rewrites change what lands on disk, so re-serializing
-                                ;; `before` drifts off the real byte boundary (isaac-63f3).
-                                (assoc entry :effective-history-offset
-                                       (transcript-byte-offset
-                                         (take-while #(not= (:id %) compaction-id) new-transcript)))
-                                (dissoc entry :effective-history-offset))))
+                           (cond-> (= :retain retention) (assoc :segment (inc n)))
+                           (dissoc :effective-history-offset :session-file)
                            (update :compaction-count inc)))
                      fs)
     compaction-entry))

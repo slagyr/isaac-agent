@@ -1,7 +1,6 @@
 ;; mutation-tested: 2026-05-06
 (ns isaac.session.store.sidecar
   (:require
-    [clojure.edn :as edn]
     [isaac.fs :as fs]
     [isaac.session.store.spi :as store]
     [isaac.session.store.impl-common :as c]
@@ -35,12 +34,6 @@
 (defn- with-session-defaults [entry]
   (c/with-session-defaults now-iso normalize-timestamp entry))
 
-(defn- migrate-transcript! [root session-file fs]
-  (c/migrate-transcript! normalize-timestamp root session-file fs))
-
-(defn- normalize-index-store [raw]
-  (c/normalize-index-store with-session-defaults raw))
-
 (defn- read-sidecar-store [root fs]
   (c/read-sidecar-store with-session-defaults root fs))
 
@@ -49,27 +42,11 @@
 ;; region ----- Storage -----
 
 (defn- write-sidecar! [root {:keys [id] :as entry} fs]
-  (let [path (c/sidecar-path root id)]
-    (c/mkdirs*! fs (fs/parent path))
-    (c/spit*! fs path (c/write-edn entry))))
-
-(defn- read-legacy-index-store [root fs]
-  (let [path (c/index-path root)
-        raw  (if (c/exists?* fs path) (edn/read-string (c/slurp* fs path)) {})]
-    (normalize-index-store raw)))
-
-(defn- migrate-legacy-index! [root fs]
-  (let [legacy-store  (read-legacy-index-store root fs)
-        sidecar-store (read-sidecar-store root fs)]
-    (doseq [[id entry] legacy-store
-            :when (not (contains? sidecar-store id))]
-      (when (and (:session-file entry)
-                 (c/exists?* fs (c/transcript-path root (:session-file entry))))
-        (migrate-transcript! root (:session-file entry) fs))
-      (write-sidecar! root entry fs))))
+  (let [path (c/session-edn-path root id)]
+    (c/mkdirs*! fs (c/session-dir root id))
+    (c/spit*! fs path (c/write-edn (dissoc entry :session-file :effective-history-offset)))))
 
 (defn- read-session-store [root fs]
-  (migrate-legacy-index! root fs)
   (read-sidecar-store root fs))
 
 (defn- update-sidecar-entry! [root identifier updater fs]
@@ -98,24 +75,18 @@
   (c/get-session read-session-store root identifier fs))
 
 (defn- get-transcript [root identifier fs]
-  (c/get-transcript get-session migrate-transcript! root identifier fs))
+  (c/get-transcript get-session root identifier fs))
 
 (defn- delete-session! [root identifier fs]
   (let [store (read-session-store root fs)]
     (when-let [id (c/resolve-entry-id store identifier)]
-      (let [entry (get store id)
-            path  (c/transcript-path root (:session-file entry))
-            meta  (c/sidecar-path root id)]
-        (when (c/exists?* fs meta) (c/delete*! fs meta))
-        (when (c/exists?* fs path) (c/delete*! fs path))
-        true))))
+      (c/delete-tree! fs (c/session-dir root id))
+      true)))
 
 (defn- rename-session! [this root old-name new-name fs]
   (c/rename-session!
     read-session-store
-    (fn [_store old-id renamed]
-      (when (c/exists?* fs (c/sidecar-path root old-id))
-        (c/delete*! fs (c/sidecar-path root old-id)))
+    (fn [_store _old-id renamed]
       (write-sidecar! root renamed fs))
     now-iso
     #(store/in-flight? this %)
@@ -165,17 +136,19 @@
   (get-transcript [_ name]
     (get-transcript root name fs))
   (active-transcript [_ name]
-    (c/active-transcript get-session migrate-transcript! root name fs))
+    (c/active-transcript get-session root name fs))
+  (chronicle-transcript [_ name]
+    (c/chronicle-transcript get-session root name fs))
   (update-session! [_ name updates]
     (c/update-session! update-sidecar-entry! normalize-timestamp root name updates fs))
   (append-message! [_ name message]
-    (c/append-message! get-session migrate-transcript! update-sidecar-entry! now-iso root name message fs))
+    (c/append-message! get-session update-sidecar-entry! now-iso root name message fs))
   (append-error! [_ name error]
-    (c/append-error! get-session migrate-transcript! update-sidecar-entry! now-iso root name error fs))
+    (c/append-error! get-session update-sidecar-entry! now-iso root name error fs))
   (append-compaction! [_ name compaction]
-    (c/append-compaction! get-session migrate-transcript! update-sidecar-entry! now-iso root name compaction fs))
+    (c/append-compaction! get-session update-sidecar-entry! now-iso root name compaction fs))
   (splice-compaction! [_ name compaction]
-    (c/splice-compaction! get-session migrate-transcript! update-sidecar-entry! now-iso root name compaction fs))
+    (c/splice-compaction! get-session update-sidecar-entry! now-iso root name compaction fs))
   (truncate-after-compaction! [_ name]
     (c/truncate-after-compaction! get-session root name fs))
 
@@ -194,6 +167,7 @@
   ([root fs*]
    (->SidecarSessionStore root fs*)))
 
+(store/register-factory! :ednl-dir #'create-store)
 (store/register-factory! :jsonl-edn-sidecar #'create-store)
 
 ;; endregion ^^^^^ Store type ^^^^^

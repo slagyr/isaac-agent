@@ -641,7 +641,7 @@
      :store
      {:type :keyword,
       :description
-      "Session store implementation: :memory, :jsonl-edn-sidecar (default), :jsonl-edn-index"}}}},
+      "Session store implementation: :memory, :ednl-dir (default)"}}}},
   :prompt-dir-names
   {:schema
    {:type :map,

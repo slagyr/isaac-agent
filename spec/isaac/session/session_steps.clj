@@ -872,8 +872,8 @@
       (let [idx     (long idx)
             session (get-session key-str)
             entries (vec (get-transcript key-str))
-            offset  (session-impl-common/transcript-byte-offset (take (inc idx) entries))]
-        (update-session! (:id session) {:effective-history-offset offset})))))
+            kept    (vec (drop (inc idx) entries))]
+        (session-impl-common/write-transcript! (root-dir) (:id session) kept (mem-fs))))))
 
 (defn compaction-spliced-into-session [key-str table]
   (g/assoc! :current-key key-str)
@@ -1022,11 +1022,11 @@
       (let [entry      (get-session session-key)
             fs*        (mem-fs)
             root       (root-dir)
-            path       (str root "/sessions/" (:session-file entry))
+            path       (session-impl-common/current-transcript-path root (:id entry))
             transcript (get-transcript session-key)
-            json-lines (mapv session-impl-common/write-json transcript)]
+            edn-lines  (mapv session-impl-common/write-edn transcript)]
         (fs/mkdirs fs* (fs/parent path))
-        (fs/spit fs* path (str (str/join "\n" json-lines) "\n" fragment))
+        (fs/spit fs* path (str (apply str edn-lines) fragment))
         nil))))
 
 (defn turn-cancelled-after-n-tool-calls [key-str n]
@@ -1120,7 +1120,7 @@
 (defn- session-match-entry [entry]
   (assoc entry
          :crew (or (:crew entry) (:agent entry))
-         :file (str "sessions/" (:session-file entry))))
+         :file (str "sessions/" (:id entry) "/current.ednl")))
 
 (defn- transcript-match-entry [entry include-compaction-message? denormalize-tool-call?]
   (let [type (if (and denormalize-tool-call?
@@ -1213,7 +1213,7 @@
 
 (defn session-file-is-quoted [expected-path]
   (let [entry (current-session)]
-    (g/should= expected-path (str "sessions/" (:session-file entry)))))
+    (g/should= expected-path (str "sessions/" (:id entry) "/current.ednl"))))
 
 (defn most-recent-session-is [session-name]
   (let [expected (unquote-string session-name)

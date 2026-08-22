@@ -1,6 +1,5 @@
 (ns isaac.bridge.resume
   (:require
-    [cheshire.core :as json]
     [clojure.pprint :as pprint]
     [clojure.set :as set]
     [clojure.string :as str]
@@ -116,8 +115,8 @@
                                 :content    synthesized-tool-result}))
       true)))
 
-(defn- truncate-torn-transcript! [session-store session-id root session-file fs]
-  (let [path (store-common/transcript-path root session-file)]
+(defn- truncate-torn-transcript! [session-store session-id root _session-file fs]
+  (let [path (store-common/current-transcript-path root session-id)]
     (when (fs/exists? fs path)
       (let [raw   (fs/slurp fs path)
             lines (str/split-lines raw)
@@ -125,7 +124,7 @@
                     (if (zero? n)
                       []
                       (let [candidate (take n lines)]
-                        (if (every? #(try (json/parse-string % true) (catch Exception _ false))
+                        (if (every? #(try (store-common/read-edn-line %) (catch Exception _ false))
                                     candidate)
                           candidate
                           (recur (dec n))))))]
@@ -134,8 +133,8 @@
                     :session session-id
                     :repair :torn-line
                     :dropped-lines (- (count lines) (count valid)))
-          (let [entries (mapv #(json/parse-string % true) valid)]
-            (store-common/write-transcript! root session-file entries fs)
+          (let [entries (mapv store-common/read-edn-line valid)]
+            (store-common/write-transcript! root session-id entries fs)
             (sync-truncated-transcript! session-store session-id entries)
             true))))))
 
@@ -147,7 +146,7 @@
   (let [session (store/get-session session-store session-id)
         fs      (filesystem)]
     (or (when session
-          (truncate-torn-transcript! session-store session-id root (:session-file session) fs))
+          (truncate-torn-transcript! session-store session-id root nil fs))
         (repair-dangling-tool-calls! session-store session-id))))
 
 (defn- requeue-hail! [root marker]

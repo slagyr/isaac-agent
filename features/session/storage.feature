@@ -1,7 +1,7 @@
 Feature: Session Storage
-  Isaac persists conversation sessions as JSONL transcript files
-  with an EDN index. Sessions are stored flat under the state
-  directory, independent of any crew member.
+  Isaac persists conversation sessions as directories of EDNL
+  transcript files. Sessions live under the state directory,
+  independent of any crew member.
 
   Background:
     Given an Isaac root at "target/test-state"
@@ -14,8 +14,8 @@ Feature: Session Storage
       | first-chat |
     Then the session count is 1
     And the following sessions match:
-      | id         | file                | compaction-count | input-tokens | output-tokens | total-tokens |
-      | first-chat | #".+\.jsonl"        | 0               | 0           | 0            | 0           |
+      | id         | file                                 | compaction-count | input-tokens | output-tokens | total-tokens |
+      | first-chat | sessions/first-chat/current.ednl     | 0               | 0           | 0            | 0           |
     And session "first-chat" has 1 transcript entry
     And session "first-chat" has transcript matching:
       | type    | id              | timestamp                               |
@@ -121,8 +121,8 @@ Feature: Session Storage
     When compaction is spliced into session "tool-chat" with:
       | key              | value                  |
       | summary          | Summary of earlier work |
-      | firstKeptIndex   | 2                      |
-      | compactedIndexes | [1]                    |
+      | firstKeptIndex   | 1                      |
+      | compactedIndexes | [0]                    |
       | tokensBefore     | 20                     |
     Then session "tool-chat" has transcript matching:
       | type       | summary                 |
@@ -208,8 +208,8 @@ Feature: Session Storage
       | name   |
       | chat-1 |
       | chat-2 |
-    Then the file "sessions/chat-1.edn" exists
-    And the file "sessions/chat-2.edn" exists
+    Then the file "sessions/chat-1/session.edn" exists
+    And the file "sessions/chat-2/session.edn" exists
 
   Scenario: Message content stored as block arrays
     Given the following sessions exist:
