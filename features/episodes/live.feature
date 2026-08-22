@@ -272,3 +272,167 @@ Feature: Episodes — live (router + lifecycle)
       | \d{4}-\d{2}-\d{2}-\d{4}-\w+\s+closed\s+reef-chat\s+1 scene |
       | \d{4}-\d{2}-\d{2}-\d{4}-\w+\s+open\s+reef-chat\s+0 scenes  |
     And the exit code is 0
+
+  # ----- Recall at open (isaac-h5dk) -----
+
+  @wip
+    Scenario: recall-at-open injects matched memory into the opening prompt
+    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path         | value            |
+      | model        | echo             |
+      | soul         | You are Cordelia |
+      | conversation | episodes         |
+    And config file "isaac.edn" containing:
+      """
+      {:embedding {:source :provider :provider "grover" :model "mini-embed"}}
+      """
+    And crew "cordelia" has a closed episode "2026-03-01-1000-ab12" with scenes:
+      | id                   | started-at          | ended-at            | gist                      | text                                    |
+      | 2026-03-01-1000-s1x1 | 2026-03-01T10:00:00 | 2026-03-01T10:05:00 | Wine pairing for pheasant | a light pinot noir suits roast pheasant |
+    When isaac is run with "episodes index --crew cordelia"
+    Given the following model responses are queued:
+      | type | content              | model |
+      | text | Pinot noir, as ever. | echo  |
+    When isaac is run with "prompt -m 'What wine pairs with pheasant?' --session supper-chat --crew cordelia"
+    Then the stdout contains "Pinot noir, as ever."
+    And the exit code is 0
+    And that episode has recalled scenes:
+      | scene-id             | origin-episode       |
+      | 2026-03-01-1000-s1x1 | 2026-03-01-1000-ab12 |
+    And the last LLM request matches:
+      | key      | value                                                                  |
+      | messages | #"(?s)Recalled from earlier conversations.*recall__scene"              |
+      | messages | #"(?s)\[2026-03-01-1000-s1x1 · 2026-03-01\] Wine pairing for pheasant" |
+      | messages | #"(?s)pinot noir suits roast pheasant.*What wine pairs with pheasant"  |
+
+  @wip
+    Scenario: below-floor opens inject nothing
+    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path         | value            |
+      | model        | echo             |
+      | soul         | You are Cordelia |
+      | conversation | episodes         |
+    And config file "isaac.edn" containing:
+      """
+      {:embedding {:source :provider :provider "grover" :model "mini-embed"}
+       :recall {:floor-cos 0.999}}
+      """
+    And crew "cordelia" has a closed episode "2026-03-01-1000-ab12" with scenes:
+      | id                   | started-at          | ended-at            | gist                      | text                                    |
+      | 2026-03-01-1000-s1x1 | 2026-03-01T10:00:00 | 2026-03-01T10:05:00 | Wine pairing for pheasant | a light pinot noir suits roast pheasant |
+    When isaac is run with "episodes index --crew cordelia"
+    Given the following model responses are queued:
+      | type | content        | model |
+      | text | Nothing known. | echo  |
+    When isaac is run with "prompt -m 'grumble mumble' --session other-chat --crew cordelia"
+    Then the stdout contains "Nothing known."
+    And the exit code is 0
+    And that episode has no recalled scenes
+    And the last LLM request does not mention recall
+
+  # ----- Lineage seed (isaac-h5dk) -----
+
+  @wip
+    Scenario: cold continuation seeds parent gists by lineage, without duplication
+    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path         | value            |
+      | model        | echo             |
+      | soul         | You are Cordelia |
+      | conversation | episodes         |
+    And the isaac EDN file "config/models/gist.edn" exists with:
+      | path     | value  |
+      | model    | gist   |
+      | provider | grover |
+    And config file "isaac.edn" containing:
+      """
+      {:embedding {:source :provider :provider "grover" :model "mini-embed"}
+       :episodes {:gist-model :gist}}
+      """
+    And the current time is "2026-03-01T10:00:00"
+    And the following model responses are queued:
+      | type | content                   | model |
+      | text | Marked; keep to leeward.  | echo  |
+      | text | 1-2: Reef passage charted | gist  |
+      | text | Still to leeward.         | echo  |
+    When isaac is run with "prompt -m 'Chart the reef passage' --session reef-chat --crew cordelia"
+    Given the current time is "2026-03-01T11:45:00"
+    When isaac is run with "prompt -m 'Back to the reef passage' --session reef-chat --crew cordelia"
+    Then the stdout contains "Still to leeward."
+    And the exit code is 0
+    And the episodes for crew "cordelia" on thread "reef-chat" chain by lineage
+    And that episode has recalled scenes:
+      | scene-id                       | origin-episode                 |
+      | #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" | #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" |
+    And the last LLM request matches:
+      | key      | value                                                 |
+      | messages | #"(?s)Previously in this conversation.*recall__scene" |
+      | messages | #"(?s)\[\S+ · 2026-03-01\] Reef passage charted"      |
+    And the last LLM request mentions "Reef passage charted" exactly 1 time
+
+  # ----- Index at close (isaac-h5dk) -----
+
+  @wip
+    Scenario: closing indexes the sealed scenes immediately
+    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path         | value            |
+      | model        | echo             |
+      | soul         | You are Cordelia |
+      | conversation | episodes         |
+    And the isaac EDN file "config/models/gist.edn" exists with:
+      | path     | value  |
+      | model    | gist   |
+      | provider | grover |
+    And config file "isaac.edn" containing:
+      """
+      {:embedding {:source :provider :provider "grover" :model "mini-embed"}
+       :episodes {:gist-model :gist}}
+      """
+    And the following model responses are queued:
+      | type | content                        | model |
+      | text | A light pinot noir.            | echo  |
+      | text | 1-2: Wine pairing for pheasant | gist  |
+    When isaac is run with "prompt -m 'What wine pairs with pheasant?' --session supper-chat --crew cordelia"
+    When isaac is run with "episodes close --crew cordelia"
+    Then the stdout contains "indexed 2 rows"
+    And the exit code is 0
+    When isaac is run with "recall pheasant --crew cordelia -n 1"
+    Then the stdout matches:
+      | pattern                                     |
+      | 1\. \S+\s+.*lex 1\.0\d*.*terms \[pheasant\] |
+    And the exit code is 0
+
+  # ----- Embedding optional / catch-up (isaac-h5dk) -----
+
+  @wip
+    Scenario: episodes work without embedding; indexing catches up when it arrives
+    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path         | value            |
+      | model        | echo             |
+      | soul         | You are Cordelia |
+      | conversation | episodes         |
+    And the isaac EDN file "config/models/gist.edn" exists with:
+      | path     | value  |
+      | model    | gist   |
+      | provider | grover |
+    And config file "isaac.edn" containing:
+      """
+      {:episodes {:gist-model :gist}}
+      """
+    And the following model responses are queued:
+      | type | content                        | model |
+      | text | A light pinot noir.            | echo  |
+      | text | 1-2: Wine pairing for pheasant | gist  |
+    When isaac is run with "prompt -m 'What wine pairs with pheasant?' --session supper-chat --crew cordelia"
+    Then the exit code is 0
+    When isaac is run with "episodes close --crew cordelia"
+    Then the stdout contains "closed 1 episode"
+    And the stdout does not contain "indexed"
+    And no index exists for crew "cordelia"
+    Given config file "isaac.edn" containing:
+      """
+      {:embedding {:source :provider :provider "grover" :model "mini-embed"}
+       :episodes {:gist-model :gist}}
+      """
+    When isaac is run with "episodes index --crew cordelia"
+    Then the stdout contains "2 new rows"
+    And the exit code is 0
