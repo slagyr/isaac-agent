@@ -24,9 +24,20 @@
       {:provider (subs model-ref 0 idx)
        :model    (subs model-ref (inc idx))})))
 
+(defn- model-by-provider-string [cfg model-id]
+  (when model-id
+    (some (fn [[_ model-cfg]]
+            (when (= model-id (->id (:model model-cfg)))
+              model-cfg))
+          (:models cfg))))
+
+(defn- lookup-model-cfg [cfg model-id]
+  (or (get-in cfg [:models model-id])
+      (get-in cfg [:models (keyword model-id)])
+      (model-by-provider-string cfg model-id)))
+
 (defn- model-override-cfg [cfg model-override]
-  (or (get-in cfg [:models model-override])
-      (get-in cfg [:models (keyword model-override)])
+  (or (lookup-model-cfg cfg model-override)
       (parse-model-ref model-override)))
 
 (defn- model-override-provider-opts [cfg provider-cfg model-cfg]
@@ -60,7 +71,7 @@
   (let [cfg          (loader/normalize-config (or cfg {}))
         crew-cfg     (resolve-crew cfg crew-id)
         model-id     (or (:model crew-cfg) (get-in cfg [:defaults :model]))
-        model-cfg    (or (get-in cfg [:models model-id])
+        model-cfg    (or (lookup-model-cfg cfg model-id)
                          (when-let [provider-id (:provider crew-cfg)]
                            {:provider provider-id}))
         provider-id  (:provider model-cfg)
@@ -95,7 +106,7 @@
         crew-id      (->id crew-id)
         crew-cfg     (resolve-crew cfg crew-id)
         model-id     (or (:model crew-cfg) (get-in cfg [:defaults :model]))
-        model-cfg    (or (get-in cfg [:models model-id])
+        model-cfg    (or (lookup-model-cfg cfg model-id)
                          (when-let [provider-id (:provider crew-cfg)]
                            {:model model-id :provider provider-id})
                          (when model-id (parse-model-ref model-id)))

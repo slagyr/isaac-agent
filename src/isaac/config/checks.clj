@@ -91,6 +91,49 @@
         {:key   (str "crew." crew-id ".tools.directories")
          :value (str "grants a parent of the user home (" directory ") — use :role for the session workspace")}))))
 
+(defn known-model-ids+aliases
+  "Model ids plus each registered model's provider :model string."
+  [config]
+  (let [models (:models config)]
+    (->> (concat (keys models)
+                 (map :model (vals models)))
+         (keep ->id)
+         distinct
+         sort
+         vec)))
+
+(defn- model-ref-error [path-prefix entity-id model-id]
+  {:key       (str path-prefix "." (->id entity-id) ".model")
+   :value     "references undefined model"
+   :bad-value (->id model-id)})
+
+(defn- undefined-model-errors [path-prefix entities known-ids]
+  (keep (fn [[entity-id entity]]
+          (when-let [model-id (:model entity)]
+            (when-not (contains? known-ids (->id model-id))
+              (model-ref-error path-prefix entity-id model-id))))
+        entities))
+
+(defn check-crew-model-aliases
+  "Accept a crew (or defaults) model that matches either a registered model id
+   or another model's :model provider string. Reject true ghosts."
+  [{:keys [config]}]
+  (let [known (set (known-model-ids+aliases config))]
+    {:errors   (vec (concat
+                      (undefined-model-errors "crew" (:crew config) known)
+                      (when-let [defaults-model (get-in config [:defaults :model])]
+                        (when-not (contains? known (->id defaults-model))
+                          [{:key       "defaults.model"
+                            :value     "references undefined model"
+                            :bad-value (->id defaults-model)}]))))
+     :warnings []}))
+
+(defonce ^:private model-exists-override
+  (when-let [vlex (try (requiring-resolve 'isaac.config.validation-lexicon/known-model-ids)
+                       (catch Throwable _ nil))]
+    (alter-var-root vlex (constantly known-model-ids+aliases))
+    true))
+
 (defn check-crew-broad-directories
   [{:keys [config root]}]
   (let [isaac-root (or (:root config)

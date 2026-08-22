@@ -136,7 +136,32 @@
                    :providers {"grover" {:api "responses" :effort 3}}}
               ctx (sut/resolve-crew-context cfg "main")]
           (should= 9 (get-in ctx [:crew-cfg :effort]))
-          (should= 5 (get-in ctx [:model-cfg :effort]))))))
+          (should= 5 (get-in ctx [:model-cfg :effort])))))
+
+    (it "uses a named model config whose id matches the provider model string"
+      (with-redefs [llm-provider/make-provider (fn [provider-id provider-cfg]
+                                                 {:id provider-id :cfg provider-cfg})]
+        (let [cfg {:defaults  {:crew "main" :model "grover"}
+                   :crew      {"cordelia" {:model "echo" :soul "You are Cordelia."}}
+                   :models    {"grover" {:model "echo" :provider "grover" :context-window 32768}
+                               "echo"   {:model "echo" :provider "grover" :context-window 200}}
+                   :providers {"grover" {:api "grover"}}}
+              ctx (sut/resolve-crew-context cfg "cordelia")]
+          (should= "echo" (:model ctx))
+          (should= 200 (:context-window ctx))
+          (should= 200 (:context-window (:model-cfg ctx))))))
+
+    (it "resolves a crew model that matches an existing model's provider string"
+      (with-redefs [llm-provider/make-provider (fn [provider-id provider-cfg]
+                                                 {:id provider-id :cfg provider-cfg})]
+        (let [cfg {:defaults  {:crew "main" :model "grover"}
+                   :crew      {"cordelia" {:model "echo" :soul "You are Cordelia."}}
+                   :models    {"grover" {:model "echo" :provider "grover" :context-window 32768}}
+                   :providers {"grover" {:api "grover"}}}
+              ctx (sut/resolve-crew-context cfg "cordelia")]
+          (should= "echo" (:model ctx))
+          (should= "grover" (get-in ctx [:model-cfg :provider]))
+          (should= 32768 (:context-window ctx))))))
 
   (describe "resolve-provider"
 

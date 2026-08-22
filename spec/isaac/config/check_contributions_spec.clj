@@ -12,4 +12,5 @@
     (should-not (contains? sut/server :comms))
     (should (contains? sut/server :resolved-providers))
     (should (contains? sut/server :manifest-refs))
-    (should (contains? sut/server :comm-reserved-schema))))
+    (should (contains? sut/server :comm-reserved-schema))
+    (should (contains? sut/server :crew-model-aliases))))
