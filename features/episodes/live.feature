@@ -14,11 +14,10 @@ Feature: Episodes — live (router + lifecycle)
 
   # ----- Open -----
 
-  @wip
     Scenario: first prompt on an episode crew opens an episode
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value            |
-      | model        | echo             |
+      | model        | grover           |
       | soul         | You are Cordelia |
       | conversation | episodes         |
     And the following model responses are queued:
@@ -42,11 +41,10 @@ Feature: Episodes — live (router + lifecycle)
 
   # ----- Warm append -----
 
-  @wip
     Scenario: warm prompts append to the open episode
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value            |
-      | model        | echo             |
+      | model        | grover           |
       | soul         | You are Cordelia |
       | conversation | episodes         |
     And the current time is "2026-03-01T10:00:00"
@@ -72,11 +70,10 @@ Feature: Episodes — live (router + lifecycle)
 
   # ----- Cold continuation -----
 
-  @wip
     Scenario: cold prompts close the episode and chain a successor
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value            |
-      | model        | echo             |
+      | model        | grover           |
       | soul         | You are Cordelia |
       | conversation | episodes         |
     And the isaac EDN file "config/models/gist.edn" exists with:
@@ -111,11 +108,10 @@ Feature: Episodes — live (router + lifecycle)
 
   # ----- Seal at close -----
 
-  @wip
     Scenario: closing seals the episode's transcript into scenes
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value            |
-      | model        | echo             |
+      | model        | grover           |
       | soul         | You are Cordelia |
       | conversation | episodes         |
     And the isaac EDN file "config/models/gist.edn" exists with:
@@ -149,14 +145,13 @@ Feature: Episodes — live (router + lifecycle)
 
   # ----- Compaction closes -----
 
-  @wip
     Scenario: compaction closes the episode and seeds the successor
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value            |
-      | model        | echo             |
+      | model        | grover           |
       | soul         | You are Cordelia |
       | conversation | episodes         |
-    And the isaac EDN file "config/models/echo.edn" exists with:
+    And the isaac EDN file "config/models/grover.edn" exists with:
       | path           | value  |
       | model          | echo   |
       | provider       | grover |
@@ -197,11 +192,10 @@ Feature: Episodes — live (router + lifecycle)
 
   # ----- Explicit close -----
 
-  @wip
     Scenario: explicit close seals now; the next prompt chains
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value            |
-      | model        | echo             |
+      | model        | grover           |
       | soul         | You are Cordelia |
       | conversation | episodes         |
     And the isaac EDN file "config/models/gist.edn" exists with:
@@ -235,7 +229,6 @@ Feature: Episodes — live (router + lifecycle)
 
   # ----- Non-episode crews -----
 
-  @wip
     Scenario: crews without the switch keep plain sessions
     Given the following model responses are queued:
       | type | content | model |
@@ -250,11 +243,10 @@ Feature: Episodes — live (router + lifecycle)
 
   # ----- Operator visibility -----
 
-  @wip
     Scenario: episodes list shows the crew's chain
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value            |
-      | model        | echo             |
+      | model        | grover           |
       | soul         | You are Cordelia |
       | conversation | episodes         |
     And the isaac EDN file "config/models/gist.edn" exists with:

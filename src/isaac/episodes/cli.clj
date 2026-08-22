@@ -7,7 +7,9 @@
     [isaac.cli.api :as cli-api]
     [isaac.config.loader :as loader]
     [isaac.config.root :as root]
+    [isaac.episodes.lifecycle :as lifecycle]
     [isaac.episodes.migrate :as migrate]
+    [isaac.episodes.store :as store]
     [isaac.fs :as fs]
     [isaac.recall.index :as recall-index]
     [isaac.session.store.spi :as session-store]))
@@ -24,11 +26,14 @@
              ""
              "Subcommands:"
              "  migrate-session <session-id>  Materialize a session as a closed episode"
-             "  index                         Embed sealed scenes into the per-crew retrieval index"
-             ""
-             "Options:"
-             "  --force   Re-run the LLM pass and replace scenes in place"
-             "  -h, --help  Show help"]))
+              "  close                         Close open episodes now (seal scenes)"
+              "  list                          List a crew's episodes"
+              "  index                         Embed sealed scenes into the per-crew retrieval index"
+              ""
+              "Options:"
+              "  --force   Re-run the LLM pass and replace scenes in place"
+              "  --crew    Crew for close/list/index"
+              "  -h, --help  Show help"]))
 
 (def ^:private migrate-help
   (str/join "\n"
@@ -114,6 +119,41 @@
       (print-err! (or (ex-message e) (.getMessage e)))
       1)))
 
+(defn- format-list-row [ep]
+  (let [n     (count (or (:scene-ids ep) []))
+        scene (str n " scene" (when (not= 1 n) "s"))]
+    (str (:id ep) "  " (name (or (:status ep) :unknown)) "  "
+         (or (:thread ep) "-") "  " scene)))
+
+(defn- run-list [opts crew]
+  (try
+    (let [{:keys [root fs cfg]} (install! opts)
+          crew* (or (when-not (str/blank? crew) crew)
+                    (default-crew cfg)
+                    "main")
+          eps   (store/list-episodes fs root crew*)]
+      (doseq [ep eps]
+        (println (format-list-row ep)))
+      0)
+    (catch Exception e
+      (print-err! (or (ex-message e) (.getMessage e)))
+      1)))
+
+(defn- run-close [opts crew]
+  (try
+    (let [{:keys [root fs cfg store]} (install! opts)
+          crew*  (or (when-not (str/blank? crew) crew)
+                     (default-crew cfg)
+                     "main")
+          result (lifecycle/close-open-episodes!
+                   {:fs fs :root root :crew crew* :session-store store :cfg cfg})
+          n      (or (:closed result) 0)]
+      (println (str "closed " n " episode" (when (not= 1 n) "s")))
+      0)
+    (catch Exception e
+      (print-err! (or (ex-message e) (.getMessage e)))
+      1)))
+
 (defn- run-migrate-session [opts session-id force?]
   (cond
     (str/blank? session-id)
@@ -175,6 +215,32 @@
           :else
           (run-index opts (:crew options) (boolean (:rebuild options)))))
 
+      (= "close" sub)
+      (let [{:keys [options errors]}
+            (tools-cli/parse-opts rest-args option-spec)]
+        (cond
+          (seq errors)
+          (do (doseq [e errors] (print-err! e)) 1)
+
+          (:help options)
+          (do (println help-text) 0)
+
+          :else
+          (run-close opts (:crew options))))
+
+      (= "list" sub)
+      (let [{:keys [options errors]}
+            (tools-cli/parse-opts rest-args option-spec)]
+        (cond
+          (seq errors)
+          (do (doseq [e errors] (print-err! e)) 1)
+
+          (:help options)
+          (do (println help-text) 0)
+
+          :else
+          (run-list opts (:crew options))))
+
       :else
       (do
         (print-err! (str "Unknown episodes subcommand: " sub))
@@ -195,5 +261,9 @@
 (defmethod cli-api/subcommands :episodes [_id]
   [{:name "migrate-session"
     :summary "Materialize a session as a closed episode"}
+   {:name "close"
+    :summary "Close open episodes now (seal scenes)"}
+   {:name "list"
+    :summary "List a crew's episodes"}
    {:name "index"
     :summary "Embed sealed scenes into the per-crew retrieval index"}])

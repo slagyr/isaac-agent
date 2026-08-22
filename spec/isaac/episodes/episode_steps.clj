@@ -10,6 +10,9 @@
     [isaac.nexus :as nexus]
     [isaac.recall.index :as recall-index]
     [isaac.recall.score :as score]
+    [isaac.session.context :as session-ctx]
+    [isaac.session.session-steps :as session-steps]
+    [isaac.session.store.spi :as session-store]
     [isaac.step-tables :as match]
     [isaac.tool.memory :as memory]))
 
@@ -36,18 +39,18 @@
 (defn- current-episode []
   (g/get :current-episode))
 
+(defn- first-matching-episode [eps table]
+  (or (some (fn [ep]
+              (let [result (match/match-object table ep)]
+                (when (empty? (:failures result)) ep)))
+            eps)
+      (first eps)))
+
 (defn episode-exists-for-crew-matching [crew table]
   (with-feature-fs
     (fn []
       (let [eps (store/list-episodes (mem-fs) (root-dir) crew)
-            ;; Prefer matching migrated-from if the table asks for it
-            want-migrated (some (fn [[k v]]
-                                  (when (= "migrated-from" k) v))
-                                (map vector (:headers table)
-                                     (first (:rows table))))
-            ep (or (when want-migrated
-                     (some #(when (= want-migrated (str (:migrated-from %))) %) eps))
-                   (last (sort-by :id eps)))]
+            ep  (first-matching-episode eps table)]
         (g/should-not-be-nil ep)
         (g/assoc! :current-episode (assoc ep :crew crew))
         (let [result (match/match-object table ep)]
@@ -266,3 +269,73 @@
 (defthen "no index exists for crew {crew:string}"
   isaac.episodes.episode-steps/no-index-exists-for-crew
   "Asserts packed index.edn is absent (no half-written file).")
+
+(defn that-episode-backing-session-has-transcript-matching [table]
+  (let [ep (or (current-episode) (ensure-current-episode!))]
+    (g/should-not-be-nil ep)
+    (session-steps/session-transcript-matching (:id ep) table)))
+
+(defn that-episode-backing-session-has-transcript [table]
+  (let [ep (or (current-episode) (ensure-current-episode!))]
+    (g/should-not-be-nil ep)
+    (session-steps/session-has-transcript (:id ep) table)))
+
+(defn episodes-for-crew-on-thread-chain-by-lineage [crew thread]
+  (with-feature-fs
+    (fn []
+      (let [eps (->> (store/list-episodes (mem-fs) (root-dir) crew)
+                     (filter #(= thread (:thread %)))
+                     (sort-by :id)
+                     vec)]
+        (g/should (>= (count eps) 2))
+        (doseq [[pred succ] (partition 2 1 eps)]
+          (g/should= (:id pred) (:parent-episode succ)))))))
+
+(defn- parse-kv-table [table]
+  (into {}
+        (map (fn [[k v]]
+               (let [k* (keyword k)
+                     v* (str v)]
+                 [k* (cond
+                       (re-matches #"-?\d+\.\d+" v*) (parse-double v*)
+                       (re-matches #"-?\d+" v*) (parse-long v*)
+                       (= "true" v*) true
+                       (= "false" v*) false
+                       :else v*)]))
+             (or (:rows table) []))))
+
+(defn crew-has-open-episode-on-thread-with [crew thread table]
+  (with-feature-fs
+    (fn []
+      (let [kv      (parse-kv-table table)
+            id      (or (:id kv) "2020-01-01-0000-aaaa")
+            episode {:id     id
+                     :crew   crew
+                     :status :open
+                     :thread thread}
+            ss      (or (session-store/registered-store)
+                        (nexus/get-in [:sessions :store]))
+            head    (get kv :compaction.head)
+            create-opts (cond-> {:crew crew :cwd (root-dir) :origin {:kind :cli}
+                                 :session-store ss}
+                          head (assoc :compaction {:head head}))]
+        (store/write-episode! (mem-fs) (root-dir) episode [])
+        (when ss
+          (session-ctx/create-with-resolved-behavior! id create-opts))
+        (g/assoc! :current-episode (assoc episode :crew crew))))))
+
+(defthen "that episode's backing session has transcript matching:"
+  isaac.episodes.episode-steps/that-episode-backing-session-has-transcript-matching
+  "Resolves the remembered episode id and delegates to the session transcript matcher.")
+
+(defgiven "that episode's backing session has transcript:"
+  isaac.episodes.episode-steps/that-episode-backing-session-has-transcript
+  "Seeds the remembered episode's backing transcript.")
+
+(defthen "the episodes for crew {crew:string} on thread {thread:string} chain by lineage"
+  isaac.episodes.episode-steps/episodes-for-crew-on-thread-chain-by-lineage
+  "Orders the thread's episodes by id; each successor's :parent-episode equals its predecessor's :id.")
+
+(defgiven "crew {crew:string} has an open episode on thread {thread:string} with:"
+  isaac.episodes.episode-steps/crew-has-open-episode-on-thread-with
+  "Writes an :open episode record + backing session with optional compaction.head.")

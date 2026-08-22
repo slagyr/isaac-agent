@@ -262,5 +262,40 @@
             (sut/run (assoc base-opts :message "Hi" :resume true))))
         (should= "prompt-default" @used-key)))
 
+    (it "routes --session as a THREAD for :conversation :episodes crews"
+      (reset! loader-stub {:config (assoc-in synthetic-config [:crew crew-name :conversation] :episodes)})
+      (let [used-key (atom nil)
+            ss       (store/registered-store)]
+        (with-redefs [bridge/dispatch! (fn [charge]
+                                         (reset! used-key (:session-key charge))
+                                         (comm/on-text-chunk (:comm charge) (:session-key charge) "Charted")
+                                         {})]
+          (with-out-str
+            (should= 0 (sut/run (assoc base-opts :message "Chart the reef" :session "reef-chat" :crew crew-name)))))
+        (should-not= "reef-chat" @used-key)
+        (should (re-matches #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" @used-key))
+        (should-be-nil (store/get-session ss "reef-chat"))
+        (should-not-be-nil (store/get-session ss @used-key))))
+
+    (it "warm-routes a second prompt on an episode crew to the same backing session"
+      (reset! loader-stub {:config (assoc-in synthetic-config [:crew crew-name :conversation] :episodes)})
+      (let [keys (atom [])]
+        (with-redefs [bridge/dispatch! (fn [charge]
+                                         (swap! keys conj (:session-key charge))
+                                         (store/append-message! (store/registered-store)
+                                                                (:session-key charge)
+                                                                {:role "user" :content "x"})
+                                         (store/append-message! (store/registered-store)
+                                                                (:session-key charge)
+                                                                {:role "assistant" :content "y"})
+                                         (comm/on-text-chunk (:comm charge) (:session-key charge) "Ok")
+                                         {})]
+          (with-out-str
+            (sut/run (assoc base-opts :message "first" :session "reef-chat" :crew crew-name))
+            (sut/run (assoc base-opts :message "second" :session "reef-chat" :crew crew-name))))
+        (should= 2 (count @keys))
+        (should= (first @keys) (second @keys))
+        (should (re-matches #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" (first @keys)))))
+
     )
   )

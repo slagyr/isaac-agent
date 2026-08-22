@@ -11,6 +11,7 @@
     [isaac.config.loader :as loader]
     [isaac.config.root :as root]
     [isaac.agent.config.runtime :as runtime]
+    [isaac.episodes.lifecycle :as lifecycle]
     [isaac.fs :as fs]
     [isaac.drive.turn :as single-turn]
     [isaac.session.context :as session-ctx]
@@ -91,19 +92,40 @@
 (defn- resolve-target [opts session-store]
   (session-frequencies/resolve-session-targets (frequencies-cli/build-frequencies opts) session-store))
 
+(defn- episode-crew-id [opts override cfg]
+  (or (:with-crew override)
+      (:crew opts)
+      (get-in cfg [:defaults :crew])
+      "main"))
+
 (defn- ensure-session! [target override opts cfg session-store]
-  (if (:create? target)
-    (let [identity    (or (:create-identity target) {})
-          create-opts (merge {:cwd           (System/getProperty "user.dir")
-                              :config        cfg
-                              :origin        {:kind :cli}
-                              :session-store session-store}
-                             identity
-                             (session-frequencies/behavioral-override override))
-          entry       (session-ctx/create-with-resolved-behavior!
-                        (:session-key target) create-opts)]
-      (:id entry))
-    (:session-key target)))
+  (let [crew-id (episode-crew-id opts override cfg)]
+    (if (lifecycle/episodes-crew? cfg crew-id)
+      (let [thread   (or (first (:session (frequencies-cli/build-frequencies opts)))
+                         (:session-key target)
+                         (:session opts)
+                         "prompt-default")
+            resolved (lifecycle/resolve-thread!
+                       {:root          (root-of opts)
+                        :crew          crew-id
+                        :thread        thread
+                        :session-store session-store
+                        :cfg           cfg
+                        :cwd           (System/getProperty "user.dir")
+                        :origin        {:kind :cli}})]
+        (:session-key resolved))
+      (if (:create? target)
+        (let [identity    (or (:create-identity target) {})
+              create-opts (merge {:cwd           (System/getProperty "user.dir")
+                                  :config        cfg
+                                  :origin        {:kind :cli}
+                                  :session-store session-store}
+                                 identity
+                                 (session-frequencies/behavioral-override override))
+              entry       (session-ctx/create-with-resolved-behavior!
+                            (:session-key target) create-opts)]
+          (:id entry))
+        (:session-key target)))))
 
 (defn run [opts]
   (if-not (:message opts)

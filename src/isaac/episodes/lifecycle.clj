@@ -152,6 +152,7 @@
                       :provider provider :model model :force? false})
             closed (when-let [ep (:episode result)]
                      (let [merged (cond-> (assoc ep
+                                            :id     episode-id
                                             :thread (:thread existing)
                                             :status (or (:status ep) :closed))
                                     (:parent-episode existing)
@@ -178,7 +179,9 @@
                                                :session-store session-store
                                                :provider provider :model model :cfg cfg)))
                       open)]
-    {:closed  (count (filter #(contains? #{:closed :partial :resumed} (:status %)) results))
+    {:closed  (count (filter #(contains? #{:closed :partial :resumed}
+                                        (or (:status %) (get-in % [:episode :status])))
+                            results))
      :results results}))
 
 (defn- chain-successor!
@@ -197,10 +200,18 @@
      :closed      (:episode closed)
      :action      :chained}))
 
+(defn- latest-on-thread [fs* root crew thread]
+  (->> (store/list-episodes fs* root crew)
+       (filter #(= thread (:thread %)))
+       (sort-by :id)
+       last))
+
 (defn resolve-thread!
   "Map a THREAD handle to the backing session of the current open episode.
    Warm (last message within TTL) -> append. Cold/absent -> close-then-open
-   with :parent-episode. opts: :fs :root :crew :thread :session-store :cfg
+   with :parent-episode. After an explicit close, the next prompt still
+   chains from the most recent episode on the thread even inside the warm
+   window. opts: :fs :root :crew :thread :session-store :cfg
    :provider :model :cwd :origin :compaction"
   [{:keys [fs root crew thread session-store cfg] :as opts}]
   (let [fs*  (runtime-fs fs)
@@ -211,9 +222,13 @@
         open (store/find-open-on-thread fs* root crew thread)]
     (cond
       (nil? open)
-      (let [ep (open-episode! (assoc opts :fs fs* :root root :crew crew
-                                     :session-store ss))]
-        {:session-key (:id ep) :episode ep :action :opened})
+      (let [prior (latest-on-thread fs* root crew thread)
+            ep    (open-episode! (cond-> (assoc opts :fs fs* :root root :crew crew
+                                                :session-store ss)
+                                   prior (assoc :parent-episode (:id prior))))]
+        {:session-key (:id ep)
+         :episode     ep
+         :action      (if prior :chained :opened)})
 
       :else
       (let [transcript (when ss (session-store/get-transcript ss (:id open)))]

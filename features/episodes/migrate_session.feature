@@ -19,7 +19,6 @@ Feature: Episodes — migrate-session
   # ----- Help -----
 
   # isaac-qxvl: gains close + list rows
-  @wip
   Scenario: episodes command is registered and has help
     When isaac is run with "help episodes"
     Then the stdout matches:

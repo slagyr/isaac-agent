@@ -2,6 +2,9 @@
   (:require
     [clojure.string :as str]
     [isaac.config.loader :as loader]
+    [isaac.episodes.lifecycle :as lifecycle]
+    [isaac.episodes.store :as episode-store]
+    [isaac.fs :as fs]
     [isaac.llm.api.protocol :as llm]
     [isaac.llm.prompt.builder :as prompt-builder]
     [isaac.logger :as log]
@@ -362,15 +365,40 @@
     (if (response-error response)
       response
       (let [summary          (prompt-builder/non-blank-summary (response-content response))
+            session-entry    (store/get-session session-store key-str)
+            crew-id          (:crew session-entry)
+            cfg              (or (try (loader/snapshot "episode compaction-close")
+                                      (catch Exception _ nil))
+                                 {})
+            episode-crew?    (lifecycle/episodes-crew? cfg crew-id)
+            open-episode     (when episode-crew?
+                               (or (episode-store/read-episode (or (nexus/get :fs) (fs/instance))
+                                                               root crew-id key-str)
+                                   (episode-store/find-open-on-thread (or (nexus/get :fs) (fs/instance))
+                                                                      root crew-id (:thread session-entry))))
             spliced-transcript (atom nil)
             splice!          (fn []
-                               (let [compaction-entry (store/splice-compaction! session-store key-str
-                                                                                 {:summary           summary
-                                                                                  :firstKeptEntryId  first-kept-entry-id
-                                                                                  :tokensBefore      tokens-before
-                                                                                  :compactedEntryIds compacted-ids})]
-                                 (reset! spliced-transcript (store/get-transcript session-store key-str))
-                                 compaction-entry))
+                               (if episode-crew?
+                                 (let [closed (lifecycle/compact-close!
+                                                {:root          root
+                                                 :crew          crew-id
+                                                 :thread        (or (:thread open-episode) (:thread session-entry))
+                                                 :episode-id    key-str
+                                                 :session-store session-store
+                                                 :summary       summary
+                                                 :cfg           cfg
+                                                 :cwd           (:cwd session-entry)
+                                                 :origin        (:origin session-entry)})]
+                                   (reset! spliced-transcript
+                                           (store/get-transcript session-store (or (:session-key closed) key-str)))
+                                   (assoc closed :summary summary :successor-session-key (:session-key closed)))
+                                 (let [compaction-entry (store/splice-compaction! session-store key-str
+                                                                                  {:summary           summary
+                                                                                   :firstKeptEntryId  first-kept-entry-id
+                                                                                   :tokensBefore      tokens-before
+                                                                                   :compactedEntryIds compacted-ids})]
+                                   (reset! spliced-transcript (store/get-transcript session-store key-str))
+                                   compaction-entry)))
             _                (when splice-ready
                                (deref splice-ready 30000 nil))
             compaction-entry (cond-> (if transcript-lock
@@ -379,8 +407,9 @@
                                chunked? (assoc :chunked true))
             system-text      (if boot-files (str soul "\n\n" boot-files) soul)
             new-total        (llm/estimate-tokens {:messages [{:role "system" :content system-text}
-                                                               {:role "user"   :content summary}]})]
-        (store/update-session! session-store key-str {:last-input-tokens new-total})
+                                                               {:role "user"   :content summary}]})
+            successor-key    (or (:successor-session-key compaction-entry) key-str)]
+        (store/update-session! session-store successor-key {:last-input-tokens new-total})
         compaction-entry))))
 
 ;; endregion ^^^^^ Orchestration ^^^^^

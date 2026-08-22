@@ -153,4 +153,40 @@
               (should= "compaction" (:type (first entries)))
               (should= "Summary so far" (:summary (first entries)))
               (should= :closed (:status (store/read-episode @mem @root "cordelia" (:id opened))))))))))
+
+  (it "close-open-episodes! counts a migrate result that only carries :episode :status"
+    (let [session (session-store/open-session! @ss "live-ep-count" {:crew "cordelia" :cwd @root})
+          _ (session-store/append-message! @ss (:id session) {:role "user" :content "Chart the reef passage."})
+          _ (session-store/append-message! @ss (:id session) {:role "assistant" :content "Charted, keep west."})
+          _ (store/write-episode! @mem @root {:id (:id session) :crew "cordelia" :status :open
+                                              :thread "reef-chat" :scene-ids []} [])
+          provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+          _ (grover/enqueue! [{:type "text" :content "1-2: Reef charting"}])
+          result (sut/close-open-episodes! {:fs @mem :root @root :crew "cordelia"
+                                            :session-store @ss
+                                            :provider provider :model "gist"})]
+      (should= 1 (:closed result))
+      (should= :closed (:status (store/read-episode @mem @root "cordelia" (:id session))))))
+
+  (it "resolve-thread! after an explicit close chains a successor even inside the warm window"
+    (with-redefs [isaac.episodes.ids/chaos-suffix (constantly "op56")]
+      (binding [memory/*now* (java.time.Instant/parse "2026-03-01T10:00:00Z")]
+        (let [opened (sut/open-episode! {:fs @mem :root @root :crew "cordelia"
+                                         :thread "reef-chat" :session-store @ss})
+              _ (session-store/append-message! @ss (:id opened) {:role "user" :content "Chart the reef passage."})
+              _ (session-store/append-message! @ss (:id opened) {:role "assistant" :content "Charted, keep west."})
+              provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+              _ (grover/enqueue! [{:type "text" :content "1-2: Reef charting"}])
+              closed (sut/close-open-episodes! {:fs @mem :root @root :crew "cordelia"
+                                                :session-store @ss
+                                                :provider provider :model "gist"})]
+          (should= 1 (:closed closed))
+          (binding [memory/*now* (java.time.Instant/parse "2026-03-01T10:05:00Z")]
+            (let [resolved (sut/resolve-thread! {:fs @mem :root @root :crew "cordelia"
+                                                 :thread "reef-chat" :session-store @ss
+                                                 :cfg {:episodes {:ttl-minutes 60}}})]
+              (should= :chained (:action resolved))
+              (should= (:id opened) (get-in resolved [:episode :parent-episode]))
+              (should= :open (get-in resolved [:episode :status]))
+              (should= "reef-chat" (get-in resolved [:episode :thread]))))))))
   )

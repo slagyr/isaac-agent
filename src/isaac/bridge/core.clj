@@ -14,6 +14,7 @@
     [isaac.comm.protocol :as comm]
     [isaac.config.loader :as loader]
     [isaac.drive.turn :as turn]
+    [isaac.episodes.lifecycle :as lifecycle]
     [isaac.fs :as fs]
     [isaac.logger :as log]
     [isaac.nexus :as nexus]
@@ -93,15 +94,27 @@
         crew-id        (or (:crew request) (get-in cfg [:defaults :crew]) "main")
         crew-cfg       (get (:crew cfg) crew-id)
         resolved-cwd   (resolve-session-cwd (:cwd request) crew-cfg nil)]
-    (when (and session-key
-               (nil? (store/get-session session-store* session-key))
-               (or (:origin request) resolved-cwd))
-      (session-ctx/create-with-resolved-behavior!
-        session-key {:crew          crew-id
-                     :cwd           resolved-cwd
-                     :origin        (:origin request)
-                     :config        cfg
-                     :session-store session-store*}))))
+    (if (and session-key (lifecycle/episodes-crew? cfg crew-id))
+      (let [resolved (lifecycle/resolve-thread!
+                       {:root          (or (get-in cfg [:root]) (:root request) (nexus/get :root))
+                        :crew          crew-id
+                        :thread        session-key
+                        :session-store session-store*
+                        :cfg           cfg
+                        :cwd           resolved-cwd
+                        :origin        (:origin request)})]
+        (assoc request :session-key (:session-key resolved)))
+      (do
+        (when (and session-key
+                   (nil? (store/get-session session-store* session-key))
+                   (or (:origin request) resolved-cwd))
+          (session-ctx/create-with-resolved-behavior!
+            session-key {:crew          crew-id
+                         :cwd           resolved-cwd
+                         :origin        (:origin request)
+                         :config        cfg
+                         :session-store session-store*}))
+        request))))
 
 ;; endregion ^^^^^ Helpers ^^^^^
 
@@ -205,8 +218,7 @@
   ([input]
     (if (charge/charge? input)
       (dispatch-charge! input)
-      (let [request (merge (nexus/necho) input)]
-        (ensure-session! request)
+      (let [request (ensure-session! (merge (nexus/necho) input))]
         (dispatch-charge! (charge/build request)))))
   ([_root request]
     ;; Two-arg form is a back-compat shim — root now lives on the

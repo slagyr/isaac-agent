@@ -10,6 +10,8 @@
     [isaac.config.loader :as loader]
     [isaac.drive.dispatch :as dispatch]
     [isaac.drive.provider-wall :as provider-wall]
+    [isaac.episodes.store :as episode-store]
+    [isaac.fs :as fs]
     [isaac.llm.api.protocol :as api]
     [isaac.llm.provider :as llm-provider]
     [isaac.llm.tool-loop :as tool-loop]
@@ -1063,6 +1065,25 @@
               (or (process-response! ctx session-key result {:model model :provider provider-name})
                   result))))))))
 
+(defn- successor-session-key [session-key ctx]
+  (let [cfg      (or (get-in ctx [:charge :config]) {})
+        crew     (get-in ctx [:charge :crew])
+        root     (or (:root ctx) (get-in cfg [:root]) (nexus/get :root))
+        fs*      (or (nexus/get :fs) (fs/instance))
+        current  (when (and root crew)
+                   (episode-store/read-episode fs* root crew session-key))
+        thread   (:thread current)
+        open-eps (when (and root crew)
+                   (->> (episode-store/list-episodes fs* root crew)
+                        (filter #(= :open (:status %)))))
+        successor (or (when thread
+                        (some #(when (and (= thread (:thread %))
+                                          (= session-key (:parent-episode %)))
+                                 %)
+                              open-eps))
+                      (some #(when (= session-key (:parent-episode %)) %) open-eps))]
+    (or (:id successor) session-key)))
+
 (defn- run-turn-body!
   "The successful-path pipeline. Returns the result that finish-turn! should
    wrap. Each branch is a single call into a focused helper.
@@ -1102,7 +1123,8 @@
                                                 :config          (:config (:charge ctx))})
             (if (bridge/cancelled? session-key)
               (suspend/interrupt-result session-key)
-              (execute-llm-turn! session-key input ctx))))))))
+              (let [live-key (successor-session-key session-key ctx)]
+                (execute-llm-turn! live-key input ctx)))))))))
 
 (defn- record-exception! [session-key e ctx]
   (let [{:keys [provider]} ctx
