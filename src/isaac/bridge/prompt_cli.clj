@@ -113,6 +113,13 @@
                         :cfg           cfg
                         :cwd           (System/getProperty "user.dir")
                         :origin        {:kind :cli}})]
+        (lifecycle/maybe-recall-at-open!
+          resolved
+          {:query         (:message opts)
+           :cfg           cfg
+           :root          (root-of opts)
+           :crew          crew-id
+           :session-store session-store})
         (:session-key resolved))
       (if (:create? target)
         (let [identity    (or (:create-identity target) {})

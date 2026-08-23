@@ -103,6 +103,13 @@
                         :cfg           cfg
                         :cwd           resolved-cwd
                         :origin        (:origin request)})]
+        (lifecycle/maybe-recall-at-open!
+          resolved
+          {:query         (:input request)
+           :cfg           cfg
+           :root          (or (get-in cfg [:root]) (:root request) (nexus/get :root))
+           :crew          crew-id
+           :session-store session-store*})
         (assoc request :session-key (:session-key resolved)))
       (do
         (when (and session-key

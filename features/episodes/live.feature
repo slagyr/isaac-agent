@@ -275,7 +275,6 @@ Feature: Episodes — live (router + lifecycle)
 
   # ----- Recall at open (isaac-h5dk) -----
 
-  @wip
     Scenario: recall-at-open injects matched memory into the opening prompt
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value            |
@@ -305,7 +304,6 @@ Feature: Episodes — live (router + lifecycle)
       | messages | #"(?s)\[2026-03-01-1000-s1x1 · 2026-03-01\] Wine pairing for pheasant" |
       | messages | #"(?s)pinot noir suits roast pheasant.*What wine pairs with pheasant"  |
 
-  @wip
     Scenario: below-floor opens inject nothing
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value            |
@@ -332,7 +330,6 @@ Feature: Episodes — live (router + lifecycle)
 
   # ----- Lineage seed (isaac-h5dk) -----
 
-  @wip
     Scenario: cold continuation seeds parent gists by lineage, without duplication
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value            |
@@ -371,7 +368,6 @@ Feature: Episodes — live (router + lifecycle)
 
   # ----- Index at close (isaac-h5dk) -----
 
-  @wip
     Scenario: closing indexes the sealed scenes immediately
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value            |
@@ -403,7 +399,6 @@ Feature: Episodes — live (router + lifecycle)
 
   # ----- Embedding optional / catch-up (isaac-h5dk) -----
 
-  @wip
     Scenario: episodes work without embedding; indexing catches up when it arrives
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value            |

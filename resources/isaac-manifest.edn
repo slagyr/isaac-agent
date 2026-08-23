@@ -110,7 +110,9 @@
   :skill/load {:factory isaac.tool.skill/load-skill-tool-factory},
   :skill/list {:factory isaac.tool.skill/list-skills-tool-factory},
   :memory/get {:factory isaac.tool.builtin/memory-get-tool-factory},
-  :comm/send {:factory isaac.tool.comm-send/comm-send-tool-factory}},
+  :comm/send {:factory isaac.tool.comm-send/comm-send-tool-factory},
+  :recall/search {:factory isaac.tool.builtin/recall-search-tool-factory},
+  :recall/scene {:factory isaac.tool.builtin/recall-scene-tool-factory}},
  :isaac.agent/provider-template
  {:anthropic
   {:template
@@ -696,7 +698,13 @@
        {:text    {:type :double, :description "Text-vector cosine weight"},
         :gist    {:type :double, :description "Gist-vector cosine weight"},
         :lex     {:type :double, :description "Lexical term-overlap weight"},
-        :recency {:type :double, :description "Recency channel weight"}}}}}}},
+        :recency {:type :double, :description "Recency channel weight"}}}
+      :inject
+      {:type :map
+       :description "Recall-at-open injection tiers (defaults :full 1, :gists 2)"
+       :schema
+       {:full  {:type :int :description "Top hits that include distilled text"}
+        :gists {:type :int :description "Following hits that include gist only"}}}}}}}
 
  :isaac.config/check
  {:comm-reserved-schema

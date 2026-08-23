@@ -80,6 +80,42 @@
       (should= 1 (count scenes))
       (should= "Reef charting" (:gist (first scenes)))))
 
+  (it "indexes sealed scenes on close when embedding is configured"
+    (let [session (session-store/open-session! @ss "idx-ep" {:crew "cordelia" :cwd @root})
+          _ (session-store/append-message! @ss (:id session) {:role "user" :content "What wine pairs with pheasant?"})
+          _ (session-store/append-message! @ss (:id session) {:role "assistant" :content "A light pinot noir."})
+          _ (store/write-episode! @mem @root {:id (:id session) :crew "cordelia" :status :open
+                                              :thread "supper-chat" :scene-ids []} [])
+          provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+          _ (grover/enqueue! [{:type "text" :content "1-2: Wine pairing for pheasant"}])
+          cfg {:embedding {:source :provider :provider "grover" :model "mini-embed"}}
+          result (sut/close-episode! {:fs @mem :root @root :crew "cordelia"
+                                      :episode-id (:id session)
+                                      :session-store @ss
+                                      :provider provider :model "gist"
+                                      :cfg cfg})]
+      (should= 2 (:indexed result))
+      (should= :closed (:status (:episode result)))))
+
+  (it "seals unindexed when embedding throws at close"
+    (let [session (session-store/open-session! @ss "idx-fail" {:crew "cordelia" :cwd @root})
+          _ (session-store/append-message! @ss (:id session) {:role "user" :content "Chart the reef."})
+          _ (session-store/append-message! @ss (:id session) {:role "assistant" :content "Charted."})
+          _ (store/write-episode! @mem @root {:id (:id session) :crew "cordelia" :status :open
+                                              :thread "reef-chat" :scene-ids []} [])
+          provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+          _ (grover/enqueue! [{:type "text" :content "1-2: Reef charting"}])
+          cfg {:embedding {:source :provider :provider "grover" :model "mini-embed"}}]
+      (with-redefs [isaac.recall.index/index-crew! (fn [& _] (throw (ex-info "nightbird down" {})))]
+        (let [result (sut/close-episode! {:fs @mem :root @root :crew "cordelia"
+                                          :episode-id (:id session)
+                                          :session-store @ss
+                                          :provider provider :model "gist"
+                                          :cfg cfg})
+              ep (store/read-episode @mem @root "cordelia" (:id session))]
+          (should= :closed (:status ep))
+          (should-be-nil (:indexed result))))))
+
   (it "warm? is true when last message is inside the TTL"
     (binding [memory/*now* (java.time.Instant/parse "2026-03-01T10:10:00Z")]
       (should (sut/warm? [{:type "message" :timestamp "2026-03-01T10:00:00"}] 60))

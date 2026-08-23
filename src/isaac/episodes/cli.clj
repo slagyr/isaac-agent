@@ -147,8 +147,11 @@
                      "main")
           result (lifecycle/close-open-episodes!
                    {:fs fs :root root :crew crew* :session-store store :cfg cfg})
-          n      (or (:closed result) 0)]
+          n      (or (:closed result) 0)
+          indexed (reduce + 0 (keep :indexed (:results result)))]
       (println (str "closed " n " episode" (when (not= 1 n) "s")))
+      (when (pos? indexed)
+        (println (str "indexed " indexed " rows")))
       0)
     (catch Exception e
       (print-err! (or (ex-message e) (.getMessage e)))

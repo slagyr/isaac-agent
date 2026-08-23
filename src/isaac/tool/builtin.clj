@@ -13,7 +13,8 @@
     [isaac.tool.session :as session]
     [isaac.tool.comm-send :as comm-send]
     [isaac.tool.web-fetch :as web-fetch]
-    [isaac.tool.web-search :as web-search]))
+    [isaac.tool.web-search :as web-search]
+    [isaac.recall.tools :as recall-tools]))
 
 ;; region ----- Registration -----
 
@@ -21,7 +22,7 @@
   ["fs__read" "fs__write" "fs__edit" "fs__multi_edit" "fs__grep" "fs__glob"
    "web__fetch" "web__search" "memory__write" "memory__get" "memory__search"
    "exec__run" "session__info" "session__model" "skill__load" "skill__list"
-   "comm__send" "hail__send"])
+   "comm__send" "hail__send" "recall__search" "recall__scene"])
 
 (def ^:private built-in-tool-specs
   {"fs__read"        {:name        "fs__read"
@@ -140,7 +141,19 @@
                                     :properties {"model" {:type "string" :description "Model alias to switch to"}
                                                  "reset" {:type "boolean" :description "Revert to crew's default model"}}
                                     :required   []}
-                      :handler     #'session/session-model-tool}})
+                      :handler     #'session/session-model-tool}
+   "recall__search"  {:name        "recall__search"
+                      :description "Rank sealed episode scenes for a query. Returns gist lines with scene ids (fetch full text with recall__scene)."
+                      :parameters  {:type       "object"
+                                    :properties {"query" {:type "string" :description "Search query"}}
+                                    :required   ["query"]}
+                      :handler     #'recall-tools/search-tool}
+   "recall__scene"   {:name        "recall__scene"
+                      :description "Fetch one sealed scene's distilled text by scene id."
+                      :parameters  {:type       "object"
+                                    :properties {"scene-id" {:type "string" :description "Scene id to fetch"}}
+                                    :required   ["scene-id"]}
+                      :handler     #'recall-tools/scene-tool}})
 
 (defn- spec-for [tool-name]
   (some-> (get built-in-tool-specs tool-name)
@@ -160,6 +173,8 @@
 (defn exec-tool-factory [_] (spec-for "exec__run"))
 (defn session-info-tool-factory [_] (spec-for "session__info"))
 (defn session-model-tool-factory [_] (spec-for "session__model"))
+(defn recall-search-tool-factory [_] (spec-for "recall__search"))
+(defn recall-scene-tool-factory [_] (spec-for "recall__scene"))
 
 (defn- allowed-tool? [allowed-tools tool-name]
   (or (= ::all allowed-tools)

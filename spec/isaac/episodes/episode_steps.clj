@@ -5,6 +5,7 @@
     [clojure.edn :as edn]
     [gherclj.core :as g :refer [defgiven defthen helper!]]
     [isaac.episodes.store :as store]
+    [isaac.drive.dispatch :as drive-dispatch]
     [isaac.foundation.cli-steps :as fcli]
     [isaac.fs :as fs]
     [isaac.nexus :as nexus]
@@ -270,10 +271,41 @@
   isaac.episodes.episode-steps/no-index-exists-for-crew
   "Asserts packed index.edn is absent (no half-written file).")
 
+(defn- recalled-target-episode []
+  (with-feature-fs
+    (fn []
+      (let [remembered (or (current-episode) (ensure-current-episode!))
+            crew (or (:crew remembered) "cordelia")
+            eps  (mapv #(assoc % :crew crew)
+                       (store/list-episodes (mem-fs) (root-dir) crew))
+            open (last (filter #(= :open (:status %)) (sort-by :id eps)))
+            ep   (or open (last (sort-by :id eps)) remembered)
+            ep   (or (store/read-episode (mem-fs) (root-dir) crew (:id ep)) ep)]
+        (g/assoc! :current-episode (assoc ep :crew crew))
+        (assoc ep :crew crew)))))
+
+(defn- substring-regex-table
+  "Transcript match uses re-matches on string cells. Feature regexes are
+   written as substring probes (#\"(?s)pinot noir...\"); wrap them so they
+   still mean 'contains'."
+  [table]
+  (update table :rows
+          (fn [rows]
+            (mapv (fn [row]
+                    (mapv (fn [cell]
+                            (let [s (str cell)]
+                              (if-let [[_ inner] (re-matches #"#\"(.+)\"" s)]
+                                (if (re-find #"\.\*" inner)
+                                  cell
+                                  (str "#\"(?s).*" inner ".*\""))
+                                cell)))
+                          row))
+                  rows))))
+
 (defn that-episode-backing-session-has-transcript-matching [table]
-  (let [ep (or (current-episode) (ensure-current-episode!))]
+  (let [ep (or (recalled-target-episode) (current-episode) (ensure-current-episode!))]
     (g/should-not-be-nil ep)
-    (session-steps/session-transcript-matching (:id ep) table)))
+    (session-steps/session-transcript-matching (:id ep) (substring-regex-table table))))
 
 (defn that-episode-backing-session-has-transcript [table]
   (let [ep (or (current-episode) (ensure-current-episode!))]
@@ -335,6 +367,60 @@
 (defthen "the episodes for crew {crew:string} on thread {thread:string} chain by lineage"
   isaac.episodes.episode-steps/episodes-for-crew-on-thread-chain-by-lineage
   "Orders the thread's episodes by id; each successor's :parent-episode equals its predecessor's :id.")
+
+(defn that-episode-has-recalled-scenes [table]
+  (with-feature-fs
+    (fn []
+      (let [ep      (recalled-target-episode)
+            refs    (vec (or (:recalled-scenes ep) []))
+            headers (:headers table)
+            rows    (:rows table)]
+        (g/should= (count rows) (count refs))
+        (doseq [[row ref] (map vector rows refs)]
+          (let [row-map (zipmap headers row)
+                failures (keep (fn [[k v]]
+                                 (let [actual (get ref (keyword k))]
+                                   (when-not (cell-matches? v actual)
+                                     (str k ": expected " (pr-str v) ", got: " (pr-str actual)))))
+                               row-map)]
+            (g/should= [] (vec failures))))))))
+
+(defn that-episode-has-no-recalled-scenes []
+  (with-feature-fs
+    (fn []
+      (let [ep (recalled-target-episode)]
+        (g/should (empty? (or (:recalled-scenes ep) [])))))))
+
+(defn- llm-messages-text []
+  (session-steps/await-turn!)
+  (let [req (or (g/get :llm-request) (drive-dispatch/last-request))]
+    (pr-str (or (:messages req) []))))
+
+(defn last-llm-request-does-not-mention-recall []
+  (let [text (llm-messages-text)]
+    (g/should-not (re-find #"(?i)Recalled from earlier conversations|Previously in this conversation|recall__scene" text))))
+
+(defn last-llm-request-mentions-exactly [needle n]
+  (let [text (llm-messages-text)
+        n    (if (string? n) (parse-long n) n)
+        hits (count (re-seq (re-pattern (java.util.regex.Pattern/quote (str needle))) text))]
+    (g/should= n hits)))
+
+(defthen "that episode has recalled scenes:"
+  isaac.episodes.episode-steps/that-episode-has-recalled-scenes
+  "Asserts :recalled-scenes on the most recently opened episode (scene-id, origin-episode).")
+
+(defthen "that episode has no recalled scenes"
+  isaac.episodes.episode-steps/that-episode-has-no-recalled-scenes
+  "Negative twin of recalled-scenes: absent or empty refs.")
+
+(defthen "the last LLM request does not mention recall"
+  isaac.episodes.episode-steps/last-llm-request-does-not-mention-recall
+  "Outbound request contains neither the recall header nor recall__scene.")
+
+(defthen #"the last LLM request mentions \"([^\"]+)\" exactly (\d+) times?"
+  isaac.episodes.episode-steps/last-llm-request-mentions-exactly
+  "Occurrence count of a substring across last LLM request messages.")
 
 (defgiven "crew {crew:string} has an open episode on thread {thread:string} with:"
   isaac.episodes.episode-steps/crew-has-open-episode-on-thread-with

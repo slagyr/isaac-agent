@@ -7,6 +7,8 @@
     [isaac.episodes.migrate :as migrate]
     [isaac.episodes.store :as store]
     [isaac.fs :as fs]
+    [isaac.recall.index :as recall-index]
+    [isaac.recall.inject :as recall-inject]
     [isaac.llm.api.protocol :as api]
     [isaac.llm.provider :as llm-provider]
     [isaac.logger :as log]
@@ -119,9 +121,29 @@
     (log/info :episodes/opened :episode id :crew crew :thread thread)
     episode))
 
+(defn- index-after-close!
+  "Embed+index scenes sealed by this close. Unconfigured embedding is a quiet
+   skip; provider failure logs and leaves scenes unindexed."
+  [fs* root crew cfg]
+  (try
+    (let [result (recall-index/index-crew! fs* root crew (or cfg {}) {})]
+      (cond
+        (nil? result) nil
+        (:error result)
+        (when (and (not= :no-embedding (:error result)))
+          (log/warn :recall/index-skipped :crew crew :reason (:error result)
+                    :message (:message result)))
+
+        :else result))
+    (catch Exception e
+      (log/warn :recall/index-skipped :crew crew :reason :embed-failed
+                :error (.getMessage e))
+      nil)))
+
 (defn close-episode!
   "Seal an open episode via the migrate/segment pipeline. Preserves :thread
-   and :parent-episode on the closed record. No index writes."
+   and :parent-episode on the closed record. Indexes sealed scenes when
+   embedding is configured (isaac-h5dk)."
   [{:keys [fs root crew episode-id session-store provider model cfg]}]
   (let [fs*     (runtime-fs fs)
         root    (runtime-root root)
@@ -162,8 +184,11 @@
                        merged))]
         (when closed
           (log/info :episodes/closed :episode episode-id :crew crew :thread (:thread existing)))
-        (cond-> result
-          closed (assoc :episode closed))))))
+        (let [indexed (when closed (index-after-close! fs* root crew cfg))]
+          (cond-> result
+            closed (assoc :episode closed)
+            (and indexed (pos? (or (:new indexed) 0)))
+            (assoc :indexed (:new indexed))))))))
 
 (defn close-open-episodes!
   "Close every :open episode for crew. Returns {:closed n :results [...]}."
@@ -237,6 +262,20 @@
           (chain-successor! (assoc opts :fs fs* :root root :crew crew
                                    :session-store ss)
                             open))))))
+
+(defn maybe-recall-at-open!
+  "Inject lineage + search-recall after resolve-thread! on a cold open/chain."
+  [{:keys [action episode] :as resolved} {:keys [query cfg fs root crew session-store]}]
+  (recall-inject/inject-on-open!
+    {:fs            fs
+     :root          root
+     :cfg           cfg
+     :crew          (or crew (:crew episode))
+     :episode       episode
+     :query         query
+     :action        action
+     :session-store session-store})
+  resolved)
 
 (defn compact-close!
   "Compaction on an episode crew: close the current episode and open a
