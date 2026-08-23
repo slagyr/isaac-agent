@@ -359,7 +359,9 @@ Feature: Episodes — migrate-session
       | Pump tooling              | true    |
       | Pump nominal report       |         |
 
-    Scenario: segmentation prompt instructs routine marking and what-not-how gists
+    # isaac-bh17: prompt gains (cont ...) continuation-mark instructions
+  @wip
+  Scenario: segmentation prompt instructs routine marking and what-not-how gists
     Given the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
       | model    | gist   |
@@ -382,4 +384,4 @@ Feature: Episodes — migrate-session
     Then the exit code is 0
     And the last LLM request matches:
       | key      | value                                                                                   |
-      | messages | #"(?s)(?=.*routine)(?=.*~)(?=.*evidence, not the subject)(?=.*what was accomplished).*" |
+      | messages | #"(?s)(?=.*routine)(?=.*~)(?=.*evidence, not the subject)(?=.*what was accomplished)(?=.*\(cont )(?=.*resumes).*" |

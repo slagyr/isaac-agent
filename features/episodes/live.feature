@@ -436,3 +436,181 @@ Feature: Episodes — live (router + lifecycle)
     When isaac is run with "episodes index --crew cordelia"
     Then the stdout contains "2 new rows"
     And the exit code is 0
+
+  # ----- Live sealing (isaac-bh17) -----
+
+  @wip
+    Scenario: the size cap seals mid-episode, keeping the trailing scene open
+    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path         | value            |
+      | model        | echo             |
+      | soul         | You are Cordelia |
+      | conversation | episodes         |
+    And the isaac EDN file "config/models/gist.edn" exists with:
+      | path     | value  |
+      | model    | gist   |
+      | provider | grover |
+    And config file "isaac.edn" containing:
+      """
+      {:embedding {:source :provider :provider "grover" :model "mini-embed"}
+       :episodes {:gist-model :gist
+                  :seal {:size-cap 4}}}
+      """
+    And the current time is "2026-03-01T10:00:00"
+    And the following model responses are queued:
+      | type | content                                                 | model |
+      | text | A light pinot noir.                                     | echo  |
+      | text | First race is Saturday.                                 | echo  |
+      | text | 1-2: Wine pairing for pheasant\n3-4: Regatta scheduling | gist  |
+    When isaac is run with "prompt -m 'What wine pairs with pheasant?' --session supper-chat --crew cordelia"
+    When isaac is run with "prompt -m 'Now the regatta schedule' --session supper-chat --crew cordelia"
+    Then the exit code is 0
+    And crew "cordelia" has 1 episode
+    And an episode exists for crew "cordelia" matching:
+      | key    | value       |
+      | status | open        |
+      | thread | supper-chat |
+    And that episode has scenes matching:
+      | gist                      | text              |
+      | Wine pairing for pheasant | #"(?s)pinot noir" |
+    When isaac is run with "recall pheasant --crew cordelia -n 1"
+    Then the stdout matches:
+      | pattern                                     |
+      | 1\. \S+\s+.*lex 1\.0\d*.*terms \[pheasant\] |
+    And the exit code is 0
+
+  @wip
+    Scenario: topic drift seals the finished topic well under the size cap
+    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path         | value            |
+      | model        | echo             |
+      | soul         | You are Cordelia |
+      | conversation | episodes         |
+    And the isaac EDN file "config/models/gist.edn" exists with:
+      | path     | value  |
+      | model    | gist   |
+      | provider | grover |
+    And config file "isaac.edn" containing:
+      """
+      {:embedding {:source :provider :provider "grover" :model "mini-embed"}
+       :episodes {:gist-model :gist
+                  :seal {:drift-threshold 0.999 :min-tail 2}}}
+      """
+    And the current time is "2026-03-01T10:00:00"
+    And the following model responses are queued:
+      | type | content                                                 | model |
+      | text | A light pinot noir.                                     | echo  |
+      | text | First race is Saturday.                                 | echo  |
+      | text | 1-2: Wine pairing for pheasant\n3-4: Regatta scheduling | gist  |
+    When isaac is run with "prompt -m 'What wine pairs with pheasant?' --session supper-chat --crew cordelia"
+    When isaac is run with "prompt -m 'Now the regatta schedule' --session supper-chat --crew cordelia"
+    Then the exit code is 0
+    And an episode exists for crew "cordelia" matching:
+      | key    | value |
+      | status | open  |
+    And that episode has scenes matching:
+      | gist                      | text              |
+      | Wine pairing for pheasant | #"(?s)pinot noir" |
+
+  @wip
+    Scenario: a false drift trigger seals nothing and harms nothing
+    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path         | value            |
+      | model        | echo             |
+      | soul         | You are Cordelia |
+      | conversation | episodes         |
+    And the isaac EDN file "config/models/gist.edn" exists with:
+      | path     | value  |
+      | model    | gist   |
+      | provider | grover |
+    And config file "isaac.edn" containing:
+      """
+      {:embedding {:source :provider :provider "grover" :model "mini-embed"}
+       :episodes {:gist-model :gist
+                  :seal {:drift-threshold 0.999 :min-tail 2}}}
+      """
+    And the current time is "2026-03-01T10:00:00"
+    And the following model responses are queued:
+      | type | content                        | model |
+      | text | A light pinot noir.            | echo  |
+      | text | And a sturdy zinfandel.        | echo  |
+      | text | 1-4: Wine pairing for pheasant | gist  |
+    When isaac is run with "prompt -m 'What wine pairs with pheasant?' --session supper-chat --crew cordelia"
+    When isaac is run with "prompt -m 'What about a heavier red?' --session supper-chat --crew cordelia"
+    Then the exit code is 0
+    And an episode exists for crew "cordelia" matching:
+      | key    | value |
+      | status | open  |
+    And that episode has no sealed scenes
+
+  @wip
+    Scenario: cont marks resolve to scene ids at seal
+    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path         | value            |
+      | model        | echo             |
+      | soul         | You are Cordelia |
+      | conversation | episodes         |
+    And the isaac EDN file "config/models/gist.edn" exists with:
+      | path     | value  |
+      | model    | gist   |
+      | provider | grover |
+    And config file "isaac.edn" containing:
+      """
+      {:embedding {:source :provider :provider "grover" :model "mini-embed"}
+       :episodes {:gist-model :gist
+                  :seal {:size-cap 8}}}
+      """
+    And the current time is "2026-03-01T10:00:00"
+    And the following model responses are queued:
+      | type | content                                                                                                              | model |
+      | text | A light pinot noir.                                                                                                  | echo  |
+      | text | First race is Saturday.                                                                                              | echo  |
+      | text | For dessert, a late harvest.                                                                                         | echo  |
+      | text | Anchorage is at the north quay.                                                                                      | echo  |
+      | text | 1-2: Wine pairing for pheasant\n3-4: Regatta scheduling\n5-6: (cont 1-2) Dessert wine pairing\n7-8: Harbor anchorage | gist  |
+    When isaac is run with "prompt -m 'What wine pairs with pheasant?' --session supper-chat --crew cordelia"
+    When isaac is run with "prompt -m 'Now the regatta schedule' --session supper-chat --crew cordelia"
+    When isaac is run with "prompt -m 'Back to wine — dessert?' --session supper-chat --crew cordelia"
+    When isaac is run with "prompt -m 'Where do we anchor?' --session supper-chat --crew cordelia"
+    Then the exit code is 0
+    And an episode exists for crew "cordelia" matching:
+      | key    | value |
+      | status | open  |
+    And that episode has scenes matching:
+      | gist                      | text                    | continues                      |
+      | Wine pairing for pheasant | #"(?s)pinot noir"       |                                |
+      | Regatta scheduling        | #"(?s)race is Saturday" |                                |
+      | Dessert wine pairing      | #"(?s)late harvest"     | #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" |
+
+  @wip
+    Scenario: without embedding, drift is inert but the size cap still seals
+    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path         | value            |
+      | model        | echo             |
+      | soul         | You are Cordelia |
+      | conversation | episodes         |
+    And the isaac EDN file "config/models/gist.edn" exists with:
+      | path     | value  |
+      | model    | gist   |
+      | provider | grover |
+    And config file "isaac.edn" containing:
+      """
+      {:episodes {:gist-model :gist
+                  :seal {:size-cap 4 :drift-threshold 0.999 :min-tail 2}}}
+      """
+    And the current time is "2026-03-01T10:00:00"
+    And the following model responses are queued:
+      | type | content                                                 | model |
+      | text | A light pinot noir.                                     | echo  |
+      | text | First race is Saturday.                                 | echo  |
+      | text | 1-2: Wine pairing for pheasant\n3-4: Regatta scheduling | gist  |
+    When isaac is run with "prompt -m 'What wine pairs with pheasant?' --session supper-chat --crew cordelia"
+    When isaac is run with "prompt -m 'Now the regatta schedule' --session supper-chat --crew cordelia"
+    Then the exit code is 0
+    And an episode exists for crew "cordelia" matching:
+      | key    | value |
+      | status | open  |
+    And that episode has scenes matching:
+      | gist                      | text              |
+      | Wine pairing for pheasant | #"(?s)pinot noir" |
+    And no index exists for crew "cordelia"
