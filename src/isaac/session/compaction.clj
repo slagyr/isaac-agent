@@ -200,10 +200,10 @@
   (or (:tokens entry)
       (llm/estimate-tokens {:messages [message]})))
 
-(def ^:private memory-tool-names #{"memory_get" "memory_search" "memory_write"})
+(def ^:private memory-tool-names #{"memory__get" "memory__search" "memory__write"})
 
 (def ^:private compaction-system-prompt
-  (str "Review this conversation. Call memory_write for anything durable the user will want later. "
+  (str "Review this conversation. Call memory__write for anything durable the user will want later. "
        "Then produce a concise summary of what happened. Use first person ('I') for actions taken by the assistant, "
        "refer to the user as 'the user', and preserve who asked, who acted, and who verified each step. "
        "Output only the summary, no preamble."))

@@ -35,7 +35,7 @@ Feature: Compaction with memory flush
       | message | assistant    | Understood — loose-leaf Assam over supermarket teabags, noted for the future  |
     And the following model responses are queued:
       | type      | tool         | arguments                                         | content                           | model      |
-      | tool_call | memory_write | {"content": "User prefers tea with two sugars."} |                                   | test-model |
+      | tool_call | memory__write | {"content": "User prefers tea with two sugars."} |                                   | test-model |
       | text      |              |                                                   | Discussion about tea preferences. | test-model |
       | text      |              |                                                   | Here is my response.              | test-model |
     When the user sends "hello" on session "mundane-chat"

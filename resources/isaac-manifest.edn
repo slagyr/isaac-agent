@@ -90,27 +90,27 @@
   :chat-completions {:factory isaac.llm.api.chat-completions/make},
   :responses {:factory isaac.llm.api.responses/make}},
  :isaac.agent/tools
- {:web_fetch {:factory isaac.tool.builtin/web-fetch-tool-factory},
-  :read {:factory isaac.tool.builtin/read-tool-factory},
-  :exec {:factory isaac.tool.builtin/exec-tool-factory},
-  :session_model
+ {:web/fetch {:factory isaac.tool.builtin/web-fetch-tool-factory},
+  :fs/read {:factory isaac.tool.builtin/read-tool-factory},
+  :exec/run {:factory isaac.tool.builtin/exec-tool-factory},
+  :session/model
   {:factory isaac.tool.builtin/session-model-tool-factory},
-  :grep {:factory isaac.tool.builtin/grep-tool-factory},
-  :edit {:factory isaac.tool.builtin/edit-tool-factory},
-  :multi_edit {:factory isaac.tool.builtin/multi-edit-tool-factory},
-  :memory_write
+  :fs/grep {:factory isaac.tool.builtin/grep-tool-factory},
+  :fs/edit {:factory isaac.tool.builtin/edit-tool-factory},
+  :fs/multi_edit {:factory isaac.tool.builtin/multi-edit-tool-factory},
+  :memory/write
   {:factory isaac.tool.builtin/memory-write-tool-factory},
-  :web_search {:factory isaac.tool.builtin/web-search-tool-factory},
-  :session_info
+  :web/search {:factory isaac.tool.builtin/web-search-tool-factory},
+  :session/info
   {:factory isaac.tool.builtin/session-info-tool-factory},
-  :write {:factory isaac.tool.builtin/write-tool-factory},
-  :glob {:factory isaac.tool.builtin/glob-tool-factory},
-  :memory_search
+  :fs/write {:factory isaac.tool.builtin/write-tool-factory},
+  :fs/glob {:factory isaac.tool.builtin/glob-tool-factory},
+  :memory/search
   {:factory isaac.tool.builtin/memory-search-tool-factory},
-  :load_skill {:factory isaac.tool.skill/load-skill-tool-factory},
-  :list_skills {:factory isaac.tool.skill/list-skills-tool-factory},
-  :memory_get {:factory isaac.tool.builtin/memory-get-tool-factory},
-  :comm_send {:factory isaac.tool.comm-send/comm-send-tool-factory}},
+  :skill/load {:factory isaac.tool.skill/load-skill-tool-factory},
+  :skill/list {:factory isaac.tool.skill/list-skills-tool-factory},
+  :memory/get {:factory isaac.tool.builtin/memory-get-tool-factory},
+  :comm/send {:factory isaac.tool.comm-send/comm-send-tool-factory}},
  :isaac.agent/provider-template
  {:anthropic
   {:template
@@ -296,7 +296,7 @@
   {:schema
    {:type :int,
     :description
-    "Max skill count to inject into the cached prompt before falling back to list_skills",
+    "Max skill count to inject into the cached prompt before falling back to skill__list",
     :validations [:non-negative?]}},
   :tools
   {:schema
@@ -352,10 +352,8 @@
        :schema
        {:allow
         {:type :seq,
-         :description "Allowed tool names",
-         :spec
-         {:type :keyword,
-          :validations [[:registered-in? :isaac.agent/tools]]}},
+         :description "Allowed tool names (namespaced keywords, ns/* globs, or :all)",
+         :spec {:type :keyword}},
         :directories
         {:type :seq,
          :description
@@ -711,4 +709,6 @@
   :resolved-providers
   {:fn isaac.config.checks/check-resolved-providers},
   :embedding-provider
-  {:fn isaac.config.checks/check-embedding-provider}}}
+  {:fn isaac.config.checks/check-embedding-provider}
+  :tool-allow-tokens
+  {:fn isaac.config.checks/check-tool-allow-tokens}}}

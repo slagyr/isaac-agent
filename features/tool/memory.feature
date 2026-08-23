@@ -12,14 +12,14 @@ Feature: Crew memory tools
     And the current time is "2026-04-21T10:00:00Z"
 
   Scenario: memory_write appends content to today's note
-    When the tool "memory_write" is called with:
+    When the tool "memory__write" is called with:
       | content | Hieronymus hates artichokes. |
     Then the file "crew/main/memory/2026-04-21.md" matches:
       | text                         |
       | Hieronymus hates artichokes. |
 
   Scenario: memory_write accepts an array of entries
-    When the tool "memory_write" is called with:
+    When the tool "memory__write" is called with:
       | content | ["Orpheus the cat sneaks in during rainstorms." "Grandma's sourdough lives on /Volumes/zane/recipes."] |
     Then the file "crew/main/memory/2026-04-21.md" matches:
       | text                                                |
@@ -27,9 +27,9 @@ Feature: Crew memory tools
       | Grandma's sourdough lives on /Volumes/zane/recipes. |
 
   Scenario: memory_write appends to existing content instead of overwriting
-    When the tool "memory_write" is called with:
+    When the tool "memory__write" is called with:
       | content | The vault door creaks when opened clockwise. |
-    And the tool "memory_write" is called with:
+    And the tool "memory__write" is called with:
       | content | Hieronymus fell asleep under the stairs again. |
     Then the file "crew/main/memory/2026-04-21.md" matches:
       | text                                           |
@@ -38,7 +38,7 @@ Feature: Crew memory tools
 
   Scenario: memory_get reads a day's note within the range
     Given a file "crew/main/memory/2026-04-15.md" exists with content "Orpheus brought a dead mouse to the back door."
-    When the tool "memory_get" is called with:
+    When the tool "memory__get" is called with:
       | start_time | 2026-04-15 |
       | end_time   | 2026-04-15 |
     Then the tool result is not an error
@@ -50,7 +50,7 @@ Feature: Crew memory tools
     Given a file "crew/main/memory/2026-04-14.md" exists with content "The moonflowers bloomed last night."
     And a file "crew/main/memory/2026-04-16.md" exists with content "Wind knocked over the hedgehog figurine."
     And a file "crew/main/memory/2026-04-19.md" exists with content "User found a geode in the attic."
-    When the tool "memory_get" is called with:
+    When the tool "memory__get" is called with:
       | start_time | 2026-04-14 |
       | end_time   | 2026-04-16 |
     Then the tool result is not an error
@@ -64,7 +64,7 @@ Feature: Crew memory tools
     Given a file "crew/main/memory/2026-04-15.md" exists with content "Orpheus brought a dead mouse to the back door."
     And a file "crew/main/memory/2026-04-19.md" exists with content "Orpheus sulked under the porch for most of the afternoon."
     And a file "crew/main/memory/2026-04-20.md" exists with content "The moonflowers bloomed last night."
-    When the tool "memory_search" is called with:
+    When the tool "memory__search" is called with:
       | query | Orpheus |
     Then the tool result is not an error
     And the tool result lines match:
@@ -77,7 +77,7 @@ Feature: Crew memory tools
 
   Scenario: memory_search is case-insensitive
     Given a file "crew/main/memory/2026-04-15.md" exists with content "Orpheus brought a dead mouse to the back door."
-    When the tool "memory_search" is called with:
+    When the tool "memory__search" is called with:
       | query | orpheus |
     Then the tool result is not an error
     And the tool result contains "Orpheus brought a dead mouse"

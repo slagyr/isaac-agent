@@ -4,6 +4,7 @@
     [isaac.llm.api.protocol :as api]
     [isaac.nexus :as nexus]
     [isaac.session.store.spi :as store]
+    [isaac.tool.names :as names]
     [isaac.tool.registry :as tool-registry]))
 
 ;; region ----- Helpers -----
@@ -56,7 +57,8 @@
       (store/create ctx-or-root))))
 
 (defn- ->tool-name [t]
-  (if (keyword? t) (name t) (str t)))
+  (or (names/wire-name t)
+      (if (keyword? t) (name t) (str t))))
 
 (defn session-allowed-tools
   "The tool allow-list for the session's crew, as a set of tool names, or nil

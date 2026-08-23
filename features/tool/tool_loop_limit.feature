@@ -21,15 +21,15 @@ Feature: Tool-loop limit configuration
       | path          | value |
       | model         | local |
       | tool-loop-max | 1     |
-    And the crew "oscar" allows tools: "exec"
+    And the crew "oscar" allows tools: "exec/run"
     And the built-in tools are registered
     And the following sessions exist:
       | name      | crew  |
       | trash-can | oscar |
     And the following model responses are queued:
       | tool_call | arguments           |
-      | exec      | {"command": "true"} |
-      | exec      | {"command": "true"} |
+      | exec__run | {"command": "true"} |
+      | exec__run | {"command": "true"} |
     When the user sends "count the cans" on session "trash-can"
     Then session "trash-can" has transcript matching:
       | type     | message.role | message.content            | #comment                                   |

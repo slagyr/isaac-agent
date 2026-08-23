@@ -51,14 +51,14 @@ Feature: Suspend in-flight turns on shutdown
     the turn mid-step past the cap. Suspend stamps :unclean and returns — it
     does not wait for the stray tool; in a real shutdown the process exit takes
     the tool with it. :unclean tells isaac-vdfc the boundary is not trustworthy.
-    Given the crew "main" allows tools: "exec"
+    Given the crew "main" allows tools: "exec/run"
     And the built-in tools are registered
     And the following sessions exist:
       | name    |
       | logbook |
     And the following model responses are queued:
       | tool_call | arguments               |
-      | exec      | {"command": "sleep 30"} |
+      | exec__run | {"command": "sleep 30"} |
     When the user sends "run the diagnostic" on session "logbook"
     And in-flight turns are suspended with timeout 100ms
     Then a turn marker exists for session "logbook" with:

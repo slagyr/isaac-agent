@@ -99,7 +99,7 @@
   (it "rejects grep outside allowed directories"
     (let [session-key session-key]
       (store-helper/create-session! support/test-dir session-key {:crew crew-name :cwd "/work/project"})
-      (let [result (helper/with-config {:defaults {} :crew {crew-name {:tools {:allow ["grep"]}}} :models {} :providers {}}
+      (let [result (helper/with-config {:defaults {} :crew {crew-name {:tools {:allow [:fs/grep]}}} :models {} :providers {}}
                      (sut/grep-tool {"pattern"     "hunter"
                                       "path"        "/tmp/secret-stash"
                                       "session_key" session-key}))]

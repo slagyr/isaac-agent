@@ -42,13 +42,13 @@
       (should= {:id    marigold/first-mate
                 :model test-model-id
                 :soul  "You are Cordelia."
-                :tools {:allow       [:read :write]
+                :tools {:allow       [:fs/read :fs/write]
                         :directories [:cwd "/tmp/playground"]}}
                (lexicon/conform (runtime-spec sut/crew)
                                 {:id    (keyword marigold/first-mate)
                                  :model (keyword test-model-id)
                                  :soul  "You are Cordelia."
-                                 :tools {:allow       [:read :write]
+                                 :tools {:allow       [:fs/read :fs/write]
                                          :directories [:cwd "/tmp/playground"]}})))
 
     (it "crew conforms with context-mode"

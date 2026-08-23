@@ -13,7 +13,7 @@ Feature: Built-in glob tool
       | src/core.clj | 2026-04-20T00:00:01Z |
       | src/util.clj | 2026-04-20T00:00:02Z |
       | src/notes.md | 2026-04-20T00:00:03Z |
-    When the tool "glob" is called with:
+    When the tool "fs__glob" is called with:
       | pattern | **/*.clj |
     Then the tool result is not an error
     And the tool result lines match:
@@ -27,7 +27,7 @@ Feature: Built-in glob tool
       | name        | mtime                |
       | src/old.clj | 2020-01-01T00:00:00Z |
       | src/new.clj | 2026-04-20T00:00:00Z |
-    When the tool "glob" is called with:
+    When the tool "fs__glob" is called with:
       | pattern | src/*.clj |
     Then the tool result is not an error
     And the tool result lines match:
@@ -39,7 +39,7 @@ Feature: Built-in glob tool
     Given the following files exist:
       | name      |
       | README.md |
-    When the tool "glob" is called with:
+    When the tool "fs__glob" is called with:
       | pattern | **/*.clj |
     Then the tool result is not an error
     And the tool result lines match:
@@ -47,7 +47,7 @@ Feature: Built-in glob tool
       | no matches |
 
   Scenario: glob truncates output at the default head_limit
-    Given the default "glob" head_limit is 3
+    Given the default "fs__glob" head_limit is 3
     And the following files exist:
       | name  | mtime                |
       | a.clj | 2026-04-20T00:00:01Z |
@@ -55,7 +55,7 @@ Feature: Built-in glob tool
       | c.clj | 2026-04-20T00:00:03Z |
       | d.clj | 2026-04-20T00:00:04Z |
       | e.clj | 2026-04-20T00:00:05Z |
-    When the tool "glob" is called with:
+    When the tool "fs__glob" is called with:
       | pattern | *.clj |
     Then the tool result is not an error
     And the tool result lines match:
@@ -75,7 +75,7 @@ Feature: Built-in glob tool
       | c.clj | 2026-04-20T00:00:03Z |
       | d.clj | 2026-04-20T00:00:04Z |
       | e.clj | 2026-04-20T00:00:05Z |
-    When the tool "glob" is called with:
+    When the tool "fs__glob" is called with:
       | pattern    | *.clj |
       | head_limit | 2     |
     Then the tool result is not an error

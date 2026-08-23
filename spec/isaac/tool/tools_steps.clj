@@ -18,6 +18,7 @@
     [isaac.tool.glob :as glob]
     [isaac.tool.grep :as grep]
     [isaac.tool.memory :as memory]
+    [isaac.tool.names :as names]
     [isaac.tool.registry :as registry]
     [isaac.tool.web-fetch :as web-fetch]
     [speclj.core :refer [pending]]))
@@ -140,9 +141,13 @@
 (defn- tool-default-var [tool-name key]
   (case [(strip-quotes tool-name) key]
     ["glob" "head_limit"] #'glob/*default-head-limit*
+    ["fs__glob" "head_limit"] #'glob/*default-head-limit*
     ["read" "limit"] #'file/*default-read-limit*
+    ["fs__read" "limit"] #'file/*default-read-limit*
     ["grep" "head_limit"] #'grep/*default-head-limit*
+    ["fs__grep" "head_limit"] #'grep/*default-head-limit*
     ["web_fetch" "limit"] #'web-fetch/*default-limit*
+    ["web__fetch" "limit"] #'web-fetch/*default-limit*
     nil))
 
 (defn- with-tool-defaults [f]
@@ -214,7 +219,7 @@
 
 (defn web-search-initialized [_tool]
   (ensure-feature-fs!)
-  (builtin/register-all! #{"web_search"}))
+  (builtin/register-all! #{:web/search}))
 
 (defn nil-tool-registered [name]
   (registry/register! {:name name :description "Returns nil" :handler (fn [_] nil)}))
@@ -506,7 +511,7 @@
     (fn []
       (let [cfg   (loaded-feature-config)
             _     (loader/set-snapshot! cfg "prompt-tool-has-parameters")
-            allow #{(str tool-name)}
+            allow #{(or (names/config-token tool-name) (keyword tool-name))}
             _     (builtin/register-all! allow)
             tool  (first (filter #(= tool-name (:name %))
                                  (registry/tool-definitions allow (:module-index cfg))))

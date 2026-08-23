@@ -115,7 +115,7 @@ Feature: OpenAI Provider Dispatch
     And the isaac EDN file "config/crew/oscar.edn" exists with:
       | path | value |
       | model | snuffy |
-      | tools.allow | read,write,edit,exec |
+      | tools.allow | fs/read,fs/write,fs/edit,exec/run |
       | soul | Lives in a trash can. |
     And the following sessions exist:
       | name      | crew  |
@@ -128,7 +128,7 @@ Feature: OpenAI Provider Dispatch
     Then the last outbound HTTP request matches:
       | key                           | value    |
       | body.tools[0].type            | function |
-      | body.tools[0].name            | read     |
+      | body.tools[0].name            | fs__read |
       | body.tools[0].parameters.type | object   |
     And the last provider request does not contain path "body.tools[0].function"
 
@@ -141,7 +141,7 @@ Feature: OpenAI Provider Dispatch
     And the isaac EDN file "config/crew/oscar.edn" exists with:
       | path | value |
       | model | snuffy |
-      | tools.allow | read,write,edit,exec |
+      | tools.allow | fs/read,fs/write,fs/edit,exec/run |
       | soul | Lives in a trash can. |
     And the following sessions exist:
       | name      | crew  |
@@ -149,7 +149,7 @@ Feature: OpenAI Provider Dispatch
     And the built-in tools are registered
     And the following model responses are queued:
       | model        | type      | tool_call | arguments                   |
-      | snuffy-codex | tool_call | read      | {"filePath":"trash-lid.txt"} |
+      | snuffy-codex | tool_call | fs__read  | {"filePath":"trash-lid.txt"} |
     And the following model responses are queued:
       | model        | type | content                          |
       | snuffy-codex | text | Old newspaper and a banana peel. |

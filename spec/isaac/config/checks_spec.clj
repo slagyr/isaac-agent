@@ -77,4 +77,56 @@
                                   :root   "/srv/isaac-state/config"})]
         (should= 1 (count warnings))
         (should (re-find #"Isaac state directory" (:value (first warnings))))
-        (should (re-find #":role" (:value (first warnings))))))))
+        (should (re-find #":role" (:value (first warnings)))))))
+
+  (context "check-tool-allow-tokens"
+
+    (it "rejects an unqualified allow token"
+      (let [{:keys [errors]} (sut/check-tool-allow-tokens
+                               {:config {:crew {"main" {:tools {:allow [:read]}}}}})]
+        (should= 1 (count errors))
+        (should= "crew.main.tools.allow[0]" (:key (first errors)))
+        (should (re-find #"namespace" (:value (first errors))))))
+
+    (it "accepts namespaced allow tokens and a namespace glob"
+      (let [{:keys [errors]} (sut/check-tool-allow-tokens
+                               {:config {:crew {"main" {:tools {:allow [:fs/read :fs/*]}}}}})]
+        (should= [] errors)))
+
+    (it "accepts :all as the exempt policy token"
+      (let [{:keys [errors]} (sut/check-tool-allow-tokens
+                               {:config {:crew {"main" {:tools {:allow [:all]}}}}})]
+        (should= [] errors)))
+
+    (it "rejects multiple unqualified tokens that are not :all"
+      (let [{:keys [errors]} (sut/check-tool-allow-tokens
+                               {:config {:crew {"main" {:tools {:allow [:nope :linear]}}}}})]
+        (should= ["crew.main.tools.allow[0]" "crew.main.tools.allow[1]"]
+                 (mapv :key errors))
+        (should (every? #(re-find #"namespace" (:value %)) errors))))
+
+    (it "load-config rejects an unqualified allow token with a path-anchored namespace error"
+      (let [fs*  (fs/mem-fs)
+            root "/tmp/isaac-allow-ns-load"]
+        (nexus/-with-nested-nexus {:fs fs*}
+          (marigold.agent/with-real-manifest
+            (fs/mkdirs fs* (str root "/config"))
+            (fs/spit fs* (str root "/config/isaac.edn")
+                     (pr-str {:crew {:main {:tools {:allow [:read]}}}}))
+            (let [result (loader/load-config-result {:root root :fs fs*})
+                  hits   (filter #(= "crew.main.tools.allow[0]" (:key %)) (:errors result))]
+              (should (seq hits))
+              (should (re-find #"namespace" (:value (first hits)))))))))
+
+    (it "load-config accepts namespaced allow tokens and a namespace glob"
+      (let [fs*  (fs/mem-fs)
+            root "/tmp/isaac-allow-ok-load"]
+        (nexus/-with-nested-nexus {:fs fs*}
+          (marigold.agent/with-real-manifest
+            (fs/mkdirs fs* (str root "/config"))
+            (fs/spit fs* (str root "/config/isaac.edn")
+                     (pr-str {:crew {:main {:tools {:allow [:fs/read :fs/*]}}}}))
+            (let [result (loader/load-config-result {:root root :fs fs*})
+                  allow  (get-in result [:config :crew "main" :tools :allow])]
+              (should= [] (filter #(re-find #"allow" (str (:key %))) (:errors result)))
+              (should= [:fs/read :fs/*] allow))))))))

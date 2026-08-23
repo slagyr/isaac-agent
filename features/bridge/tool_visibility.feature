@@ -10,15 +10,15 @@ Feature: Crew tools reach every comm path
 
   Background:
     Given default Grover setup
-    And the crew "main" allows tools: "read,write,exec"
+    And the crew "main" allows tools: "fs/read,fs/write,exec/run"
 
   Scenario: prompt command offers the crew's configured tools
     When isaac is run with "prompt hi"
     Then the prompt has tools:
-      | name  |
-      | read  |
-      | write |
-      | exec  |
+      | name      |
+      | fs__read  |
+      | fs__write |
+      | exec__run |
 
   Scenario: a crew with no :tools section still gets zero tools over every comm
     Given the isaac EDN file "config/crew/main.edn" exists with:

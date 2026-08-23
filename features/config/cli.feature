@@ -205,12 +205,7 @@ Feature: Config Command
     Then the stderr matches:
       | pattern                                                  |
       | crew\.main\.tools\.allow                                |
-      | must be a registered contribution to :isaac.agent/tools |
-      | bad value: bogus-tool                                    |
-      | file: config/crew/main\.edn                              |
-      | valid: .*read.*                                          |
-      | valid: .*write.*                                         |
-      | valid: .*exec.*                                          |
+      | namespace                                                |
     And the exit code is 1
 
   Scenario: validate reports unknown provider refs with file and valid set

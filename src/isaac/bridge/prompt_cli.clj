@@ -26,13 +26,13 @@
 
 (defn- tool-icon [tool-name]
   (cond
-    (= "grep" tool-name) "🔍"
-    (= "read" tool-name) "📖"
-    (or (= "write" tool-name)
-        (= "edit" tool-name)) "✏️"
-    (= "exec" tool-name) "⚙️"
-    (= "web_fetch" tool-name) "🌐"
-    (str/starts-with? tool-name "memory_") "💾"
+    (= "fs__grep" tool-name) "🔍"
+    (= "fs__read" tool-name) "📖"
+    (or (= "fs__write" tool-name)
+        (= "fs__edit" tool-name)) "✏️"
+    (= "exec__run" tool-name) "⚙️"
+    (= "web__fetch" tool-name) "🌐"
+    (str/starts-with? tool-name "memory__") "💾"
     :else "🧰"))
 
 (defn- tool-summary [tool-call]

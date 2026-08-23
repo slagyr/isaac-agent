@@ -21,7 +21,7 @@ Feature: comm_send tool
 
   Background:
     Given default Grover setup
-    And the crew "main" allows tools: comm_send
+    And the crew "main" allows tools: "comm/send"
     And the following sessions exist:
       | name       | crew |
       | dawn-watch | main |
@@ -31,7 +31,7 @@ Feature: comm_send tool
       | key                | value   |
       | comms.skybeam.type | skybeam |
     When the prompt for session "dawn-watch" is built for provider "grover"
-    Then the prompt tool "comm_send" has parameters:
+    Then the prompt tool "comm__send" has parameters:
       | param   | type   | required |
       | comm    | string | true     |
       | content | string | true     |
@@ -42,7 +42,7 @@ Feature: comm_send tool
       | key               | value |
       | comms.tannoy.type | telly |
     When the prompt for session "dawn-watch" is built for provider "grover"
-    Then the prompt tool "comm_send" has parameters:
+    Then the prompt tool "comm__send" has parameters:
       | param        | type   | required |
       | comm         | string | true     |
       | content      | string | true     |
@@ -56,7 +56,7 @@ Feature: comm_send tool
       | comms.tannoy.type | telly |
     And the following model responses are queued:
       | type     | tool_call | arguments                                                                                |
-      | toolCall | comm_send | {"comm":"tannoy","content":"Lantern is lit.","telly.target":"bridge","telly.loft":"high"} |
+      | toolCall | comm__send | {"comm":"tannoy","content":"Lantern is lit.","telly.target":"bridge","telly.loft":"high"} |
       | text     |           | Done.                                                                                    |
     When the user sends "tell the bridge" on session "dawn-watch"
     And the turn ends on session "dawn-watch"
@@ -70,7 +70,7 @@ Feature: comm_send tool
   Scenario: comm_send to an unknown comm slot errors without enqueueing
     And the following model responses are queued:
       | type     | tool_call | arguments                                    |
-      | toolCall | comm_send | {"comm":"phantom","content":"Anyone there?"} |
+      | toolCall | comm__send | {"comm":"phantom","content":"Anyone there?"} |
       | text     |           | Could not send.                              |
     When the user sends "ping phantom" on session "dawn-watch"
     And the turn ends on session "dawn-watch"

@@ -86,13 +86,13 @@
       (grover/reset-queue!)
       (grover/enqueue! [{:model     "claude-sonnet-4-6"
                          :type      "tool_call"
-                         :tool_call "load_skill"
+                         :tool_call "skill__load"
                          :arguments {:name "greenhouse-protocol"}}])
       (let [result (sut/chat {:model "claude-sonnet-4-6" :messages []}
                              "anthropic"
                              (assoc (api-key-config) :simulate-provider "anthropic"))]
         (should= 1 (count (:tool-calls result)))
-        (should= "load_skill" (:name (first (:tool-calls result))))
+        (should= "skill__load" (:name (first (:tool-calls result))))
         (should= {:name "greenhouse-protocol"} (:arguments (first (:tool-calls result))))))
 
     (it "sets x-api-key header for api-key auth"

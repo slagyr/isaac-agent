@@ -122,10 +122,10 @@
   (describe "tool-call-content"
 
     (it "reads tool calls from top-level message and vector content"
-      (should= {:type "toolCall" :id "tc-1" :name "read" :arguments {:path "a.txt"}}
-               (#'sut/tool-call-content {:message {:type "toolCall" :id "tc-1" :name "read" :arguments {:path "a.txt"}}}))
-      (should= {:type "toolCall" :id "tc-2" :name "grep" :arguments {:pattern "lettuce"}}
-               (#'sut/tool-call-content {:message {:content [{:type "toolCall" :id "tc-2" :name "grep" :arguments {:pattern "lettuce"}}]}})))
+      (should= {:type "toolCall" :id "tc-1" :name "fs__read" :arguments {:path "a.txt"}}
+               (#'sut/tool-call-content {:message {:type "toolCall" :id "tc-1" :name "fs__read" :arguments {:path "a.txt"}}}))
+      (should= {:type "toolCall" :id "tc-2" :name "fs__grep" :arguments {:pattern "lettuce"}}
+               (#'sut/tool-call-content {:message {:content [{:type "toolCall" :id "tc-2" :name "fs__grep" :arguments {:pattern "lettuce"}}]}})))
 
     (it "returns nil for non-tool-call content"
       (should-be-nil (#'sut/tool-call-content {:message {:content "plain text"}}))))
@@ -155,7 +155,7 @@
                         :chat-fn        mock-chat})]
         (should-not-be-nil @chat-called)
         (should= "test-model" (:model @chat-called))
-        (should= #{"memory_get" "memory_search" "memory_write"}
+        (should= #{"memory__get" "memory__search" "memory__write"}
                  (set (map #(or (:name %) (get-in % [:function :name])) (:tools @chat-called))))
         (should= 2 (count (:messages @chat-called)))
         (should= "system" (-> @chat-called :messages first :role))
@@ -222,7 +222,7 @@
                        :soul           "You are helpful."
                        :context-window 10000
                        :chat-fn        mock-chat})
-        (should= ["memory_get" "memory_search" "memory_write"]
+        (should= ["memory__get" "memory__search" "memory__write"]
                  (sort (map #(or (:name %) (get-in % [:function :name])) (:tools @captured))))))
 
     (it "passes explicit runtime args to compaction tools"
@@ -233,14 +233,14 @@
             _msg          (store/append-message! explicit-store key-str {:role "user" :content "hello"})
             tool-called   (atom nil)
             mock-chat     (fn [_request tool-fn]
-                            (reset! tool-called (tool-fn "memory_write" {"content" "note"}))
+                            (reset! tool-called (tool-fn "memory__write" {"content" "note"}))
                             {:message {:content "Summary"}})]
         (with-redefs [tool-registry/execute (fn [name args allowed-tools]
-                                              (should= "memory_write" name)
+                                              (should= "memory__write" name)
                                               (should= explicit-dir (get args "state_dir"))
                                               (should= explicit-store (get args "session_store"))
                                               (should= key-str (get args "session_key"))
-                                              (should= #{"memory_get" "memory_search" "memory_write"} allowed-tools)
+                                              (should= #{"memory__get" "memory__search" "memory__write"} allowed-tools)
                                               {:result "ok"})]
           (sut/compact! key-str
                         {:model          "test-model"
@@ -265,11 +265,11 @@
                        :soul           "You are helpful."
                        :context-window 10000
                        :chat-fn        mock-chat})
-        (should= #{{:type "function" :name "memory_get"}
-                   {:type "function" :name "memory_search"}
-                   {:type "function" :name "memory_write"}}
+        (should= #{{:type "function" :name "memory__get"}
+                   {:type "function" :name "memory__search"}
+                   {:type "function" :name "memory__write"}}
                  (set (map #(select-keys % [:type :name]) (:tools @captured))))
-        (let [memory-write (first (filter #(= "memory_write" (:name %)) (:tools @captured)))]
+        (let [memory-write (first (filter #(= "memory__write" (:name %)) (:tools @captured)))]
           (should= "string" (get-in memory-write [:parameters :properties "content" :type]))
           (should-be-nil (get-in memory-write [:parameters :properties "content" :anyOf])))))
 
@@ -280,7 +280,7 @@
             _msg2     (storage/append-message! test-root key-str {:role "assistant"
                                                                   :content [{:type "toolCall"
                                                                              :id "tc-1"
-                                                                             :name "session_info"
+                                                                             :name "session__info"
                                                                              :arguments {}}]})
             _msg3     (storage/append-message! test-root key-str {:role "toolResult"
                                                                   :id "tc-1"
@@ -307,7 +307,7 @@
             _msg2     (storage/append-message! test-root key-str {:role "assistant"
                                                                   :content [{:type      "toolCall"
                                                                              :id        "call_old"
-                                                                             :name      "read"
+                                                                             :name      "fs__read"
                                                                              :arguments {:filePath "fridge.txt"}}]})
             _msg3     (storage/append-message! test-root key-str {:role "toolResult"
                                                                   :id "call_old"
@@ -337,7 +337,7 @@
             _msg2       (storage/append-message! test-root key-str {:role "assistant"
                                                                     :content [{:type      "toolCall"
                                                                                :id        "call_big"
-                                                                               :name      "read"
+                                                                               :name      "fs__read"
                                                                                :arguments {:filePath "huge.txt"}}]})
             _msg3       (storage/append-message! test-root key-str {:role "toolResult"
                                                                     :id "call_big"
@@ -448,7 +448,7 @@
             _tool-call   (storage/append-message! test-root key-str {:role    "assistant"
                                                                      :content [{:type      "toolCall"
                                                                                 :id        "tc-1"
-                                                                                :name      "grep"
+                                                                                :name      "fs__grep"
                                                                                 :arguments {:q "error"}}]
                                                                      :tokens  10})
             _tool-result (storage/append-message! test-root key-str {:role "toolResult" :id "tc-1" :content "3 matches" :tokens 40})

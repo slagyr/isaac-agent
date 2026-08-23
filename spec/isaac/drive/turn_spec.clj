@@ -684,9 +684,9 @@
         (with-redefs [sut/augment-provider (fn [_root p _session-key _context-window _model-cfg-overrides] p)
                       session-ctx/read-skill-disclosure (fn [& _]
                                                           {:menu-text  nil
-                                                           :tool-names #{"list_skills" "load_skill"}})]
+                                                           :tool-names #{"skill__list" "skill__load"}})]
           (let [turn (#'sut/build-turn charge)]
-            (should= ["list_skills" "load_skill"] (sort (:allowed-tools turn))))))))
+            (should= ["skill__list" "skill__load"] (sort (:allowed-tools turn))))))))
 
   (describe "context-mode"
     #_{:clj-kondo/ignore [:unresolved-symbol]}

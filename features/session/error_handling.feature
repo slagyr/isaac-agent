@@ -100,7 +100,7 @@ Feature: Error Entry Handling
       """
     And the following model responses are queued:
       | model | tool_call | arguments                                     |
-      | echo  | read      | {"file_path": "target/test-state/hello.txt"} |
+      | echo  | fs__read  | {"file_path": "target/test-state/hello.txt"} |
       | model | type      | content |
       | echo  | text      |         |
       | model | type      | content |

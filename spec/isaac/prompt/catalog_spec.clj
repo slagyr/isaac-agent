@@ -244,8 +244,8 @@
     (should= {:menu-text  (str "Available skills:\n"
                                "- aeroponics: Use for soil-free growing\n"
                                "- greenhouse-protocol: Use when tending specimens\n\n"
-                               "Use load_skill to load a skill body on demand.")
-              :tool-names #{"load_skill"}}
+                               "Use skill__load to load a skill body on demand.")
+              :tool-names #{"skill__load"}}
              (sut/resolve-skill-disclosure {:fs        (nexus/get :fs)
                                             :root root})))
 
@@ -263,7 +263,7 @@
                              "---\n\n"
                              "Two."))
     (should= {:menu-text  nil
-              :tool-names #{"list_skills" "load_skill"}}
+              :tool-names #{"skill__list" "skill__load"}}
              (sut/resolve-skill-disclosure {:config    {:skill-menu-threshold 1}
                                             :fs        (nexus/get :fs)
                                             :root root})))

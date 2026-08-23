@@ -20,6 +20,7 @@
     [isaac.session.compaction :as compaction]
     [isaac.session.context :as session-ctx]
     [isaac.session.store.spi :as store]
+    [isaac.tool.names :as names]
     [isaac.tool.registry :as tool-registry])
   (:import (clojure.lang ExceptionInfo)))
 
@@ -830,10 +831,11 @@
     (when (contains? crew :tools)
       (->> (get-in crew [:tools :allow])
            (mapv (fn [tool]
-                   (cond
-                     (keyword? tool) (name tool)
-                     (string? tool) tool
-                     :else (str tool))))
+                   (or (names/wire-name tool)
+                       (cond
+                         (keyword? tool) (name tool)
+                         (string? tool) tool
+                         :else (str tool)))))
            set))))
 
 (defn- active-tools [_p allowed-tools module-index]

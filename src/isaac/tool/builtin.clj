@@ -9,6 +9,7 @@
     [isaac.tool.glob :as glob]
     [isaac.tool.grep :as grep]
     [isaac.tool.memory :as memory]
+    [isaac.tool.names :as names]
     [isaac.tool.session :as session]
     [isaac.tool.comm-send :as comm-send]
     [isaac.tool.web-fetch :as web-fetch]
@@ -17,175 +18,168 @@
 ;; region ----- Registration -----
 
 (def ^:private ordered-built-in-tools
-  ["read" "write" "edit" "multi_edit" "grep" "glob" "web_fetch" "web_search" "memory_write" "memory_get" "memory_search" "exec" "session_info" "session_model" "load_skill" "list_skills" "comm_send" "hail-send"])
+  ["fs__read" "fs__write" "fs__edit" "fs__multi_edit" "fs__grep" "fs__glob"
+   "web__fetch" "web__search" "memory__write" "memory__get" "memory__search"
+   "exec__run" "session__info" "session__model" "skill__load" "skill__list"
+   "comm__send" "hail__send"])
 
 (def ^:private built-in-tool-specs
-  {"read"          {:name        "read"
-                     :description "Read file contents or list a directory"
-                     :parameters  {:type       "object"
-                                   :properties {"file_path" {:type "string" :description "Path to file or directory"}
-                                                "offset"    {:type "integer" :description "Start line (1-indexed)"}
-                                                "limit"     {:type "integer" :description "Max lines to return"}}
-                                   :required   ["file_path"]}
-                     :handler     #'file/read-tool}
-   "write"         {:name        "write"
-                     :description "Write content to a file"
-                     :parameters  {:type       "object"
-                                   :properties {"file_path" {:type "string" :description "Path to write"}
-                                                "content"   {:type "string" :description "Content to write"}}
-                                   :required   ["file_path" "content"]}
-                     :handler     #'file/write-tool}
-   "edit"          {:name        "edit"
-                     :description "Replace text in a file"
-                     :parameters  {:type       "object"
-                                   :properties {"file_path"   {:type "string" :description "File to edit"}
-                                                "old_string"  {:type "string" :description "Text to replace"}
-                                                "new_string"  {:type "string" :description "Replacement text"}
-                                                "replace_all" {:type "boolean" :description "Replace all occurrences"}}
-                                   :required   ["file_path" "old_string" "new_string"]}
-                     :handler     #'file/edit-tool}
-   "multi_edit"    {:name        "multi_edit"
-                     :description "Apply multiple validated string replacements atomically"
-                     :parameters  {:type       "object"
-                                   :properties {"edits" {:type        "array"
-                                                         :description "Replacement entries (same fields as edit)"
-                                                         :items       {:type       "object"
-                                                                       :properties {"file_path"   {:type "string"}
-                                                                                    "old_string"  {:type "string"}
-                                                                                    "new_string"  {:type "string"}
-                                                                                    "replace_all" {:type "boolean"}}
-                                                                       :required   ["file_path" "old_string" "new_string"]}}}
-                                   :required   ["edits"]}
-                     :handler     #'file/multi-edit-tool}
-   "grep"          {:name        "grep"
-                     :description "Search file contents with ripgrep"
-                     :parameters  {:type       "object"
-                                   :properties {"pattern"     {:type "string" :description "Regex pattern to search for"}
-                                                "path"        {:type "string" :description "File or directory to search"}
-                                                "glob"        {:type "string" :description "Optional file glob filter"}
-                                                "type"        {:type "string" :description "Optional file type shorthand"}
-                                                "-i"          {:type "boolean" :description "Case-insensitive search"}
-                                                "-n"          {:type "boolean" :description "Include line numbers in content mode"}
-                                                "-A"          {:type "integer" :description "Context lines after each match"}
-                                                "-B"          {:type "integer" :description "Context lines before each match"}
-                                                "-C"          {:type "integer" :description "Context lines before and after each match"}
-                                                "multiline"   {:type "boolean" :description "Enable multiline matching"}
-                                                "output_mode" {:type "string" :description "content, files_with_matches, or count"}
-                                                "head_limit"  {:type "integer" :description "Maximum rows to return; 0 means unlimited"}
-                                                "offset"      {:type "integer" :description "Rows to skip before returning results"}}
-                                   :required   ["pattern" "path"]}
-                     :available?  #(grep/available?)
-                     :handler     #'grep/grep-tool}
-   "glob"          {:name        "glob"
-                     :description "List files matching a glob pattern"
-                     :parameters  {:type       "object"
-                                   :properties {"pattern"    {:type "string" :description "Glob pattern to match"}
-                                                "path"       {:type "string" :description "Directory to search; defaults to cwd or root"}
-                                                "head_limit" {:type "integer" :description "Maximum rows to return"}}
-                                   :required   ["pattern"]}
-                     :handler     #'glob/glob-tool}
-   "web_fetch"     {:name        "web_fetch"
-                     :description "Fetch URL content via HTTP GET"
-                     :parameters  {:type       "object"
-                                   :properties {"url"     {:type "string" :description "HTTP or HTTPS URL to fetch"}
-                                                "format"  {:type "string" :description "text or raw"}
-                                                "timeout" {:type "integer" :description "Timeout in milliseconds"}}
-                                   :required   ["url"]}
-                     :handler     #'web-fetch/web-fetch-tool}
-   "web_search"    {:name        "web_search"
-                     :description "Search the web via Brave Search"
-                     :parameters  {:type       "object"
-                                   :properties {"query"       {:type "string" :description "Search query"}
-                                                "num_results" {:type "integer" :description "Maximum results to return"}}
-                                   :required   ["query"]}
-                     :handler     #'web-search/web-search-tool}
-   "memory_write"  {:name        "memory_write"
-                     :description "Append content to today's crew memory note"
-                     :parameters  {:type       "object"
-                                   :properties {"content" {:type "string" :description "Text to append"}}
-                                   :required   ["content"]}
-                     :handler     #'memory/memory-write-tool}
-   "memory_get"    {:name        "memory_get"
-                     :description "Read crew memory notes in an inclusive date range"
-                     :parameters  {:type       "object"
-                                   :properties {"start_time" {:type "string" :description "Start date YYYY-MM-DD"}
-                                                "end_time"   {:type "string" :description "End date YYYY-MM-DD"}}
-                                   :required   ["start_time" "end_time"]}
-                     :handler     #'memory/memory-get-tool}
-   "memory_search" {:name        "memory_search"
-                     :description "Search crew memory notes"
-                     :parameters  {:type       "object"
-                                   :properties {"query" {:type "string" :description "Regex query to search for"}}
-                                   :required   ["query"]}
-                     :handler     #'memory/memory-search-tool}
-   "exec"          {:name        "exec"
-                     :description "Execute a shell command"
-                     :parameters  {:type       "object"
-                                   :properties {"command" {:type "string" :description "Command to run"}
-                                                "workdir" {:type "string" :description "Working directory"}
-                                                "timeout" {:type "integer" :description "Timeout in ms"}}
-                                   :required   ["command"]}
-                     :handler     #'exec/exec-tool}
-   "session_info"  {:name        "session_info"
-                     :description "Report the current session's crew, model, provider, origin, timing, context, and compaction count"
-                     :parameters  {:type "object" :properties {}}
-                     :handler     #'session/session-info-tool}
-   "session_model" {:name        "session_model"
-                    :description "Switch or reset the calling session's model; returns new session state"
-                    :parameters  {:type       "object"
-                                  :properties {"model" {:type "string" :description "Model alias to switch to"}
-                                               "reset" {:type "boolean" :description "Revert to crew's default model"}}
-                                  :required   []}
-                    :handler     #'session/session-model-tool}})
+  {"fs__read"        {:name        "fs__read"
+                      :description "Read file contents or list a directory"
+                      :parameters  {:type       "object"
+                                    :properties {"file_path" {:type "string" :description "Path to file or directory"}
+                                                 "offset"    {:type "integer" :description "Start line (1-indexed)"}
+                                                 "limit"     {:type "integer" :description "Max lines to return"}}
+                                    :required   ["file_path"]}
+                      :handler     #'file/read-tool}
+   "fs__write"       {:name        "fs__write"
+                      :description "Write content to a file"
+                      :parameters  {:type       "object"
+                                    :properties {"file_path" {:type "string" :description "Path to write"}
+                                                 "content"   {:type "string" :description "Content to write"}}
+                                    :required   ["file_path" "content"]}
+                      :handler     #'file/write-tool}
+   "fs__edit"        {:name        "fs__edit"
+                      :description "Replace text in a file"
+                      :parameters  {:type       "object"
+                                    :properties {"file_path"   {:type "string" :description "File to edit"}
+                                                 "old_string"  {:type "string" :description "Text to replace"}
+                                                 "new_string"  {:type "string" :description "Replacement text"}
+                                                 "replace_all" {:type "boolean" :description "Replace all occurrences"}}
+                                    :required   ["file_path" "old_string" "new_string"]}
+                      :handler     #'file/edit-tool}
+   "fs__multi_edit"  {:name        "fs__multi_edit"
+                      :description "Apply multiple validated string replacements atomically"
+                      :parameters  {:type       "object"
+                                    :properties {"edits" {:type        "array"
+                                                          :description "Replacement entries (same fields as edit)"
+                                                          :items       {:type       "object"
+                                                                        :properties {"file_path"   {:type "string"}
+                                                                                     "old_string"  {:type "string"}
+                                                                                     "new_string"  {:type "string"}
+                                                                                     "replace_all" {:type "boolean"}}
+                                                                        :required   ["file_path" "old_string" "new_string"]}}}
+                                    :required   ["edits"]}
+                      :handler     #'file/multi-edit-tool}
+   "fs__grep"        {:name        "fs__grep"
+                      :description "Search file contents with ripgrep"
+                      :parameters  {:type       "object"
+                                    :properties {"pattern"     {:type "string" :description "Regex pattern to search for"}
+                                                 "path"        {:type "string" :description "File or directory to search"}
+                                                 "glob"        {:type "string" :description "Optional file glob filter"}
+                                                 "type"        {:type "string" :description "Optional file type shorthand"}
+                                                 "-i"          {:type "boolean" :description "Case-insensitive search"}
+                                                 "-n"          {:type "boolean" :description "Include line numbers in content mode"}
+                                                 "-A"          {:type "integer" :description "Context lines after each match"}
+                                                 "-B"          {:type "integer" :description "Context lines before each match"}
+                                                 "-C"          {:type "integer" :description "Context lines before and after each match"}
+                                                 "multiline"   {:type "boolean" :description "Enable multiline matching"}
+                                                 "output_mode" {:type "string" :description "content, files_with_matches, or count"}
+                                                 "head_limit"  {:type "integer" :description "Maximum rows to return; 0 means unlimited"}
+                                                 "offset"      {:type "integer" :description "Rows to skip before returning results"}}
+                                    :required   ["pattern" "path"]}
+                      :available?  #(grep/available?)
+                      :handler     #'grep/grep-tool}
+   "fs__glob"        {:name        "fs__glob"
+                      :description "List files matching a glob pattern"
+                      :parameters  {:type       "object"
+                                    :properties {"pattern"    {:type "string" :description "Glob pattern to match"}
+                                                 "path"       {:type "string" :description "Directory to search; defaults to cwd or root"}
+                                                 "head_limit" {:type "integer" :description "Maximum rows to return"}}
+                                    :required   ["pattern"]}
+                      :handler     #'glob/glob-tool}
+   "web__fetch"      {:name        "web__fetch"
+                      :description "Fetch URL content via HTTP GET"
+                      :parameters  {:type       "object"
+                                    :properties {"url"     {:type "string" :description "HTTP or HTTPS URL to fetch"}
+                                                 "format"  {:type "string" :description "text or raw"}
+                                                 "timeout" {:type "integer" :description "Timeout in milliseconds"}}
+                                    :required   ["url"]}
+                      :handler     #'web-fetch/web-fetch-tool}
+   "web__search"     {:name        "web__search"
+                      :description "Search the web via Brave Search"
+                      :parameters  {:type       "object"
+                                    :properties {"query"       {:type "string" :description "Search query"}
+                                                 "num_results" {:type "integer" :description "Maximum results to return"}}
+                                    :required   ["query"]}
+                      :handler     #'web-search/web-search-tool}
+   "memory__write"   {:name        "memory__write"
+                      :description "Append content to today's crew memory note"
+                      :parameters  {:type       "object"
+                                    :properties {"content" {:type "string" :description "Text to append"}}
+                                    :required   ["content"]}
+                      :handler     #'memory/memory-write-tool}
+   "memory__get"     {:name        "memory__get"
+                      :description "Read crew memory notes in an inclusive date range"
+                      :parameters  {:type       "object"
+                                    :properties {"start_time" {:type "string" :description "Start date YYYY-MM-DD"}
+                                                 "end_time"   {:type "string" :description "End date YYYY-MM-DD"}}
+                                    :required   ["start_time" "end_time"]}
+                      :handler     #'memory/memory-get-tool}
+   "memory__search"  {:name        "memory__search"
+                      :description "Search crew memory notes"
+                      :parameters  {:type       "object"
+                                    :properties {"query" {:type "string" :description "Regex query to search for"}}
+                                    :required   ["query"]}
+                      :handler     #'memory/memory-search-tool}
+   "exec__run"       {:name        "exec__run"
+                      :description "Execute a shell command"
+                      :parameters  {:type       "object"
+                                    :properties {"command" {:type "string" :description "Command to run"}
+                                                 "workdir" {:type "string" :description "Working directory"}
+                                                 "timeout" {:type "integer" :description "Timeout in ms"}}
+                                    :required   ["command"]}
+                      :handler     #'exec/exec-tool}
+   "session__info"   {:name        "session__info"
+                      :description "Report the current session's crew, model, provider, origin, timing, context, and compaction count"
+                      :parameters  {:type "object" :properties {}}
+                      :handler     #'session/session-info-tool}
+   "session__model"  {:name        "session__model"
+                      :description "Switch or reset the calling session's model; returns new session state"
+                      :parameters  {:type       "object"
+                                    :properties {"model" {:type "string" :description "Model alias to switch to"}
+                                                 "reset" {:type "boolean" :description "Revert to crew's default model"}}
+                                    :required   []}
+                      :handler     #'session/session-model-tool}})
 
 (defn- spec-for [tool-name]
   (some-> (get built-in-tool-specs tool-name)
           (dissoc :name :available?)))
 
-(defn read-tool-factory [_] (spec-for "read"))
-(defn write-tool-factory [_] (spec-for "write"))
-(defn edit-tool-factory [_] (spec-for "edit"))
-(defn multi-edit-tool-factory [_] (spec-for "multi_edit"))
-(defn grep-tool-factory [_] (spec-for "grep"))
-(defn glob-tool-factory [_] (spec-for "glob"))
-(defn web-fetch-tool-factory [_] (spec-for "web_fetch"))
-(defn web-search-tool-factory [_] (spec-for "web_search"))
-(defn memory-write-tool-factory [_] (spec-for "memory_write"))
-(defn memory-get-tool-factory [_] (spec-for "memory_get"))
-(defn memory-search-tool-factory [_] (spec-for "memory_search"))
-(defn exec-tool-factory [_] (spec-for "exec"))
-(defn session-info-tool-factory [_] (spec-for "session_info"))
-(defn session-model-tool-factory [_] (spec-for "session_model"))
+(defn read-tool-factory [_] (spec-for "fs__read"))
+(defn write-tool-factory [_] (spec-for "fs__write"))
+(defn edit-tool-factory [_] (spec-for "fs__edit"))
+(defn multi-edit-tool-factory [_] (spec-for "fs__multi_edit"))
+(defn grep-tool-factory [_] (spec-for "fs__grep"))
+(defn glob-tool-factory [_] (spec-for "fs__glob"))
+(defn web-fetch-tool-factory [_] (spec-for "web__fetch"))
+(defn web-search-tool-factory [_] (spec-for "web__search"))
+(defn memory-write-tool-factory [_] (spec-for "memory__write"))
+(defn memory-get-tool-factory [_] (spec-for "memory__get"))
+(defn memory-search-tool-factory [_] (spec-for "memory__search"))
+(defn exec-tool-factory [_] (spec-for "exec__run"))
+(defn session-info-tool-factory [_] (spec-for "session__info"))
+(defn session-model-tool-factory [_] (spec-for "session__model"))
 
-(defn- normalize-allowed-tools [allowed-tools]
-  (when-not (= ::all allowed-tools)
-    (some->> allowed-tools
-             (map (fn [tool]
-                    (cond
-                      (keyword? tool) (name tool)
-                      (string? tool)  tool
-                      :else           (str tool))))
-             set)))
-
-(defn- allowed-tool? [allowed-tools normalized tool-name]
+(defn- allowed-tool? [allowed-tools tool-name]
   (or (= ::all allowed-tools)
-      (boolean (and normalized (contains? normalized tool-name)))))
+      (names/allowed? allowed-tools tool-name)))
 
 (defn- register-comm-send! []
-  (tool-registry/unregister! "comm_send")
+  (tool-registry/unregister! "comm__send")
   (tool-registry/register-tool-entry!
-    [:comm_send {:factory 'isaac.tool.comm-send/comm-send-tool-factory}]))
+    [:comm/send {:factory 'isaac.tool.comm-send/comm-send-tool-factory}]))
 
 (defn- register-built-in-tool! [tool-name]
-  (when (= tool-name "comm_send")
+  (when (= tool-name "comm__send")
     (register-comm-send!))
   (when-not (tool-registry/lookup tool-name)
     (when-let [spec (get built-in-tool-specs tool-name)]
       (if-let [pred (:available? spec)]
         (if (pred)
-          (module-loader/register-builtin-berth-entry! :isaac.agent/tools tool-name)
+          (module-loader/register-builtin-berth-entry! :isaac.agent/tools (names/config-token tool-name))
           (log/warn :tool/register-skipped :tool tool-name :reason "available? returned false"))
-        (module-loader/register-builtin-berth-entry! :isaac.agent/tools tool-name)))))
+        (module-loader/register-builtin-berth-entry! :isaac.agent/tools (names/config-token tool-name))))))
 
 (defn register-all!
   "Register all built-in tools with the tool registry.
@@ -193,9 +187,8 @@
    With 1-arity, registers only the tools in the allow list (nil registers none)."
   ([] (register-all! ::all))
   ([allowed-tools]
-   (let [normalized (normalize-allowed-tools allowed-tools)]
-     (doseq [tool-name ordered-built-in-tools]
-       (when (allowed-tool? allowed-tools normalized tool-name)
-         (register-built-in-tool! tool-name))))))
+   (doseq [tool-name ordered-built-in-tools]
+     (when (allowed-tool? allowed-tools tool-name)
+       (register-built-in-tool! tool-name)))))
 
 ;; endregion ^^^^^ Registration ^^^^^

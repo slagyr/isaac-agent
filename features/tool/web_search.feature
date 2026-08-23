@@ -12,7 +12,7 @@ Feature: Built-in web_search tool
       | title            | url                         | description            |
       | core.async guide | https://clojure.org/async   | Channels and go blocks |
       | Rich Hickey talk | https://youtu.be/hMIZ9g6ucs | Intro to core.async    |
-    When the tool "web_search" is called with:
+    When the tool "web__search" is called with:
       | query | clojure core async |
     Then the tool result is not an error
     And the tool result lines match:
@@ -30,7 +30,7 @@ Feature: Built-in web_search tool
       | Guide 1 | https://example.com/1 | snippet 1   |
       | Guide 2 | https://example.com/2 | snippet 2   |
       | Guide 3 | https://example.com/3 | snippet 3   |
-    When the tool "web_search" is called with:
+    When the tool "web__search" is called with:
       | query       | clojure |
       | num_results | 2       |
     Then the tool result is not an error
@@ -41,7 +41,7 @@ Feature: Built-in web_search tool
   Scenario: web_search with no matches returns a clear no-results result
     Given the search query "ajshdkajshdakjsh" returns results:
       | title | url | description |
-    When the tool "web_search" is called with:
+    When the tool "web__search" is called with:
       | query | ajshdkajshdakjsh |
     Then the tool result is not an error
     And the tool result lines match:
@@ -49,7 +49,7 @@ Feature: Built-in web_search tool
       | no results |
 
   Scenario: web_search without configured API key returns a config error
-    When the tool "web_search" is called with:
+    When the tool "web__search" is called with:
       | query | clojure |
     Then the tool result is an error
     And the tool result contains "api_key"

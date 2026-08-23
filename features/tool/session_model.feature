@@ -21,7 +21,7 @@ Feature: session_model tool
       | name        | crew |
       | status-test | main |
     And the current session is "status-test"
-    When the tool "session_model" is called with:
+    When the tool "session__model" is called with:
       | model | parrot |
     Then the tool result is not an error
     And the tool result JSON has:
@@ -42,7 +42,7 @@ Feature: session_model tool
       | name        | crew | model  |
       | status-test | main | parrot |
     And the current session is "status-test"
-    When the tool "session_model" is called with:
+    When the tool "session__model" is called with:
       | reset | true |
     Then the tool result is not an error
     And the tool result JSON has:
@@ -58,7 +58,7 @@ Feature: session_model tool
       | name        | crew |
       | status-test | main |
     And the current session is "status-test"
-    When the tool "session_model" is called with:
+    When the tool "session__model" is called with:
       | model | grover |
       | reset | true   |
     Then the tool result is an error
@@ -69,7 +69,7 @@ Feature: session_model tool
       | name        | crew |
       | status-test | main |
     And the current session is "status-test"
-    When the tool "session_model" is called with:
+    When the tool "session__model" is called with:
       | model | nonexistent |
     Then the tool result is an error
     And the tool result contains "unknown model: nonexistent"

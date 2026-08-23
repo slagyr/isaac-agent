@@ -51,7 +51,7 @@ Feature: Model-driven skill activation
       """
     And the following model responses are queued:
       | model  | type      | content | tool_call  | arguments                      |
-      | grover | tool_call |         | load_skill | {"name":"greenhouse-protocol"} |
+      | grover | tool_call |         | skill__load | {"name":"greenhouse-protocol"} |
       | grover | text      | On it.  |            |                                |
     When the user sends "Tend the orchid." on session "greenhouse"
     Then the tool result lines match:

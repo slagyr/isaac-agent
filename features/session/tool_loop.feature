@@ -18,7 +18,7 @@ Feature: Tool Loop Message Format
       | api     | chat-completions        |
     And the following model responses are queued:
       | type      | content                       | model | tool_call | arguments                      |
-      | tool_call |                               |       | exec      | {"command": "echo Hieronymus"} |
+      | tool_call |                               |       | exec__run | {"command": "echo Hieronymus"} |
       | text      | The tortoise says Hieronymus. | echo  |           |                                |
     When the user sends "ask the tortoise his name" on session "loop-test"
     Then the tool loop request contains messages with:
@@ -32,8 +32,8 @@ Feature: Tool Loop Message Format
       | loop-test |
     And the following model responses are queued:
       | type      | content                                  | model | tool_call | arguments                     |
-      | tool_call |                                          |       | read      | {"filePath": "fridge.txt"}    |
-      | tool_call |                                          |       | exec      | {"command": "echo still sad"} |
+      | tool_call |                                          |       | fs__read  | {"filePath": "fridge.txt"}    |
+      | tool_call |                                          |       | exec__run | {"command": "echo still sad"} |
       | text      | The lemon is still sad after two checks. | echo  |           |                               |
     When the user sends "double check the fridge" on session "loop-test"
     Then session "loop-test" has transcript matching:

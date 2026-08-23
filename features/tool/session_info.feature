@@ -15,7 +15,7 @@ Feature: session_info tool
       | name        | crew | cwd           |
       | status-test | main | /work/project |
     And the current session is "status-test"
-    When the tool "session_info" is called
+    When the tool "session__info" is called
     Then the tool result is not an error
     And the tool result JSON has:
       | path           | value                |
@@ -37,7 +37,7 @@ Feature: session_info tool
       | name         | crew | origin.kind | origin.name |
       | hook:lettuce | main | webhook     | lettuce     |
     And the current session is "hook:lettuce"
-    When the tool "session_info" is called
+    When the tool "session__info" is called
     Then the tool result is not an error
     And the tool result JSON has:
       | path        | value   |
@@ -57,7 +57,7 @@ Feature: session_info tool
       | name       | crew | model          |
       | salad-bowl | main | lettuce-grande |
     And the current session is "salad-bowl"
-    When the tool "session_info" is called
+    When the tool "session__info" is called
     Then the tool result is not an error
     And the tool result JSON has:
       | path           | value          |

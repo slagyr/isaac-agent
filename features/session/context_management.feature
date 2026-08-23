@@ -149,7 +149,7 @@ Feature: Context Management
       """
     And the following model responses are queued:
       | model | tool_call | arguments                                     | usage.input_tokens |
-      | echo  | read      | {"file_path": "target/test-state/hello.txt"} | 100                |
+      | echo  | fs__read  | {"file_path": "target/test-state/hello.txt"} | 100                |
       | model | type      | content | usage.input_tokens |
       | echo  | text      | done    | 120                |
     When the user sends "read hello.txt" on session "context-progress"

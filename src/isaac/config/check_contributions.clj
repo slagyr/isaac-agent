@@ -8,4 +8,5 @@
    :crew-model-aliases      {:fn 'isaac.config.checks/check-crew-model-aliases}
    :manifest-refs           {:fn 'isaac.config.checks/check-manifest-refs}
    :resolved-providers      {:fn 'isaac.config.checks/check-resolved-providers}
-   :embedding-provider      {:fn 'isaac.config.checks/check-embedding-provider}})
+   :embedding-provider      {:fn 'isaac.config.checks/check-embedding-provider}
+   :tool-allow-tokens       {:fn 'isaac.config.checks/check-tool-allow-tokens}})

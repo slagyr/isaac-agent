@@ -36,7 +36,7 @@ Feature: Skill bundled resources via load_skill
       """
     And the following model responses are queued:
       | model  | type      | content | tool_call  | arguments                                                |
-      | grover | tool_call |         | load_skill | {"name":"greenhouse-protocol","resource":"checklist.md"} |
+      | grover | tool_call |         | skill__load | {"name":"greenhouse-protocol","resource":"checklist.md"} |
       | grover | text      | Done.   |            |                                                          |
     When the user sends "Run the greenhouse checklist." on session "greenhouse"
     Then the tool result lines match:
@@ -55,7 +55,7 @@ Feature: Skill bundled resources via load_skill
       """
     And the following model responses are queued:
       | model  | type      | content     | tool_call  | arguments                                                   |
-      | grover | tool_call |             | load_skill | {"name":"greenhouse-protocol","resource":"../../auth.json"} |
+      | grover | tool_call |             | skill__load | {"name":"greenhouse-protocol","resource":"../../auth.json"} |
       | grover | text      | Understood. |            |                                                             |
     When the user sends "Load the secrets." on session "greenhouse"
     Then the tool result lines match:

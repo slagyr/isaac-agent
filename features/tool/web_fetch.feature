@@ -11,7 +11,7 @@ Feature: Built-in web_fetch tool
       """
       Hello, world.
       """
-    When the tool "web_fetch" is called with:
+    When the tool "web__fetch" is called with:
       | url | http://example.local/hello |
     Then the tool result is not an error
     And the tool result lines match:
@@ -29,7 +29,7 @@ Feature: Built-in web_fetch tool
         <p>Main content.</p>
       </body></html>
       """
-    When the tool "web_fetch" is called with:
+    When the tool "web__fetch" is called with:
       | url | http://example.local/page |
     Then the tool result is not an error
     And the tool result lines match:
@@ -44,7 +44,7 @@ Feature: Built-in web_fetch tool
       """
       <script>var secret = 1;</script><h1>Title</h1>
       """
-    When the tool "web_fetch" is called with:
+    When the tool "web__fetch" is called with:
       | url    | http://example.local/page |
       | format | raw                       |
     Then the tool result is not an error
@@ -53,7 +53,7 @@ Feature: Built-in web_fetch tool
     And the tool result contains "<h1>Title</h1>"
 
   Scenario: web_fetch truncates output at the default line limit
-    Given the default "web_fetch" limit is 3
+    Given the default "web__fetch" limit is 3
     And the URL "http://example.local/long" has body:
       """
       line 1
@@ -62,7 +62,7 @@ Feature: Built-in web_fetch tool
       line 4
       line 5
       """
-    When the tool "web_fetch" is called with:
+    When the tool "web__fetch" is called with:
       | url | http://example.local/long |
     Then the tool result is not an error
     And the tool result lines match:
@@ -76,7 +76,7 @@ Feature: Built-in web_fetch tool
   Scenario: web_fetch refuses binary content types
     Given the URL "http://example.local/image.png" responds with:
       | header.content-type | image/png |
-    When the tool "web_fetch" is called with:
+    When the tool "web__fetch" is called with:
       | url | http://example.local/image.png |
     Then the tool result is an error
     And the tool result contains "binary"
@@ -89,7 +89,7 @@ Feature: Built-in web_fetch tool
       """
       Moved here.
       """
-    When the tool "web_fetch" is called with:
+    When the tool "web__fetch" is called with:
       | url | http://example.local/old |
     Then the tool result is not an error
     And the tool result contains "Moved here"

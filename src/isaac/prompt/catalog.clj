@@ -181,7 +181,7 @@
   (when (seq entries)
     (str "Available skills:\n"
          (str/join "\n" (map skill-menu-line entries))
-         "\n\nUse load_skill to load a skill body on demand.")))
+         "\n\nUse skill__load to load a skill body on demand.")))
 
 (defn- dedupe-file-specs [file-specs]
   (vals (reduce (fn [acc spec] (assoc acc (:path spec) spec)) {} file-specs)))
@@ -291,11 +291,11 @@
       {:menu-text nil :tool-names #{}}
 
       (and (some? threshold) (> (count skill-entries) threshold))
-      {:menu-text nil :tool-names #{"list_skills" "load_skill"}}
+      {:menu-text nil :tool-names #{"skill__list" "skill__load"}}
 
       :else
       {:menu-text  (render-skill-menu skill-entries)
-       :tool-names #{"load_skill"}})))
+       :tool-names #{"skill__load"}})))
 
 (defn resolve-skill-body [{:keys [config cwd fs root]} skill-name]
   (some-> (get-in (resolve-catalog {:config config :cwd cwd :fs fs :root root})

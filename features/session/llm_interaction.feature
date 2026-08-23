@@ -37,14 +37,14 @@ Feature: LLM Interaction
     Given the built-in tools are registered
     And the crew member has tools:
       | name | description      | parameters             |
-      | exec | Run a command    | {"command": "string"}  |
+      | exec__run | Run a command    | {"command": "string"}  |
     And the following model responses are queued:
       | tool_call | arguments              |
-      | exec      | {"command": "echo hi"} |
+      | exec__run | {"command": "echo hi"} |
     When the user sends "Run echo hi" on session "llm-chat"
     Then session "llm-chat" has transcript matching:
       | type    | message.role | message.content[0].type | message.content[0].name |
-      | message | assistant    | toolCall                | exec                    |
+      | message | assistant    | toolCall                | exec__run               |
       | message | toolResult   |                         |                         |
       | message | assistant    |                         |                         |
     And session "llm-chat" has transcript matching:
@@ -58,10 +58,10 @@ Feature: LLM Interaction
     And the built-in tools are registered
     And the crew member has tools:
       | name | description   | parameters             |
-      | exec | Run a command | {"command": "string"}  |
+      | exec__run | Run a command | {"command": "string"}  |
     And the following model responses are queued:
       | tool_call | arguments              |
-      | exec      | {"command": "echo hi"} |
+      | exec__run | {"command": "echo hi"} |
     When the user sends "Run echo hi" on session "llm-chat"
     Then session "llm-chat" has transcript matching:
       | type    | message.role | message.content |
@@ -92,7 +92,7 @@ Feature: LLM Interaction
 
   Scenario: tools-using turns stream text deltas as they arrive
     Given the built-in tools are registered
-    And the crew "main" allows tools: grep
+    And the crew "main" allows tools: "fs/grep"
     And the following sessions exist:
       | name        |
       | stream-test |
@@ -109,14 +109,14 @@ Feature: LLM Interaction
   Scenario: tool loop produces a real final message when the LLM keeps requesting tools
     Given the tool loop max is 1
     And the built-in tools are registered
-    And the crew "main" allows tools: grep
+    And the crew "main" allows tools: "fs/grep"
     And the following sessions exist:
       | name  |
       | loopy |
     And the following model responses are queued:
       | type      | tool_call | arguments | model | content |
-      | tool_call | grep      | {}        | echo  |         |
-      | tool_call | grep      | {}        | echo  |         |
+      | tool_call | fs__grep  | {}        | echo  |         |
+      | tool_call | fs__grep  | {}        | echo  |         |
       | text      |           |           | echo  | I checked grep once, hit the limit, and need to continue manually. |
     When the user sends "poke around" on session "loopy"
     Then session "loopy" has transcript matching:

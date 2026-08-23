@@ -15,7 +15,7 @@ Feature: Per-crew filesystem boundaries
   Scenario: crew can read files in their quarters
     Given config file "crew/main.edn" containing:
       """
-      {:tools {:allow [:read]}}
+      {:tools {:allow [:fs/read]}}
       """
     And crew "main" has file "notes.txt" with "hello"
     And the following sessions exist:
@@ -23,7 +23,7 @@ Feature: Per-crew filesystem boundaries
       | fence-test |
     And the following model responses are queued:
       | type      | tool | arguments                                       |
-      | tool_call | read | {"file_path": "/isaac-state/crew/main/notes.txt"} |
+      | tool_call | fs__read | {"file_path": "/isaac-state/crew/main/notes.txt"} |
       | text      |      | Got it                                          |
     When the user sends "read notes" on session "fence-test"
     Then session "fence-test" has transcript matching:
@@ -33,7 +33,7 @@ Feature: Per-crew filesystem boundaries
   Scenario: crew can read files in whitelisted directories
     Given config file "crew/main.edn" containing:
       """
-      {:tools {:allow       [:read]
+      {:tools {:allow       [:fs/read]
                :directories ["/tmp/isaac-playground"]}}
       """
     And file "/tmp/isaac-playground/data.txt" contains "hello"
@@ -42,7 +42,7 @@ Feature: Per-crew filesystem boundaries
       | fence-test |
     And the following model responses are queued:
       | type      | tool | arguments                                     |
-      | tool_call | read | {"file_path": "/tmp/isaac-playground/data.txt"} |
+      | tool_call | fs__read | {"file_path": "/tmp/isaac-playground/data.txt"} |
       | text      |      | Got it                                        |
     When the user sends "read data" on session "fence-test"
     Then session "fence-test" has transcript matching:
@@ -52,14 +52,14 @@ Feature: Per-crew filesystem boundaries
   Scenario: crew cannot read files outside their boundaries
     Given config file "crew/main.edn" containing:
       """
-      {:tools {:allow [:read]}}
+      {:tools {:allow [:fs/read]}}
       """
     And the following sessions exist:
       | name       |
       | fence-test |
     And the following model responses are queued:
       | type      | tool | arguments                   |
-      | tool_call | read | {"file_path": "/etc/passwd"} |
+      | tool_call | fs__read | {"file_path": "/etc/passwd"} |
       | text      |      | Sorry                       |
     When the user sends "read passwords" on session "fence-test"
     Then session "fence-test" has transcript matching:
@@ -69,14 +69,14 @@ Feature: Per-crew filesystem boundaries
   Scenario: crew cannot write files outside their boundaries
     Given config file "crew/main.edn" containing:
       """
-      {:tools {:allow [:write]}}
+      {:tools {:allow [:fs/write]}}
       """
     And the following sessions exist:
       | name       |
       | fence-test |
     And the following model responses are queued:
       | type      | tool  | arguments                                          |
-      | tool_call | write | {"file_path": "/tmp/evil.txt", "content": "gotcha"} |
+      | tool_call | fs__write | {"file_path": "/tmp/evil.txt", "content": "gotcha"} |
       | text      |       | Sorry                                              |
     When the user sends "write evil" on session "fence-test"
     Then session "fence-test" has transcript matching:
@@ -86,7 +86,7 @@ Feature: Per-crew filesystem boundaries
   Scenario: crew can access session cwd when it opts in via :cwd
     Given config file "crew/main.edn" containing:
       """
-      {:tools {:allow       [:read]
+      {:tools {:allow       [:fs/read]
                :directories [:cwd]}}
       """
     And file "/work/project/hello.txt" contains "hi there"
@@ -95,7 +95,7 @@ Feature: Per-crew filesystem boundaries
       | fence-test | /work/project |
     And the following model responses are queued:
       | type      | tool | arguments                               |
-      | tool_call | read | {"file_path": "/work/project/hello.txt"} |
+      | tool_call | fs__read | {"file_path": "/work/project/hello.txt"} |
       | text      |      | Got it                                  |
     When the user sends "read hello" on session "fence-test"
     Then session "fence-test" has transcript matching:
@@ -105,7 +105,7 @@ Feature: Per-crew filesystem boundaries
   Scenario: crew can access the session role workspace without explicit :directories opt-in (isaac-dwjy)
     Given config file "crew/main.edn" containing:
       """
-      {:tools {:allow [:read]}}
+      {:tools {:allow [:fs/read]}}
       """
     And file "/work/project/hello.txt" contains "hi there"
     And the following sessions exist:
@@ -113,7 +113,7 @@ Feature: Per-crew filesystem boundaries
       | fence-test | /work/project |
     And the following model responses are queued:
       | type      | tool | arguments                               |
-      | tool_call | read | {"file_path": "/work/project/hello.txt"} |
+      | tool_call | fs__read | {"file_path": "/work/project/hello.txt"} |
       | text      |      | Got it                                  |
     When the user sends "read hello" on session "fence-test"
     Then session "fence-test" has transcript matching:
@@ -123,14 +123,14 @@ Feature: Per-crew filesystem boundaries
   Scenario: a crew scoped to its role workspace cannot write outside it (isaac-dwjy)
     Given config file "crew/main.edn" containing:
       """
-      {:tools {:allow [:write]}}
+      {:tools {:allow [:fs/write]}}
       """
     And the following sessions exist:
       | name       | cwd           |
       | fence-test | /work/project |
     And the following model responses are queued:
       | type      | tool  | arguments                                          |
-      | tool_call | write | {"file_path": "/tmp/evil.txt", "content": "gotcha"} |
+      | tool_call | fs__write | {"file_path": "/tmp/evil.txt", "content": "gotcha"} |
       | text      |       | Sorry                                              |
     When the user sends "write evil" on session "fence-test"
     Then session "fence-test" has transcript matching:
@@ -140,14 +140,14 @@ Feature: Per-crew filesystem boundaries
   Scenario: path traversal that escapes boundaries is rejected
     Given config file "crew/main.edn" containing:
       """
-      {:tools {:allow [:read]}}
+      {:tools {:allow [:fs/read]}}
       """
     And the following sessions exist:
       | name       |
       | fence-test |
     And the following model responses are queued:
       | type      | tool | arguments                                                |
-      | tool_call | read | {"file_path": "/isaac-state/crew/main/../../etc/passwd"} |
+      | tool_call | fs__read | {"file_path": "/isaac-state/crew/main/../../etc/passwd"} |
       | text      |      | Sorry                                                   |
     When the user sends "sneaky read" on session "fence-test"
     Then session "fence-test" has transcript matching:
@@ -157,14 +157,14 @@ Feature: Per-crew filesystem boundaries
   Scenario: crew cannot read its own config file
     Given config file "crew/main.edn" containing:
       """
-      {:tools {:allow [:read]}}
+      {:tools {:allow [:fs/read]}}
       """
     And the following sessions exist:
       | name       |
       | fence-test |
     And the following model responses are queued:
       | type      | tool | arguments                                          |
-      | tool_call | read | {"file_path": "/isaac-state/config/crew/main.edn"} |
+      | tool_call | fs__read | {"file_path": "/isaac-state/config/crew/main.edn"} |
       | text      |      | Sorry                                             |
     When the user sends "read my config" on session "fence-test"
     Then session "fence-test" has transcript matching:
@@ -174,7 +174,7 @@ Feature: Per-crew filesystem boundaries
   Scenario: crew cannot grep files outside allowed directories
     Given config file "crew/main.edn" containing:
       """
-      {:tools {:allow [:grep]}}
+      {:tools {:allow [:fs/grep]}}
       """
     And file "/tmp/secret-stash/passwords.txt" contains "hunter2"
     And the following sessions exist:
@@ -182,7 +182,7 @@ Feature: Per-crew filesystem boundaries
       | fence-test |
     And the following model responses are queued:
       | type      | tool | arguments                                          |
-      | tool_call | grep | {"pattern": "hunter", "path": "/tmp/secret-stash"} |
+      | tool_call | fs__grep | {"pattern": "hunter", "path": "/tmp/secret-stash"} |
       | text      |      | Sorry, I cannot.                                   |
     When the user sends "find passwords" on session "fence-test"
     Then session "fence-test" has transcript matching:
@@ -192,7 +192,7 @@ Feature: Per-crew filesystem boundaries
   Scenario: crew cannot glob files outside allowed directories
     Given config file "crew/main.edn" containing:
       """
-      {:tools {:allow [:glob]}}
+      {:tools {:allow [:fs/glob]}}
       """
     And file "/tmp/secret-stash/treasure.clj" contains ""
     And the following sessions exist:
@@ -200,7 +200,7 @@ Feature: Per-crew filesystem boundaries
       | fence-test |
     And the following model responses are queued:
       | type      | tool | arguments                                         |
-      | tool_call | glob | {"pattern": "*.clj", "path": "/tmp/secret-stash"} |
+      | tool_call | fs__glob | {"pattern": "*.clj", "path": "/tmp/secret-stash"} |
       | text      |      | Sorry, I cannot.                                  |
     When the user sends "hunt for code" on session "fence-test"
     Then session "fence-test" has transcript matching:

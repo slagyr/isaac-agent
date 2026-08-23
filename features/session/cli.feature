@@ -187,7 +187,7 @@ Feature: Sessions Command
       | path        | value           |
       | model       | grover          |
       | soul        | You fix things. |
-      | tools.allow | read,write      |
+      | tools.allow | fs/read,fs/write |
     And the following sessions exist:
       | name      | crew      |
       | workbench | toolsmith |

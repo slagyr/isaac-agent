@@ -8,7 +8,7 @@ Feature: web_search integration against the real Brave API
   @slow
   Scenario: web_search returns real Brave results
     Given the BRAVE_API_KEY environment variable is set
-    When the tool "web_search" is called with:
+    When the tool "web__search" is called with:
       | query | clojure.org |
     Then the tool result is not an error
     And the tool result contains "clojure.org"

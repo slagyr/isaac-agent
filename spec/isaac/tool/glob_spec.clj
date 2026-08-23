@@ -71,7 +71,7 @@
       (store-helper/create-session! support/test-dir session-key {:crew crew-name :cwd cwd})
       (support/write-file! "workspace/src/core.clj" "")
       (config/dangerously-install-config! {:defaults {}
-                                           :crew {crew-name {:tools {:allow ["glob"]
+                                           :crew {crew-name {:tools {:allow [:fs/glob]
                                                                      :directories [:cwd]}}}
                                            :models {}
                                            :providers {}} "spec")
@@ -83,7 +83,7 @@
   (it "rejects glob outside allowed directories"
     (let [session-key session-key]
       (store-helper/create-session! support/test-dir session-key {:crew crew-name :cwd "/work/project"})
-      (let [result (helper/with-config {:defaults {} :crew {crew-name {:tools {:allow ["glob"]}}} :models {} :providers {}}
+      (let [result (helper/with-config {:defaults {} :crew {crew-name {:tools {:allow [:fs/glob]}}} :models {} :providers {}}
                      (sut/glob-tool {"pattern" "*.clj"
                                       "path" "/tmp/secret-stash"
                                       "session_key" session-key}))]

@@ -60,8 +60,8 @@
             err-writer  (java.io.StringWriter.)]
         (binding [*err* err-writer]
           (comm/on-compaction-start channel "prompt-default" {:total-tokens 95})
-          (comm/on-tool-call channel "prompt-default" {:id "tc" :name "grep" :arguments {:pattern "lettuce" :path "src"}})
-          (comm/on-tool-result channel "prompt-default" {:id "tc" :name "grep" :arguments {:pattern "lettuce" :path "src"}} "ok")
+          (comm/on-tool-call channel "prompt-default" {:id "tc" :name "fs__grep" :arguments {:pattern "lettuce" :path "src"}})
+          (comm/on-tool-result channel "prompt-default" {:id "tc" :name "fs__grep" :arguments {:pattern "lettuce" :path "src"}} "ok")
           (comm/on-compaction-success channel "prompt-default" {:tokens-saved 40})
           (comm/on-compaction-failure channel "prompt-default" {:error :llm-error :consecutive-failures 2})
           (comm/on-compaction-disabled channel "prompt-default" {:reason :too-many-failures})
@@ -70,9 +70,9 @@
         (let [stderr (str err-writer)]
           (should (str/includes? stderr "🥬 compacting"))
           (should (str/includes? stderr "95"))
-          (should (str/includes? stderr "🔍 grep"))
+          (should (str/includes? stderr "🔍 fs__grep"))
           (should (str/includes? stderr "lettuce"))
-          (should (str/includes? stderr "← grep"))
+          (should (str/includes? stderr "← fs__grep"))
           (should (str/includes? stderr "✨ compacted"))
           (should (str/includes? stderr "🥀 compaction failed"))
           (should (str/includes? stderr "llm-error"))
@@ -82,13 +82,13 @@
   (describe "tool-icon"
 
     (it "renders distinct icons for the known built-in tools"
-      (should= "🔍" (@#'sut/tool-icon "grep"))
-      (should= "📖" (@#'sut/tool-icon "read"))
-      (should= "✏️" (@#'sut/tool-icon "write"))
-      (should= "✏️" (@#'sut/tool-icon "edit"))
-      (should= "⚙️" (@#'sut/tool-icon "exec"))
-      (should= "🌐" (@#'sut/tool-icon "web_fetch"))
-      (should= "💾" (@#'sut/tool-icon "memory_save"))
+      (should= "🔍" (@#'sut/tool-icon "fs__grep"))
+      (should= "📖" (@#'sut/tool-icon "fs__read"))
+      (should= "✏️" (@#'sut/tool-icon "fs__write"))
+      (should= "✏️" (@#'sut/tool-icon "fs__edit"))
+      (should= "⚙️" (@#'sut/tool-icon "exec__run"))
+      (should= "🌐" (@#'sut/tool-icon "web__fetch"))
+      (should= "💾" (@#'sut/tool-icon "memory__write"))
       (should= "🧰" (@#'sut/tool-icon "unknown"))))
 
   (describe "run"

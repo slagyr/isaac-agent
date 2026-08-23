@@ -10,7 +10,7 @@ Feature: Built-in Tools
 
   Scenario: Read a file
     Given a file "test.txt" exists with content "line one\nline two\nline three"
-    When the tool "read" is called with:
+    When the tool "fs__read" is called with:
       | file_path | test.txt |
     Then the tool result contains "line one"
     And the tool result contains "line three"
@@ -18,7 +18,7 @@ Feature: Built-in Tools
 
   Scenario: Read a file with offset and limit
     Given a file "long.txt" exists with 100 lines
-    When the tool "read" is called with:
+    When the tool "fs__read" is called with:
       | file_path | long.txt |
       | offset   | 10       |
       | limit    | 5        |
@@ -29,20 +29,20 @@ Feature: Built-in Tools
 
   Scenario: Read a directory
     Given a directory "mydir" exists with files "a.txt" and "b.txt"
-    When the tool "read" is called with:
+    When the tool "fs__read" is called with:
       | file_path | mydir |
     Then the tool result contains "a.txt"
     And the tool result contains "b.txt"
 
   Scenario: Read a missing file
-    When the tool "read" is called with:
+    When the tool "fs__read" is called with:
       | file_path | no-such-file.txt |
     Then the tool result is an error
     And the tool result contains "not found"
 
   Scenario: read output prefixes each line with its line number
     Given a file "test.txt" exists with content "alpha\nbeta\ngamma"
-    When the tool "read" is called with:
+    When the tool "fs__read" is called with:
       | file_path | test.txt |
     Then the tool result is not an error
     And the tool result lines match:
@@ -52,9 +52,9 @@ Feature: Built-in Tools
       | 3: gamma |
 
   Scenario: read truncates output at the default line limit
-    Given the default "read" limit is 3
+    Given the default "fs__read" limit is 3
     And a file "medium.txt" exists with 5 lines
-    When the tool "read" is called with:
+    When the tool "fs__read" is called with:
       | file_path | medium.txt |
     Then the tool result is not an error
     And the tool result lines match:
@@ -67,14 +67,14 @@ Feature: Built-in Tools
 
   Scenario: read refuses to dump binary files
     Given a binary file "image.bin" exists
-    When the tool "read" is called with:
+    When the tool "fs__read" is called with:
       | file_path | image.bin |
     Then the tool result is an error
     And the tool result contains "binary"
 
   Scenario: read on an empty file returns a clear empty-file signal
     Given a file "empty.txt" exists with content ""
-    When the tool "read" is called with:
+    When the tool "fs__read" is called with:
       | file_path | empty.txt |
     Then the tool result is not an error
     And the tool result lines match:
@@ -83,7 +83,7 @@ Feature: Built-in Tools
 
   Scenario: read with offset and limit preserves absolute line numbers
     Given a file "long.txt" exists with 100 lines
-    When the tool "read" is called with:
+    When the tool "fs__read" is called with:
       | file_path | long.txt |
       | offset   | 10       |
       | limit    | 3        |
@@ -98,7 +98,7 @@ Feature: Built-in Tools
 
   Scenario: read on a directory lists entries without line numbers
     Given a directory "mydir" exists with files "a.txt" and "b.txt"
-    When the tool "read" is called with:
+    When the tool "fs__read" is called with:
       | file_path | mydir |
     Then the tool result is not an error
     And the tool result lines match:
@@ -110,7 +110,7 @@ Feature: Built-in Tools
 
   Scenario: the tool result lines match step accepts negative indices
     Given a file "tail.txt" exists with content "alpha\nbeta\ngamma"
-    When the tool "read" is called with:
+    When the tool "fs__read" is called with:
       | file_path | tail.txt |
     Then the tool result lines match:
       | text  | #index |
@@ -120,7 +120,7 @@ Feature: Built-in Tools
   # --- write ---
 
   Scenario: Write a new file
-    When the tool "write" is called with:
+    When the tool "fs__write" is called with:
       | file_path | new.txt     |
       | content  | hello world |
     Then the tool result is not an error
@@ -128,7 +128,7 @@ Feature: Built-in Tools
 
   Scenario: Overwrite an existing file
     Given a file "existing.txt" exists with content "old"
-    When the tool "write" is called with:
+    When the tool "fs__write" is called with:
       | file_path | existing.txt |
       | content  | new          |
     Then the file "existing.txt" has content "new"
@@ -137,7 +137,7 @@ Feature: Built-in Tools
 
   Scenario: Edit replaces matching text
     Given a file "code.txt" exists with content "foo = 1\nbar = 2"
-    When the tool "edit" is called with:
+    When the tool "fs__edit" is called with:
       | file_path  | code.txt |
       | old_string | foo = 1  |
       | new_string | foo = 42 |
@@ -146,7 +146,7 @@ Feature: Built-in Tools
 
   Scenario: Edit with no match returns error
     Given a file "code.txt" exists with content "foo = 1"
-    When the tool "edit" is called with:
+    When the tool "fs__edit" is called with:
       | file_path  | code.txt    |
       | old_string | not here    |
       | new_string | replacement |
@@ -155,7 +155,7 @@ Feature: Built-in Tools
 
   Scenario: Edit with multiple matches and no replace_all returns error
     Given a file "code.txt" exists with content "x = 1\nx = 1\nx = 1"
-    When the tool "edit" is called with:
+    When the tool "fs__edit" is called with:
       | file_path  | code.txt |
       | old_string | x = 1    |
       | new_string | x = 2    |
@@ -164,7 +164,7 @@ Feature: Built-in Tools
 
   Scenario: Edit with replace_all replaces all occurrences
     Given a file "code.txt" exists with content "x = 1\ny = 2\nx = 1"
-    When the tool "edit" is called with:
+    When the tool "fs__edit" is called with:
       | file_path   | code.txt |
       | old_string  | x = 1    |
       | new_string  | x = 99   |
@@ -175,19 +175,19 @@ Feature: Built-in Tools
   # --- exec ---
 
   Scenario: Execute a shell command
-    When the tool "exec" is called with:
+    When the tool "exec__run" is called with:
       | command | echo hello world |
     Then the tool result contains "hello world"
     And the tool result is not an error
 
   Scenario: Execute a failing command
-    When the tool "exec" is called with:
+    When the tool "exec__run" is called with:
       | command | exit 1 |
     Then the tool result is an error
 
   Scenario: Execute with a working directory
     Given a directory "subdir" exists with files "target.txt"
-    When the tool "exec" is called with:
+    When the tool "exec__run" is called with:
       | command | ls     |
       | workdir | subdir |
     Then the tool result contains "target.txt"
@@ -198,7 +198,7 @@ Feature: Built-in Tools
       | name     | crew | cwd         |
       | exec-cwd | main | session-cwd |
     And the current session is "exec-cwd"
-    When the tool "exec" is called with:
+    When the tool "exec__run" is called with:
       | command | ls |
     Then the tool result contains "marker.txt"
 
@@ -209,7 +209,7 @@ Feature: Built-in Tools
       | name     | crew | cwd         |
       | exec-cwd | main | session-cwd |
     And the current session is "exec-cwd"
-    When the tool "exec" is called with:
+    When the tool "exec__run" is called with:
       | command | ls                |
       | workdir | session-cwd/nested |
     Then the tool result contains "nested-marker.txt"
@@ -222,7 +222,7 @@ Feature: Built-in Tools
       | name     | crew | cwd         |
       | exec-cwd | main | session-cwd |
     And the current session is "exec-cwd"
-    When the tool "exec" is called with:
+    When the tool "exec__run" is called with:
       | command | ls           |
       | workdir | outside-dir  |
     Then the tool result is an error
@@ -230,7 +230,7 @@ Feature: Built-in Tools
 
   Scenario: Execute with timeout exceeded
     Given the exec timeout is set to 25 milliseconds
-    When the tool "exec" is called with:
+    When the tool "exec__run" is called with:
       | command | sleep 10 |
     Then the tool result is an error
     And the tool result contains "timeout"

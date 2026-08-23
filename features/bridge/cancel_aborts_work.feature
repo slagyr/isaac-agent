@@ -12,7 +12,7 @@ Feature: Cancel Aborts In-Flight Turn Work
   Background:
     Given default Grover setup
     And the built-in tools are registered
-    And the crew "main" allows tools: "exec"
+    And the crew "main" allows tools: "exec/run"
     And the following sessions exist:
       | name        |
       | cancel-test |
@@ -20,7 +20,7 @@ Feature: Cancel Aborts In-Flight Turn Work
   Scenario: cancel between tool-loop iterations skips the next chat call
     Given the following model responses are queued:
       | type      | tool_call | arguments                  | content              |
-      | tool_call | exec      | {"command": "sleep 0.05"}  |                      |
+      | tool_call | exec__run | {"command": "sleep 0.05"}  |                      |
       | text      |           |                            | Should never appear  |
     When the user sends "do stuff" on session "cancel-test"
     And the turn is cancelled on session "cancel-test" after 1 tool call
@@ -32,7 +32,7 @@ Feature: Cancel Aborts In-Flight Turn Work
   Scenario: session remains usable after a cancel mid-loop
     Given the following model responses are queued:
       | type      | tool_call | arguments                  | content              |
-      | tool_call | exec      | {"command": "sleep 0.05"}  |                      |
+      | tool_call | exec__run | {"command": "sleep 0.05"}  |                      |
       | text      |           |                            | Should never appear  |
     When the user sends "do stuff" on session "cancel-test"
     And the turn is cancelled on session "cancel-test" after 1 tool call

@@ -426,16 +426,16 @@ Feature: Prompt single-turn command
     And the stdout does not contain "🥬 compacting"
 
   Scenario: prompt shows tool calls and results on stderr with kind icons
-    Given the crew "main" allows tools: grep
+    Given the crew "main" allows tools: "fs/grep"
     Given the following model responses are queued:
       | type     | tool_call | arguments                          | content  | model |
-      | toolCall | grep      | {"pattern":"lettuce","path":"src"} |          | echo  |
+      | toolCall | fs__grep  | {"pattern":"lettuce","path":"src"} |          | echo  |
       | text     |           |                                    | found it | echo  |
       When isaac is run with "prompt -m 'find the lettuce'"
       Then the stderr matches:
-        | 🔍 grep |
+        | 🔍 fs__grep |
         | lettuce |
-        | ← grep  |
+        | ← fs__grep  |
     And the stdout contains "found it"
 
   Scenario: prompt shows compaction failure inline with the underlying error

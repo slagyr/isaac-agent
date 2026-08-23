@@ -7,13 +7,13 @@ Feature: Per-crew tool allowlist
     Given default Grover setup
 
   Scenario: crew member with allowed tools can use them
-    Given the crew "main" allows tools: "read,write,edit"
+    Given the crew "main" allows tools: "fs/read,fs/write,fs/edit"
     And the following sessions exist:
       | name       |
       | tools-test |
     And the following model responses are queued:
       | model | tool_call | arguments                                    |
-      | echo  | read      | {"file_path": "target/test-state/hello.txt"}   |
+      | echo  | fs__read  | {"file_path": "target/test-state/hello.txt"}   |
       | model | type      | content                                      |
       | echo  | text      | Got it                                       |
     When the user sends "read hello.txt" on session "tools-test"
@@ -24,19 +24,19 @@ Feature: Per-crew tool allowlist
       | message | assistant    | Got it          |
 
   Scenario: crew member cannot use tools not in their allow list
-    Given the crew "main" allows tools: "read"
+    Given the crew "main" allows tools: "fs/read"
     And the following sessions exist:
       | name       |
       | tools-test |
     When the user sends "hello" on session "tools-test"
     Then the prompt has tools:
-      | name |
-      | read |
+      | name     |
+      | fs__read |
     And the prompt does not have tools:
-      | name  |
-      | write |
-      | edit  |
-      | exec  |
+      | name      |
+      | fs__write |
+      | fs__edit  |
+      | exec__run |
 
   Scenario: crew member with no tools configured has no tools
     Given the following sessions exist:
@@ -46,29 +46,29 @@ Feature: Per-crew tool allowlist
     Then the prompt has 0 tools
 
   Scenario: exec requires explicit opt-in
-    Given the crew "main" allows tools: "read,write,edit"
+    Given the crew "main" allows tools: "fs/read,fs/write,fs/edit"
     And the following sessions exist:
       | name       |
       | tools-test |
     When the user sends "hello" on session "tools-test"
     Then the prompt has 3 tools
     And the prompt has tools:
-      | name  |
-      | read  |
-      | write |
-      | edit  |
+      | name      |
+      | fs__read  |
+      | fs__write |
+      | fs__edit  |
     And the prompt does not have tools:
-      | name |
-      | exec |
+      | name      |
+      | exec__run |
 
   Scenario: tool call for a disallowed tool returns an error
-    Given the crew "main" allows tools: "read"
+    Given the crew "main" allows tools: "fs/read"
     And the following sessions exist:
       | name       |
       | tools-test |
     And the following model responses are queued:
       | model | tool_call | arguments               |
-      | echo  | exec      | {"command": "rm -rf /"} |
+      | echo  | exec__run | {"command": "rm -rf /"} |
       | model | type      | content                 |
       | echo  | text      | Sorry about that        |
     When the user sends "do something dangerous" on session "tools-test"
@@ -97,7 +97,7 @@ Feature: Per-crew tool allowlist
       | tools-test |
     And the following model responses are queued:
       | model | tool_call | arguments         |
-      | echo  | exec      | {"command": "ls"} |
+      | echo  | exec__run | {"command": "ls"} |
       | model | type      | content           |
       | echo  | text      | Fine, I give up.  |
     When the user sends "list files" on session "tools-test"
@@ -105,7 +105,6 @@ Feature: Per-crew tool allowlist
       | type    | message.role | message.isError |
       | message | toolResult   | true            |
 
-  @wip
   Scenario: Namespaced allow offers the wire name, not the old bare name
     Given the built-in tools are registered
     And the crew "main" allows tools: "fs/read"
@@ -120,7 +119,6 @@ Feature: Per-crew tool allowlist
       | name |
       | read |
 
-  @wip
   Scenario: Unqualified allow token fails config validate
     Given an empty Isaac root at "/tmp/isaac-allow-ns"
     And the isaac file "isaac.edn" exists with:
@@ -129,10 +127,9 @@ Feature: Per-crew tool allowlist
       """
     When the config is loaded
     Then the config has validation errors matching:
-      | key                      | value        |
-      | crew.main.tools.allow[0] | #"namespace" |
+      | key                      | value     |
+      | crew.main.tools.allow[0] | namespace |
 
-  @wip
   Scenario: Namespaced allow is exact, not the whole family
     Given the built-in tools are registered
     And the crew "main" allows tools: "fs/read"
@@ -147,7 +144,6 @@ Feature: Per-crew tool allowlist
       | name      |
       | fs__write |
 
-  @wip
   Scenario: Namespace glob offers the family and no other families
     Given the built-in tools are registered
     And a tool "linear__get_issue" that returns nil is registered
@@ -171,7 +167,6 @@ Feature: Per-crew tool allowlist
       | linear__get_issue |
       | github__get_issue |
 
-  @wip
   Scenario: Tool call for a namespaced name not on the allow list is an error
     Given the built-in tools are registered
     And the crew "main" allows tools: "fs/read"
@@ -188,7 +183,6 @@ Feature: Per-crew tool allowlist
       | type    | message.role | message.isError |
       | message | toolResult   | true            |
 
-  @wip
   Scenario: Config validate accepts namespaced allow and a namespace glob
     Given an empty Isaac root at "/tmp/isaac-allow-ok"
     And the isaac file "isaac.edn" exists with:
@@ -197,11 +191,9 @@ Feature: Per-crew tool allowlist
       """
     When the config is loaded
     Then the loaded config has:
-      | key                      | value   |
-      | crew.main.tools.allow[0] | fs/read |
-      | crew.main.tools.allow[1] | fs/*    |
+      | key                   | value            |
+      | crew.main.tools.allow | [:fs/read :fs/*] |
 
-  @wip
   Scenario: Config validate rejects unqualified tokens that are not :all
     Given an empty Isaac root at "/tmp/isaac-allow-bare"
     And the isaac file "isaac.edn" exists with:
@@ -210,6 +202,6 @@ Feature: Per-crew tool allowlist
       """
     When the config is loaded
     Then the config has validation errors matching:
-      | key                      | value        |
-      | crew.main.tools.allow[0] | #"namespace" |
-      | crew.main.tools.allow[1] | #"namespace" |
+      | key                      | value     |
+      | crew.main.tools.allow[0] | namespace |
+      | crew.main.tools.allow[1] | namespace |

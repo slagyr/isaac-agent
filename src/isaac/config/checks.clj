@@ -8,7 +8,8 @@
     [isaac.config.schema-compose :as schema-compose]
     [isaac.config.root :as root]
     [isaac.config.validation :as validation]
-    [isaac.tool.fs-bounds :as fs-bounds]))
+    [isaac.tool.fs-bounds :as fs-bounds]
+    [isaac.tool.names :as names]))
 
 (defn- ->id [value]
   (schema-base/->id value))
@@ -158,6 +159,25 @@
     {:ids (set (concat user-ids templates aliases))
      :template template
      :->id ->id}))
+
+(defn- allow-token-error [crew-id idx token]
+  {:key   (str "crew." (->id crew-id) ".tools.allow[" idx "]")
+   :value (str "must be a namespaced keyword (ns/name or ns/*); got " (pr-str token))})
+
+(defn check-tool-allow-tokens
+  "Reject unqualified allow tokens. :all is exempt. Namespaced tokens and
+   ns/* globs need not name a live tool (MCP may be down)."
+  [{:keys [config]}]
+  {:errors (vec
+             (mapcat
+               (fn [[crew-id crew]]
+                 (keep-indexed
+                   (fn [idx token]
+                     (when-not (names/config-token? token)
+                       (allow-token-error crew-id idx token)))
+                   (or (get-in crew [:tools :allow]) [])))
+               (or (:crew config) {})))
+   :warnings []})
 
 (defn check-embedding-provider
   "Present-but-broken :embedding.provider references must fail validation

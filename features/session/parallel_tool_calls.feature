@@ -13,14 +13,14 @@ Feature: Parallel tool calls — invite, permit, execute
       | batch-tools |
     And the following model responses are queued:
       | model | type       | tool_calls                                                                                                                      | content          |
-      |       | tool_calls | [{"function":{"name":"read","arguments":{"filePath":"a.txt"}}},{"function":{"name":"read","arguments":{"filePath":"b.txt"}}}] |                  |
+      |       | tool_calls | [{"function":{"name":"fs__read","arguments":{"filePath":"a.txt"}}},{"function":{"name":"fs__read","arguments":{"filePath":"b.txt"}}}] |                  |
       | echo  | text       |                                                                                                                               | Both files read. |
     When the user sends "read a and b" on session "batch-tools"
     Then session "batch-tools" has transcript matching:
       | type    | message.role | message.content[0].name |
-      | message | assistant    | read                    |
+      | message | assistant    | fs__read                |
       | message | toolResult   |                         |
-      | message | assistant    | read                    |
+      | message | assistant    | fs__read                |
       | message | toolResult   |                         |
       | message | assistant    |                         |
 

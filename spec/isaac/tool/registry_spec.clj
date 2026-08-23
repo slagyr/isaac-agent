@@ -153,6 +153,15 @@
             (should= "api-key=shazam" (:result result))
             (should= "Doodad" (:description (sut/lookup "doodad")))))))
 
+    (it "registers a namespaced berth key under its wire name"
+      (module-loader/clear-activations!)
+      (let [module-index {:isaac.tool.doodad {:manifest {:isaac.agent/tools {:fs/read {:factory 'isaac.tool.registry-spec/doodad-tool}}}}}]
+        (nexus/-with-nexus {:tool-registry (atom {})
+                            :config        (atom {})}
+          (let [result (sut/execute "fs__read" {} #{:fs/read} module-index)]
+            (should= "api-key=" (:result result))
+            (should-not-be-nil (sut/lookup "fs__read"))))))
+
   ;; endregion ^^^^^ Execution ^^^^^
 
   ;; region ----- tool-fn -----
@@ -208,7 +217,20 @@
       (sut/register! {:name "read" :description "Read" :parameters {} :handler identity})
       (sut/register! {:name "write" :description "Write" :parameters {} :handler identity})
       (let [defs (sut/tool-definitions #{"read"})]
-        (should= ["read"] (mapv :name defs)))))
+        (should= ["read"] (mapv :name defs))))
+
+    (it "filters tool definitions by a namespaced allow token"
+      (sut/register! {:name "fs__read" :description "Read" :parameters {} :handler identity})
+      (sut/register! {:name "fs__write" :description "Write" :parameters {} :handler identity})
+      (let [defs (sut/tool-definitions #{:fs/read})]
+        (should= ["fs__read"] (mapv :name defs))))
+
+    (it "filters tool definitions by a namespace glob"
+      (sut/register! {:name "fs__read" :description "Read" :parameters {} :handler identity})
+      (sut/register! {:name "fs__write" :description "Write" :parameters {} :handler identity})
+      (sut/register! {:name "exec__run" :description "Exec" :parameters {} :handler identity})
+      (let [defs (sut/tool-definitions #{:fs/*})]
+        (should= ["fs__read" "fs__write"] (sort (mapv :name defs))))))
 
   ;; endregion ^^^^^ Tool Definitions for Prompts ^^^^^
 

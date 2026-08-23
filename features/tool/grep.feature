@@ -8,7 +8,7 @@ Feature: Built-in grep tool
 
   Scenario: grep returns matching lines with file:line prefix
     Given a file "src/core.clj" exists with content "(defn greet [name])\n(defn shout [name])"
-    When the tool "grep" is called with:
+    When the tool "fs__grep" is called with:
       | pattern | defn |
       | path    | src  |
     Then the tool result is not an error
@@ -21,7 +21,7 @@ Feature: Built-in grep tool
 
   Scenario: grep with no matches returns a clear no-matches result
     Given a file "src/core.clj" exists with content "(defn greet [name])"
-    When the tool "grep" is called with:
+    When the tool "fs__grep" is called with:
       | pattern | xyzzy |
       | path    | src   |
     Then the tool result is not an error
@@ -32,7 +32,7 @@ Feature: Built-in grep tool
   Scenario: grep glob filter limits search to matching files
     Given a file "src/core.clj" exists with content "(defn greet [name])"
     And a file "src/notes.md" exists with content "defn is a Clojure macro"
-    When the tool "grep" is called with:
+    When the tool "fs__grep" is called with:
       | pattern | defn  |
       | path    | src   |
       | glob    | *.clj |
@@ -47,7 +47,7 @@ Feature: Built-in grep tool
     Given a file "src/core.clj" exists with content "(defn greet [name])"
     And a file "src/util.clj" exists with content "(defn shout [name])"
     And a file "src/notes.md" exists with content "no matches here"
-    When the tool "grep" is called with:
+    When the tool "fs__grep" is called with:
       | pattern     | defn               |
       | path        | src                |
       | output_mode | files_with_matches |
@@ -62,7 +62,7 @@ Feature: Built-in grep tool
   Scenario: grep output_mode count returns match count per file
     Given a file "src/core.clj" exists with content "(defn greet [name])\n(defn shout [name])"
     And a file "src/util.clj" exists with content "(defn only [name])"
-    When the tool "grep" is called with:
+    When the tool "fs__grep" is called with:
       | pattern     | defn  |
       | path        | src   |
       | output_mode | count |
@@ -73,9 +73,9 @@ Feature: Built-in grep tool
       | util.clj:1 |
 
   Scenario: grep truncates output at the default head_limit
-    Given the default "grep" head_limit is 3
+    Given the default "fs__grep" head_limit is 3
     And a file "short.txt" exists with 5 lines
-    When the tool "grep" is called with:
+    When the tool "fs__grep" is called with:
       | pattern | line      |
       | path    | short.txt |
     Then the tool result is not an error
@@ -88,7 +88,7 @@ Feature: Built-in grep tool
 
   Scenario: grep respects explicit head_limit
     Given a file "big.txt" exists with 300 lines
-    When the tool "grep" is called with:
+    When the tool "fs__grep" is called with:
       | pattern    | line    |
       | path       | big.txt |
       | head_limit | 5       |
@@ -101,7 +101,7 @@ Feature: Built-in grep tool
 
   Scenario: grep with -i flag is case-insensitive
     Given a file "src/core.clj" exists with content "(DEFN greet)\n(defn shout)"
-    When the tool "grep" is called with:
+    When the tool "fs__grep" is called with:
       | pattern | defn |
       | path    | src  |
       | -i      | true |
@@ -113,7 +113,7 @@ Feature: Built-in grep tool
 
   Scenario: grep -C includes context lines before and after matches
     Given a file "src/core.clj" exists with content "(ns core)\n(defn before [x] x)\n(defn target [x] x)\n(defn after [x] x)\n(def tail 1)"
-    When the tool "grep" is called with:
+    When the tool "fs__grep" is called with:
       | pattern | target |
       | path    | src    |
       | -C      | 1      |

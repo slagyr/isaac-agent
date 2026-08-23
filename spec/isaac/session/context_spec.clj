@@ -92,8 +92,8 @@
                   "Always quarantine new specimens for one cycle."))
     (should= {:menu-text  (str "Available skills:\n"
                                "- greenhouse-protocol: Use when tending specimens\n\n"
-                               "Use load_skill to load a skill body on demand.")
-              :tool-names #{"load_skill"}}
+                               "Use skill__load to load a skill body on demand.")
+              :tool-names #{"skill__load"}}
              (sut/read-skill-disclosure {:root test-root} test-root (str test-root "/project"))))
 
   (it "falls back to list_skills when the configured threshold is exceeded"
@@ -110,7 +110,7 @@
                   "---\n\n"
                   "Two."))
     (should= {:menu-text  nil
-              :tool-names #{"list_skills" "load_skill"}}
+              :tool-names #{"skill__list" "skill__load"}}
              (sut/read-skill-disclosure {:skill-menu-threshold 1} test-root (str test-root "/project")))))
 
 (describe "behavior funnel"

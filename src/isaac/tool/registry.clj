@@ -5,6 +5,7 @@
     [isaac.module.loader :as module-loader]
     [isaac.nexus :as nexus]
     [isaac.tool.fs-bounds :as fs-bounds]
+    [isaac.tool.names :as names]
     [isaac.tool.output-cap :as output-cap]))
 
 ;; region ----- State -----
@@ -15,19 +16,8 @@
         (nexus/register! [:tool-registry] registry*)
         registry*)))
 
-(defn- normalize-allowed-tools [allowed-tools]
-  (when (some? allowed-tools)
-    (->> allowed-tools
-         (map (fn [tool]
-                (cond
-                  (keyword? tool) (name tool)
-                  (string? tool)  tool
-                  :else           (str tool))))
-         set)))
-
 (defn- allowed-tool? [allowed-tools name]
-  (when-let [allowed-tools (normalize-allowed-tools allowed-tools)]
-    (contains? allowed-tools name)))
+  (names/allowed? allowed-tools name))
 
 ;; endregion ^^^^^ State ^^^^^
 
@@ -44,7 +34,7 @@
    installs the resulting spec into the registry (with :name set
    from tool-id)."
   [[tool-id entry]]
-  (let [tool-name (name tool-id)
+  (let [tool-name (or (names/wire-name tool-id) (name tool-id))
         factory   (some-> (:factory entry) requiring-resolve var-get)
         user-cfg  (or (module-loader/user-config :tools tool-name) {})
         spec      (factory user-cfg)]
@@ -65,13 +55,15 @@
   ;; extensions), call the berth's per-entry factory directly so the
   ;; single tool lands in the registry without paying for a full
   ;; process-manifest-berths! sweep.
-  (when-let [module-id (module-loader/supporting-module-id module-index :isaac.agent/tools name)]
-    (module-loader/activate! module-id module-index)
-    (let [tool-kw (keyword name)
-          entry   (get-in module-index [module-id :manifest :isaac.agent/tools tool-kw])]
-      (when entry
-        (register-tool-entry! [tool-kw entry])))
-    (lookup name)))
+  (let [berth-key (or (names/config-token name) (keyword name))]
+    (when-let [module-id (or (module-loader/supporting-module-id module-index :isaac.agent/tools berth-key)
+                             (module-loader/supporting-module-id module-index :isaac.agent/tools name))]
+      (module-loader/activate! module-id module-index)
+      (let [entry (or (get-in module-index [module-id :manifest :isaac.agent/tools berth-key])
+                      (get-in module-index [module-id :manifest :isaac.agent/tools (keyword name)]))]
+        (when entry
+          (register-tool-entry! [berth-key entry])))
+      (lookup name))))
 
 (defn all-tools
   "With no args, returns every registered tool.
@@ -205,9 +197,10 @@
   ([allowed-tools]
    (mapv #(dissoc % :handler) (all-tools allowed-tools)))
   ([allowed-tools module-index]
-   (doseq [tool-name allowed-tools]
-     (when-not (lookup tool-name)
-       (activate-missing-tool! module-index tool-name)))
+   (doseq [token allowed-tools]
+     (let [wire (or (names/wire-name token) (str token))]
+       (when-not (or (names/glob-token? token) (lookup wire))
+         (activate-missing-tool! module-index wire))))
    (mapv #(dissoc % :handler) (all-tools allowed-tools))))
 
 ;; endregion ^^^^^ Prompt Definitions ^^^^^

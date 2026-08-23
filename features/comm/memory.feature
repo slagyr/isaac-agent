@@ -33,13 +33,13 @@ Feature: Memory Comm
     Given the built-in tools are registered
     And the following model responses are queued:
       | tool_call | arguments              |
-      | exec      | {"command": "echo hi"} |
+      | exec__run | {"command": "echo hi"} |
     When the user sends "Run echo" on session "memory-chat" via memory comm
     Then the memory comm has events matching:
       | event       | tool-name |
       | turn-start  |           |
-      | tool-call   | exec      |
-      | tool-result | exec      |
+      | tool-call   | exec__run |
+      | tool-result | exec__run |
       | turn-end    |           |
 
   Scenario: Compaction triggers during a memory comm turn

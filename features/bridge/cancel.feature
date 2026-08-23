@@ -6,7 +6,7 @@ Feature: Turn Cancellation
 
   Background:
     Given default Grover setup
-    And the crew "main" allows tools: "exec"
+    And the crew "main" allows tools: "exec/run"
     And the built-in tools are registered
 
   Scenario: cancel interrupts a running exec tool call
@@ -15,7 +15,7 @@ Feature: Turn Cancellation
       | cancel-test |
     And the following model responses are queued:
       | tool_call | arguments               |
-      | exec      | {"command": "sleep 30"} |
+      | exec__run | {"command": "sleep 30"} |
     When the user sends "run it" on session "cancel-test"
     And the turn is cancelled on session "cancel-test"
     Then the turn result is "cancelled"
@@ -35,7 +35,7 @@ Feature: Turn Cancellation
       | cancel-test |
     And the following model responses are queued:
       | tool_call | arguments               |
-      | exec      | {"command": "sleep 30"} |
+      | exec__run | {"command": "sleep 30"} |
     When the user sends "run it" on session "cancel-test"
     And the turn is cancelled on session "cancel-test"
     Then the turn result is "cancelled"

@@ -296,7 +296,7 @@ Feature: Context Compaction Logging
       | name      | model      | compaction-disabled | compaction.consecutive-failures |
       | recovered | test-model | true                | 5                               |
     And the current session is "recovered"
-    When the tool "session_model" is called with:
+    When the tool "session__model" is called with:
       | model | bigger-model |
     Then session "recovered" matches:
       | key                             | value |
@@ -329,8 +329,8 @@ Feature: Context Compaction Logging
       | key                | value         |
       | #index             | 0             |
       | body.tools[0].type | function      |
-      | body.tools[0].name | memory_write  |
-      | body.tools[2].name | memory_search |
+      | body.tools[0].name | memory__write  |
+      | body.tools[2].name | memory__search |
     And the last provider request does not contain path "body.tools[0].function"
 
   Scenario: Compaction keeps toolCall and toolResult together
@@ -349,7 +349,7 @@ Feature: Context Compaction Logging
     And session "tool-orphan" has transcript:
       | type    | message.role | message.id | message.content                                                                            | tokens | #comment                                       |
       | message | user         |            | What's in fridge.txt?                                                                      | 20     | head of compactables                           |
-      | message | assistant    |            | [{"type":"toolCall","id":"call_old","name":"read","arguments":{"filePath":"fridge.txt"}}]  | 5      | bug: ->compact-message returns nil here        |
+      | message | assistant    |            | [{"type":"toolCall","id":"call_old","name":"fs__read","arguments":{"filePath":"fridge.txt"}}]  | 5      | bug: ->compact-message returns nil here        |
       | message | toolResult   | call_old   | one sad lemon                                                                              | 15     | enters compactables; will be in compacted-ids  |
       | message | assistant    |            | The fridge has a lemon.                                                                    | 20     | tail=15: this 20-token reply is firstKept      |
     And the following model responses are queued:
@@ -377,7 +377,7 @@ Feature: Context Compaction Logging
     And session "offset-tool-split" has transcript:
       | type       | message.role | message.content         | id       | name | arguments                    |
       | message    | user         | What's in fridge?       |          |      |                              |
-      | toolCall   |              |                         | call_old | read | {"filePath":"fridge.txt"}    |
+      | toolCall   |              |                         | call_old | fs__read | {"filePath":"fridge.txt"}    |
       | toolResult |              | one sad lemon           | call_old |      |                              |
       | message    | assistant    | The fridge has a lemon. |          |      |                              |
     When compaction is spliced into session "offset-tool-split" with:
@@ -398,7 +398,7 @@ Feature: Context Compaction Logging
     And session "offset-tool-paired" has transcript:
       | type       | message.role | message.content         | id       | name | arguments                    |
       | message    | user         | What's in fridge?       |          |      |                              |
-      | toolCall   |              |                         | call_old | read | {"filePath":"fridge.txt"}    |
+      | toolCall   |              |                         | call_old | fs__read | {"filePath":"fridge.txt"}    |
       | toolResult |              | one sad lemon           | call_old |      |                              |
       | message    | assistant    | The fridge has a lemon. |          |      |                              |
     When compaction is spliced into session "offset-tool-paired" with:

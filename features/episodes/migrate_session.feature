@@ -118,7 +118,7 @@ Feature: Episodes — migrate-session
     And session "tidy-larder" has transcript:
       | type    | message.role | message.toolCallId | message.content                                                                         |
       | message | user         |                    | What is in the fridge?                                                                  |
-      | message | assistant    |                    | [{"type":"toolCall","id":"call_1","name":"read","arguments":{"filePath":"fridge.txt"}}] |
+      | message | assistant    |                    | [{"type":"toolCall","id":"call_1","name":"fs__read","arguments":{"filePath":"fridge.txt"}}] |
       | message | toolResult   | call_1             | 1 sad lemon, mass of unidentified cheese, Hieronymus's emergency lettuce (DO NOT TOUCH) |
       | message | assistant    |                    | One sad lemon and some cheese. Leave the lettuce alone.                                 |
     And the following model responses are queued:
@@ -131,7 +131,7 @@ Feature: Episodes — migrate-session
       | migrated-from | tidy-larder |
     And that episode has scenes matching:
       | gist                   | text                                                               |
-      | Fridge inventory check | #"(?s)What is in the fridge.*\(tool read.*Leave the lettuce alone" |
+      | Fridge inventory check | #"(?s)What is in the fridge.*\(tool fs__read.*Leave the lettuce alone" |
     And scene 1 of that episode does not contain "emergency lettuce"
 
   # ----- Compaction spans -----
@@ -345,7 +345,7 @@ Feature: Episodes — migrate-session
     And session "quiet-bilge" has transcript:
       | type    | message.role | message.toolCallId | message.content                                                                           |
       | message | user         |                    | Check the bilge pump status.                                                              |
-      | message | assistant    |                    | [{"type":"toolCall","id":"call_1","name":"exec","arguments":{"command":"pump --status"}}] |
+      | message | assistant    |                    | [{"type":"toolCall","id":"call_1","name":"exec__run","arguments":{"command":"pump --status"}}] |
       | message | toolResult   | call_1             | pump nominal, 12 liters cleared                                                           |
       | message | assistant    |                    | Bilge pump is nominal.                                                                    |
     And the following model responses are queued:

@@ -47,7 +47,7 @@ Feature: Prompt Building
     And the crew member has tools:
       | name      | description              | parameters             |
       | read_file | Read a file's contents   | {"path": "string"}     |
-      | exec      | Execute a shell command  | {"command": "string"}  |
+      | exec__run | Execute a shell command  | {"command": "string"}  |
     And session "prompt-tools" has transcript:
       | type    | message.role | message.content |
       | message | user         | Read the README |
@@ -55,7 +55,7 @@ Feature: Prompt Building
       | key                               | value                    |
       | tools[0].function.name            | read_file                |
       | tools[0].function.description     | Read a file's contents   |
-      | tools[1].function.name            | exec                     |
+      | tools[1].function.name            | exec__run                |
       | tools[1].function.description     | Execute a shell command  |
 
   # --- History After Compaction ---

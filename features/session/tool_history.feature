@@ -14,7 +14,7 @@ Feature: Tool Call History in Prompts
     And session "tool-history" has transcript:
       | type       | message.role | message.content                                                                               | id       | name | arguments                       |
       | message    | user         | What's in the fridge?                                                                         |          |      |                                 |
-      | toolCall   |              |                                                                                               | call_123 | read | {"filePath":"fridge.txt"}       |
+      | toolCall   |              |                                                                                               | call_123 | fs__read | {"filePath":"fridge.txt"}       |
       | message    | toolResult   | 1 sad lemon, mass of unidentified cheese, Hieronymus's emergency lettuce (DO NOT TOUCH)        |          |      |                                 |
       | message    | assistant    | The fridge contains a lemon of questionable morale, some cheese, and forbidden tortoise rations. |          |      |                                 |
     When the prompt for session "tool-history" is built for provider "openai"
@@ -22,7 +22,7 @@ Feature: Tool Call History in Prompts
       | key                         | value    |
       | role                        | assistant |
       | tool_calls[0].type          | function |
-      | tool_calls[0].function.name | read     |
+      | tool_calls[0].function.name | fs__read |
       | tool_calls[0].id            | call_123 |
     And the prompt messages contain a tool result with:
       | key          | value                                                                                  |
@@ -37,7 +37,7 @@ Feature: Tool Call History in Prompts
     And session "tool-history" has transcript:
       | type       | message.role | message.content                                                                               | id       | name | arguments                 |
       | message    | user         | What's in the fridge?                                                                         |          |      |                           |
-      | toolCall   |              |                                                                                               | call_123 | read | {"filePath":"fridge.txt"} |
+      | toolCall   |              |                                                                                               | call_123 | fs__read | {"filePath":"fridge.txt"} |
       | message    | toolResult   | 1 sad lemon, mass of unidentified cheese, Hieronymus's emergency lettuce (DO NOT TOUCH)        |          |      |                           |
       | message    | assistant    | The fridge contains a lemon of questionable morale, some cheese, and forbidden tortoise rations. |          |      |                           |
     When the prompt for session "tool-history" is built for provider "ollama"
