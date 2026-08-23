@@ -74,4 +74,6 @@
     "Attempt to deliver a queued outbound record. `record` carries :comm,
      :target, :content, and delivery metadata. Return {:ok true} on success
      or {:ok false :transient? bool} on failure (transient failures are
-     rescheduled; permanent failures are dead-lettered)."))
+     rescheduled; permanent failures are dead-lettered). Optional :defer?
+     true means wait without burning a retry attempt — used when the
+     comm is temporarily unavailable (e.g. Discord gateway not READY)."))

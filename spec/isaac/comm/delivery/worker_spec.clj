@@ -93,7 +93,22 @@
     (should-be-nil (queue/read-pending "7f3a"))
     (should= 0 (:attempts (queue/read-failed "7f3a")))
     (should= {:event :comm.delivery/dead-lettered :id "7f3a" :reason :permanent}
-             (select-keys (last @log/captured-logs) [:event :id :reason]))))
+             (select-keys (last @log/captured-logs) [:event :id :reason])))
+
+  (it "leaves a deferred send pending without burning an attempt"
+    (queue/enqueue! {:id       "7f3a"
+                     :comm     :stub
+                     :target   "C999"
+                     :content  "Hold the lantern."
+                     :attempts 2})
+    (comm-registry/register-instance! "stub" (->StubComm {:ok false :transient? true :defer? true}))
+    (sut/tick! {:now (Instant/parse "2026-04-21T10:00:00Z")})
+    (should= {:attempts 2 :id "7f3a" :content "Hold the lantern."}
+             (select-keys (queue/read-pending "7f3a") [:attempts :id :content]))
+    (should-be-nil (:next-attempt-at (queue/read-pending "7f3a")))
+    (should-be-nil (queue/read-failed "7f3a"))
+    (should= {:event :comm.delivery/deferred :id "7f3a"}
+             (select-keys (last @log/captured-logs) [:event :id])))
 
   (it "registers its tick with the shared scheduler"
     (nexus/-with-nexus {}
@@ -104,3 +119,4 @@
         (should= [{:id :delivery/tick :trigger {:kind :interval :ms 10000}}]
                  (mapv #(select-keys % [:id :trigger]) (scheduler/list-tasks scheduler)))
         (scheduler/stop! scheduler))))
+  )

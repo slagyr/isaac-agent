@@ -124,3 +124,27 @@ Feature: Delivery queue
     Then the log has entries matching:
       | level | event                         | attempts |
       | info  | :comm.delivery/attempt-failed | 1        |
+
+  Scenario: a deferred send leaves the delivery pending without burning an attempt
+    The comm asked us to wait (gateway not READY) rather than retry with
+    backoff. File state stays pending so a later tick can deliver once the
+    comm is available again — no attempt increment, no dead-letter.
+    Given the comm "stub" returns:
+      | ok    | transient? | defer? |
+      | false | true       | true   |
+    And the isaac EDN file comm/delivery/pending/7f3a.edn exists with:
+      | path     | value              | #comment                         |
+      | id       | 7f3a               |                                  |
+      | comm     | stub               |                                  |
+      | target   | C999               |                                  |
+      | content  | Hold the lantern.  |                                  |
+      | attempts | 2                  | already retried; must not climb |
+    When the delivery worker ticks at "2026-04-21T10:00:00Z"
+    Then the isaac file "comm/delivery/pending/7f3a.edn" EDN contains:
+      | path     | value | #comment                                      |
+      | attempts | 2     | unchanged; defer does not consume a retry slot |
+      | id       | 7f3a  |                                                |
+    And the isaac file "comm/delivery/failed/7f3a.edn" does not exist
+    And the log has entries matching:
+      | level | event                   | id   |
+      | info  | :comm.delivery/deferred | 7f3a |

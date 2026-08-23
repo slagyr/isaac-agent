@@ -69,6 +69,9 @@
                     (assoc (audit-fields record) :attempts (:attempts record 0)))
           (queue/delete-pending! (:id record)))
 
+        (:defer? result)
+        (log/info :comm.delivery/deferred (audit-fields record))
+
         (false? (:transient? result))
         (dead-letter! record (:attempts record 0) :permanent)
 
