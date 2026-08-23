@@ -1,12 +1,11 @@
 Feature: Tool-loop limit configuration
-  The tool loop's cycle budget (:max-loops, default 100) becomes
+  The tool loop's cycle budget (:max-loops, default 500) becomes
   crew-configurable as :tool-loop-max — same layering as compaction config.
   Needed so hail crews can carry bigger budgets than chat crews, and so the
-  loop-limit behavior is testable without queuing 100 cycles. When the budget
-  exhausts with tools still pending, the drive already emits the
-  loop-exhausted summary/canned message (turn.clj); a delivery-driven turn
-  ending this way is re-queued as a continuation by the hail worker instead
-  of completing — see isaac-hail delivery.feature. (isaac-5ru9)
+  loop-limit behavior is testable without queuing 500 cycles. When the budget
+  exhausts with tools still pending, the drive emits the loop-exhausted
+  summary; hail treats that as a delivered turn outcome (no re-queue —
+  isaac-fgo0).
 
   Background:
     Given default Grover setup

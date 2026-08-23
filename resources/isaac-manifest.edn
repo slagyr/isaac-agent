@@ -412,7 +412,7 @@
       :tool-loop-max
       {:type :int,
        :description
-       "Tool-call cycle budget for turns on this crew (default 100)",
+       "Tool-call cycle budget for turns on this crew (default 500)",
        :validations [:positive?]},
       :model
       {:type :id,
