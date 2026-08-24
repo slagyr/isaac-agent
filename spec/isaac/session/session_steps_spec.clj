@@ -1,6 +1,7 @@
 (ns isaac.session.session-steps-spec
   (:require
     [gherclj.core :as g]
+    [isaac.config.config-steps :as config-steps]
     [isaac.config.loader :as loader]
     [isaac.foundation.fs-steps :as ffs]
     [isaac.fs :as fs]
@@ -46,4 +47,13 @@
         (should= 1 @loads*)
         (ffs/file-exists-with "config/crew/main.edn" "{:model :grover}")
         (should= cfg (#'sut/loaded-config))
-        (should= 2 @loads*)))))
+        (should= 2 @loads*))))
+
+  (it "parses a tools.allow EDN vector as keywords, not a comma-split of the brackets"
+    (should= [:exec/run] (#'ffs/parse-isaac-value "config/crew/main.edn" "tools.allow" "[:exec/run]"))
+    (should= [:memory/*] (#'ffs/parse-isaac-value "config/crew/main.edn" "tools.allow" "[:memory/*]")))
+
+  (it "matches a validation error value against a #\"...\" table cell"
+    (should (#'config-steps/row-matches?
+              {:key "tools.allow" :value ":all is the list, not a list item — use :allow :all, never [:all]"}
+              {"key" "tools.allow" "value" "#\":all\""}))))

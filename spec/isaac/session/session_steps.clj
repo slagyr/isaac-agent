@@ -7,9 +7,11 @@
     [clojure.string :as str]
     [gherclj.core :as g :refer [defgiven defwhen defthen helper!]]
     [isaac.config.api :as config]
+    [isaac.config.config-steps :as config-steps]
     [isaac.config.loader :as loader]
     [isaac.config.resolve :as resolve]
 
+    [isaac.foundation.fs-steps :as ffs]
     [isaac.foundation.harness-config-steps :as fconfig]
     [isaac.foundation.root-steps :as froot]
 
@@ -93,6 +95,33 @@
     (let [mem-store (memory-store/create-store abs-dir)]
       (store/register-store! mem-store)
       (alter-var-root #'sidecar-store/create-store (constantly (fn [& _] mem-store))))))
+
+;; Foundation parse-isaac-value special-cases tools.allow as a comma-split of
+;; unqualified keywords (legacy allow-list tables). Polar cascade values are
+;; EDN (:all, [:exec/run], [:memory/*]); read those first so crew overlays land.
+(alter-var-root #'ffs/parse-isaac-value
+  (fn [orig]
+    (fn [file-path path value]
+      (if (and (#{"tools.allow" "tools.deny"} path)
+               (or (str/starts-with? value "[")
+                   (str/starts-with? value "{")
+                   (str/starts-with? value ":")
+                   (str/starts-with? value "\"")
+                   (str/starts-with? value "#")))
+        (edn/read-string value)
+        (orig file-path path value)))))
+
+;; Foundation row-matches? treats the table value as a raw regex. Feature cells
+;; written as #"..." (gherkin regex-cell convention) must unwrap to the inner
+;; pattern so tools.allow / #":all" matches the check-tool-allow-tokens message.
+(alter-var-root #'config-steps/row-matches?
+  (fn [orig]
+    (fn [entry expected]
+      (let [raw   (get expected "value")
+            inner (when (string? raw)
+                    (second (re-matches #"^#\"(.*)\"$" raw)))
+            expected (if inner (assoc expected "value" inner) expected)]
+        (orig entry expected)))))
 
 ;; region ----- Helpers -----
 

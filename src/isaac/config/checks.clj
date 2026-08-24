@@ -160,23 +160,50 @@
      :template template
      :->id ->id}))
 
-(defn- allow-token-error [crew-id idx token]
-  {:key   (str "crew." (->id crew-id) ".tools.allow[" idx "]")
+(defn- policy-path [prefix field]
+  (if prefix (str prefix "." (name field)) (str "tools." (name field))))
+
+(defn- policy-token-error [path idx token]
+  {:key   (str path "[" idx "]")
    :value (str "must be a namespaced keyword (ns/name or ns/*); got " (pr-str token))})
 
+(defn- policy-all-as-item-error [path]
+  {:key   path
+   :value ":all is the list, not a list item — use :allow :all, never [:all]"})
+
+(defn- check-policy-field [path value]
+  (cond
+    (nil? value) []
+    (= names/POLICY_ALL value) []
+    (sequential? value)
+    (if (some #(= names/POLICY_ALL %) value)
+      [(policy-all-as-item-error path)]
+      (vec (keep-indexed
+             (fn [idx token]
+               (when-not (names/config-token? token)
+                 (policy-token-error path idx token)))
+             value)))
+    :else
+    [{:key   path
+      :value (str "must be :all or a vector of namespaced keywords; got " (pr-str value))}]))
+
+(defn- check-tools-policies [prefix tools]
+  (when (map? tools)
+    (concat (check-policy-field (policy-path prefix :allow) (:allow tools))
+            (check-policy-field (policy-path prefix :deny) (:deny tools)))))
+
 (defn check-tool-allow-tokens
-  "Reject unqualified allow tokens. :all is exempt. Namespaced tokens and
-   ns/* globs need not name a live tool (MCP may be down)."
+  "Reject unqualified allow/deny tokens. :all is the list, not a list item.
+   Namespaced tokens and ns/* globs need not name a live tool (MCP may be down)."
   [{:keys [config]}]
   {:errors (vec
-             (mapcat
-               (fn [[crew-id crew]]
-                 (keep-indexed
-                   (fn [idx token]
-                     (when-not (names/config-token? token)
-                       (allow-token-error crew-id idx token)))
-                   (or (get-in crew [:tools :allow]) [])))
-               (or (:crew config) {})))
+             (concat
+               (check-tools-policies nil (:tools config))
+               (mapcat
+                 (fn [[crew-id crew]]
+                   (check-tools-policies (str "crew." (->id crew-id) ".tools")
+                                         (:tools crew)))
+                 (or (:crew config) {}))))
    :warnings []})
 
 (defn check-embedding-provider

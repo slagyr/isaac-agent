@@ -115,4 +115,74 @@
     (it "returns nil policy as deny-all"
       (should-not (sut/allowed? nil "fs__read")))
     )
+
+  (context "policy-list"
+    (it "treats the keyword :all as a policy list, not a seq of tokens"
+      (should= [:all] (sut/policy-list :all)))
+
+    (it "returns a sequential of tokens as-is"
+      (should= [:fs/read :exec/run] (sut/policy-list [:fs/read :exec/run])))
+
+    (it "treats nil as an empty policy list"
+      (should= [] (sut/policy-list nil)))
+    )
+
+  (context "covers?"
+    (it "treats :all as covering every wire name"
+      (should (sut/covers? :all "exec__run"))
+      (should (sut/covers? :all "fs__read")))
+
+    (it "does not treat a vector of tokens as :all"
+      (should-not (sut/covers? [:fs/read] "exec__run")))
+
+    (it "matches an exact token or namespace glob"
+      (should (sut/covers? [:fs/read] "fs__read"))
+      (should (sut/covers? [:fs/*] "fs__grep"))
+      (should-not (sut/covers? [:fs/read] "fs__write")))
+    )
+
+  (context "cascade"
+    (it "denies every tool when both layers are empty"
+      (should-not (sut/cascade-allowed? {} {} "fs__read")))
+
+    (it "inherits a global :allow :all when the crew omits :tools"
+      (should (sut/cascade-allowed? {:allow :all} nil "exec__run"))
+      (should (sut/cascade-allowed? {:allow :all} nil "fs__read")))
+
+    (it "inherits a global deny of exec"
+      (should-not (sut/cascade-allowed? {:allow :all :deny [:exec/run]} nil "exec__run"))
+      (should (sut/cascade-allowed? {:allow :all :deny [:exec/run]} nil "fs__read")))
+
+    (it "lets crew allow re-enable a globally denied tool"
+      (should (sut/cascade-allowed? {:allow :all :deny [:exec/run]}
+                                    {:allow [:exec/run]}
+                                    "exec__run")))
+
+    (it "overlays crew deny without dropping a global deny"
+      (let [global {:allow :all :deny [:exec/run]}
+            crew   {:deny [:fs/*]}]
+        (should-not (sut/cascade-allowed? global crew "exec__run"))
+        (should-not (sut/cascade-allowed? global crew "fs__read"))
+        (should (sut/cascade-allowed? global crew "web__fetch"))))
+
+    (it "lets crew deny :all then allow memory leave only memory tools"
+      (let [global {:allow :all}
+            crew   {:deny :all :allow [:memory/*]}]
+        (should (sut/cascade-allowed? global crew "memory__get"))
+        (should-not (sut/cascade-allowed? global crew "fs__read"))
+        (should-not (sut/cascade-allowed? global crew "exec__run"))))
+
+    (it "overlays a crew family deny while other global allows remain"
+      (let [global {:allow :all}
+            crew   {:deny [:web/*]}]
+        (should-not (sut/cascade-allowed? global crew "web__fetch"))
+        (should-not (sut/cascade-allowed? global crew "web__search"))
+        (should (sut/cascade-allowed? global crew "fs__read"))
+        (should (sut/cascade-allowed? global crew "exec__run"))))
+
+    (it "lets crew allow beat a later-listed crew deny of the same family (crew allow is last)"
+      (should (sut/cascade-allowed? {:allow :all}
+                                    {:deny [:linear/delete_issue] :allow [:linear/*]}
+                                    "linear__delete_issue")))
+    )
   )

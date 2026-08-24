@@ -69,3 +69,44 @@
    :all is a policy token handled by callers that implement cascade (isaac-da0r)."
   [allow-tokens wire]
   (boolean (some #(matches? % wire) allow-tokens)))
+
+(defn policy-list
+  "Normalize an :allow or :deny value. :all is the list (not a list item).
+   A sequential of tokens is returned as-is. Nil is an empty list."
+  [value]
+  (cond
+    (= POLICY_ALL value) [POLICY_ALL]
+    (sequential? value)  (vec value)
+    :else                []))
+
+(defn covers?
+  "True when policy covers the wire name. :all covers every name.
+   A sequential of tokens uses allowed? matching (exact / ns/*)."
+  [policy wire]
+  (let [tokens (policy-list policy)]
+    (boolean (some (fn [token]
+                     (or (= POLICY_ALL token)
+                         (matches? token wire)))
+                   tokens))))
+
+(defn cascade-allowed?
+  "Four-step last-match-wins cascade (isaac-da0r):
+     1. global :allow
+     2. global :deny
+     3. crew :deny
+     4. crew :allow
+   Empty config (missing :allow) is deny-all. Crew overlays; a crew
+   :deny adds a deny and does not drop global denies. Nil crew-tools
+   means the crew omitted :tools and inherits the global result."
+  [global-tools crew-tools wire]
+  (let [global-tools (or global-tools {})
+        allowed?     (covers? (:allow global-tools) wire)
+        allowed?     (if (covers? (:deny global-tools) wire) false allowed?)
+        allowed?     (if (and (map? crew-tools)
+                              (covers? (:deny crew-tools) wire))
+                       false
+                       allowed?)]
+    (if (and (map? crew-tools)
+             (covers? (:allow crew-tools) wire))
+      true
+      allowed?)))

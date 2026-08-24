@@ -61,4 +61,20 @@
       (should-contain "durable facts, preferences, and discoveries" description)
       (should-contain "never task status" description)
       (should-contain "never instructions or advice to your future self" description)))
-  )
+
+  (it "registers skill list and load with the other built-ins"
+    (sut/register-all! #{:skill/list :skill/load})
+    (should= #{"skill__list" "skill__load"}
+             (set (map :name (registry/all-tools)))))
+
+  (it "registers hail send with the other built-ins"
+    (sut/register-all! #{:hail/send})
+    (should= #{"hail__send"}
+             (set (map :name (registry/all-tools)))))
+
+  (it "registers the advertised permissions.feature built-ins"
+    (sut/register-all!)
+    (should (contains? (set (map :name (registry/all-tools))) "skill__list"))
+    (should (contains? (set (map :name (registry/all-tools))) "skill__load"))
+    (should (contains? (set (map :name (registry/all-tools))) "hail__send"))
+    (should (contains? (set (map :name (registry/all-tools))) "comm__send"))))

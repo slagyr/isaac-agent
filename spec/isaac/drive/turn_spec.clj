@@ -686,7 +686,77 @@
                                                           {:menu-text  nil
                                                            :tool-names #{"skill__list" "skill__load"}})]
           (let [turn (#'sut/build-turn charge)]
-            (should= ["skill__list" "skill__load"] (sort (:allowed-tools turn))))))))
+            (should= ["skill__list" "skill__load"] (sort (:allowed-tools turn)))))))
+
+    (it "inherits global :allow :all when the crew omits :tools"
+      (helper/create-session! test-dir "inherit-all")
+      (helper/update-session! test-dir "inherit-all" {:crew "main"})
+      (tool-registry/clear!)
+      (tool-registry/register! {:name "fs__read" :description "Read" :handler identity})
+      (tool-registry/register! {:name "exec__run" :description "Exec" :handler identity})
+      (let [provider (->TestProvider marigold/quantum-anvil {:api marigold/anvil-api})
+            charge   {:charge/type    :charge
+                      :session-key    "inherit-all"
+                      :input          "hi"
+                      :comm           :test-comm
+                      :config         {:root test-dir :tools {:allow :all}}
+                      :crew           "main"
+                      :crew-members   {"main" {:model "spark"}}
+                      :context-window 32768
+                      :model          "helm-spark-1.0"
+                      :provider       provider
+                      :soul           "You are Isaac."}]
+        (with-redefs [sut/augment-provider (fn [_root p _session-key _context-window _model-cfg-overrides] p)
+                      session-ctx/read-skill-disclosure (fn [& _] {:menu-text nil :tool-names #{}})]
+          (let [turn (#'sut/build-turn charge)]
+            (should= ["exec__run" "fs__read"] (sort (:allowed-tools turn)))))))
+
+    (it "lets crew allow re-enable a globally denied tool"
+      (helper/create-session! test-dir "crew-reallow")
+      (helper/update-session! test-dir "crew-reallow" {:crew "main"})
+      (tool-registry/clear!)
+      (tool-registry/register! {:name "fs__read" :description "Read" :handler identity})
+      (tool-registry/register! {:name "exec__run" :description "Exec" :handler identity})
+      (let [provider (->TestProvider marigold/quantum-anvil {:api marigold/anvil-api})
+            charge   {:charge/type    :charge
+                      :session-key    "crew-reallow"
+                      :input          "hi"
+                      :comm           :test-comm
+                      :config         {:root test-dir :tools {:allow :all :deny [:exec/run]}}
+                      :crew           "main"
+                      :crew-members   {"main" {:model "spark" :tools {:allow [:exec/run]}}}
+                      :context-window 32768
+                      :model          "helm-spark-1.0"
+                      :provider       provider
+                      :soul           "You are Isaac."}]
+        (with-redefs [sut/augment-provider (fn [_root p _session-key _context-window _model-cfg-overrides] p)
+                      session-ctx/read-skill-disclosure (fn [& _] {:menu-text nil :tool-names #{}})]
+          (let [turn (#'sut/build-turn charge)]
+            (should= ["exec__run" "fs__read"] (sort (:allowed-tools turn)))))))
+
+    (it "overlays crew deny without dropping a global deny"
+      (helper/create-session! test-dir "crew-overlay")
+      (helper/update-session! test-dir "crew-overlay" {:crew "main"})
+      (tool-registry/clear!)
+      (tool-registry/register! {:name "fs__read" :description "Read" :handler identity})
+      (tool-registry/register! {:name "exec__run" :description "Exec" :handler identity})
+      (tool-registry/register! {:name "web__fetch" :description "Fetch" :handler identity})
+      (let [provider (->TestProvider marigold/quantum-anvil {:api marigold/anvil-api})
+            charge   {:charge/type    :charge
+                      :session-key    "crew-overlay"
+                      :input          "hi"
+                      :comm           :test-comm
+                      :config         {:root test-dir :tools {:allow :all :deny [:exec/run]}}
+                      :crew           "main"
+                      :crew-members   {"main" {:model "spark" :tools {:deny [:fs/*]}}}
+                      :context-window 32768
+                      :model          "helm-spark-1.0"
+                      :provider       provider
+                      :soul           "You are Isaac."}]
+        (with-redefs [sut/augment-provider (fn [_root p _session-key _context-window _model-cfg-overrides] p)
+                      session-ctx/read-skill-disclosure (fn [& _] {:menu-text nil :tool-names #{}})]
+          (let [turn (#'sut/build-turn charge)]
+            (should= ["web__fetch"] (sort (:allowed-tools turn))))))))
 
   (describe "context-mode"
     #_{:clj-kondo/ignore [:unresolved-symbol]}

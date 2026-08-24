@@ -78,6 +78,29 @@
                (lexicon/conform (runtime-spec sut/field-tools)
                                 {:defaults {:max-lines 500 :max-bytes 131072}})))
 
+    (it "root tools.allow :all conforms as the policy keyword, not a seq"
+      (should= {:allow :all}
+               (lexicon/conform (runtime-spec sut/field-tools)
+                                {:allow :all})))
+
+    (it "root tools.deny of a namespaced token vector conforms"
+      (should= {:deny [:exec/run]}
+               (lexicon/conform (runtime-spec sut/field-tools)
+                                {:deny [:exec/run]})))
+
+    (it "crew tools.allow :all conforms as the policy keyword"
+      (let [result (lexicon/conform (runtime-spec sut/crew)
+                                    {:tools {:allow :all}})]
+        (should-not (schema/error? result))
+        (should= :all (get-in result [:tools :allow]))))
+
+    (it "crew tools.deny :all then allow memory/* conforms"
+      (let [result (lexicon/conform (runtime-spec sut/crew)
+                                    {:tools {:deny :all :allow [:memory/*]}})]
+        (should-not (schema/error? result))
+        (should= :all (get-in result [:tools :deny]))
+        (should= [:memory/*] (get-in result [:tools :allow]))))
+
     (it "model conforms with all required + optional fields"
       (should= {:id test-model-id :model marigold/helm-mark-iii :provider test-provider-id :context-window 128000}
                (lexicon/conform (runtime-spec sut/model)

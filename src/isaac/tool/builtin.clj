@@ -180,14 +180,34 @@
   (or (= ::all allowed-tools)
       (names/allowed? allowed-tools tool-name)))
 
-(defn- register-comm-send! []
-  (tool-registry/unregister! "comm__send")
-  (tool-registry/register-tool-entry!
-    [:comm/send {:factory 'isaac.tool.comm-send/comm-send-tool-factory}]))
+(defn hail-send-tool-factory [cfg]
+  (if-let [remote (try (requiring-resolve 'isaac.tool.hail/hail-send-tool-factory)
+                       (catch Throwable _ nil))]
+    (remote cfg)
+    {:description "Send a hail to a band or session target."
+     :parameters  {:type       "object"
+                   :properties {"band"     {:type "string" :description "Hail band id"}
+                                "session"  {:type "array" :items {:type "string"} :description "Exact session ids"}
+                                "prompt"   {:type "string" :description "Optional prompt override"}
+                                "params"   {:type "object" :description "Band template parameters"}
+                                "reply_to" {:type "string" :description "Optional hail id being replied to"}}}
+     :handler     (fn [_] {:isError true :error "hail module is not loaded"})}))
+
+(def ^:private extra-built-in-factories
+  {"comm__send"  'isaac.tool.comm-send/comm-send-tool-factory
+   "skill__list" 'isaac.tool.skill/list-skills-tool-factory
+   "skill__load" 'isaac.tool.skill/load-skill-tool-factory
+   "hail__send"  'isaac.tool.builtin/hail-send-tool-factory})
+
+(defn- register-extra-built-in! [tool-name]
+  (when-let [factory (get extra-built-in-factories tool-name)]
+    (tool-registry/unregister! tool-name)
+    (tool-registry/register-tool-entry!
+      [(names/config-token tool-name) {:factory factory}])))
 
 (defn- register-built-in-tool! [tool-name]
-  (when (= tool-name "comm__send")
-    (register-comm-send!))
+  (when (contains? extra-built-in-factories tool-name)
+    (register-extra-built-in! tool-name))
   (when-not (tool-registry/lookup tool-name)
     (when-let [spec (get built-in-tool-specs tool-name)]
       (if-let [pred (:available? spec)]

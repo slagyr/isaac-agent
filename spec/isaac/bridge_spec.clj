@@ -164,6 +164,19 @@
                      :model         "echo" :provider "grover" :context-window 32768}
                 data (bridge-status/status-data "testuser" ctx)]
             (should= 2 (:tool-count data))))))
+
+    (it "inherits global :allow :all when the crew omits :tools"
+      (nexus/-with-nexus {:root *root*}
+        (helper/with-memory-store
+          (tool-registry/clear!)
+          (tool-registry/register! {:name "fs__read" :description "Read" :handler identity})
+          (tool-registry/register! {:name "exec__run" :description "Exec" :handler identity})
+          (let [ctx {:crew         "main"
+                     :crew-members {"main" {:model "echo"}}
+                     :config       {:tools {:allow :all}}
+                     :model        "echo" :provider "grover" :context-window 32768}
+                data (bridge-status/status-data "testuser" ctx)]
+            (should= 2 (:tool-count data))))))
     )
 
   (context "format-status"

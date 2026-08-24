@@ -63,14 +63,20 @@
 (defn session-allowed-tools
   "The tool allow-list for the session's crew, as a set of tool names, or nil
    when the crew declares none. Prefers an explicit :allowed-tools already
-   resolved by a caller (the sessions CLI path), else reads the crew's
-   :tools :allow from the resolved crew-cfg or the crew-members map."
+   resolved by a caller (the sessions CLI path), else runs the four-step
+   cascade (isaac-da0r) over registered tools."
   [ctx]
   (or (some->> (:allowed-tools ctx) (map ->tool-name) set)
-      (let [crew (or (:crew-cfg ctx)
-                     (get (:crew-members ctx) (:crew ctx)))]
-        (when (contains? crew :tools)
-          (->> (get-in crew [:tools :allow]) (map ->tool-name) set)))))
+      (let [crew         (or (:crew-cfg ctx)
+                             (get (:crew-members ctx) (:crew ctx)))
+            global-tools (get-in ctx [:config :tools])
+            crew-tools   (:tools crew)
+            registered   (map :name (tool-registry/all-tools))
+            allowed      (->> registered
+                              (filter #(names/cascade-allowed? global-tools crew-tools %))
+                              set)]
+        (when (or (seq allowed) (some? global-tools) (contains? crew :tools))
+          allowed))))
 
 (defn- session-tool-count
   "Count the tools the session's crew can actually use: the process registry

@@ -320,7 +320,13 @@
       :description "Web search tool config",
       :schema
       {:provider {:type :keyword, :validations [[:one-of? :brave]]},
-       :api-key {:type :string, :validations [:present?]}}}}}},
+       :api-key {:type :string, :validations [:present?]}}}
+     :allow
+     {:type :ignore,
+      :description "Global allowed tools: :all or a vector of namespaced keywords / ns/* globs"}
+     :deny
+     {:type :ignore,
+      :description "Global denied tools: :all or a vector of namespaced keywords / ns/* globs"}}}},
   :crew
   {:entity-dir "crew",
    :frontmatter? true,
@@ -353,9 +359,11 @@
        :description "Tool configuration",
        :schema
        {:allow
-        {:type :seq,
-         :description "Allowed tool names (namespaced keywords, ns/* globs, or :all)",
-         :spec {:type :keyword}},
+        {:type :ignore,
+         :description "Allowed tools: :all or a vector of namespaced keywords / ns/* globs"},
+        :deny
+        {:type :ignore,
+         :description "Denied tools: :all or a vector of namespaced keywords / ns/* globs"},
         :directories
         {:type :seq,
          :description

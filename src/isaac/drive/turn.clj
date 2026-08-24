@@ -826,17 +826,34 @@
   (or (:name tool)
       (get-in tool [:function :name])))
 
-(defn- allowed-tool-names [crew-members crew-id]
-  (when-let [crew (get crew-members crew-id)]
-    (when (contains? crew :tools)
-      (->> (get-in crew [:tools :allow])
-           (mapv (fn [tool]
-                   (or (names/wire-name tool)
-                       (cond
-                         (keyword? tool) (name tool)
-                         (string? tool) tool
-                         :else (str tool)))))
-           set))))
+(defn- declared-wire-names [tools]
+  (->> (concat (names/policy-list (:allow tools))
+               (names/policy-list (:deny tools)))
+       (remove #{names/POLICY_ALL})
+       (remove names/glob-token?)
+       (keep (fn [token]
+               (or (names/wire-name token)
+                   (cond
+                     (keyword? token) (name token)
+                     (string? token)  token
+                     :else            (str token)))))))
+
+(defn- allowed-tool-names
+  "Wire names allowed for this turn via the four-step cascade (isaac-da0r).
+   Empty/missing :allow is deny-all. Crew overlays global; omit crew :tools
+   inherits the global result. Skill auto-tools are merged by the caller.
+   Candidates are registered tools plus any exact tokens declared in policy
+   (test fixtures / not-yet-activated modules)."
+  [crew-members crew-id config]
+  (let [global-tools (:tools config)
+        crew-tools   (get-in crew-members [crew-id :tools])
+        registered   (map :name (tool-registry/all-tools))
+        declared     (concat (declared-wire-names global-tools)
+                             (declared-wire-names crew-tools))
+        candidates   (distinct (concat registered declared))]
+    (->> candidates
+         (filter #(names/cascade-allowed? global-tools crew-tools %))
+         set)))
 
 (defn- active-tools [_p allowed-tools module-index]
   (not-empty (if module-index
@@ -908,7 +925,7 @@
         session          (store/get-session session-store* session-key)
         skill-disclosure (or (session-ctx/read-skill-disclosure (:config charge) root (:cwd session))
                              {:menu-text nil :tool-names #{}})
-        allowed-tools    (merge-allowed-tools (allowed-tool-names crew-members crew)
+        allowed-tools    (merge-allowed-tools (allowed-tool-names crew-members crew (:config charge))
                                               (:tool-names skill-disclosure))
         boot-files       (session-ctx/read-boot-files (:cwd session))
         rules-text       (session-ctx/read-rules-text (:config charge) root (:cwd session))

@@ -93,9 +93,9 @@
                                {:config {:crew {"main" {:tools {:allow [:fs/read :fs/*]}}}}})]
         (should= [] errors)))
 
-    (it "accepts :all as the exempt policy token"
+    (it "accepts :all as the exempt policy token (the list, not a list item)"
       (let [{:keys [errors]} (sut/check-tool-allow-tokens
-                               {:config {:crew {"main" {:tools {:allow [:all]}}}}})]
+                               {:config {:crew {"main" {:tools {:allow :all}}}}})]
         (should= [] errors)))
 
     (it "rejects multiple unqualified tokens that are not :all"
@@ -129,4 +129,48 @@
             (let [result (loader/load-config-result {:root root :fs fs*})
                   allow  (get-in result [:config :crew "main" :tools :allow])]
               (should= [] (filter #(re-find #"allow" (str (:key %))) (:errors result)))
-              (should= [:fs/read :fs/*] allow))))))))
+              (should= [:fs/read :fs/*] allow)))))))
+
+    (it "rejects [:all] as a list item — :all is the list"
+      (let [{:keys [errors]} (sut/check-tool-allow-tokens
+                               {:config {:crew {"main" {:tools {:allow [:all]}}}}})]
+        (should= 1 (count errors))
+        (should= "crew.main.tools.allow" (:key (first errors)))
+        (should (re-find #":all" (:value (first errors))))))
+
+    (it "rejects [:all] on global tools.allow"
+      (let [{:keys [errors]} (sut/check-tool-allow-tokens
+                               {:config {:tools {:allow [:all]}}})]
+        (should= 1 (count errors))
+        (should= "tools.allow" (:key (first errors)))
+        (should (re-find #":all" (:value (first errors))))))
+
+    (it "accepts global :allow :all as the policy keyword"
+      (let [{:keys [errors]} (sut/check-tool-allow-tokens
+                               {:config {:tools {:allow :all :deny [:exec/run]}}})]
+        (should= [] errors)))
+
+    (it "rejects an unqualified deny token"
+      (let [{:keys [errors]} (sut/check-tool-allow-tokens
+                               {:config {:crew {"main" {:tools {:deny [:read]}}}}})]
+        (should= 1 (count errors))
+        (should= "crew.main.tools.deny[0]" (:key (first errors)))
+        (should (re-find #"namespace" (:value (first errors))))))
+
+    (it "accepts crew :deny :all then :allow of a namespaced family"
+      (let [{:keys [errors]} (sut/check-tool-allow-tokens
+                               {:config {:crew {"main" {:tools {:deny :all :allow [:memory/*]}}}}})]
+        (should= [] errors)))
+
+    (it "load-config rejects [:all] on tools.allow with a path-anchored :all error"
+      (let [fs*  (fs/mem-fs)
+            root "/tmp/isaac-allow-all-vec"]
+        (nexus/-with-nested-nexus {:fs fs*}
+          (marigold.agent/with-real-manifest
+            (fs/mkdirs fs* (str root "/config"))
+            (fs/spit fs* (str root "/config/isaac.edn")
+                     (pr-str {:tools {:allow [:all]}}))
+            (let [result (loader/load-config-result {:root root :fs fs*})
+                  hits   (filter #(= "tools.allow" (:key %)) (:errors result))]
+              (should (seq hits))
+              (should (re-find #":all" (:value (first hits))))))))))
