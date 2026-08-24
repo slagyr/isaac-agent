@@ -62,3 +62,28 @@ Feature: Compaction with memory flush
     Then session "quiet-day" has transcript matching:
       | type       | summary                           |
       | compaction | Quick chat about today's weather. |
+
+  @wip
+    Scenario: the compaction flush asks memory for knowledge, not work state
+    Given the isaac EDN file "config/models/local.edn" exists with:
+      | path | value |
+      | model | test-model |
+      | provider | grover |
+      | context-window | 200 |
+    And the following sessions exist:
+      | name       | compaction.head |
+      | tea-ledger | 0.1             |
+    And session "tea-ledger" has transcript:
+      | type    | message.role | message.content                                                            |
+      | message | user         | I take tea with two sugars and a splash of milk first thing every morning  |
+      | message | assistant    | Noted — tea with two sugars and a splash of milk, served first thing it is |
+      | message | user         | Also remember I prefer the loose-leaf Assam blend over the supermarket bags |
+      | message | assistant    | Understood — loose-leaf Assam over supermarket teabags, noted for the future |
+    And the following model responses are queued:
+      | type | content                           | model      |
+      | text | Discussion about tea preferences. | test-model |
+      | text | Here is my response.              | test-model |
+    When the user sends "hello" on session "tea-ledger"
+    Then the compaction request matches:
+      | key                 | value |
+      | messages[0].content | #"(?s)(?=.*durable facts, preferences, and discoveries)(?=.*never task status)(?=.*never instructions or advice to your future self)(?=.*Work state and next steps belong in the summary, not in memory).*" |
