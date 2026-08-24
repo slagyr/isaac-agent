@@ -275,12 +275,12 @@
         (append-transcript-line! root id entry))
       entry))
 
-  (splice-compaction! [_ name {:keys [compactedEntryIds firstKeptEntryId summary tokensBefore]}]
+  (splice-compaction! [_ name {:keys [compactedEntryIds firstKeptEntryId summary tokensBefore turnRequest]}]
     (let [id         (c/session-id name)
           transcript (get-in @state [:transcripts id] [])
           retention  (or (get-in @state [:sessions id :history-retention]) resolve/default-history-retention)
           now        (now-iso)
-          [compaction-entry new-current] (c/compacted-current transcript compactedEntryIds firstKeptEntryId summary tokensBefore now)
+          [compaction-entry new-current] (c/compacted-current transcript compactedEntryIds firstKeptEntryId summary tokensBefore now turnRequest)
           n          (or (get-in @state [:sessions id :segment]) 0)]
       (swap! state (fn [s]
                      (cond-> s

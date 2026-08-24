@@ -654,7 +654,9 @@
 
 (defn compacted-current
   "New current-view transcript: compaction entry + kept tail."
-  [transcript compactedEntryIds firstKeptEntryId summary tokensBefore now]
+  ([transcript compactedEntryIds firstKeptEntryId summary tokensBefore now]
+   (compacted-current transcript compactedEntryIds firstKeptEntryId summary tokensBefore now nil))
+  ([transcript compactedEntryIds firstKeptEntryId summary tokensBefore now turnRequest]
   (let [compacted-ids    (set compactedEntryIds)
         removable-ids    (->> transcript
                               (filter #(and (= "message" (:type %))
@@ -671,28 +673,29 @@
                              (or first-kept-index (count transcript)))
         before           (subvec transcript 0 insert-at)
         compaction-id    (new-id)
-        compaction-entry {:type             "compaction"
-                          :id               compaction-id
-                          :parentId         (:id (last before))
-                          :timestamp        now
-                          :summary          summary
-                          :firstKeptEntryId firstKeptEntryId
-                          :tokensBefore     tokensBefore}
+        compaction-entry (cond-> {:type             "compaction"
+                                  :id               compaction-id
+                                  :parentId         (:id (last before))
+                                  :timestamp        now
+                                  :summary          summary
+                                  :firstKeptEntryId firstKeptEntryId
+                                  :tokensBefore     tokensBefore}
+                           turnRequest (assoc :turnRequest turnRequest))
         after            (->> (subvec transcript (or first-kept-index (count transcript)))
                               (remove #(contains? removable-ids (:id %)))
                               (mapv (fn [e]
                                       (if (contains? removable-ids (:parentId e))
                                         (assoc e :parentId compaction-id)
                                         e))))]
-    [compaction-entry (drop-orphan-toolcalls (into [compaction-entry] after))]))
+    [compaction-entry (drop-orphan-toolcalls (into [compaction-entry] after))])))
 
-(defn splice-compaction! [get-session-fn update-entry-fn now-fn root identifier {:keys [compactedEntryIds firstKeptEntryId summary tokensBefore]} fs]
+(defn splice-compaction! [get-session-fn update-entry-fn now-fn root identifier {:keys [compactedEntryIds firstKeptEntryId summary tokensBefore turnRequest]} fs]
   (let [entry      (get-session-fn root identifier fs)
         id         (:id entry)
         transcript (read-transcript-raw root id fs)
         retention  (or (:history-retention entry) resolve/default-history-retention)
         now        (now-fn)
-        [compaction-entry new-current] (compacted-current transcript compactedEntryIds firstKeptEntryId summary tokensBefore now)
+        [compaction-entry new-current] (compacted-current transcript compactedEntryIds firstKeptEntryId summary tokensBefore now turnRequest)
         n          (or (:segment entry) 0)
         current-path (current-transcript-path root id)]
     (when (= :retain retention)

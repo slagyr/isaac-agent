@@ -193,7 +193,20 @@
                        :chat-fn        mock-chat})
         (let [system-prompt (-> @chat-called :messages first :content)]
           (should-contain "first person" system-prompt)
-          (should-contain "the user" system-prompt))))
+          (should-contain "the user" system-prompt)
+          (should-contain "not part of the conversation" system-prompt))))
+
+    (it "records the compacted turn's originating user request on the compaction entry"
+      (let [key-str   "isaac:main:cli:chat:turnreq123"
+            _session  (storage/create-session! test-root key-str)
+            _msg1     (storage/append-message! test-root key-str {:role "user" :content "Old question"})
+            _msg2     (storage/append-message! test-root key-str {:role "assistant" :content "Old answer"})
+            _msg3     (storage/append-message! test-root key-str {:role "user" :content "Fix the widget, then run the specs."})
+            mock-chat (fn [_request _tool-fn] {:message {:content "I began fixing the widget."}})
+            result    (sut/compact! key-str {:model "test-model" :soul "You are helpful." :context-window 10000 :chat-fn mock-chat})
+            stored    (->> (storage/get-transcript test-root key-str) (filter #(= "compaction" (:type %))) last)]
+        (should= "Fix the widget, then run the specs." (:turnRequest result))
+        (should= "Fix the widget, then run the specs." (:turnRequest stored))))
 
     (it "returns error when chat-fn returns error"
       (let [key-str  "isaac:main:cli:chat:err123"

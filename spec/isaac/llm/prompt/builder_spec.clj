@@ -231,7 +231,18 @@
       (let [p (sut/build {:model "test" :soul "You are Isaac." :transcript compacted-transcript})]
         (should= "system" (:role (first (:messages p))))
         (should= "user" (:role (second (:messages p))))
-        (should= "User said hello and assistant replied." (:content (second (:messages p))))))
+        (should-contain "User said hello and assistant replied." (:content (second (:messages p))))
+        (should-contain sut/compaction-summary-preamble (:content (second (:messages p))))))
+
+    (it "re-seeds the compacted turn request verbatim after the summary"
+      (let [transcript [{:type "compaction" :id "c1" :parentId "sess-1" :timestamp 2000
+                         :summary "I started fixing the widget." :turnRequest "Fix the widget, then run the specs."
+                         :firstKeptEntryId nil}]
+            p          (sut/build {:model "test" :soul "You are Isaac." :transcript transcript})
+            content    (get-in p [:messages 1 :content])]
+        (should-contain "I started fixing the widget." content)
+        (should-contain "Fix the widget, then run the specs." content)
+        (should (< (.indexOf content "I started") (.indexOf content "Fix the widget")))))
 
     (it "includes post-compaction messages"
       (let [p (sut/build {:model "test" :soul "You are Isaac." :transcript compacted-transcript})]
@@ -242,7 +253,7 @@
       (let [p (sut/build {:model "test" :soul "You are Isaac." :transcript partially-compacted-transcript})]
         (should= "system" (get-in p [:messages 0 :role]))
         (should-contain "You are Isaac." (get-in p [:messages 0 :content]))
-        (should= [{:role "user" :content "Older exchange summary"}
+        (should= [{:role "user" :content (sut/compaction-summary-text {:summary "Older exchange summary"})}
                   {:role "user" :content "Recent question"}
                   {:role "assistant" :content "Recent answer"}
                   {:role "user" :content "Newest question"}]
@@ -252,7 +263,7 @@
       (let [p (sut/build {:model "test" :soul "You are Isaac." :transcript compacted-with-tool-call-transcript})]
         (should= "system" (get-in p [:messages 0 :role]))
         (should-contain "You are Isaac." (get-in p [:messages 0 :content]))
-        (should= [{:role "user" :content "Earlier conversation summary."}
+        (should= [{:role "user" :content (sut/compaction-summary-text {:summary "Earlier conversation summary."})}
                   {:role "user" :content "File contents here"}
                   {:role "assistant" :content "The file says hello."}]
                  (subvec (:messages p) 1))))
@@ -261,7 +272,7 @@
       (let [p (sut/build {:model "test" :soul "You are Isaac." :transcript partially-compacted-with-tool-call-transcript})]
         (should= "system" (get-in p [:messages 0 :role]))
         (should-contain "You are Isaac." (get-in p [:messages 0 :content]))
-        (should= [{:role "user" :content "Summary"}
+        (should= [{:role "user" :content (sut/compaction-summary-text {:summary "Summary"})}
                   {:role "user" :content "File contents here"}
                   {:role "assistant" :content "The file says hello."}
                   {:role "user" :content "Follow-up"}]
@@ -327,7 +338,7 @@
                                    :soul  "You are Isaac."
                                    :transcript transcript
                                    :filter-fn sut/filter-messages-anthropic})]
-        (should= sut/compaction-summary-fallback (get-in p [:messages 1 :content]))
+        (should-contain sut/compaction-summary-fallback (get-in p [:messages 1 :content]))
         (should-not (empty-text-blocks? (:messages p))))))
 
   (context "OpenAI provider"

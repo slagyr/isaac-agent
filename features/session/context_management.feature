@@ -116,8 +116,8 @@ Feature: Context Management
       | provider | grover |
       | context-window | 160 |
     And the following sessions exist:
-      | name              | compaction.head |
-      | context-summarize | 0.1             |
+      | name              | compaction.head | compaction.threshold |
+      | context-summarize | 0.1             | 0.9                  |
     And session "context-summarize" has transcript:
       | type       | message.role | message.content                                                                                                                                                                                            |
       | message    | user         | Read the big file                                                                                                                                                                                           |

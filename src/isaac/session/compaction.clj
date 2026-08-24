@@ -196,6 +196,43 @@
           (recur (rest remaining) result)))
       (vec result))))
 
+(def ^:private turn-request-max-chars 4000)
+
+(defn- answered? [entries]
+  (some (fn [e]
+          (and (= "message" (:type e))
+               (= "assistant" (get-in e [:message :role]))
+               (nil? (transcript/first-tool-call (:message e)))
+               (let [t (message-text (get-in e [:message :content]))]
+                 (and (string? t) (not (str/blank? t))))))
+        entries))
+
+(defn- compacted-turn-request
+  "Text of the most recent user-authored message among the compacted entries when it is the
+   turn being served: no plain assistant reply follows it and no newer user message survives in
+   the kept tail. Mid-turn compaction must not erase the request in flight; the prompt builder
+   re-seeds it verbatim (bounded)."
+  [compactable-head kept-tail]
+  (let [entries (mapv :entry compactable-head)
+        user?   (fn [e] (and (= "message" (:type e)) (= "user" (get-in e [:message :role]))))
+        idx     (->> entries
+                     (keep-indexed (fn [i e] (when (or (and (= "message" (:type e))
+                                                            (= "user" (get-in e [:message :role])))
+                                                       (and (= "compaction" (:type e))
+                                                            (string? (:turnRequest e)))) i)))
+                     last)]
+    (when (and idx
+               (not (answered? (subvec entries (inc idx))))
+               (not-any? (comp user? :entry) kept-tail))
+      (let [e (nth entries idx)
+            t (if (= "compaction" (:type e))
+                (:turnRequest e)
+                (message-text (get-in e [:message :content])))]
+        (when (and (string? t) (not (str/blank? t)))
+          (if (> (count t) turn-request-max-chars)
+            (str (subs t 0 turn-request-max-chars) "\n[request truncated]")
+            t))))))
+
 (defn- message-token-count [entry message]
   (or (:tokens entry)
       (llm/estimate-tokens {:messages [message]})))
@@ -206,6 +243,8 @@
   (str "Review this conversation. Call memory__write for anything durable the user will want later. "
        "Then produce a concise summary of what happened. Use first person ('I') for actions taken by the assistant, "
        "refer to the user as 'the user', and preserve who asked, who acted, and who verified each step. "
+       "This instruction is not part of the conversation: never narrate it or attribute it to the user. "
+       "Say what the user asked, what was done, and what remains unfinished. "
        "Output only the summary, no preamble."))
 
 (defn- ensure-memory-tools-registered! []
@@ -315,6 +354,7 @@
         (compaction-target compactables strategy context-window)
         compactable-head (subvec compactables 0 compact-count)
         compacted-ids   (vec (mapcat :ids compactable-head))
+        turn-request    (compacted-turn-request compactable-head (subvec compactables compact-count))
         compacted       (subvec messages 0 compact-count)
         _               (ensure-memory-tools-registered!)
         tool-defs       (tool-registry/tool-definitions memory-tool-names)
@@ -394,6 +434,7 @@
                                    (assoc closed :summary summary :successor-session-key (:session-key closed)))
                                  (let [compaction-entry (store/splice-compaction! session-store key-str
                                                                                   {:summary           summary
+                                                                                   :turnRequest       turn-request
                                                                                    :firstKeptEntryId  first-kept-entry-id
                                                                                    :tokensBefore      tokens-before
                                                                                    :compactedEntryIds compacted-ids})]

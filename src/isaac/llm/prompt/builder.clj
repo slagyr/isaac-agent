@@ -180,6 +180,19 @@
   (let [text (str/trim (or summary ""))]
     (if (str/blank? text) compaction-summary-fallback text)))
 
+(def compaction-summary-preamble
+  "[Compacted history; not a new request]")
+
+(defn compaction-summary-text
+  "Render a compaction entry as the user-role message that stands in for compacted history.
+   Frames the summary as a system artifact (never a fresh ask) and re-seeds, verbatim, the most
+   recent user request that was compacted away, so a turn interrupted by compaction keeps its task."
+  [compaction]
+  (let [request (:turnRequest compaction)]
+    (cond-> (str compaction-summary-preamble "\n\n" (non-blank-summary (:summary compaction)))
+      (and (string? request) (not (str/blank? request)))
+      (str "\n\nPending request, verbatim:\n" request))))
+
 (defn- find-last-compaction
   "Find the last compaction entry in the transcript, if any."
   [transcript]
@@ -311,7 +324,7 @@
       (let [preserved (when-let [first-kept-entry-id (:firstKeptEntryId compaction)]
                         (messages-from-entry-id transcript first-kept-entry-id))]
         (into [{:role "system" :content system-text}
-               {:role "user" :content (non-blank-summary (:summary compaction))}]
+               {:role "user" :content (compaction-summary-text compaction)}]
               (filter-fn (-> (sanitize-user-messages (if (seq preserved)
                                                        preserved
                                                        (messages-after-compaction transcript compaction))
@@ -335,7 +348,7 @@
      (if compaction
        (let [preserved (when-let [id (:firstKeptEntryId compaction)]
                          (messages-from-entry-id transcript id))]
-         (into [{:role "user" :content (non-blank-summary (:summary compaction))}]
+         (into [{:role "user" :content (compaction-summary-text compaction)}]
                (f (-> (sanitize-user-messages (if (seq preserved)
                                                 preserved
                                                 (messages-after-compaction transcript compaction))

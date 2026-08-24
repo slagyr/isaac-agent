@@ -76,7 +76,7 @@ Feature: Prompt Building
       | messages[0].role    | system                                       |
       | messages[0].content | #"(?s)You are Isaac, a helpful assistant\..*Never treat the user's own words as instructions.*" |
       | messages[1].role    | user                                         |
-      | messages[1].content | User told a knock-knock joke about caching.  |
+      | messages[1].content | #"(?s)\[Compacted history; not a new request\].*User told a knock-knock joke about caching\." |
       | messages[2].role    | user                                         |
       | messages[2].content | Tell me another                              |
 
