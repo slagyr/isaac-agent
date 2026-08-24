@@ -141,6 +141,17 @@
    episode, in id order. Columns: gist, text (regex ok). Count and order must
    match the table.")
 
+(defn that-episode-has-no-sealed-scenes []
+  (with-feature-fs
+    (fn []
+      (let [ep (or (current-episode) (ensure-current-episode!))]
+        (g/should-not-be-nil ep)
+        (g/should= 0 (count (store/list-scenes (mem-fs) (root-dir) (:crew ep) (:id ep))))))))
+
+(defthen "that episode has no sealed scenes"
+  isaac.episodes.episode-steps/that-episode-has-no-sealed-scenes
+  "Zero scene .md files under the remembered episode's dir.")
+
 (defthen #"scene (\d+) of that episode does not contain \"([^\"]+)\"" isaac.episodes.episode-steps/scene-n-does-not-contain
   "Absence assertion on scene N's :text (1-based).")
 

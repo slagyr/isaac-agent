@@ -297,5 +297,19 @@
         (should= (first @keys) (second @keys))
         (should (re-matches #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" (first @keys)))))
 
+    (it "seals live after a successful episode-crew reply is printed"
+      (reset! loader-stub {:config (assoc-in synthetic-config [:crew crew-name :conversation] :episodes)})
+      (let [sealed (atom nil)]
+        (with-redefs [bridge/dispatch! (fn [charge]
+                                         (comm/on-text-chunk (:comm charge) (:session-key charge) "Charted")
+                                         {})
+                      isaac.episodes.lifecycle/maybe-seal! (fn [opts]
+                                                             (reset! sealed opts)
+                                                             {:status :skipped})]
+          (with-out-str
+            (should= 0 (sut/run (assoc base-opts :message "Chart the reef" :session "reef-chat" :crew crew-name))))
+          (should= crew-name (:crew @sealed))
+          (should (re-matches #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" (:episode-id @sealed))))))
+
     )
   )

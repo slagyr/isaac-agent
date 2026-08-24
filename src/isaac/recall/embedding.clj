@@ -16,18 +16,31 @@
 
 ;; region ----- Grover deterministic vectors -----
 
+(def ^:private WINE_TOPIC
+  #"(?i)\b(wine|pinot|pheasant|zinfandel|harvest)\b")
+
+(def ^:private REGATTA_TOPIC
+  #"(?i)\b(regatta|race|schedule|saturday|anchor(?:age)?|harbor|quay)\b")
+
+(defn- base-grover-vector [s]
+  [(count s)
+   (long (reduce + 0 (map int s)))
+   (int (first s))
+   (int (last s))])
+
 (defn grover-vector
   "Deterministic 4-dim integer vector for test/stub embedders.
-   [char-count char-sum first-char-code last-char-code].
-   Empty string → [0 0 0 0]."
+   Short strings (the documented contract): [char-count char-sum first last].
+   Longer topic-bearing exchanges get orthogonal axes so live-seal drift
+   can fire in fixtures (wine vs regatta). Empty string → [0 0 0 0]."
   [text]
   (let [s (or text "")]
-    (if (zero? (count s))
-      [0 0 0 0]
-      [(count s)
-       (long (reduce + 0 (map int s)))
-       (int (first s))
-       (int (last s))])))
+    (cond
+      (zero? (count s)) [0 0 0 0]
+      (< (count s) 20)  (base-grover-vector s)
+      (re-find WINE_TOPIC s)    [1 0 0 0]
+      (re-find REGATTA_TOPIC s) [0 1 0 0]
+      :else (base-grover-vector s))))
 
 (deftype GroverEmbedder [model]
   protocol/Embedder

@@ -81,6 +81,34 @@
         (should= true (:routine r-back))
         (should-not (contains? s-back :routine)))))
 
+  (it "writes continues: <scene-id> only when the scene continues another"
+    (let [episode {:id "2026-01-02-0304-ab"
+                   :crew "cordelia"
+                   :status :closed
+                   :scene-ids ["s-wine" "s-dessert"]}
+          wine {:id "s-wine" :gist "Wine pairing" :text "pinot"
+                :start-id "a" :end-id "b"
+                :started-at "2026-01-02T03:04:05"
+                :ended-at "2026-01-02T03:04:10"
+                :seal-reason :live}
+          dessert {:id "s-dessert" :gist "Dessert wine" :text "late harvest"
+                   :start-id "c" :end-id "d"
+                   :started-at "2026-01-02T03:04:11"
+                   :ended-at "2026-01-02T03:04:20"
+                   :seal-reason :live
+                   :continues "s-wine"}
+          mem (fs/mem-fs)]
+      (fs/mkdirs mem @root)
+      (sut/write-episode! mem @root episode [wine dessert])
+      (let [w-raw (fs/slurp mem (str (sut/episode-path @root "cordelia" "2026-01-02-0304-ab") "/s-wine.md"))
+            d-raw (fs/slurp mem (str (sut/episode-path @root "cordelia" "2026-01-02-0304-ab") "/s-dessert.md"))
+            w-back (sut/read-scene mem @root "cordelia" "2026-01-02-0304-ab" "s-wine")
+            d-back (sut/read-scene mem @root "cordelia" "2026-01-02-0304-ab" "s-dessert")]
+        (should-not (re-find #"continues" w-raw))
+        (should (re-find #"(?m)^continues: s-wine$" d-raw))
+        (should-not (contains? w-back :continues))
+        (should= "s-wine" (:continues d-back)))))
+
   (it "finds episode by migrated-from session id"
     (let [mem (fs/mem-fs)
           episode {:id "ep1" :crew "cordelia" :migrated-from "calm-lagoon"

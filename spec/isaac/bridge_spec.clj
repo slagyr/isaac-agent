@@ -323,6 +323,24 @@
             (should= {:dispatched? false :reason :session-in-flight} result)
             (should= :dispatch/refused (:event entry))
             (should= "testuser" (:session entry))))))
+
+    (it "seals live after a successful episode-crew turn"
+      (let [called (atom nil)
+            cfg    {:crew {"cordelia" {:conversation :episodes :soul "You are Cordelia" :model "echo"}}
+                    :models {"echo" {:model "echo" :provider "grover"}}}]
+        (with-redefs [single-turn/run-turn! (fn [_] {:message {:role "assistant" :content "ok"}})
+                      isaac.episodes.lifecycle/maybe-seal! (fn [opts]
+                                                             (reset! called opts)
+                                                             {:status :skipped})]
+          (bridge/dispatch! {:charge/type    :charge
+                             :session-key    "2026-03-01-1000-ab12"
+                             :input          "hello"
+                             :crew           "cordelia"
+                             :config         cfg
+                             :session-store  (store/registered-store)
+                             :comm           nil})
+          (should= "2026-03-01-1000-ab12" (:episode-id @called))
+          (should= "cordelia" (:crew @called)))))
     )
 
   (context "dispatch - /model command"

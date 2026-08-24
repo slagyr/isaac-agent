@@ -15,7 +15,7 @@
 (def DEFAULT_SIZE_CAP 80)
 
 (def ^:private BOUNDARY_LINE
-  #"(?i)^\s*(?:(\d+)\s*-\s*(\d+|end|present|last)|(\d+))\s*:\s*(.+?)\s*$")
+  #"(?i)^\s*(?:(\d+)\s*-\s*(\d+|end|present|last)|(\d+))\s*:\s*(?:\(cont\s+(\d+)\s*-\s*(\d+)\)\s*)?(.+?)\s*$")
 
 (defn parse-scenes
   "Parse LLM text into a vector of {:start :end :gist} maps.
@@ -31,7 +31,7 @@
      []
      (->> (str/split-lines text)
           (keep (fn [line]
-                  (when-let [[_ a b solo gist] (re-matches BOUNDARY_LINE line)]
+                  (when-let [[_ a b solo cont-a cont-b gist] (re-matches BOUNDARY_LINE line)]
                     (let [start (Long/parseLong (or a solo))
                           end   (cond
                                   solo               start
@@ -46,7 +46,10 @@
                           (cond-> {:start start
                                    :end   (long end)
                                    :gist  gist}
-                            routine? (assoc :routine? true))))))))
+                            routine? (assoc :routine? true)
+                            (and cont-a cont-b)
+                            (assoc :continues-ordinals [(Long/parseLong cont-a)
+                                                        (Long/parseLong cont-b)]))))))))
           vec))))
 
 (defn valid-tiling?
@@ -83,7 +86,8 @@
                        :gist      (:gist s)
                        :start-ord (:start s)
                        :end-ord   (:end s)}
-                (:routine? s) (assoc :routine? true))))
+                (:routine? s) (assoc :routine? true)
+                (:continues-ordinals s) (assoc :continues-ordinals (:continues-ordinals s)))))
           (sort-by :start scenes))))
 
 (defn- message-entry? [e]
@@ -275,26 +279,82 @@
                 (drop-marker-text? (:text m))))
           slice))
 
+(defn- scene-covering-ord
+  "First sealed scene whose span-local ordinals cover `ord`, or nil."
+  [scenes-by-ord ord]
+  (get scenes-by-ord ord))
+
+(defn- resolve-continues
+  "Map :continues-ordinals onto a target scene id within this batch.
+   A (cont) pointing at a scene that is not in `sealable` is dropped
+   with a warn log (the still-open trailing scene is the usual case)."
+  [scene scenes-by-ord sealable]
+  (if-let [[a _b] (:continues-ordinals scene)]
+    (let [target (scene-covering-ord scenes-by-ord a)]
+      (cond
+        (and target (contains? sealable (:id target)))
+        (assoc scene :continues (:id target))
+
+        target
+        (do
+          (log/warn :episodes/cont-dropped
+                    :scene (:id scene)
+                    :target (:id target)
+                    :reason :still-open)
+          (dissoc scene :continues-ordinals))
+
+        :else
+        (do
+          (log/warn :episodes/cont-dropped
+                    :scene (:id scene)
+                    :ordinals (:continues-ordinals scene)
+                    :reason :unknown-target)
+          (dissoc scene :continues-ordinals))))
+    scene))
+
 (defn seal-scenes
   "Build sealed scene records from resolved ordinal scenes + distilled msgs.
-   Tilde-marked gists and marker-only slices seal with :routine true."
-  [distilled-messages resolved-scenes seal-reason]
-  (mapv (fn [s]
-          (let [start-ord (:start-ord s)
-                end-ord   (:end-ord s)
-                slice     (subvec distilled-messages (dec start-ord) end-ord)
-                texts     (->> slice (keep :text) (str/join "\n"))
-                start-ts  (:timestamp (first slice))
-                end-ts    (:timestamp (last slice))
-                scene-id  (ids/timestamped-id start-ts)
-                routine?  (or (:routine? s) (markers-only? slice))]
-            (cond-> {:id          scene-id
-                     :start-id    (:start-id s)
-                     :end-id      (:end-id s)
-                     :started-at  start-ts
-                     :ended-at    end-ts
-                     :seal-reason seal-reason
-                     :text        texts
-                     :gist        (:gist s)}
-              routine? (assoc :routine true))))
-        resolved-scenes))
+   Tilde-marked gists and marker-only slices seal with :routine true.
+   Optional :continues-ordinals resolve to a scene id in this batch.
+   `opts` may include `:leave-open` — that many trailing scenes stay
+   unsealed (their ids are assigned so (cont) can detect them, then
+   they are dropped from the return)."
+  ([distilled-messages resolved-scenes seal-reason]
+   (seal-scenes distilled-messages resolved-scenes seal-reason {}))
+  ([distilled-messages resolved-scenes seal-reason {:keys [leave-open] :or {leave-open 0}}]
+   (let [drafts (mapv (fn [s]
+                        (let [start-ord (:start-ord s)
+                              end-ord   (:end-ord s)
+                              slice     (subvec distilled-messages (dec start-ord) end-ord)
+                              texts     (->> slice (keep :text) (str/join "\n"))
+                              start-ts  (:timestamp (first slice))
+                              end-ts    (:timestamp (last slice))
+                              scene-id  (ids/timestamped-id start-ts)
+                              routine?  (or (:routine? s) (markers-only? slice))]
+                          (cond-> {:id          scene-id
+                                   :start-id    (:start-id s)
+                                   :end-id      (:end-id s)
+                                   :start-ord   start-ord
+                                   :end-ord     end-ord
+                                   :started-at  start-ts
+                                   :ended-at    end-ts
+                                   :seal-reason seal-reason
+                                   :text        texts
+                                   :gist        (:gist s)}
+                            routine? (assoc :routine true)
+                            (:continues-ordinals s) (assoc :continues-ordinals (:continues-ordinals s)))))
+                      resolved-scenes)
+         n          (count drafts)
+         open-n     (min (long leave-open) n)
+         sealed     (vec (drop-last open-n drafts))
+         sealable   (set (map :id sealed))
+         by-ord     (into {}
+                          (mapcat (fn [s]
+                                    (map (fn [ord] [ord s])
+                                         (range (:start-ord s) (inc (:end-ord s)))))
+                                  drafts))
+         sealed*    (mapv (fn [s]
+                            (-> (resolve-continues s by-ord sealable)
+                                (dissoc :continues-ordinals :start-ord :end-ord)))
+                          sealed)]
+     sealed*)))

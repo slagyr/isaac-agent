@@ -678,7 +678,20 @@
        :description "Chat model ref used for scene segmentation + gisting (defaults to :defaults :model)"},
       :ttl-minutes
       {:type :int,
-       :description "Warm-episode TTL in minutes (default 60)"}}}},
+       :description "Warm-episode TTL in minutes (default 60)"},
+      :seal
+      {:type :map,
+       :description "Live-sealing triggers (topic drift is primary; size cap is the backstop)",
+       :schema
+       {:size-cap
+        {:type :int,
+         :description "Unsealed-tail message count that forces a seal (default 80)"},
+        :drift-threshold
+        {:type :double,
+         :description "Cosine below which the new exchange has drifted from the rolling open-scene vector"},
+        :min-tail
+        {:type :int,
+         :description "Minimum unsealed-tail messages before drift may fire"}}}}}},
    :recall
    {:schema
     {:name :recall,

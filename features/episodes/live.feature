@@ -434,7 +434,6 @@ Feature: Episodes — live (router + lifecycle)
 
   # ----- Live sealing (isaac-bh17) -----
 
-  @wip
     Scenario: the size cap seals mid-episode, keeping the trailing scene open
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value            |
@@ -474,7 +473,6 @@ Feature: Episodes — live (router + lifecycle)
       | 1\. \S+\s+.*lex 1\.0\d*.*terms \[pheasant\] |
     And the exit code is 0
 
-  @wip
     Scenario: topic drift seals the finished topic well under the size cap
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value            |
@@ -507,7 +505,6 @@ Feature: Episodes — live (router + lifecycle)
       | gist                      | text              |
       | Wine pairing for pheasant | #"(?s)pinot noir" |
 
-  @wip
     Scenario: a false drift trigger seals nothing and harms nothing
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value            |
@@ -538,7 +535,6 @@ Feature: Episodes — live (router + lifecycle)
       | status | open  |
     And that episode has no sealed scenes
 
-  @wip
     Scenario: cont marks resolve to scene ids at seal
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value            |
@@ -577,7 +573,6 @@ Feature: Episodes — live (router + lifecycle)
       | Regatta scheduling        | #"(?s)race is Saturday" |                                |
       | Dessert wine pairing      | #"(?s)late harvest"     | #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" |
 
-  @wip
     Scenario: without embedding, drift is inert but the size cap still seals
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value            |

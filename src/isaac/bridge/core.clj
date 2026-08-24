@@ -201,6 +201,24 @@
 (defn clear-turn-marker! [store session-key]
   (suspend/release-turn-marker! store session-key))
 
+(defn- maybe-live-seal! [charge result]
+  (when (and charge
+             (not= :cli (:kind (:origin charge)))
+             (not (:error result))
+             (not (:unavailable? result))
+             (not (get-in result [:response :error])))
+    (let [cfg     (or (when (map? (:config charge)) (:config charge)) {})
+          crew-id (or (:crew charge) (get-in cfg [:defaults :crew]) "main")]
+      (when (lifecycle/episodes-crew? cfg crew-id)
+        (lifecycle/maybe-seal!
+          {:fs            (or (nexus/get :fs) (fs/instance))
+           :root          (or (get-in cfg [:root]) (:root charge) (nexus/get :root))
+           :crew          crew-id
+           :episode-id    (:session-key charge)
+           :session-store (or (:session-store charge) (nexus/get-in [:sessions :store]))
+           :cfg           cfg}))))
+  result)
+
 (defn- dispatch-charge! [c]
   (let [{:keys [charge result]} (route-charge! c)]
     (if charge
@@ -210,12 +228,12 @@
             (do
               (record-turn-marker! session-store* session-key charge)
               (try
-                (turn/run-turn! charge)
+                (maybe-live-seal! charge (turn/run-turn! charge))
                 (finally
                   (clear-turn-marker! session-store* session-key)
                   (store/clear-in-flight! session-store* session-key))))
             (refuse-dispatch session-key)))
-        (turn/run-turn! charge))
+        (maybe-live-seal! charge (turn/run-turn! charge)))
       result)))
 
 (defn dispatch!

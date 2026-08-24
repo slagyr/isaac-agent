@@ -5,11 +5,28 @@
     [isaac.fs :as fs]
     [isaac.llm.api.grover :as grover]
     [isaac.llm.provider :as llm-provider]
+    [isaac.logger :as log]
     [isaac.nexus :as nexus]
+    [isaac.recall.embedding :as embedding]
     [isaac.session.store.memory :as memory-store]
     [isaac.session.store.spi :as session-store]
     [isaac.tool.memory :as memory]
     [speclj.core :refer :all]))
+
+(defn- seed-open-episode!
+  [ss mem root n-pairs]
+  (let [session (session-store/open-session! ss "live-seal" {:crew "cordelia" :cwd root})
+        pairs   (take n-pairs
+                      [["What wine pairs with pheasant?" "A light pinot noir."]
+                       ["Now the regatta schedule" "First race is Saturday."]
+                       ["Back to wine — dessert?" "For dessert, a late harvest."]
+                       ["Where do we anchor?" "Anchorage is at the north quay."]])]
+    (doseq [[u a] pairs]
+      (session-store/append-message! ss (:id session) {:role "user" :content u})
+      (session-store/append-message! ss (:id session) {:role "assistant" :content a}))
+    (store/write-episode! mem root {:id (:id session) :crew "cordelia" :status :open
+                                    :thread "supper-chat" :scene-ids []} [])
+    session))
 
 (describe "isaac.episodes.lifecycle"
 
@@ -225,4 +242,187 @@
               (should= (:id opened) (get-in resolved [:episode :parent-episode]))
               (should= :open (get-in resolved [:episode :status]))
               (should= "reef-chat" (get-in resolved [:episode :thread]))))))))
+
+  (context "maybe-seal!"
+
+    (it "seals all but the last scene when the unsealed tail hits :size-cap"
+      (let [session  (seed-open-episode! @ss @mem @root 2)
+            provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+            _        (grover/enqueue! [{:type "text" :content "1-2: Wine pairing for pheasant\n3-4: Regatta scheduling"}])
+            result   (sut/maybe-seal! {:fs @mem :root @root :crew "cordelia"
+                                       :episode-id (:id session)
+                                       :session-store @ss
+                                       :provider provider :model "gist"
+                                       :cfg {:episodes {:gist-model :gist :seal {:size-cap 4}}}})
+            ep       (store/read-episode @mem @root "cordelia" (:id session))
+            scenes   (store/list-scenes @mem @root "cordelia" (:id session))]
+        (should= :sealed (:status result))
+        (should= 1 (:sealed result))
+        (should= :open (:status ep))
+        (should= 1 (count scenes))
+        (should= "Wine pairing for pheasant" (:gist (first scenes)))))
+
+    (it "skips when the tail is under the size cap and drift is not configured"
+      (let [session (seed-open-episode! @ss @mem @root 1)
+            result  (sut/maybe-seal! {:fs @mem :root @root :crew "cordelia"
+                                      :episode-id (:id session)
+                                      :session-store @ss
+                                      :cfg {:episodes {:seal {:size-cap 4}}}})
+            scenes  (store/list-scenes @mem @root "cordelia" (:id session))]
+        (should= :skipped (:status result))
+        (should= :no-trigger (:reason result))
+        (should= 0 (count scenes))))
+
+    (it "seals the whole tail when size-cap fires and the segmenter returns one scene"
+      (let [session  (seed-open-episode! @ss @mem @root 2)
+            provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+            _        (grover/enqueue! [{:type "text" :content "1-4: Wine pairing for pheasant"}])
+            result   (sut/maybe-seal! {:fs @mem :root @root :crew "cordelia"
+                                       :episode-id (:id session)
+                                       :session-store @ss
+                                       :provider provider :model "gist"
+                                       :cfg {:episodes {:gist-model :gist
+                                                        :seal {:size-cap 4}}}})
+            scenes   (store/list-scenes @mem @root "cordelia" (:id session))]
+        (should= :sealed (:status result))
+        (should= :size-cap (:trigger result))
+        (should= 1 (count scenes))
+        (should= "Wine pairing for pheasant" (:gist (first scenes)))))
+
+    (it "absorbs a single-scene segmentation as a no-op when only drift fired"
+      (let [session  (seed-open-episode! @ss @mem @root 1)
+            provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+            embed-cfg {:embedding {:source :provider :provider "grover" :model "mini-embed"}
+                       :episodes  {:gist-model :gist
+                                   :seal {:drift-threshold 0.999 :min-tail 2}}}
+            calls    (atom 0)]
+        (with-redefs [embedding/embed-texts
+                      (fn [_cfg _texts]
+                        (let [n (swap! calls inc)]
+                          {:vectors [(if (= 1 n) [1.0 0.0 0.0 0.0] [0.0 1.0 0.0 0.0])]}))]
+          (let [planted (sut/maybe-seal! {:fs @mem :root @root :crew "cordelia"
+                                          :episode-id (:id session)
+                                          :session-store @ss
+                                          :provider provider :model "gist"
+                                          :cfg embed-cfg})
+                planted-ep (store/read-episode @mem @root "cordelia" (:id session))
+                _ (should= :skipped (:status planted))
+                _ (should (seq (:open-scene-vector planted-ep)))
+                _ (session-store/append-message! @ss (:id session) {:role "user" :content "Now the regatta schedule"})
+                _ (session-store/append-message! @ss (:id session) {:role "assistant" :content "First race is Saturday."})
+                _ (grover/enqueue! [{:type "text" :content "1-4: Wine pairing for pheasant"}])
+                result (sut/maybe-seal! {:fs @mem :root @root :crew "cordelia"
+                                         :episode-id (:id session)
+                                         :session-store @ss
+                                         :provider provider :model "gist"
+                                         :cfg embed-cfg})
+                scenes (store/list-scenes @mem @root "cordelia" (:id session))]
+            (should= :skipped (:status result))
+            (should= :single-scene (:reason result))
+            (should= 0 (count scenes))))))
+
+    (it "seals under the size cap when the new exchange drifts from the rolling vector"
+      (let [session  (seed-open-episode! @ss @mem @root 1)
+            provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+            embed-cfg {:embedding {:source :provider :provider "grover" :model "mini-embed"}
+                       :episodes  {:gist-model :gist
+                                   :seal {:drift-threshold 0.999 :min-tail 2}}}
+            calls    (atom 0)]
+        (with-redefs [embedding/embed-texts
+                      (fn [_cfg _texts]
+                        (let [n (swap! calls inc)]
+                          {:vectors [(if (= 1 n) [1.0 0.0 0.0 0.0] [0.0 1.0 0.0 0.0])]}))]
+          (sut/maybe-seal! {:fs @mem :root @root :crew "cordelia"
+                            :episode-id (:id session)
+                            :session-store @ss
+                            :provider provider :model "gist"
+                            :cfg embed-cfg})
+          (session-store/append-message! @ss (:id session) {:role "user" :content "Now the regatta schedule"})
+          (session-store/append-message! @ss (:id session) {:role "assistant" :content "First race is Saturday."})
+          (grover/enqueue! [{:type "text" :content "1-2: Wine pairing for pheasant\n3-4: Regatta scheduling"}])
+          (let [result (sut/maybe-seal! {:fs @mem :root @root :crew "cordelia"
+                                         :episode-id (:id session)
+                                         :session-store @ss
+                                         :provider provider :model "gist"
+                                         :cfg embed-cfg})
+                scenes (store/list-scenes @mem @root "cordelia" (:id session))]
+            (should= :sealed (:status result))
+            (should= :drift (:trigger result))
+            (should= 1 (count scenes))
+            (should= "Wine pairing for pheasant" (:gist (first scenes)))))))
+
+    (it "does not fire drift when embedding is unconfigured; size-cap still seals"
+      (let [session  (seed-open-episode! @ss @mem @root 2)
+            provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+            _        (grover/enqueue! [{:type "text" :content "1-2: Wine pairing for pheasant\n3-4: Regatta scheduling"}])
+            result   (sut/maybe-seal! {:fs @mem :root @root :crew "cordelia"
+                                       :episode-id (:id session)
+                                       :session-store @ss
+                                       :provider provider :model "gist"
+                                       :cfg {:episodes {:gist-model :gist
+                                                        :seal {:size-cap 4
+                                                               :drift-threshold 0.999
+                                                               :min-tail 2}}}})
+            scenes   (store/list-scenes @mem @root "cordelia" (:id session))
+            ep       (store/read-episode @mem @root "cordelia" (:id session))]
+        (should= :sealed (:status result))
+        (should= :size-cap (:trigger result))
+        (should= 1 (count scenes))
+        (should-not (contains? ep :open-scene-vector))))
+
+    (it "indexes newly sealed scenes when embedding is configured"
+      (let [session  (seed-open-episode! @ss @mem @root 2)
+            provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+            _        (grover/enqueue! [{:type "text" :content "1-2: Wine pairing for pheasant\n3-4: Regatta scheduling"}])
+            result   (sut/maybe-seal! {:fs @mem :root @root :crew "cordelia"
+                                       :episode-id (:id session)
+                                       :session-store @ss
+                                       :provider provider :model "gist"
+                                       :cfg {:embedding {:source :provider :provider "grover" :model "mini-embed"}
+                                             :episodes {:gist-model :gist :seal {:size-cap 4}}}})]
+        (should= :sealed (:status result))
+        (should (>= (or (:indexed result) 0) 1))))
+
+    (it "logs and leaves the episode unharmed when segmentation throws"
+      (let [session (seed-open-episode! @ss @mem @root 2)]
+        (with-redefs [isaac.episodes.segment/segment-span! (fn [& _] (throw (ex-info "gist down" {})))]
+          (log/capture-logs
+            (let [result (sut/maybe-seal! {:fs @mem :root @root :crew "cordelia"
+                                           :episode-id (:id session)
+                                           :session-store @ss
+                                           :provider :unused :model "gist"
+                                           :cfg {:episodes {:gist-model :gist :seal {:size-cap 4}}}})
+                  scenes (store/list-scenes @mem @root "cordelia" (:id session))
+                  ep     (store/read-episode @mem @root "cordelia" (:id session))]
+              (should= :error (:status result))
+              (should= 0 (count scenes))
+              (should= :open (:status ep))
+              (should (some #(= :episodes/seal-failed (:event %)) @log/captured-logs)))))))
+
+    (it "persists a rolling open-scene vector after a turn when embedding is configured"
+      (let [session (seed-open-episode! @ss @mem @root 1)
+            _       (sut/maybe-seal! {:fs @mem :root @root :crew "cordelia"
+                                      :episode-id (:id session)
+                                      :session-store @ss
+                                      :cfg {:embedding {:source :provider :provider "grover" :model "mini-embed"}
+                                            :episodes {:seal {:size-cap 80 :min-tail 2}}}})
+            ep      (store/read-episode @mem @root "cordelia" (:id session))]
+        (should (seq (:open-scene-vector ep)))
+        (should= 1 (:open-scene-vector-n ep))
+        (should (every? int? (:open-scene-vector ep)))))
+
+    (it "resets the rolling vector after a successful seal"
+      (let [session  (seed-open-episode! @ss @mem @root 2)
+            provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+            _        (grover/enqueue! [{:type "text" :content "1-2: Wine pairing for pheasant\n3-4: Regatta scheduling"}])
+            _        (sut/maybe-seal! {:fs @mem :root @root :crew "cordelia"
+                                       :episode-id (:id session)
+                                       :session-store @ss
+                                       :provider provider :model "gist"
+                                       :cfg {:embedding {:source :provider :provider "grover" :model "mini-embed"}
+                                             :episodes {:gist-model :gist :seal {:size-cap 4}}}})
+            ep       (store/read-episode @mem @root "cordelia" (:id session))]
+        (should-not (contains? ep :open-scene-vector))
+        (should-not (contains? ep :open-scene-vector-n))))
+    )
   )

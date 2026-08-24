@@ -54,6 +54,21 @@
                (sut/parse-scenes
                  (str "1-2: ~ Loading the rigging checklist skill\n"
                       "3-4: Diagnosed mainstay fraying: chafe guard mounted backwards\n"))))
+
+    (it "reads an optional (cont a-b) mark after the ordinal"
+      (should= [{:start 1 :end 2 :gist "Wine pairing for pheasant"}
+                {:start 3 :end 4 :gist "Regatta scheduling"}
+                {:start 5 :end 6 :gist "Dessert wine pairing" :continues-ordinals [1 2]}
+                {:start 7 :end 8 :gist "Harbor anchorage"}]
+               (sut/parse-scenes
+                 (str "1-2: Wine pairing for pheasant\n"
+                      "3-4: Regatta scheduling\n"
+                      "5-6: (cont 1-2) Dessert wine pairing\n"
+                      "7-8: Harbor anchorage\n"))))
+
+    (it "keeps (cont) when the gist is also routine-marked"
+      (should= [{:start 5 :end 6 :gist "Loading more wine notes" :routine? true :continues-ordinals [1 2]}]
+               (sut/parse-scenes "5-6: (cont 1-2) ~ Loading more wine notes")))
     )
 
   (context "validate-tiling"
@@ -84,6 +99,16 @@
                     {:start 3 :end 4 :gist "Diagnosed fraying"}]]
         (should= [{:start-id "a" :end-id "b" :gist "Loading skill" :start-ord 1 :end-ord 2 :routine? true}
                   {:start-id "c" :end-id "d" :gist "Diagnosed fraying" :start-ord 3 :end-ord 4}]
+                 (sut/resolve-ordinals msgs scenes))))
+
+    (it "carries continues-ordinals onto resolved scenes"
+      (let [msgs [{:id "a"} {:id "b"} {:id "c"} {:id "d"} {:id "e"} {:id "f"}]
+            scenes [{:start 1 :end 2 :gist "Wine"}
+                    {:start 3 :end 4 :gist "Regatta"}
+                    {:start 5 :end 6 :gist "Dessert" :continues-ordinals [1 2]}]]
+        (should= [{:start-id "a" :end-id "b" :gist "Wine" :start-ord 1 :end-ord 2}
+                  {:start-id "c" :end-id "d" :gist "Regatta" :start-ord 3 :end-ord 4}
+                  {:start-id "e" :end-id "f" :gist "Dessert" :start-ord 5 :end-ord 6 :continues-ordinals [1 2]}]
                  (sut/resolve-ordinals msgs scenes))))
     )
 
@@ -192,6 +217,34 @@
         (should= true (:routine (first scenes)))
         (should-not (contains? (second scenes) :routine))
         (should= "Loading the skill" (:gist (first scenes)))))
+
+    (it "resolves in-batch (cont) ordinals to the target scene id"
+      (let [msgs [{:id "a" :timestamp "t1" :text "Wine?" :dropped? false}
+                  {:id "b" :timestamp "t2" :text "Pinot." :dropped? false}
+                  {:id "c" :timestamp "t3" :text "Regatta?" :dropped? false}
+                  {:id "d" :timestamp "t4" :text "Saturday." :dropped? false}
+                  {:id "e" :timestamp "t5" :text "Dessert?" :dropped? false}
+                  {:id "f" :timestamp "t6" :text "Late harvest." :dropped? false}]
+            resolved [{:start-id "a" :end-id "b" :gist "Wine pairing" :start-ord 1 :end-ord 2}
+                      {:start-id "c" :end-id "d" :gist "Regatta" :start-ord 3 :end-ord 4}
+                      {:start-id "e" :end-id "f" :gist "Dessert wine" :start-ord 5 :end-ord 6 :continues-ordinals [1 2]}]
+            scenes (with-redefs [isaac.episodes.ids/chaos-suffix (constantly "ab12")]
+                     (sut/seal-scenes msgs resolved :live))]
+        (should= (:id (first scenes)) (:continues (nth scenes 2)))
+        (should-not (contains? (first scenes) :continues))
+        (should-not (contains? (second scenes) :continues))))
+
+    (it "drops a (cont) that points at the still-open trailing scene"
+      (let [msgs [{:id "a" :timestamp "t1" :text "Wine?" :dropped? false}
+                  {:id "b" :timestamp "t2" :text "Pinot." :dropped? false}
+                  {:id "c" :timestamp "t3" :text "Dessert?" :dropped? false}
+                  {:id "d" :timestamp "t4" :text "Late harvest." :dropped? false}]
+            resolved [{:start-id "a" :end-id "b" :gist "Wine pairing" :start-ord 1 :end-ord 2}
+                      {:start-id "c" :end-id "d" :gist "Dessert wine" :start-ord 3 :end-ord 4 :continues-ordinals [1 2]}]
+            scenes (sut/seal-scenes msgs resolved :live {:leave-open 1})]
+        (should= 1 (count scenes))
+        (should= "Wine pairing" (:gist (first scenes)))
+        (should-not (contains? (first scenes) :continues))))
 
     (it "auto-marks a markers-only slice as routine without LLM judgment"
       (let [msgs [{:id "a" :timestamp "t1" :text "Check the pump." :dropped? false}

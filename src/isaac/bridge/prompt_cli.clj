@@ -175,6 +175,13 @@
                         (println (json/generate-string {:session  session-key
                                                           :response @text}))
                         (println @text))
+                      (when (lifecycle/episodes-crew? cfg (episode-crew-id opts override cfg))
+                        (lifecycle/maybe-seal!
+                          {:root          root
+                           :crew          (episode-crew-id opts override cfg)
+                           :episode-id    session-key
+                           :session-store session-store
+                           :cfg           cfg}))
                       0)))))))))))
 
 (def option-spec

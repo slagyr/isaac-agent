@@ -7,6 +7,7 @@
     [isaac.recall.embedding.cli :as cli]
     [isaac.recall.embedding.ollama :as ollama]
     [isaac.recall.embedding.protocol :as protocol]
+    [isaac.recall.score :as score]
     [speclj.core :refer :all]))
 
 (describe "isaac.recall.embedding"
@@ -23,6 +24,14 @@
 
     (it "empty string is zeros"
       (should= [0 0 0 0] (sut/grover-vector "")))
+
+    (it "distinguishes a wine exchange from a regatta exchange below the live-seal drift threshold"
+      (let [wine    (sut/grover-vector (str "What wine pairs with pheasant?\nA light pinot noir."))
+            regatta (sut/grover-vector (str "Now the regatta schedule\nFirst race is Saturday."))
+            sim     (score/cosine
+                      (score/quantize-vector (score/normalize-vector wine))
+                      (score/quantize-vector (score/normalize-vector regatta)))]
+        (should (< sim 0.999))))
     )
 
   (context "GroverEmbedder"

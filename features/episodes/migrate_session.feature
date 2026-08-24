@@ -360,7 +360,6 @@ Feature: Episodes — migrate-session
       | Pump nominal report       |         |
 
     # isaac-bh17: prompt gains (cont ...) continuation-mark instructions
-  @wip
   Scenario: segmentation prompt instructs routine marking and what-not-how gists
     Given the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |

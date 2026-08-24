@@ -98,5 +98,11 @@
       (let [msgs [{:id "a" :role "user" :text "one" :dropped? false}]
             prompt (sut/format-span-prompt msgs nil)]
         (should (re-find #"(?s)(?=.*routine)(?=.*~)(?=.*evidence, not the subject)(?=.*what was accomplished)" prompt))))
+
+    (it "instructs (cont) marks for a scene that resumes an earlier topic"
+      (let [msgs [{:id "a" :role "user" :text "one" :dropped? false}]
+            prompt (sut/format-span-prompt msgs nil)]
+        (should (re-find #"\(cont " prompt))
+        (should (re-find #"resumes" prompt))))
     )
   )

@@ -1,18 +1,23 @@
 (ns isaac.episodes.lifecycle
   "Open/close live episodes and route a THREAD handle to the backing session."
   (:require
+    [clojure.string :as str]
     [isaac.config.loader :as loader]
     [isaac.config.resolve :as resolve]
+    [isaac.episodes.distill :as distill]
     [isaac.episodes.ids :as ids]
     [isaac.episodes.migrate :as migrate]
+    [isaac.episodes.segment :as segment]
     [isaac.episodes.store :as store]
     [isaac.fs :as fs]
-    [isaac.recall.index :as recall-index]
-    [isaac.recall.inject :as recall-inject]
     [isaac.llm.api.protocol :as api]
     [isaac.llm.provider :as llm-provider]
     [isaac.logger :as log]
     [isaac.nexus :as nexus]
+    [isaac.recall.embedding :as embedding]
+    [isaac.recall.index :as recall-index]
+    [isaac.recall.inject :as recall-inject]
+    [isaac.recall.score :as score]
     [isaac.session.context :as session-ctx]
     [isaac.session.store.spi :as session-store]
     [isaac.tool.memory :as memory])
@@ -276,6 +281,156 @@
      :action        action
      :session-store session-store})
   resolved)
+
+(defn- seal-knobs [cfg]
+  (let [seal (get-in (or cfg {}) [:episodes :seal] {})]
+    {:size-cap         (or (:size-cap seal) segment/DEFAULT_SIZE_CAP)
+     :drift-threshold  (:drift-threshold seal)
+     :min-tail         (:min-tail seal)}))
+
+(defn- message-entries [transcript]
+  (filterv #(= "message" (:type %)) (or transcript [])))
+
+(defn- tail-after-sealed [messages sealed-scenes]
+  (let [ids     (mapv :id messages)
+        ranks   (keep (fn [s]
+                        (let [i (.indexOf ids (:end-id s))]
+                          (when-not (neg? i) i)))
+                      sealed-scenes)
+        cut     (if (seq ranks) (inc (apply max ranks)) 0)]
+    (subvec messages (min cut (count messages)))))
+
+(defn- last-exchange-text [messages]
+  (->> (take-last 2 messages)
+       (map distill/distill-entry)
+       (keep :text)
+       (str/join "\n")))
+
+(defn- embed-one [cfg text]
+  (try
+    (when-not (str/blank? text)
+      (let [r (embedding/embed-texts cfg [text])]
+        (when-not (:error r)
+          (first (:vectors r)))))
+    (catch Exception _
+      nil)))
+
+(defn- running-mean [prev-ints n new-raw]
+  (let [new-u (vec (seq (score/normalize-vector new-raw)))]
+    (if (or (empty? prev-ints) (zero? (or n 0)))
+      {:vector (vec (seq (score/quantize-vector new-u))) :n 1}
+      (let [prev (mapv #(/ (double %) score/VECTOR_SCALE) prev-ints)
+            n    (long n)
+            mean (mapv (fn [p x] (/ (+ (* p n) x) (inc n))) prev new-u)
+            unit (score/normalize-vector mean)]
+        {:vector (vec (seq (score/quantize-vector unit))) :n (inc n)}))))
+
+(defn- cosine-to-rolling [rolling-ints new-raw]
+  (when (seq rolling-ints)
+    (score/cosine (int-array rolling-ints)
+                  (score/quantize-vector (score/normalize-vector new-raw)))))
+
+(defn- persist-vector! [fs* root episode mean]
+  (store/write-episode! fs* root
+                        (assoc episode
+                          :open-scene-vector (:vector mean)
+                          :open-scene-vector-n (:n mean))
+                        []))
+
+(defn- commit-live-seal!
+  [fs* root crew cfg episode sealed new-scenes trigger]
+  (let [all (vec (concat (remove nil? sealed) new-scenes))
+        ep  (-> episode
+                (assoc :scene-ids (mapv :id all))
+                (dissoc :open-scene-vector :open-scene-vector-n))]
+    (store/write-episode! fs* root ep new-scenes)
+    (let [indexed (index-after-close! fs* root crew cfg)]
+      (log/info :episodes/live-sealed :episode (:id episode)
+                :sealed (count new-scenes) :trigger trigger)
+      (cond-> {:status :sealed :sealed (count new-scenes)
+               :trigger trigger :scenes new-scenes}
+        (and indexed (pos? (or (:new indexed) 0)))
+        (assoc :indexed (:new indexed))))))
+
+(defn maybe-seal!
+  "Post-reply live seal. Order: update rolling open-scene vector → check
+   drift/cap triggers → segment tail → seal all-but-last (hard-cap
+   single-scene seals entirely) → index → reset vector.
+   Failure is loud-logged and leaves the turn / episode unharmed."
+  [{:keys [fs root crew episode-id session-store provider model cfg]}]
+  (let [fs*  (runtime-fs fs)
+        root (runtime-root root)
+        ss   (runtime-store session-store)
+        crew (or crew "main")
+        cfg  (or cfg {})
+        existing (when (and root episode-id)
+                   (store/read-episode fs* root crew episode-id))]
+    (cond
+      (or (nil? existing) (not= :open (:status existing)))
+      {:status :skipped :reason :not-open}
+
+      (nil? ss)
+      {:status :skipped :reason :no-store}
+
+      :else
+      (try
+        (let [{:keys [size-cap drift-threshold min-tail]} (seal-knobs cfg)
+              transcript (session-store/chronicle-transcript ss episode-id)
+              sealed     (vec (remove nil? (store/list-scenes fs* root crew episode-id)))
+              tail       (tail-after-sealed (message-entries transcript) sealed)
+              n          (count tail)
+              new-raw    (embed-one cfg (last-exchange-text tail))
+              prior-vec  (:open-scene-vector existing)
+              cosine     (when new-raw (cosine-to-rolling prior-vec new-raw))
+              new-mean   (when new-raw (running-mean prior-vec (:open-scene-vector-n existing) new-raw))
+              cap-fired? (>= n size-cap)
+              drift-fired? (boolean
+                             (and drift-threshold min-tail new-raw (seq prior-vec)
+                                  (>= n min-tail)
+                                  (number? cosine)
+                                  (< cosine drift-threshold)))
+              trigger    (cond
+                           cap-fired?    :size-cap
+                           drift-fired?  :drift
+                           :else         nil)
+              episode*   (cond-> existing
+                           new-mean (assoc :open-scene-vector (:vector new-mean)
+                                           :open-scene-vector-n (:n new-mean)))]
+          (when (and new-mean (nil? trigger))
+            (persist-vector! fs* root existing new-mean))
+          (if-not trigger
+            {:status :skipped :reason :no-trigger}
+            (let [{:keys [provider model]} (gist-provider+model cfg root provider model)]
+              (if-not provider
+                (do
+                  (when new-mean (persist-vector! fs* root existing new-mean))
+                  (log/warn :episodes/seal-failed :episode episode-id :reason :no-provider)
+                  {:status :skipped :reason :no-provider})
+                (let [distilled (mapv distill/distill-entry tail)
+                      result    (segment/segment-span! provider model distilled nil)]
+                  (if-not (:ok result)
+                    (do
+                      (when new-mean (persist-vector! fs* root existing new-mean))
+                      (log/warn :episodes/seal-failed :episode episode-id
+                                :reason (or (:error result) :bad-parse)
+                                :raw (:raw result))
+                      {:status :error :reason (:error result)})
+                    (let [resolved   (:ok result)
+                          leave-open (if (and (= :size-cap trigger)
+                                              (= 1 (count resolved)))
+                                       0 1)
+                          new-scenes (segment/seal-scenes distilled resolved :live
+                                                          {:leave-open leave-open})]
+                      (if (empty? new-scenes)
+                        (do
+                          (when new-mean (persist-vector! fs* root existing new-mean))
+                          {:status :skipped :reason :single-scene :trigger trigger})
+                        (commit-live-seal! fs* root crew cfg episode* sealed
+                                           new-scenes trigger)))))))))
+        (catch Exception e
+          (log/warn :episodes/seal-failed :episode episode-id
+                    :reason :exception :error (.getMessage e))
+          {:status :error :reason :exception :message (.getMessage e)})))))
 
 (defn compact-close!
   "Compaction on an episode crew: close the current episode and open a

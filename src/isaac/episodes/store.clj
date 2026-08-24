@@ -16,7 +16,7 @@
     [isaac.session.store.impl-common :as impl]))
 
 (def ^:private SCENE_FRONTMATTER_KEYS
-  [:id :start-id :end-id :started-at :ended-at :seal-reason :gist :routine])
+  [:id :start-id :end-id :started-at :ended-at :seal-reason :gist :routine :continues])
 
 (defn episodes-root [root]
   (str root "/episodes"))
