@@ -3,9 +3,11 @@
     [c3kit.apron.schema :as schema]
     [isaac.config.schema.root :as sut]
     [isaac.config.validation-lexicon :as validation-lexicon]
+    [isaac.fs :as fs]
     [isaac.marigold :as marigold]
     [isaac.marigold.agent :as marigold-agent]
     [isaac.module.loader :as module-loader]
+    [isaac.nexus :as nexus]
     [isaac.schema.lexicon :as lexicon]
     [isaac.schema.registered-in :as registered-in]
     [speclj.core :refer :all]))
@@ -29,7 +31,8 @@
 
   #_{:clj-kondo/ignore [:unresolved-symbol]}
   (around [example]
-    (with-config-schema-bindings example))
+    (nexus/-with-nested-nexus {:fs (fs/mem-fs)}
+      (with-config-schema-bindings example)))
 
   (describe "entity conformance"
 

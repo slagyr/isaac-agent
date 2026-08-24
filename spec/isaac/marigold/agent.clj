@@ -9,6 +9,7 @@
     [isaac.llm.api.protocol :as api]
     [isaac.llm.api.grover]
     [isaac.marigold :as marigold]
+    [isaac.module.discovery :as discovery]
     [isaac.module.loader :as module-loader]
     [isaac.slash.registry :as slash-registry]
     [isaac.tool.registry :as tool-registry]
@@ -112,7 +113,8 @@
   []
   #_{:clj-kondo/ignore [:unresolved-symbol]}
   (speclj/around [example]
-    (binding [module-loader/*foundation-index-override* baseline-foundation-index]
+    (binding [module-loader/*foundation-index-override* baseline-foundation-index
+              discovery/*foundation-index-override*     baseline-foundation-index]
       (schema-compose/clear-cache!)
       (reset-extension-registries!)
       (try
@@ -123,7 +125,8 @@
 
 (defn with-real-manifest*
   [thunk]
-  (binding [module-loader/*foundation-index-override* nil]
+  (binding [module-loader/*foundation-index-override* nil
+            discovery/*foundation-index-override*     nil]
     (reset-extension-registries!)
     (module-loader/activate-foundation!)
     (register-grover-test-fixture!)

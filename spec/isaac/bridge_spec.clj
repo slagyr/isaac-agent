@@ -66,11 +66,10 @@
             data (bridge-status/status-data *root* "testuser" ctx)]
         (should= "testuser" (:session-key data))))
 
-    (it "includes session-file from storage"
+    (it "includes session directory transcript path from storage"
       (let [ctx {:agent "main" :model "echo" :provider "grover" :context-window 32768}
             data (bridge-status/status-data *root* "testuser" ctx)]
-        (should-not-be-nil (:session-file data))
-        (should (re-matches #"[a-z0-9-]+\.jsonl" (:session-file data)))))
+        (should= "testuser/current.ednl" (:session-file data))))
 
     (it "counts zero turns on a fresh session"
       (let [ctx {:agent "main" :model "echo" :provider "grover" :context-window 32768}
