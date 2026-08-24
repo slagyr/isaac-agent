@@ -957,13 +957,13 @@
           (sut/run-turn! charge))
         (should= [[:started "lookout-ok"] [:ended "lookout-ok" :ok]] @events)))
 
-    (it "fires observers with an error outcome when the turn throws"
+    (it "fires observers with turn-died when the turn throws"
       (helper/create-session! test-dir "lookout-boom" {:crew "main"})
       (let [events   (atom [])
             obs      (reify observer/TurnObserver
                        (on-turn-started [_ _] (swap! events conj :started))
                        (on-turn-ended [_ _ outcome] (swap! events conj [:ended outcome]))
-                       (on-turn-died [_ _ _]))
+                       (on-turn-died [_ _ reason] (swap! events conj [:died reason])))
             provider (->TestProvider marigold/quantum-anvil {:api marigold/anvil-api})
             charge   {:charge/type    :charge
                       :session-key    "lookout-boom"
@@ -981,9 +981,126 @@
                       tool-loop/run         (fn [& _] (throw (Exception. "fog rolled in")))
                       sut/process-response! (fn [& _] nil)]
           (sut/run-turn! charge))
+        (should= [:started [:died "fog rolled in"]] @events)))
+
+    (it "fires observers with turn-died when a non-Exception Throwable escapes"
+      (helper/create-session! test-dir "lookout-err" {:crew "main"})
+      (let [events   (atom [])
+            obs      (reify observer/TurnObserver
+                       (on-turn-started [_ _] (swap! events conj :started))
+                       (on-turn-ended [_ _ outcome] (swap! events conj [:ended outcome]))
+                       (on-turn-died [_ _ reason] (swap! events conj [:died reason])))
+            provider (->TestProvider marigold/quantum-anvil {:api marigold/anvil-api})
+            charge   {:charge/type    :charge
+                      :session-key    "lookout-err"
+                      :input          "scan"
+                      :root           test-dir
+                      :session-store  (store/registered-store)
+                      :comm           null-comm/channel
+                      :crew           "main"
+                      :model          "test-model"
+                      :provider       provider
+                      :soul           "You are Isaac."
+                      :context-window 4096
+                      :observers      [obs]}]
+        (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+                      tool-loop/run         (fn [& _] (throw (Error. "stack overflow")))
+                      sut/process-response! (fn [& _] nil)]
+          (sut/run-turn! charge))
+        (should= [:started [:died "stack overflow"]] @events)))
+
+    (it "fires turn-ended, not turn-died, when the provider returns an error reply"
+      (helper/create-session! test-dir "lookout-http" {:crew "main"})
+      (let [events   (atom [])
+            obs      (reify observer/TurnObserver
+                       (on-turn-started [_ _] (swap! events conj :started))
+                       (on-turn-ended [_ _ outcome] (swap! events conj [:ended outcome]))
+                       (on-turn-died [_ _ reason] (swap! events conj [:died reason])))
+            provider (->TestProvider marigold/quantum-anvil {:api marigold/anvil-api})
+            charge   {:charge/type    :charge
+                      :session-key    "lookout-http"
+                      :input          "scan"
+                      :root           test-dir
+                      :session-store  (store/registered-store)
+                      :comm           null-comm/channel
+                      :crew           "main"
+                      :model          "test-model"
+                      :provider       provider
+                      :soul           "You are Isaac."
+                      :context-window 4096
+                      :observers      [obs]}]
+        (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+                      tool-loop/run         (fn [& _] {:error :http-error :status 403 :message "fog rolled in"})
+                      sut/process-response! (fn [_ _ result _] result)]
+          (sut/run-turn! charge))
         (should= :started (first @events))
         (should= :ended (first (second @events)))
-        (should= :error (get-in @events [1 1 :kind]))))
+        (should= :error (get-in @events [1 1 :kind]))
+        (should= 2 (count @events))))
+
+    (it "fires an ambient observer with turn-died when the turn throws"
+      (helper/create-session! test-dir "ambient-died" {:crew "main"})
+      (let [events   (atom [])
+            ambient  (reify observer/TurnObserver
+                       (on-turn-started [_ ctx] (swap! events conj [:started (:session-key ctx)]))
+                       (on-turn-ended [_ _ outcome] (swap! events conj [:ended outcome]))
+                       (on-turn-died [_ ctx reason] (swap! events conj [:died (:session-key ctx) reason])))
+            provider (->TestProvider marigold/quantum-anvil {:api marigold/anvil-api})
+            charge   {:charge/type    :charge
+                      :session-key    "ambient-died"
+                      :input          "scan"
+                      :root           test-dir
+                      :session-store  (store/registered-store)
+                      :comm           null-comm/channel
+                      :crew           "main"
+                      :model          "test-model"
+                      :provider       provider
+                      :soul           "You are Isaac."
+                      :context-window 4096}]
+        (try
+          (observer/attach! ambient)
+          (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+                        tool-loop/run         (fn [& _] (throw (Exception. "crow's nest exploded")))
+                        sut/process-response! (fn [& _] nil)]
+            (sut/run-turn! charge))
+          (finally
+            (observer/clear-ambient!)))
+        (should= [[:started "ambient-died"] [:died "ambient-died" "crow's nest exploded"]] @events)))
+
+    (it "isolates a throwing died observer so finalization continues"
+      (helper/create-session! test-dir "died-boom" {:crew "main"})
+      (let [events    (atom [])
+            exploding (reify observer/TurnObserver
+                        (on-turn-started [_ _])
+                        (on-turn-ended [_ _ _])
+                        (on-turn-died [_ _ _] (throw (Exception. "lookout exploded"))))
+            witness   (reify observer/TurnObserver
+                        (on-turn-started [_ _])
+                        (on-turn-ended [_ _ outcome] (swap! events conj [:ended outcome]))
+                        (on-turn-died [_ _ reason] (swap! events conj [:died reason])))
+            provider  (->TestProvider marigold/quantum-anvil {:api marigold/anvil-api})
+            charge    {:charge/type    :charge
+                       :session-key    "died-boom"
+                       :input          "scan"
+                       :root           test-dir
+                       :session-store  (store/registered-store)
+                       :comm           null-comm/channel
+                       :crew           "main"
+                       :model          "test-model"
+                       :provider       provider
+                       :soul           "You are Isaac."
+                       :context-window 4096
+                       :observers      [exploding witness]}]
+        (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+                      tool-loop/run         (fn [& _] (throw (Exception. "fog rolled in")))
+                      sut/process-response! (fn [& _] nil)]
+          (log/capture-logs
+            (let [result (sut/run-turn! charge)
+                  entry  (first (filter #(= :turn/observer-failed (:event %)) @log/captured-logs))]
+              (should= :exception (:error result))
+              (should= :warn (:level entry))
+              (should= "lookout exploded" (:error entry)))))
+        (should= [[:died "fog rolled in"]] @events)))
 
     (it "fires an ambient observer on a turn with no submitted observers"
       (helper/create-session! test-dir "ambient-ok" {:crew "main"})

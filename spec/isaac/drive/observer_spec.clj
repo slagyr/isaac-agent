@@ -142,4 +142,12 @@
                   (sut/on-turn-ended obs {:session-key "crows-nest"}
                                      {:kind :error :reason "fog rolled in"})))]
       (should (str/includes? out "turn started"))
-      (should (re-find #"turn ended \(error[^)]*\)" out)))))
+      (should (re-find #"turn ended \(error[^)]*\)" out))))
+
+  (it "prints turn ended (error ...) when the turn dies"
+    (let [out (with-out-str
+                (let [obs (sut/lookout)]
+                  (sut/on-turn-started obs {:session-key "crows-nest"})
+                  (sut/on-turn-died obs {:session-key "crows-nest"} "fog rolled in")))]
+      (should (str/includes? out "turn started"))
+      (should (re-find #"turn ended \(error fog rolled in\)" out)))))

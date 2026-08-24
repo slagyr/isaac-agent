@@ -967,7 +967,10 @@
 
 (defn- finish-turn! [ch session-key result observers]
   (comm/on-turn-end ch session-key result)
-  (notify-observers! observers :on-turn-ended (observer-ctx session-key) (observer/outcome result))
+  (let [ctx (observer-ctx session-key)]
+    (if (= :exception (:error result))
+      (notify-observers! observers :on-turn-died ctx (or (:message result) "unknown"))
+      (notify-observers! observers :on-turn-ended ctx (observer/outcome result))))
   result)
 
 (defn- record-tool-call!
