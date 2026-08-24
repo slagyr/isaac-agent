@@ -8,11 +8,13 @@
     [isaac.charge :as charge]
     [isaac.cli.registry :as cli]
     [isaac.comm.protocol :as comm]
+    [isaac.comm.render :as render]
     [isaac.config.loader :as loader]
     [isaac.config.root :as root]
     [isaac.agent.config.runtime :as runtime]
     [isaac.episodes.lifecycle :as lifecycle]
     [isaac.fs :as fs]
+    [isaac.drive.observer :as observer]
     [isaac.drive.turn :as single-turn]
     [isaac.session.context :as session-ctx]
     [isaac.session.frequencies :as session-frequencies]
@@ -49,10 +51,15 @@
       (some-> (:error payload) str)
       "unknown error"))
 
-(deftype PromptComm [text-atom]
+(deftype PromptComm [text-atom live?]
   comm/Comm
   (on-turn-start [_ _ _] nil)
-  (on-text-chunk [_ _ text] (swap! text-atom str text))
+  (on-text-chunk [_ _ text]
+    (let [plain (render/chunk-text text)]
+      (swap! text-atom str plain)
+      (when live?
+        (print plain)
+        (flush))))
   (on-tool-call [_ _ tool-call]
     (stderr-line! (str (tool-icon (:name tool-call)) " " (:name tool-call)
                        (when-let [summary (not-empty (str (tool-summary tool-call)))]
@@ -70,10 +77,12 @@
     (stderr-line! (str "🪦 compaction disabled: " (name (:reason payload)))))
   (on-turn-end [_ _ _] nil))
 
-(defn- make-prompt-comm []
-  (let [text (atom "")]
-    {:comm (->PromptComm text)
-     :text text}))
+(defn- make-prompt-comm
+  ([] (make-prompt-comm false))
+  ([live?]
+   (let [text (atom "")]
+     {:comm (->PromptComm text (boolean live?))
+      :text text})))
 
 (defn- root-of [opts]
   (root/default-root opts))
@@ -134,6 +143,51 @@
           (:id entry))
         (:session-key target)))))
 
+(defn- dispatch-prompt! [opts cfg session-store session-key session comm text]
+  (let [obs-refs  (mapv observer/parse-ref (or (:observer opts) []))
+        override  (frequencies-cli/build-override opts)
+        obs-check (when (seq obs-refs) (observer/resolve-submitted obs-refs))]
+    (if (:error obs-check)
+      (do (print-error! (:message obs-check)) 1)
+      (do
+        (builtin/register-all!)
+        (let [result (bridge/dispatch!
+                       (charge/build (cond-> {:session-key    session-key
+                                              :input          (:message opts)
+                                              :config         cfg
+                                              :crew           (or (:with-crew override) (:crew session))
+                                              :model-override (or (:with-model override) (:model opts))
+                                              :origin         {:kind :cli}
+                                              :comm           comm}
+                                             (seq obs-refs) (assoc :observers obs-refs))))]
+          (if (or (:error result)
+                  (:unavailable? result)
+                  (get-in result [:response :error]))
+            (do
+              (binding [*out* *err*]
+                (println (single-turn/error-message result)))
+              1)
+            (do
+              (cond
+                (:json opts)
+                (println (json/generate-string {:session  session-key
+                                                :response @text}))
+
+                (seq obs-refs)
+                (when-not (str/ends-with? (or @text "") "\n")
+                  (println))
+
+                :else
+                (println @text))
+              (when (lifecycle/episodes-crew? cfg (episode-crew-id opts override cfg))
+                (lifecycle/maybe-seal!
+                  {:root          (root-of opts)
+                   :crew          (episode-crew-id opts override cfg)
+                   :episode-id    session-key
+                   :session-store session-store
+                   :cfg           cfg}))
+              0)))))))
+
 (defn run [opts]
   (if-not (:message opts)
     (do (println "Error: -m/--message is required")
@@ -153,41 +207,15 @@
               (do (print-error! (:message target)) 1)
               (let [session-key (ensure-session! target override opts cfg session-store)
                     session     (store/get-session session-store session-key)
-                    {:keys [comm text]} (make-prompt-comm)]
-                (builtin/register-all!)
-                (let [result (bridge/dispatch!
-                               (charge/build {:session-key    session-key
-                                              :input          (:message opts)
-                                              :config         cfg
-                                              :crew           (or (:with-crew override) (:crew session))
-                                              :model-override (or (:with-model override) (:model opts))
-                                              :origin         {:kind :cli}
-                                              :comm           comm}))]
-                  (if (or (:error result)
-                          (:unavailable? result)
-                          (get-in result [:response :error]))
-                    (do
-                      (binding [*out* *err*]
-                        (println (single-turn/error-message result)))
-                      1)
-                    (do
-                      (if (:json opts)
-                        (println (json/generate-string {:session  session-key
-                                                          :response @text}))
-                        (println @text))
-                      (when (lifecycle/episodes-crew? cfg (episode-crew-id opts override cfg))
-                        (lifecycle/maybe-seal!
-                          {:root          root
-                           :crew          (episode-crew-id opts override cfg)
-                           :episode-id    session-key
-                           :session-store session-store
-                           :cfg           cfg}))
-                      0)))))))))))
+                    {:keys [comm text]} (make-prompt-comm (seq (:observer opts)))]
+                (dispatch-prompt! opts cfg session-store session-key session comm text)))))))))
 
 (def option-spec
   (concat
     [["-m" "--message TEXT" "Message to send (required)"]
      ["-j" "--json" "Output result as JSON"]
+     [nil "--observer REF" "Submit a turn observer (repeatable); e.g. lookout or foreman:bean-work/bn-7"
+      :assoc-fn (fn [m k v] (update m k (fnil conj []) v))]
      ["-h" "--help" "Show help"]]
     frequencies-cli/frequencies-option-spec
     frequencies-cli/override-option-spec))

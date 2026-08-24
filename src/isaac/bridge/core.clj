@@ -13,6 +13,7 @@
     [isaac.charge :as charge]
     [isaac.comm.protocol :as comm]
     [isaac.config.loader :as loader]
+    [isaac.drive.observer :as observer]
     [isaac.drive.turn :as turn]
     [isaac.episodes.lifecycle :as lifecycle]
     [isaac.fs :as fs]
@@ -219,21 +220,48 @@
            :cfg           cfg}))))
   result)
 
+(defn- isolate-cleanup! [step-name f]
+  (try
+    (f)
+    (catch Throwable t
+      (log/warn :turn/finalization-step-failed
+                :step step-name
+                :error (.getMessage t)
+                :ex-class (.getName (class t))))))
+
+(defn- resolve-charge-observers [charge]
+  (let [refs (:observers charge)]
+    (cond
+      (empty? refs) {:charge charge}
+      (every? #(satisfies? observer/TurnObserver %) refs) {:charge charge}
+      :else (let [resolved (observer/resolve-submitted refs)]
+              (if (:error resolved)
+                resolved
+                {:charge (assoc charge :observers (:observers resolved))})))))
+
 (defn- dispatch-charge! [c]
   (let [{:keys [charge result]} (route-charge! c)]
     (if charge
-      (if-let [session-key (:session-key charge)]
-        (let [session-store* (or (:session-store charge) (nexus/get-in [:sessions :store]))]
-          (if (store/mark-in-flight! session-store* session-key)
-            (do
-              (record-turn-marker! session-store* session-key charge)
-              (try
-                (maybe-live-seal! charge (turn/run-turn! charge))
-                (finally
-                  (clear-turn-marker! session-store* session-key)
-                  (store/clear-in-flight! session-store* session-key))))
-            (refuse-dispatch session-key)))
-        (maybe-live-seal! charge (turn/run-turn! charge)))
+      (let [obs-check (resolve-charge-observers charge)]
+        (if (:error obs-check)
+          {:error   (:error obs-check)
+           :message (:message obs-check)
+           :ref     (:ref obs-check)}
+          (let [charge (or (:charge obs-check) charge)]
+            (if-let [session-key (:session-key charge)]
+              (let [session-store* (or (:session-store charge) (nexus/get-in [:sessions :store]))]
+                (if (store/mark-in-flight! session-store* session-key)
+                  (do
+                    (record-turn-marker! session-store* session-key charge)
+                    (try
+                      (maybe-live-seal! charge (turn/run-turn! charge))
+                      (finally
+                        (isolate-cleanup! :clear-turn-marker
+                                          #(clear-turn-marker! session-store* session-key))
+                        (isolate-cleanup! :clear-in-flight
+                                          #(store/clear-in-flight! session-store* session-key)))))
+                  (refuse-dispatch session-key)))
+              (maybe-live-seal! charge (turn/run-turn! charge))))))
       result)))
 
 (defn dispatch!

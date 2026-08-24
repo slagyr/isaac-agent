@@ -6,6 +6,7 @@
     [isaac.comm.null :as null-comm]
     [isaac.config.api :as config]
     [isaac.drive.dispatch :as dispatch]
+    [isaac.drive.observer :as observer]
     [isaac.drive.turn :as sut]
     [isaac.fs :as fs]
     [isaac.llm.api.protocol :as api]
@@ -925,7 +926,64 @@
             (should= :exception (:error result))
             (should= "stack overflow" (:message result))
             (should= "error" (:type last-e))
-            (should= "stack overflow" (:content last-e)))))))
+            (should= "stack overflow" (:content last-e))))))
+
+    (it "fires submitted observers around a successful turn"
+      (helper/create-session! test-dir "lookout-ok" {:crew "main"})
+      (let [events   (atom [])
+            obs      (reify observer/TurnObserver
+                       (on-turn-started [_ ctx] (swap! events conj [:started (:session-key ctx)]))
+                       (on-turn-ended [_ ctx outcome] (swap! events conj [:ended (:session-key ctx) outcome]))
+                       (on-turn-died [_ _ _]))
+            provider (->TestProvider marigold/quantum-anvil {:api marigold/anvil-api})
+            charge   {:charge/type    :charge
+                      :session-key    "lookout-ok"
+                      :input          "scan"
+                      :root           test-dir
+                      :session-store  (store/registered-store)
+                      :comm           null-comm/channel
+                      :crew           "main"
+                      :model          "test-model"
+                      :provider       provider
+                      :soul           "You are Isaac."
+                      :context-window 4096
+                      :observers      [obs]}]
+        (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+                      tool-loop/run         (fn [& _] {:message {:role "assistant" :content "Land ho ahead"}
+                                                       :model   "test-model"
+                                                       :usage   {}
+                                                       :tool-calls []})
+                      sut/process-response! (fn [& _] nil)]
+          (sut/run-turn! charge))
+        (should= [[:started "lookout-ok"] [:ended "lookout-ok" :ok]] @events)))
+
+    (it "fires observers with an error outcome when the turn throws"
+      (helper/create-session! test-dir "lookout-boom" {:crew "main"})
+      (let [events   (atom [])
+            obs      (reify observer/TurnObserver
+                       (on-turn-started [_ _] (swap! events conj :started))
+                       (on-turn-ended [_ _ outcome] (swap! events conj [:ended outcome]))
+                       (on-turn-died [_ _ _]))
+            provider (->TestProvider marigold/quantum-anvil {:api marigold/anvil-api})
+            charge   {:charge/type    :charge
+                      :session-key    "lookout-boom"
+                      :input          "scan"
+                      :root           test-dir
+                      :session-store  (store/registered-store)
+                      :comm           null-comm/channel
+                      :crew           "main"
+                      :model          "test-model"
+                      :provider       provider
+                      :soul           "You are Isaac."
+                      :context-window 4096
+                      :observers      [obs]}]
+        (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+                      tool-loop/run         (fn [& _] (throw (Exception. "fog rolled in")))
+                      sut/process-response! (fn [& _] nil)]
+          (sut/run-turn! charge))
+        (should= :started (first @events))
+        (should= :ended (first (second @events)))
+        (should= :error (get-in @events [1 1 :kind])))))
 
   (describe "logging"
     #_{:clj-kondo/ignore [:unresolved-symbol]}

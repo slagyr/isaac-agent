@@ -202,4 +202,12 @@
       (let [charge (sut/build {:session-key "s1" :input "hi"
                                :dispatch-error {:error :unknown-crew}})]
         (should (sut/unresolved? charge))
-        (should= :unknown-crew (:charge/reason charge))))))
+        (should= :unknown-crew (:charge/reason charge))))
+
+    (it "preserves submitted observer refs"
+      (with-redefs [loader/snapshot              (fn [_] base-cfg)
+                    session-ctx/resolve-behavior (fn [_ _] (stub-behavior "main" "You are Atticus." test-model-id 4096))]
+        (let [charge (sut/build {:session-key "s1"
+                                 :input       "hi"
+                                 :observers   [:lookout [:foreman "bean-work" "bn-7"]]})]
+          (should= [:lookout [:foreman "bean-work" "bn-7"]] (:observers charge)))))))

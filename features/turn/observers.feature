@@ -13,8 +13,7 @@ Feature: Turn observers — lookout
       | name       |
       | crows-nest |
 
-  @wip
-    Scenario: a submitted lookout narrates the turn
+  Scenario: a submitted lookout narrates the turn
     Given the following model responses are queued:
       | type | content       | model |
       | text | Land ho ahead | echo  |
@@ -24,8 +23,7 @@ Feature: Turn observers — lookout
       | (?s)turn started.*Land ho ahead.*turn ended \(ok\) |
     And the exit code is 0
 
-  @wip
-    Scenario: the lookout reports a failed turn's outcome
+  Scenario: the lookout reports a failed turn's outcome
     Given the following model responses are queued:
       | type       | status | message       | model |
       | http-error | 403    | fog rolled in | echo  |
@@ -36,8 +34,7 @@ Feature: Turn observers — lookout
       | pattern                   |
       | turn ended \(error[^)]*\) |
 
-  @wip
-    Scenario: unknown observer names refuse loudly, before dispatch
+  Scenario: unknown observer names refuse loudly, before dispatch
     Given the following model responses are queued:
       | type | content    | model |
       | text | Never seen | echo  |

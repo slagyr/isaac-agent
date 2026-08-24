@@ -226,6 +226,39 @@
           (should (some? tagged))
           (should= #{:project/chess :wip} (:tags tagged)))))
 
+    (it "forwards --observer lookout on the charge"
+      (let [captured (atom nil)]
+        (with-redefs [bridge/dispatch! (fn [charge]
+                                         (reset! captured charge)
+                                         (comm/on-text-chunk (:comm charge) (:session-key charge) "Ok")
+                                         {})]
+          (with-out-str
+            (should= 0 (sut/run (assoc base-opts :message "Hi" :observer ["lookout"])))))
+        (should= [:lookout] (:observers @captured))))
+
+    (it "prints each response chunk as it arrives when an observer is submitted"
+      (let [seen-during (atom nil)]
+        (with-out-str
+          (with-redefs [bridge/dispatch! (fn [charge]
+                                           (comm/on-text-chunk (:comm charge) (:session-key charge) "Land ho ahead")
+                                           (reset! seen-during (str *out*))
+                                           {})]
+            (should= 0 (sut/run (assoc base-opts :message "Hi" :observer ["lookout"])))))
+        (should (str/includes? @seen-during "Land ho ahead"))))
+
+    (it "refuses unknown --observer names before dispatch"
+      (let [dispatched? (atom false)]
+        (with-redefs [bridge/dispatch! (fn [_]
+                                         (reset! dispatched? true)
+                                         {})]
+          (let [err (java.io.StringWriter.)]
+            (binding [*err* err]
+              (with-out-str
+                (should= 1 (sut/run (assoc base-opts :message "Hi" :observer ["foghorn:xyz"])))))
+            (should (str/includes? (str err) "foghorn"))
+            (should (str/includes? (str err) "unknown observer"))))
+        (should-not @dispatched?)))
+
     (it "returns 1 when run-turn! returns an error"
       (with-redefs [bridge/dispatch! (fn [& _] {:error {:message "context length exceeded"}})]
         (binding [*err* (java.io.StringWriter.)]

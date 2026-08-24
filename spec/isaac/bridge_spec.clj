@@ -322,6 +322,33 @@
             @dispatch-future
             (should= false (store/in-flight? session-store "testuser"))))))
 
+    (it "refuses unknown submitted observers before running the turn"
+      (let [called? (atom false)]
+        (with-redefs [single-turn/run-turn! (fn [_]
+                                              (reset! called? true)
+                                              {:content "should not run"})]
+          (let [result (bridge/dispatch! {:charge/type    :charge
+                                          :session-key    "testuser"
+                                          :input          "hello"
+                                          :observers      [[:foghorn "xyz"]]
+                                          :session-store  (store/registered-store)
+                                          :comm           nil})]
+            (should= :unknown-observer (:error result))
+            (should (str/includes? (:message result) "foghorn"))
+            (should (str/includes? (:message result) "unknown observer"))))
+        (should-not @called?)))
+
+    (it "clears in-flight even when marker cleanup throws"
+      (let [session-store (store/registered-store)]
+        (with-redefs [single-turn/run-turn! (fn [_] {:content "done"})
+                      bridge/clear-turn-marker! (fn [& _] (throw (Exception. "marker boom")))]
+          (bridge/dispatch! {:charge/type    :charge
+                             :session-key    "testuser"
+                             :input          "hello"
+                             :session-store  session-store
+                             :comm           nil})
+          (should= false (store/in-flight? session-store "testuser")))))
+
     (it "refuses dispatch when the session is already in flight"
       (let [session-store (store/registered-store)]
         (store/mark-in-flight! session-store "testuser")

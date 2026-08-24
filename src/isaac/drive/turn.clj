@@ -9,6 +9,7 @@
     [isaac.comm.protocol :as comm]
     [isaac.config.loader :as loader]
     [isaac.drive.dispatch :as dispatch]
+    [isaac.drive.observer :as observer]
     [isaac.drive.provider-wall :as provider-wall]
     [isaac.episodes.store :as episode-store]
     [isaac.fs :as fs]
@@ -957,8 +958,16 @@
                       :skill-menu-text (:menu-text skill-disclosure)
                       :provider        augmented})))
 
-(defn- finish-turn! [ch session-key result]
+(defn- observer-ctx [session-key]
+  {:session-key session-key})
+
+(defn- notify-observers! [observers method ctx extra]
+  (when (seq observers)
+    (observer/notify! observers method ctx extra)))
+
+(defn- finish-turn! [ch session-key result observers]
   (comm/on-turn-end ch session-key result)
+  (notify-observers! observers :on-turn-ended (observer-ctx session-key) (observer/outcome result))
   result)
 
 (defn- record-tool-call!
@@ -1169,9 +1178,11 @@
         ctx         (build-turn charge)
         ch          (or (:comm charge) cli-comm/channel)
         turn-id     (bridge/begin-turn! session-key)
-        finish!     #(finish-turn! ch session-key %)]
+        observers   (or (:observers charge) [])
+        finish!     #(finish-turn! ch session-key % observers)]
     (try
       (comm/on-turn-start ch session-key input)
+      (notify-observers! observers :on-turn-started (observer-ctx session-key) nil)
       (finish! (run-turn-body! session-key input ctx))
       (catch ExceptionInfo e
         (if (= :cancelled (:type (ex-data e)))
