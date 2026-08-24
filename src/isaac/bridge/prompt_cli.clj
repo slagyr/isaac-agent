@@ -20,7 +20,8 @@
     [isaac.session.frequencies :as session-frequencies]
     [isaac.session.frequencies-cli :as frequencies-cli]
     [isaac.session.store.spi :as store]
-    [isaac.tool.builtin :as builtin]))
+    [isaac.tool.builtin :as builtin]
+    [isaac.turnstile :as turnstile]))
 
 (defn- stderr-line! [text]
   (binding [*out* *err*]
@@ -145,10 +146,14 @@
 
 (defn- dispatch-prompt! [opts cfg session-store session-key session comm text]
   (let [obs-refs  (mapv observer/parse-ref (or (:observer opts) []))
+        ts-refs   (mapv turnstile/parse-ref (or (:turnstile opts) []))
         override  (frequencies-cli/build-override opts)
-        obs-check (when (seq obs-refs) (observer/resolve-submitted obs-refs))]
-    (if (:error obs-check)
-      (do (print-error! (:message obs-check)) 1)
+        obs-check (when (seq obs-refs) (observer/resolve-submitted obs-refs))
+        ts-check  (when (seq ts-refs) (turnstile/resolve-submitted ts-refs))]
+    (cond
+      (:error obs-check) (do (print-error! (:message obs-check)) 1)
+      (:error ts-check) (do (print-error! (:message ts-check)) 1)
+      :else
       (do
         (builtin/register-all!)
         (let [result (bridge/dispatch!
@@ -159,7 +164,8 @@
                                               :model-override (or (:with-model override) (:model opts))
                                               :origin         {:kind :cli}
                                               :comm           comm}
-                                             (seq obs-refs) (assoc :observers obs-refs))))]
+                                             (seq obs-refs) (assoc :observers obs-refs)
+                                             (seq ts-refs) (assoc :turnstiles ts-refs))))]
           (if (or (:error result)
                   (:unavailable? result)
                   (get-in result [:response :error]))
@@ -215,6 +221,8 @@
     [["-m" "--message TEXT" "Message to send (required)"]
      ["-j" "--json" "Output result as JSON"]
      [nil "--observer REF" "Submit a turn observer (repeatable); e.g. lookout or foreman:bean-work/bn-7"
+      :assoc-fn (fn [m k v] (update m k (fnil conj []) v))]
+     [nil "--turnstile REF" "Submit a turnstile (repeatable); e.g. worksite or worksite:chart-room"
       :assoc-fn (fn [m k v] (update m k (fnil conj []) v))]
      ["-h" "--help" "Show help"]]
     frequencies-cli/frequencies-option-spec

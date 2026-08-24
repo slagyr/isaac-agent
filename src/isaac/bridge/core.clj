@@ -23,7 +23,8 @@
     [isaac.session.context :as session-ctx]
     [isaac.session.store.spi :as store]
     [isaac.slash.builtin :as slash-builtin]
-    [isaac.slash.registry :as slash-registry]))
+    [isaac.slash.registry :as slash-registry]
+    [isaac.turnstile :as turnstile]))
 
 ;; region ----- Helpers -----
 
@@ -239,6 +240,44 @@
                 resolved
                 {:charge (assoc charge :observers (:observers resolved))})))))
 
+(defn- turnstile-refuse-message [reason]
+  (str "turnstile refused: "
+       (cond
+         (keyword? reason) (name reason)
+         (string? reason)  reason
+         :else             (pr-str reason))))
+
+(defn- maybe-log-gateless! [charge]
+  (when (and (empty? (:turnstiles charge))
+             (seq (turnstile/registered-names)))
+    (log/info :turnstile/gateless
+              :session (:session-key charge)
+              :message "gateless turn in a registered worksite")))
+
+(defn- admit-charge-turnstiles [charge]
+  (let [refs (:turnstiles charge)]
+    (cond
+      (empty? refs)
+      (do (maybe-log-gateless! charge)
+          {:charge charge})
+
+      :else
+      (let [resolved (if (every? #(satisfies? turnstile/Turnstile %) refs)
+                       {:turnstiles refs}
+                       (turnstile/resolve-submitted refs))]
+        (if (:error resolved)
+          resolved
+          (let [decision (turnstile/admit-all! (:turnstiles resolved)
+                                               {:session-key (:session-key charge)
+                                                :cwd         (:cwd charge)
+                                                :crew        (:crew charge)
+                                                :origin      (:origin charge)})]
+            (if (:error decision)
+              {:error   (:error decision)
+               :reason  (:reason decision)
+               :message (turnstile-refuse-message (:reason decision))}
+              {:charge (assoc charge :turnstile-tokens (:tokens decision))})))))))
+
 (defn- dispatch-charge! [c]
   (let [{:keys [charge result]} (route-charge! c)]
     (if charge
@@ -247,21 +286,28 @@
           {:error   (:error obs-check)
            :message (:message obs-check)
            :ref     (:ref obs-check)}
-          (let [charge (or (:charge obs-check) charge)]
-            (if-let [session-key (:session-key charge)]
-              (let [session-store* (or (:session-store charge) (nexus/get-in [:sessions :store]))]
-                (if (store/mark-in-flight! session-store* session-key)
-                  (do
-                    (record-turn-marker! session-store* session-key charge)
-                    (try
-                      (maybe-live-seal! charge (turn/run-turn! charge))
-                      (finally
-                        (isolate-cleanup! :clear-turn-marker
-                                          #(clear-turn-marker! session-store* session-key))
-                        (isolate-cleanup! :clear-in-flight
-                                          #(store/clear-in-flight! session-store* session-key)))))
-                  (refuse-dispatch session-key)))
-              (maybe-live-seal! charge (turn/run-turn! charge))))))
+          (let [charge   (or (:charge obs-check) charge)
+                ts-check (admit-charge-turnstiles charge)]
+            (if (:error ts-check)
+              {:error   (:error ts-check)
+               :reason  (:reason ts-check)
+               :message (:message ts-check)
+               :ref     (:ref ts-check)}
+              (let [charge (or (:charge ts-check) charge)]
+                (if-let [session-key (:session-key charge)]
+                  (let [session-store* (or (:session-store charge) (nexus/get-in [:sessions :store]))]
+                    (if (store/mark-in-flight! session-store* session-key)
+                      (do
+                        (record-turn-marker! session-store* session-key charge)
+                        (try
+                          (maybe-live-seal! charge (turn/run-turn! charge))
+                          (finally
+                            (isolate-cleanup! :clear-turn-marker
+                                              #(clear-turn-marker! session-store* session-key))
+                            (isolate-cleanup! :clear-in-flight
+                                              #(store/clear-in-flight! session-store* session-key)))))
+                      (refuse-dispatch session-key)))
+                  (maybe-live-seal! charge (turn/run-turn! charge))))))))
       result)))
 
 (defn dispatch!

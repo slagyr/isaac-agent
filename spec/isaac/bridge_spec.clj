@@ -15,6 +15,7 @@
     [isaac.session.spec-helper :as helper]
     [isaac.nexus :as nexus]
     [isaac.tool.registry :as tool-registry]
+    [isaac.turnstile :as turnstile]
     [speclj.core :refer :all]))
 
 (defn- slash-charge
@@ -336,6 +337,41 @@
             (should= :unknown-observer (:error result))
             (should (str/includes? (:message result) "foghorn"))
             (should (str/includes? (:message result) "unknown observer"))))
+        (should-not @called?)))
+
+    (it "refuses unknown submitted turnstiles before running the turn"
+      (let [called? (atom false)]
+        (with-redefs [single-turn/run-turn! (fn [_]
+                                              (reset! called? true)
+                                              {:content "should not run"})]
+          (let [result (bridge/dispatch! {:charge/type    :charge
+                                          :session-key    "testuser"
+                                          :input          "hello"
+                                          :turnstiles     [[:foghorn "xyz"]]
+                                          :session-store  (store/registered-store)
+                                          :comm           nil})]
+            (should= :unknown-turnstile (:error result))
+            (should (str/includes? (:message result) "foghorn"))
+            (should (str/includes? (:message result) "unknown turnstile"))))
+        (should-not @called?)))
+
+    (it "refuses a turn whose turnstile returns {:refuse reason}"
+      (let [called? (atom false)
+            gate    (reify turnstile/Turnstile
+                      (admit? [_ _] {:refuse :member-locked})
+                      (release! [_ _]))]
+        (with-redefs [single-turn/run-turn! (fn [_]
+                                              (reset! called? true)
+                                              {:content "should not run"})]
+          (let [result (bridge/dispatch! {:charge/type    :charge
+                                          :session-key    "testuser"
+                                          :input          "hello"
+                                          :turnstiles     [gate]
+                                          :session-store  (store/registered-store)
+                                          :comm           nil})]
+            (should= :refused (:error result))
+            (should= :member-locked (:reason result))
+            (should (str/includes? (:message result) "member-locked"))))
         (should-not @called?)))
 
     (it "clears in-flight even when marker cleanup throws"

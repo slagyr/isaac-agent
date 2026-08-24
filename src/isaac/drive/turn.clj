@@ -22,7 +22,8 @@
     [isaac.session.context :as session-ctx]
     [isaac.session.store.spi :as store]
     [isaac.tool.names :as names]
-    [isaac.tool.registry :as tool-registry])
+    [isaac.tool.registry :as tool-registry]
+    [isaac.turnstile :as turnstile])
   (:import (clojure.lang ExceptionInfo)))
 
 ;; region ----- Error Formatting -----
@@ -1200,6 +1201,7 @@
           (finish! (suspend/interrupt-result session-key))
           (finish! (record-exception! session-key t ctx))))
       (finally
+        (turnstile/release-all! (:turnstile-tokens charge))
         (bridge/end-turn! session-key turn-id)))))
 
 ;; endregion ^^^^^ Public API ^^^^^

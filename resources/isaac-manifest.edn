@@ -52,7 +52,19 @@
                 {:type :map,
                  :key-spec {:type :keyword},
                  :value-spec
-                 {:type :map, :schema {:template {:type :map}}}}}},
+                 {:type :map, :schema {:template {:type :map}}}}},
+                :turnstiles
+                {:description
+                 "Named turnstile factories. Modules contribute by name; submitters reference names as data. Registration is not activation.",
+                 :schema
+                 {:type :map,
+                  :key-spec {:type :keyword},
+                  :value-spec
+                  {:type :map,
+                   :factory isaac.turnstile/register-entry!,
+                   :schema
+                   {:factory
+                    {:type :symbol, :validations [:present?]}}}}}},
  :isaac/cli
  {:auth
   {:usage "auth <subcommand> [options]",

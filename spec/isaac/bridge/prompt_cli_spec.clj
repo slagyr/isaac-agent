@@ -12,6 +12,7 @@
     [isaac.session.context :as session-ctx]
     [isaac.session.store.spi :as store]
     [isaac.tool.builtin :as builtin]
+    [isaac.turnstile :as turnstile]
     [speclj.core :refer :all]))
 
 (def crew-name marigold/captain)
@@ -245,6 +246,33 @@
                                            {})]
             (should= 0 (sut/run (assoc base-opts :message "Hi" :observer ["lookout"])))))
         (should (str/includes? @seen-during "Land ho ahead"))))
+
+    (it "forwards --turnstile worksite:chart-room on the charge"
+      (turnstile/register! :worksite (fn [_] :worksite-impl))
+      (try
+        (let [captured (atom nil)]
+          (with-redefs [bridge/dispatch! (fn [charge]
+                                           (reset! captured charge)
+                                           (comm/on-text-chunk (:comm charge) (:session-key charge) "Ok")
+                                           {})]
+            (with-out-str
+              (should= 0 (sut/run (assoc base-opts :message "Hi" :turnstile ["worksite:chart-room"])))))
+          (should= [[:worksite "chart-room"]] (:turnstiles @captured)))
+        (finally
+          (turnstile/unregister! :worksite))))
+
+    (it "refuses unknown --turnstile names before dispatch"
+      (let [dispatched? (atom false)]
+        (with-redefs [bridge/dispatch! (fn [_]
+                                         (reset! dispatched? true)
+                                         {})]
+          (let [err (java.io.StringWriter.)]
+            (binding [*err* err]
+              (with-out-str
+                (should= 1 (sut/run (assoc base-opts :message "Hi" :turnstile ["foghorn:xyz"])))))
+            (should (str/includes? (str err) "foghorn"))
+            (should (str/includes? (str err) "unknown turnstile"))))
+        (should-not @dispatched?)))
 
     (it "refuses unknown --observer names before dispatch"
       (let [dispatched? (atom false)]

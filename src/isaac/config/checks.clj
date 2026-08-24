@@ -15,7 +15,7 @@
   (schema-base/->id value))
 
 (def ^:private manifest-schema-kinds
-  [:isaac.server/comm :isaac.agent/comm :isaac.agent/provider-template :isaac.agent/slash-commands :isaac.agent/tools])
+  [:isaac.server/comm :isaac.agent/comm :isaac.agent/provider-template :isaac.agent/slash-commands :isaac.agent/tools :isaac.agent/turnstiles])
 
 (defn- verify-manifest-schema-fragment [module-id field-schema]
   (try

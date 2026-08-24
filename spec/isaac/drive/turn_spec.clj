@@ -22,6 +22,7 @@
     [isaac.nexus :as nexus]
     [isaac.tool.builtin :as builtin]
     [isaac.tool.registry :as tool-registry]
+    [isaac.turnstile :as turnstile]
     [speclj.core :refer [around describe it should should-be-nil should-not should-not-be-nil should-throw should=]]))
 
 (def test-dir marigold/home)
@@ -1211,7 +1212,63 @@
                 (should= "crow's nest exploded" (:error entry)))))
           (finally
             (observer/clear-ambient!)))
-        (should= [:submitted-started :ambient-ended [:submitted-ended :ok]] @events))))
+        (should= [:submitted-started :ambient-ended [:submitted-ended :ok]] @events)))
+
+    (it "releases acquired turnstile tokens after a successful turn"
+      (helper/create-session! test-dir "gate-ok" {:crew "main"})
+      (let [events   (atom [])
+            gate     (reify turnstile/Turnstile
+                       (admit? [_ _] :pass)
+                       (release! [_ token] (swap! events conj [:release token])))
+            token    (turnstile/->ReleaseToken "tok-ok")
+            provider (->TestProvider marigold/quantum-anvil {:api marigold/anvil-api})
+            charge   {:charge/type       :charge
+                      :session-key       "gate-ok"
+                      :input             "scan"
+                      :root              test-dir
+                      :session-store     (store/registered-store)
+                      :comm              null-comm/channel
+                      :crew              "main"
+                      :model             "test-model"
+                      :provider          provider
+                      :soul              "You are Isaac."
+                      :context-window    4096
+                      :turnstile-tokens  [{:turnstile gate :token token}]}]
+        (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+                      tool-loop/run         (fn [& _] {:message {:role "assistant" :content "Land ho ahead"}
+                                                       :model   "test-model"
+                                                       :usage   {}
+                                                       :tool-calls []})
+                      sut/process-response! (fn [& _] nil)]
+          (sut/run-turn! charge))
+        (should= [[:release token]] @events)))
+
+    (it "releases acquired turnstile tokens when the turn throws"
+      (helper/create-session! test-dir "gate-boom" {:crew "main"})
+      (let [events   (atom [])
+            gate     (reify turnstile/Turnstile
+                       (admit? [_ _] :pass)
+                       (release! [_ token] (swap! events conj [:release token])))
+            token    (turnstile/->ReleaseToken "tok-boom")
+            provider (->TestProvider marigold/quantum-anvil {:api marigold/anvil-api})
+            charge   {:charge/type       :charge
+                      :session-key       "gate-boom"
+                      :input             "scan"
+                      :root              test-dir
+                      :session-store     (store/registered-store)
+                      :comm              null-comm/channel
+                      :crew              "main"
+                      :model             "test-model"
+                      :provider          provider
+                      :soul              "You are Isaac."
+                      :context-window    4096
+                      :turnstile-tokens  [{:turnstile gate :token token}]}]
+        (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+                      tool-loop/run         (fn [& _] (throw (Exception. "fog rolled in")))
+                      sut/process-response! (fn [& _] nil)]
+          (sut/run-turn! charge))
+        (should= [[:release token]] @events)))
+    )
 
   (describe "logging"
     #_{:clj-kondo/ignore [:unresolved-symbol]}
