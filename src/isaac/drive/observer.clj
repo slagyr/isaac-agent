@@ -14,6 +14,7 @@
   (on-turn-died [this ctx reason]))
 
 (defonce ^:private factories* (atom {}))
+(defonce ^:private ambient* (atom []))
 
 (defn register!
   "Register an observer factory under `name` (keyword). The factory is
@@ -25,8 +26,26 @@
 (defn unregister! [name]
   (swap! factories* dissoc (keyword name)))
 
+(defn attach!
+  "Attach an observer instance so it witnesses every turn (ambient)."
+  [observer]
+  (swap! ambient* conj observer)
+  observer)
+
+(defn detach! [observer]
+  (swap! ambient* (fn [obs] (vec (remove #(identical? observer %) obs)))))
+
+(defn ambient
+  "Observers attached to every turn, independent of submitted refs."
+  []
+  @ambient*)
+
+(defn clear-ambient! []
+  (reset! ambient* []))
+
 (defn clear! []
-  (reset! factories* {}))
+  (reset! factories* {})
+  (clear-ambient!))
 
 (defn resolve
   "Resolve a registered factory by name and invoke it with no params.
@@ -86,6 +105,12 @@
                 :method method
                 :error (.getMessage t)
                 :ex-class (.getName (class t))))))
+
+(defn for-turn
+  "Merge ambient observers with submitted ones for this turn.
+   Ambient first, then submitted. Zero ambient is identity."
+  [submitted]
+  (into (vec (ambient)) submitted))
 
 (defn notify!
   "Fire `method` on every observer. Extra is the outcome (ended) or reason (died).

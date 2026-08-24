@@ -1178,7 +1178,7 @@
         ctx         (build-turn charge)
         ch          (or (:comm charge) cli-comm/channel)
         turn-id     (bridge/begin-turn! session-key)
-        observers   (or (:observers charge) [])
+        observers   (observer/for-turn (:observers charge))
         finish!     #(finish-turn! ch session-key % observers)]
     (try
       (comm/on-turn-start ch session-key input)

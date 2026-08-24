@@ -77,6 +77,52 @@
       (should= :unknown-observer (:error result))
       (should-contain "foghorn" (:message result))
       (should-contain "unknown observer" (:message result))))
+
+  (it "attaches an ambient observer that is included for every turn"
+    (let [obs (reify sut/TurnObserver
+                (on-turn-started [_ _])
+                (on-turn-ended [_ _ _])
+                (on-turn-died [_ _ _]))]
+      (sut/attach! obs)
+      (should= [obs] (sut/ambient))))
+
+  (it "merges ambient observers ahead of submitted ones"
+    (let [ambient-obs (reify sut/TurnObserver
+                        (on-turn-started [_ _])
+                        (on-turn-ended [_ _ _])
+                        (on-turn-died [_ _ _]))
+          submitted   (reify sut/TurnObserver
+                        (on-turn-started [_ _])
+                        (on-turn-ended [_ _ _])
+                        (on-turn-died [_ _ _]))]
+      (sut/attach! ambient-obs)
+      (should= [ambient-obs submitted] (sut/for-turn [submitted]))))
+
+  (it "returns only ambient observers when none are submitted"
+    (let [obs (reify sut/TurnObserver
+                (on-turn-started [_ _])
+                (on-turn-ended [_ _ _])
+                (on-turn-died [_ _ _]))]
+      (sut/attach! obs)
+      (should= [obs] (sut/for-turn nil))))
+
+  (it "is identity when no ambient observers are attached"
+    (let [submitted (reify sut/TurnObserver
+                      (on-turn-started [_ _])
+                      (on-turn-ended [_ _ _])
+                      (on-turn-died [_ _ _]))]
+      (should= [submitted] (sut/for-turn [submitted]))
+      (should= [] (sut/for-turn nil))))
+
+  (it "clears ambient observers so later examples do not inherit them"
+    (let [obs (reify sut/TurnObserver
+                (on-turn-started [_ _])
+                (on-turn-ended [_ _ _])
+                (on-turn-died [_ _ _]))]
+      (sut/attach! obs)
+      (sut/clear-ambient!)
+      (should= [] (sut/ambient))
+      (should= [] (sut/for-turn nil))))
   )
 
 (describe "lookout observer"

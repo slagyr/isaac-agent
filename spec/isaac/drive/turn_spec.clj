@@ -22,7 +22,7 @@
     [isaac.nexus :as nexus]
     [isaac.tool.builtin :as builtin]
     [isaac.tool.registry :as tool-registry]
-    [speclj.core :refer [around describe it should should-not should-not-be-nil should-throw should=]]))
+    [speclj.core :refer [around describe it should should-be-nil should-not should-not-be-nil should-throw should=]]))
 
 (def test-dir marigold/home)
 
@@ -983,7 +983,118 @@
           (sut/run-turn! charge))
         (should= :started (first @events))
         (should= :ended (first (second @events)))
-        (should= :error (get-in @events [1 1 :kind])))))
+        (should= :error (get-in @events [1 1 :kind]))))
+
+    (it "fires an ambient observer on a turn with no submitted observers"
+      (helper/create-session! test-dir "ambient-ok" {:crew "main"})
+      (let [events   (atom [])
+            ambient  (reify observer/TurnObserver
+                       (on-turn-started [_ ctx] (swap! events conj [:started (:session-key ctx)]))
+                       (on-turn-ended [_ ctx outcome] (swap! events conj [:ended (:session-key ctx) outcome]))
+                       (on-turn-died [_ _ _]))
+            provider (->TestProvider marigold/quantum-anvil {:api marigold/anvil-api})
+            charge   {:charge/type    :charge
+                      :session-key    "ambient-ok"
+                      :input          "scan"
+                      :root           test-dir
+                      :session-store  (store/registered-store)
+                      :comm           null-comm/channel
+                      :crew           "main"
+                      :model          "test-model"
+                      :provider       provider
+                      :soul           "You are Isaac."
+                      :context-window 4096}]
+        (try
+          (observer/attach! ambient)
+          (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+                        tool-loop/run         (fn [& _] {:message {:role "assistant" :content "Land ho ahead"}
+                                                         :model   "test-model"
+                                                         :usage   {}
+                                                         :tool-calls []})
+                        sut/process-response! (fn [& _] nil)]
+            (sut/run-turn! charge))
+          (finally
+            (observer/clear-ambient!)))
+        (should= [[:started "ambient-ok"] [:ended "ambient-ok" :ok]] @events)))
+
+    (it "fires ambient and submitted observers together on the same turn"
+      (helper/create-session! test-dir "both-watch" {:crew "main"})
+      (let [events    (atom [])
+            ambient   (reify observer/TurnObserver
+                        (on-turn-started [_ _] (swap! events conj :ambient-started))
+                        (on-turn-ended [_ _ _] (swap! events conj :ambient-ended))
+                        (on-turn-died [_ _ _]))
+            submitted (reify observer/TurnObserver
+                        (on-turn-started [_ _] (swap! events conj :submitted-started))
+                        (on-turn-ended [_ _ _] (swap! events conj :submitted-ended))
+                        (on-turn-died [_ _ _]))
+            provider  (->TestProvider marigold/quantum-anvil {:api marigold/anvil-api})
+            charge    {:charge/type    :charge
+                       :session-key    "both-watch"
+                       :input          "scan"
+                       :root           test-dir
+                       :session-store  (store/registered-store)
+                       :comm           null-comm/channel
+                       :crew           "main"
+                       :model          "test-model"
+                       :provider       provider
+                       :soul           "You are Isaac."
+                       :context-window 4096
+                       :observers      [submitted]}]
+        (try
+          (observer/attach! ambient)
+          (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+                        tool-loop/run         (fn [& _] {:message {:role "assistant" :content "Land ho ahead"}
+                                                         :model   "test-model"
+                                                         :usage   {}
+                                                         :tool-calls []})
+                        sut/process-response! (fn [& _] nil)]
+            (sut/run-turn! charge))
+          (finally
+            (observer/clear-ambient!)))
+        (should= [:ambient-started :submitted-started :ambient-ended :submitted-ended] @events)))
+
+    (it "isolates a throwing ambient observer so the turn still finishes"
+      (helper/create-session! test-dir "ambient-boom" {:crew "main"})
+      (let [events    (atom [])
+            ambient   (reify observer/TurnObserver
+                        (on-turn-started [_ _] (throw (Exception. "crow's nest exploded")))
+                        (on-turn-ended [_ _ _] (swap! events conj :ambient-ended))
+                        (on-turn-died [_ _ _]))
+            submitted (reify observer/TurnObserver
+                        (on-turn-started [_ _] (swap! events conj :submitted-started))
+                        (on-turn-ended [_ _ outcome] (swap! events conj [:submitted-ended outcome]))
+                        (on-turn-died [_ _ _]))
+            provider  (->TestProvider marigold/quantum-anvil {:api marigold/anvil-api})
+            charge    {:charge/type    :charge
+                       :session-key    "ambient-boom"
+                       :input          "scan"
+                       :root           test-dir
+                       :session-store  (store/registered-store)
+                       :comm           null-comm/channel
+                       :crew           "main"
+                       :model          "test-model"
+                       :provider       provider
+                       :soul           "You are Isaac."
+                       :context-window 4096
+                       :observers      [submitted]}]
+        (try
+          (observer/attach! ambient)
+          (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+                        tool-loop/run         (fn [& _] {:message {:role "assistant" :content "Land ho ahead"}
+                                                         :model   "test-model"
+                                                         :usage   {}
+                                                         :tool-calls []})
+                        sut/process-response! (fn [& _] nil)]
+            (log/capture-logs
+              (let [result (sut/run-turn! charge)
+                    entry  (first (filter #(= :turn/observer-failed (:event %)) @log/captured-logs))]
+                (should-be-nil (:error result))
+                (should= :warn (:level entry))
+                (should= "crow's nest exploded" (:error entry)))))
+          (finally
+            (observer/clear-ambient!)))
+        (should= [:submitted-started :ambient-ended [:submitted-ended :ok]] @events))))
 
   (describe "logging"
     #_{:clj-kondo/ignore [:unresolved-symbol]}
