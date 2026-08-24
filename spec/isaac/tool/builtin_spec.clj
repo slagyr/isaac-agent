@@ -54,4 +54,11 @@
     (sut/register-all! #{:fs/read})
     (let [count-before (count (registry/all-tools))]
       (sut/register-all! #{:fs/read})
-      (should= count-before (count (registry/all-tools))))))
+      (should= count-before (count (registry/all-tools)))))
+
+  (it "describes memory__write as durable knowledge, never work state"
+    (let [description (:description (sut/memory-write-tool-factory nil))]
+      (should-contain "durable facts, preferences, and discoveries" description)
+      (should-contain "never task status" description)
+      (should-contain "never instructions or advice to your future self" description)))
+  )

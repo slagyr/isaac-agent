@@ -196,6 +196,27 @@
           (should-contain "the user" system-prompt)
           (should-contain "not part of the conversation" system-prompt))))
 
+    (it "asks memory for durable knowledge and keeps work state in the summary"
+      (let [key-str     "isaac:main:cli:chat:knowledge-not-orders"
+            _session    (storage/create-session! test-root key-str)
+            _msg1       (storage/append-message! test-root key-str {:role "user" :content "I take tea with two sugars."})
+            _msg2       (storage/append-message! test-root key-str {:role "assistant" :content "Noted."})
+            chat-called (atom nil)
+            mock-chat   (fn [request _tool-fn]
+                          (reset! chat-called request)
+                          {:message {:content "Discussion about tea preferences."}})]
+        (sut/compact! key-str
+                      {:model          "test-model"
+                       :soul           "You are helpful."
+                       :context-window 10000
+                       :chat-fn        mock-chat})
+        (let [system-prompt (-> @chat-called :messages first :content)]
+          (should-contain "durable facts, preferences, and discoveries" system-prompt)
+          (should-contain "never task status" system-prompt)
+          (should-contain "never instructions or advice to your future self" system-prompt)
+          (should-contain "Work state and next steps belong in the summary, not in memory" system-prompt)
+          (should-contain "not part of the conversation" system-prompt))))
+
     (it "records the compacted turn's originating user request on the compaction entry"
       (let [key-str   "isaac:main:cli:chat:turnreq123"
             _session  (storage/create-session! test-root key-str)

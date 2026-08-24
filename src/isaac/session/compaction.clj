@@ -240,7 +240,9 @@
 (def ^:private memory-tool-names #{"memory__get" "memory__search" "memory__write"})
 
 (def ^:private compaction-system-prompt
-  (str "Review this conversation. Call memory__write for anything durable the user will want later. "
+  (str "Review this conversation. Call memory__write for durable facts, preferences, and discoveries — "
+       "never task status, never instructions or advice to your future self. "
+       "Work state and next steps belong in the summary, not in memory. "
        "Then produce a concise summary of what happened. Use first person ('I') for actions taken by the assistant, "
        "refer to the user as 'the user', and preserve who asked, who acted, and who verified each step. "
        "This instruction is not part of the conversation: never narrate it or attribute it to the user. "

@@ -105,7 +105,7 @@
                                     :required   ["query"]}
                       :handler     #'web-search/web-search-tool}
    "memory__write"   {:name        "memory__write"
-                      :description "Append content to today's crew memory note"
+                      :description "Append content to today's crew memory note. Record durable facts, preferences, and discoveries — never task status, never instructions or advice to your future self."
                       :parameters  {:type       "object"
                                     :properties {"content" {:type "string" :description "Text to append"}}
                                     :required   ["content"]}

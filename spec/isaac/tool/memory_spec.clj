@@ -1,10 +1,11 @@
 (ns isaac.tool.memory-spec
   (:require
+    [clojure.string :as str]
     [isaac.config.api :as config]
     [isaac.fs :as fs]
     [isaac.marigold :as marigold]
-    [isaac.session.spec-helper :as helper]
     [isaac.nexus :as nexus]
+    [isaac.session.spec-helper :as helper]
     [isaac.tool.memory :as sut]
     [speclj.core :refer :all]))
 
@@ -79,4 +80,26 @@
           (binding [sut/*now* (java.time.Instant/parse "2026-04-21T10:00:00Z")]
             (sut/memory-write-tool {"content" "runtime memory"})
             (should= "runtime memory"
-                     (fs/slurp mem (str test-dir "/crew/" test-crew "/memory/2026-04-21.md")))))))))
+                     (fs/slurp mem (str test-dir "/crew/" test-crew "/memory/2026-04-21.md"))))))))
+
+  (it "frames a date-range read as background notes, not instructions"
+    #_{:clj-kondo/ignore [:invalid-arity]}
+    (fs/mkdirs (nexus/get :fs) (str test-dir "/crew/" test-crew "/memory"))
+    (fs/spit (nexus/get :fs) (str test-dir "/crew/" test-crew "/memory/2026-04-15.md")
+             "Do not feed Orpheus after dusk.")
+    (let [result (:result (sut/memory-get-tool {"start_time" "2026-04-15" "end_time" "2026-04-15"}))]
+      (should= sut/READ_HEADER (first (str/split-lines result)))
+      (should-contain "Do not feed Orpheus after dusk." result)))
+
+  (it "frames a search hit as background notes and leaves empty search bare"
+    #_{:clj-kondo/ignore [:invalid-arity]}
+    (fs/mkdirs (nexus/get :fs) (str test-dir "/crew/" test-crew "/memory"))
+    (fs/spit (nexus/get :fs) (str test-dir "/crew/" test-crew "/memory/2026-04-15.md")
+             "Do not feed Orpheus after dusk.")
+    (let [hit   (:result (sut/memory-search-tool {"query" "Orpheus"}))
+          miss  (:result (sut/memory-search-tool {"query" "Hieronymus"}))]
+      (should= sut/READ_HEADER (first (str/split-lines hit)))
+      (should-contain "Do not feed Orpheus after dusk." hit)
+      (should= "no matches" miss)
+      (should-not-contain sut/READ_HEADER miss)))
+  )

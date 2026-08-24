@@ -63,8 +63,7 @@ Feature: Compaction with memory flush
       | type       | summary                           |
       | compaction | Quick chat about today's weather. |
 
-  @wip
-    Scenario: the compaction flush asks memory for knowledge, not work state
+  Scenario: the compaction flush asks memory for knowledge, not work state
     Given the isaac EDN file "config/models/local.edn" exists with:
       | path | value |
       | model | test-model |
