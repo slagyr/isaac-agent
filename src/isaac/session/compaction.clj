@@ -239,15 +239,44 @@
 
 (def ^:private memory-tool-names #{"memory__get" "memory__search" "memory__write"})
 
-(def ^:private compaction-system-prompt
-  (str "Review this conversation. Call memory__write for durable facts, preferences, and discoveries — "
-       "never task status, never instructions or advice to your future self. "
-       "Work state and next steps belong in the summary, not in memory. "
-       "Then produce a concise summary of what happened. Use first person ('I') for actions taken by the assistant, "
-       "refer to the user as 'the user', and preserve who asked, who acted, and who verified each step. "
-       "This instruction is not part of the conversation: never narrate it or attribute it to the user. "
-       "Say what the user asked, what was done, and what remains unfinished. "
-       "Output only the summary, no preamble."))
+(def builtin-compaction-system-prompt
+  (str "Your task is to produce a faithful, thorough summary of the conversation so far so that a successor "
+       "assistant can continue the work seamlessly after the earlier turns are discarded. The successor will see "
+       "the request it is currently serving plus this summary. Before writing, call memory__write for durable "
+       "facts, preferences, and discoveries — never task status, never instructions or advice to your future self. "
+       "Work state and next steps belong in the summary, not in memory. Then produce the summary.\n\n"
+       "Be economical but complete: tight prose, short references, no padding — but never omit paths, identifiers, "
+       "commands, or error text; a summary that loses those forces the successor to redo the work. If earlier turns "
+       "include a prior compaction summary, treat it as authoritative for early history and carry its still-relevant "
+       "content forward so nothing is lost across successive compactions.\n\n"
+       "Organize into these numbered sections; include every heading, writing \"None\" when a section is empty:\n"
+       "1. Primary Request and Intent: all explicit requests and their underlying intent, with constraints and preferences.\n"
+       "2. Key Technical Concepts: technologies, tools, patterns relied upon.\n"
+       "3. Files and Code Sections: every file examined or changed — full path, why it matters, the relevant code (recent edits in full).\n"
+       "4. Errors and Fixes: every error or failed command, its root cause, and the exact fix (user-supplied fixes verbatim).\n"
+       "5. Problem Solving: what was solved, and in-progress diagnosis with hypotheses still open.\n"
+       "6. All User Messages: every user message in order, verbatim. Do NOT include this summarization instruction — "
+       "it is a system-generated compaction prompt and not part of the conversation; never narrate it or attribute it to the user.\n"
+       "7. Pending Tasks: only what was explicitly asked and is not yet complete.\n"
+       "8. Current Work: precisely what you were doing immediately before this summary, with the latest files, code, commands, and state — resumable mid-stream.\n"
+       "9. Optional Next Step: the single step that directly continues the most recent work; quote the latest message showing where you left off. If the task was finished, say the user should confirm before proceeding.\n\n"
+       "Use first person ('I') for actions taken by the assistant and refer to the user as 'the user'; preserve who asked, "
+       "who acted, and who verified each step. Output only the summary, no preamble."))
+
+(def ^:dynamic *compaction-system-prompt* builtin-compaction-system-prompt)
+
+(defn- resolve-compaction-prompt
+  "Optional operator override: <root>/config/compaction.md replaces the built-in template verbatim.
+   Read at compaction time (hot-reloads); absent or unreadable -> built-in."
+  [root]
+  (or (try
+        (let [fs*  (or (nexus/get :fs) (fs/instance))
+              path (str root "/config/compaction.md")]
+          (when (fs/exists? fs* path)
+            (let [text (fs/slurp fs* path)]
+              (when-not (str/blank? text) text))))
+        (catch Exception _ nil))
+      builtin-compaction-system-prompt))
 
 (defn- ensure-memory-tools-registered! []
   (doseq [tool-name memory-tool-names]
@@ -290,7 +319,7 @@
       (if-let [compactable (first remaining)]
         (let [candidate  (conj current compactable)
               messages   (mapv :message candidate)
-              req-tokens (llm/estimate-tokens (llm/build-summary-request api model compaction-system-prompt messages tool-defs))]
+              req-tokens (llm/estimate-tokens (llm/build-summary-request api model *compaction-system-prompt* messages tool-defs))]
           (cond
             (<= req-tokens budget)
             (recur (rest remaining) candidate chunks)
@@ -314,7 +343,7 @@
     (assoc plan :chunks (when (and chunks (> (count chunks) 1)) chunks))))
 
 (defn- summarize-messages [chat-fn tool-fn model api messages tool-defs]
-  (let [request (llm/build-summary-request api model compaction-system-prompt messages tool-defs)]
+  (let [request (llm/build-summary-request api model *compaction-system-prompt* messages tool-defs)]
     (reset! last-compaction-request* request)
     (chat-fn request tool-fn)))
 
@@ -343,6 +372,7 @@
         :compaction-llm-done - optional promise delivered after LLM call completes
         :splice-ready - optional promise waited on before performing the splice"
   [key-str {:keys [boot-files chat-fn compaction-llm-done context-window model api soul splice-ready transcript-lock root session-store]}]
+  (binding [*compaction-system-prompt* (resolve-compaction-prompt (or root (loader/root)))]
   (let [root      (or root (loader/root))
         session-store  (or session-store (nexus/get-in [:sessions :store]))
         ctx            {:root root :session-store session-store}
@@ -360,7 +390,7 @@
         compacted       (subvec messages 0 compact-count)
         _               (ensure-memory-tools-registered!)
         tool-defs       (tool-registry/tool-definitions memory-tool-names)
-        summary-prompt  (llm/build-summary-request api model compaction-system-prompt compacted tool-defs)
+        summary-prompt  (llm/build-summary-request api model *compaction-system-prompt* compacted tool-defs)
         summary-prompt-tokens (llm/estimate-tokens summary-prompt)
         needs-chunking? (or (> tokens-before context-window)
                              (> summary-prompt-tokens context-window))
@@ -368,7 +398,7 @@
                           (feasible-chunks model api compactable-head context-window tool-defs))
         chunk-messages  (:chunks chunks)
         chunked?        (seq chunk-messages)
-        chunk-request-tokens (mapv #(llm/estimate-tokens (llm/build-summary-request api model compaction-system-prompt % tool-defs)) chunk-messages)
+        chunk-request-tokens (mapv #(llm/estimate-tokens (llm/build-summary-request api model *compaction-system-prompt* % tool-defs)) chunk-messages)
         _               (log/debug :session/compaction-analysis
                                     :compact-count compact-count
                                     :compactable-count (count compactables)
@@ -453,6 +483,6 @@
                                                                {:role "user"   :content summary}]})
             successor-key    (or (:successor-session-key compaction-entry) key-str)]
         (store/update-session! session-store successor-key {:last-input-tokens new-total})
-        compaction-entry))))
+        compaction-entry)))))
 
 ;; endregion ^^^^^ Orchestration ^^^^^
