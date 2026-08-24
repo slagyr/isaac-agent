@@ -18,6 +18,7 @@
     [isaac.episodes.lifecycle :as lifecycle]
     [isaac.fs :as fs]
     [isaac.logger :as log]
+    [isaac.tool.memory :as memory]
     [isaac.nexus :as nexus]
     [isaac.prompt.catalog :as prompt-catalog]
     [isaac.session.context :as session-ctx]
@@ -240,12 +241,14 @@
                 resolved
                 {:charge (assoc charge :observers (:observers resolved))})))))
 
-(defn- turnstile-refuse-message [reason]
-  (str "turnstile refused: "
-       (cond
-         (keyword? reason) (name reason)
-         (string? reason)  reason
-         :else             (pr-str reason))))
+(defn- turnstile-refuse-message [decision]
+  (or (:message decision)
+      (str "turnstile refused: "
+           (let [reason (:reason decision)]
+             (cond
+               (keyword? reason) (name reason)
+               (string? reason)  reason
+               :else             (pr-str reason))))))
 
 (defn- maybe-log-gateless! [charge]
   (when (and (empty? (:turnstiles charge))
@@ -271,11 +274,12 @@
                                                {:session-key (:session-key charge)
                                                 :cwd         (:cwd charge)
                                                 :crew        (:crew charge)
-                                                :origin      (:origin charge)})]
+                                                :origin      (:origin charge)
+                                                :now         (or (:now charge) (memory/now))})]
             (if (:error decision)
               {:error   (:error decision)
                :reason  (:reason decision)
-               :message (turnstile-refuse-message (:reason decision))}
+               :message (turnstile-refuse-message decision)}
               {:charge (assoc charge :turnstile-tokens (:tokens decision))})))))))
 
 (defn- dispatch-charge! [c]

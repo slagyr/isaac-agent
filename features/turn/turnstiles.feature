@@ -13,8 +13,7 @@ Feature: Turnstiles — tide
       | name   |
       | harbor |
 
-  @wip
-    Scenario: tide holds a turn outside its window
+  Scenario: tide holds a turn outside its window
     Given the current time is "2026-03-01T14:00:00"
     And the following model responses are queued:
       | type | content      | model |
@@ -29,8 +28,7 @@ Feature: Turnstiles — tide
     Then the stdout contains "Setting sail"
     And the exit code is 0
 
-  @wip
-    Scenario: unknown turnstile names refuse loudly, before dispatch
+  Scenario: unknown turnstile names refuse loudly, before dispatch
     Given the following model responses are queued:
       | type | content    | model |
       | text | Never seen | echo  |

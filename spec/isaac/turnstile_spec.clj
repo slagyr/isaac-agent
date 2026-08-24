@@ -68,6 +68,14 @@
   (it "registers a factory from a manifest contribution entry"
     (sut/register-entry! [:worksite {:factory 'isaac.turnstile/null-turnstile}])
     (should (some? (sut/resolve :worksite))))
+
+  (it "parses a CLI turnstile flag as name:HH:mm-HH:mm window"
+    (should= [:tide "22:00-06:00"] (sut/parse-ref "tide:22:00-06:00")))
+
+  (it "resolves the builtin :tide factory via the registry"
+    (let [result (sut/resolve-submitted [[:tide "22:00-06:00"]])]
+      (should-be-nil (:error result))
+      (should= 1 (count (:turnstiles result)))))
   )
 
 (describe "null turnstile"
@@ -77,6 +85,40 @@
 
   (it "release is a no-op"
     (should-be-nil (sut/release! (sut/null-turnstile) nil)))
+  )
+
+(describe "tide turnstile"
+
+  (it "holds at 14:00 when the window is 22:00-06:00 (midnight-crossing)"
+    (let [gate     (sut/tide ["22:00-06:00"])
+          decision (sut/admit? gate {:now (java.time.Instant/parse "2026-03-01T14:00:00Z")})]
+      (should= :hold (:status decision))
+      (should-contain "tide" (:message decision))
+      (should-contain "22:00-06:00" (:message decision))
+      (should-contain "held" (:message decision))))
+
+  (it "admits at 23:30 when the window is 22:00-06:00"
+    (let [gate (sut/tide ["22:00-06:00"])]
+      (should= :pass (sut/admit? gate {:now (java.time.Instant/parse "2026-03-01T23:30:00Z")}))))
+
+  (it "admits at 03:00 when the window is 22:00-06:00 (after midnight)"
+    (let [gate (sut/tide ["22:00-06:00"])]
+      (should= :pass (sut/admit? gate {:now (java.time.Instant/parse "2026-03-01T03:00:00Z")}))))
+
+  (it "holds at 07:00 when the window is 22:00-06:00"
+    (let [gate (sut/tide ["22:00-06:00"])]
+      (should= :hold (:status (sut/admit? gate {:now (java.time.Instant/parse "2026-03-01T07:00:00Z")})))))
+
+  (it "admits at 14:00 when the window is 09:00-17:00 (same-day)"
+    (let [gate (sut/tide ["09:00-17:00"])]
+      (should= :pass (sut/admit? gate {:now (java.time.Instant/parse "2026-03-01T14:00:00Z")}))))
+
+  (it "holds at 08:00 when the window is 09:00-17:00"
+    (let [gate (sut/tide ["09:00-17:00"])]
+      (should= :hold (:status (sut/admit? gate {:now (java.time.Instant/parse "2026-03-01T08:00:00Z")})))))
+
+  (it "release is a no-op"
+    (should-be-nil (sut/release! (sut/tide ["22:00-06:00"]) nil)))
   )
 
 (describe "admission"
@@ -113,6 +155,15 @@
       (should= :refused (:error result))
       (should= :hold (:reason result))
       (should= [] (:tokens result))))
+
+  (it "includes the turnstile name and window on a tide hold"
+    (let [gate   (sut/tide ["22:00-06:00"])
+          result (sut/admit-all! [gate] {:now (java.time.Instant/parse "2026-03-01T14:00:00Z")})]
+      (should= :refused (:error result))
+      (should= :hold (:reason result))
+      (should-contain "tide" (:message result))
+      (should-contain "22:00-06:00" (:message result))
+      (should-contain "held" (:message result))))
 
   (it "releases already-acquired tokens when a later turnstile refuses"
     (let [events  (atom [])
