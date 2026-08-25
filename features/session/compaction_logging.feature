@@ -146,7 +146,7 @@ Feature: Context Compaction Logging
       | 3      | message    | user         | Third question                                |                           |
       | 4      | message    | assistant    | Third answer                                  |                           |
 
-  @wip
+  # isaac-5cr6: leftover-material splice is :partial so recheck still loops
   Scenario: Switching to a smaller-context model runs compaction repeatedly until chat can continue
     Given the following sessions exist:
       | name          | total-tokens | #comment                             |

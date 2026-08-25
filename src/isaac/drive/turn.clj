@@ -616,12 +616,12 @@
                   (comm/on-compaction-success ch session-key {:summary      (:summary result)
                                                               :tokens-saved (max 0 (- prompt-tokens updated-total))
                                                               :duration-ms  (- (System/currentTimeMillis) started-at)}))
-                ;; Recheck only after a chunked splice that still sits over
-                ;; threshold (model-switch into a smaller window, isaac-h5xm).
-                ;; A complete non-chunked splice must not consume the next
-                ;; grover/chat turn even when the prompt floor (soul + tools)
-                ;; keeps the estimate over the line — rubberband/slinky
-                ;; counts and quiet-day summaries depend on that.
+                ;; Recheck iff compactable material remains after the splice
+                ;; (isaac-5cr6). Chunked splices and true oversized-single
+                ;; splices (a compactable body > window) are partial. A
+                ;; complete non-chunked splice — including template-floor
+                ;; :oversized-single — must not consume the next grover/chat
+                ;; turn even when soul + tools keep the estimate over the line.
                 (cond
                   (>= updated-total prompt-tokens)
                   (log/warn :session/compaction-stopped
@@ -633,7 +633,7 @@
                             :total-tokens updated-total
                             :context-window context-window)
 
-                  (and (:chunked result)
+                  (and (compaction/partial-splice? result)
                        (compaction/should-compact? updated-total
                                                    (assoc (session-entry opts session-key)
                                                           :compaction (:compaction opts))

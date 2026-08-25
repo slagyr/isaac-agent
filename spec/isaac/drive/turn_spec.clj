@@ -670,6 +670,31 @@
           (should-not-be-nil (event events "compaction-success"))
           (should= session-key (first @follow-up))
           (should= 2 (nth @follow-up 2))
+          (should= false (nth @follow-up 3)))))
+
+    (it "rechecks after an oversized-single splice that still sits over threshold"
+      (let [provider      (->TestProvider marigold/starcore {:api marigold/sky-api})
+            session-key   "compact-oversized"
+            session-store (store/registered-store)
+            events        (atom [])
+            follow-up     (atom nil)]
+        (helper/create-session! test-dir session-key)
+        (with-redefs [compaction/compact!               (fn [& _] {:summary "Partial summary" :partial true})
+                      compaction/estimate-prompt-tokens (fn [_ _] 850)
+                      compaction/should-compact?        (fn [tokens _entry window]
+                                                          (>= tokens (* 0.8 window)))
+                      sut/run-compaction-check!         (fn [next-session-key next-opts next-attempt allow-async?]
+                                                          (reset! follow-up [next-session-key next-opts next-attempt allow-async?]))]
+          (#'sut/perform-compaction! session-key 1 900 {:comm           (memory-comm/channel events)
+                                                        :context-window 1000
+                                                        :model          "test-model"
+                                                        :provider       provider
+                                                        :soul           "You are Isaac."
+                                                        :root           test-dir
+                                                        :session-store  session-store})
+          (should-not-be-nil (event events "compaction-success"))
+          (should= session-key (first @follow-up))
+          (should= 2 (nth @follow-up 2))
           (should= false (nth @follow-up 3))))))
 
   (describe "build-turn"

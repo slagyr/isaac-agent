@@ -33,6 +33,14 @@
   (let [{:keys [threshold]} (resolve-config session-entry context-window)]
     (>= estimated-tokens (* threshold context-window))))
 
+(defn partial-splice?
+  "True when compactable material remains after this splice.
+   Chunked splices leave later chunks; :partial marks an oversized-single
+   splice whose compactable body itself exceeds the window (not merely
+   the summary-prompt floor)."
+  [result]
+  (boolean (or (:chunked result) (:partial result))))
+
 (defn- transcript-for-estimate [transcript context-mode input]
   (let [transcript (or transcript [])
         transcript (if (= :reset context-mode)
@@ -398,6 +406,8 @@
                           (feasible-chunks model api compactable-head context-window tool-defs))
         chunk-messages  (:chunks chunks)
         chunked?        (seq chunk-messages)
+        oversized?      (and (= :oversized-single (get-in chunks [:failure :reason]))
+                             (some #(> (or (:tokens %) 0) context-window) compactable-head))
         chunk-request-tokens (mapv #(llm/estimate-tokens (llm/build-summary-request api model *compaction-system-prompt* % tool-defs)) chunk-messages)
         _               (log/debug :session/compaction-analysis
                                     :compact-count compact-count
@@ -477,7 +487,8 @@
             compaction-entry (cond-> (if transcript-lock
                                        (locking transcript-lock (splice!))
                                        (splice!))
-                               chunked? (assoc :chunked true))
+                               chunked? (assoc :chunked true)
+                               oversized? (assoc :partial true))
             system-text      (if boot-files (str soul "\n\n" boot-files) soul)
             new-total        (llm/estimate-tokens {:messages [{:role "system" :content system-text}
                                                                {:role "user"   :content summary}]})

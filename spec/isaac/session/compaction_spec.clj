@@ -85,6 +85,16 @@
       (should (sut/should-compact? 80 {} 100))
       (should-not (sut/should-compact? 79 {} 100))))
 
+  (describe "partial-splice?"
+    (it "is true for a chunked splice"
+      (should (sut/partial-splice? {:chunked true :summary "A"})))
+
+    (it "is true for an oversized-single partial splice"
+      (should (sut/partial-splice? {:partial true :summary "A"})))
+
+    (it "is false for a complete non-chunked splice"
+      (should-not (sut/partial-splice? {:summary "A"}))))
+
   (describe "estimate-prompt-tokens"
     #_{:clj-kondo/ignore [:unresolved-symbol]}
     (around [example]
@@ -744,5 +754,47 @@
         (should= "Summary so far" (:summary @closed))
         (should= "2026-03-01-1030-cd34" (:successor-session-key result))
         (should= "Summary so far" (:summary result))))
+
+    (it "does not mark a complete floor-stuck rubberband splice as partial"
+      (let [key-str   "isaac:main:cli:chat:floor-stuck"
+            _session  (storage/create-session! test-root key-str)
+            _msg1     (storage/append-message! test-root key-str
+                        {:role "user" :content "Tell me about compaction"})
+            _msg2     (storage/append-message! test-root key-str
+                        {:role "assistant" :content "It summarizes old messages"})
+            mock-chat (fn [_request _tool-fn]
+                        {:message {:content "Summary of prior chat"}})
+            result    (sut/compact! key-str
+                        {:model          "test-model"
+                         :soul           "You are helpful."
+                         :context-window 160
+                         :chat-fn        mock-chat})]
+        (should= "Summary of prior chat" (:summary result))
+        (should-be-nil (:partial result))
+        (should-not (sut/partial-splice? result))))
+
+    (it "marks an oversized-single splice partial when leftover compactables remain"
+      (let [key-str   "isaac:main:cli:chat:oversized-remain"
+            _session  (storage/create-session! test-root key-str)
+            huge      (apply str (repeat 2000 "Recent facts remain active after the downgrade. "))
+            _msg1     (storage/append-message! test-root key-str
+                        {:role "user" :content "Earlier planning notes from the large-window model."})
+            _msg2     (storage/append-message! test-root key-str
+                        {:role "assistant" :content "Earlier planning summary from the large-window model."})
+            _msg3     (storage/append-message! test-root key-str
+                        {:role "user" :content huge})
+            _msg4     (storage/append-message! test-root key-str
+                        {:role "assistant" :content huge})
+            mock-chat (fn [_request _tool-fn]
+                        {:message {:content "Summary from first compact"}})
+            result    (log/capture-logs
+                        (sut/compact! key-str
+                          {:model          "test-model"
+                           :soul           "You are helpful."
+                           :context-window 20
+                           :chat-fn        mock-chat}))]
+        (should= "Summary from first compact" (:summary result))
+        (should= true (:partial result))
+        (should (sut/partial-splice? result))))
     )
   )
