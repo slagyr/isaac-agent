@@ -128,4 +128,4 @@
                 {:response      response
                  :tool-calls    all-tools
                  :token-counts  new-tokens
-                 :loop-request? (boolean (and (seq tool-calls) (not budget-left?)))})))))))))
+                 :loop-request? (boolean (and (seq tool-calls) (not budget-left?)))}))))))))
