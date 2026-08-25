@@ -51,7 +51,7 @@ Feature: Token accounting — one unit, one source
     And session "tally" has transcript:
       | type    | message.role | message.content                                   | tokens |
       | message | user         | dump the config                                   | 4      |
-      | message | assistant    | #"x{3000}" — three thousand characters of output  | 750    |
+      | message | assistant    | dump output, stamped far above its text length    | 750    |
     And the following model responses are queued:
       | type | content         | model      | usage.input_tokens |
       | text | Summary of dump | test-model | 900                |
