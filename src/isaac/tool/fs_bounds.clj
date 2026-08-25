@@ -6,12 +6,16 @@
     [isaac.config.loader :as loader]
     [isaac.fs :as fs]
     [isaac.session.store.spi :as store]
+    [isaac.tool.names :as names]
     [isaac.nexus :as nexus])
   (:import
     [java.io File]))
 
 (defn canonical-path [path]
-  (.getCanonicalPath (io/file path)))
+  (try
+    (.getCanonicalPath (io/file path))
+    (catch Exception _
+      path)))
 
 (defn path-inside? [parent child]
   (let [parent (canonical-path parent)
@@ -64,20 +68,21 @@
       :else            default)))
 
 (defn session-workdir
-  "Return the session's cwd as a string if it exists as a directory, else nil."
-  [session-key-or-args]
-  (let [args        (if (map? session-key-or-args)
-                      (string-key-map session-key-or-args)
-                      {"session_key" session-key-or-args})
-        session-key (get args "session_key")
-        store       (session-store args)]
-    (when (and session-key store)
-      (when-let [cwd (:cwd (store/get-session store session-key))]
-        ;; Exec and grep/glob operate on the host filesystem, so session cwd must
-        ;; still be a real OS directory here even when other tool paths use an
-        ;; explicit isaac.fs implementation.
-        (when (.isDirectory (io/file cwd))
-          cwd)))))
+  "Return the session's cwd as a string. For exec, require a real OS directory.
+   For fs/* ACL expansion, return the configured cwd even on a mem filesystem."
+  ([session-key-or-args]
+   (session-workdir session-key-or-args false))
+  ([session-key-or-args require-os-dir?]
+   (let [args        (if (map? session-key-or-args)
+                       (string-key-map session-key-or-args)
+                       {"session_key" session-key-or-args})
+         session-key (get args "session_key")
+         store       (session-store args)]
+     (when (and session-key store)
+       (when-let [cwd (:cwd (store/get-session store session-key))]
+         (if require-os-dir?
+           (when (.isDirectory (io/file cwd)) cwd)
+           cwd))))))
 
 (defn resolve-path
   "Resolve a path against session-cwd:
@@ -87,44 +92,39 @@
   (cond
     (or (nil? path) (str/blank? path) (= "." path)) session-cwd
     (.isAbsolute (io/file path))                      path
-    session-cwd                                       (.getCanonicalPath (io/file session-cwd path))
+    session-cwd                                       (str session-cwd
+                                                            (when-not (str/ends-with? (str session-cwd) "/") "/")
+                                                            path)
     :else                                             path))
 
-(defn- expand-directory [directory session]
-  (cond
-    (#{:cwd :role} directory) (:cwd session)
-    (#{"cwd" "role"} directory) (:cwd session)
-    (string? directory) directory
-    :else nil))
+(defn- directory-policy [tools]
+  (let [directories (:directories tools)]
+    (cond
+      (map? directories) directories
+      (sequential? directories) {:allow (vec directories)}
+      :else nil)))
 
-(defn allowed-directories [args]
-  (let [args        (string-key-map args)
-        fs*         (filesystem args)
-        session-key (get args "session_key")
-        root   (root args)
-        store       (session-store args)]
-    (when (and session-key root)
-      (when-let [session (store/get-session store session-key)]
-        (let [crew-id     (or (:crew session) "main")
-              quarters    (crew-quarters root crew-id)
-              _           (fs/mkdirs fs* quarters)
-              cfg         (loader/snapshot "tool fs-bounds: crew tool directories")
-              directories (or (get-in cfg [:crew crew-id :tools :directories]) [])
-              role-ws     (session-workdir args)]
-          (->> (concat [quarters]
-                       (when role-ws [role-ws])
-                       (keep #(expand-directory % session) directories))
-               (remove str/blank?)
-               distinct
-               vec))))))
+(defn- session-ctx [args session]
+  (let [root    (root args)
+        crew-id (or (:crew session) "main")]
+    {:cwd      (or (:cwd session) (session-workdir args))
+     :quarters (when root (crew-quarters root crew-id))}))
 
 (defn path-outside-error [file-path]
   {:isError true :error (str "path outside allowed directories: " file-path)})
 
 (defn ensure-path-allowed [args file-path]
-  (when-let [directories (seq (allowed-directories args))]
-    (let [root      (root args)
-          denied-config? (some #(path-inside? % file-path) (config-directories root))]
-      (when (or denied-config?
-                (not-any? #(path-inside? % file-path) directories))
-        (path-outside-error file-path)))))
+  (when file-path
+    (let [args        (string-key-map args)
+          session-key (get args "session_key")
+          store       (session-store args)
+          session     (when (and session-key store)
+                        (store/get-session store session-key))]
+      (when session
+        (let [cfg         (loader/snapshot "tool fs-bounds: directory policy")
+              crew-id     (or (:crew session) "main")
+              global-dirs (directory-policy (:tools cfg))
+              crew-dirs   (directory-policy (get-in cfg [:crew crew-id :tools]))
+              ctx         (session-ctx args session)]
+          (when-not (names/path-allowed? global-dirs crew-dirs file-path ctx)
+            (path-outside-error file-path)))))))

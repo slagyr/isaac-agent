@@ -189,4 +189,66 @@
                                     {:deny [:linear/delete_issue] :allow [:linear/*]}
                                     "linear__delete_issue")))
     )
+
+  (context "directory prefix cascade"
+    (it "denies every path when both layers are empty"
+      (should-not (sut/path-allowed? {} {} "/work/project/hello.txt" {:cwd "/work/project"})))
+
+    (it "expands :cwd to the session workdir and descendants"
+      (should (sut/path-allowed? {:allow [:cwd]} nil
+                                 "/work/project/hello.txt"
+                                 {:cwd "/work/project"}))
+      (should-not (sut/path-allowed? {:allow [:cwd]} nil
+                                    "/outside/secret.txt"
+                                    {:cwd "/work/project"})))
+
+    (it "expands :quarters to the crew area and descendants, not cwd"
+      (should (sut/path-allowed? {:allow [:quarters]} nil
+                                 "/isaac-state/crew/main/notes.txt"
+                                 {:cwd "/work/project" :quarters "/isaac-state/crew/main"}))
+      (should-not (sut/path-allowed? {:allow [:quarters]} nil
+                                    "/work/project/hello.txt"
+                                    {:cwd "/work/project" :quarters "/isaac-state/crew/main"})))
+
+    (it "overlays a crew extra absolute path without dropping inherited cwd"
+      (should (sut/path-allowed? {:allow [:cwd]}
+                                 {:allow ["/tmp/isaac-playground"]}
+                                 "/work/project/hello.txt"
+                                 {:cwd "/work/project"}))
+      (should (sut/path-allowed? {:allow [:cwd]}
+                                 {:allow ["/tmp/isaac-playground"]}
+                                 "/tmp/isaac-playground/data.txt"
+                                 {:cwd "/work/project"})))
+
+    (it "lets a more specific global deny beat a shorter crew allow"
+      (should (sut/path-allowed? {:deny ["/work/project/secret"]}
+                                 {:allow ["/work/project"]}
+                                 "/work/project/hello.txt"
+                                 {}))
+      (should-not (sut/path-allowed? {:deny ["/work/project/secret"]}
+                                    {:allow ["/work/project"]}
+                                    "/work/project/secret/key.txt"
+                                    {})))
+
+    (it "lets crew allow of the denied child prefix re-open it"
+      (should (sut/path-allowed? {:deny ["/work/project/secret"]}
+                                 {:allow ["/work/project" "/work/project/secret"]}
+                                 "/work/project/secret/key.txt"
+                                 {})))
+
+    (it "lets a crew deny of a subpath leave siblings under the root allowed"
+      (should (sut/path-allowed? {:allow ["/work/project"]}
+                                 {:deny ["/work/project/.env"]}
+                                 "/work/project/hello.txt"
+                                 {}))
+      (should-not (sut/path-allowed? {:allow ["/work/project"]}
+                                    {:deny ["/work/project/.env"]}
+                                    "/work/project/.env"
+                                    {})))
+
+    (it "inherits global directories when the crew omits :directories"
+      (should (sut/path-allowed? {:allow [:cwd]} nil
+                                 "/work/project/hello.txt"
+                                 {:cwd "/work/project"})))
+    )
   )

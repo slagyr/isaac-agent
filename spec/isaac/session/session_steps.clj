@@ -1136,6 +1136,16 @@
                         :else (str (root-dir) "/" path))]
         (g/should (str/includes? (or (fs/slurp (mem-fs) abs-path) "") content))))))
 
+(defn given-symlink-pointing-at [path target]
+  (let [abs-path   (if (str/starts-with? path "/") path (str (System/getProperty "user.dir") "/" path))
+        abs-target (if (str/starts-with? target "/") target (str (System/getProperty "user.dir") "/" target))
+        parent     (.getParentFile (io/file abs-path))]
+    (when parent (.mkdirs parent))
+    (java.nio.file.Files/createSymbolicLink
+      (.toPath (io/file abs-path))
+      (.toPath (io/file abs-target))
+      (into-array java.nio.file.attribute.FileAttribute []))))
+
 (defn crew-has-file [crew-id filename content]
   (with-feature-fs
     (fn []
@@ -1759,6 +1769,8 @@
 (defgiven #"file \"([^\"]+)\" contains \"([^\"]*)\"" isaac.session.session-steps/given-file-contains)
 
 (defthen #"the file \"([^\"]+)\" contains \"([^\"]*)\"" isaac.session.session-steps/then-file-contains)
+
+(defgiven #"a symlink \"([^\"]+)\" pointing at \"([^\"]+)\"" isaac.session.session-steps/given-symlink-pointing-at)
 
 (defgiven #"crew \"([^\"]+)\" has file \"([^\"]+)\" with \"([^\"]+)\"" isaac.session.session-steps/crew-has-file)
 

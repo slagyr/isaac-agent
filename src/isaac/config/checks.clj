@@ -142,10 +142,14 @@
     {:errors   []
      :warnings (vec
                  (mapcat (fn [[crew-id {:keys [tools]}]]
-                           (mapcat (fn [directory]
-                                     (when-let [warning (broad-directory-warning (->id crew-id) directory {:root isaac-root})]
-                                       [warning]))
-                                   (or (:directories tools) [])))
+                           (let [directories (:directories tools)
+                                 tokens      (if (map? directories)
+                                               (concat (:allow directories) (:deny directories))
+                                               directories)]
+                             (mapcat (fn [directory]
+                                       (when-let [warning (broad-directory-warning (->id crew-id) directory {:root isaac-root})]
+                                         [warning]))
+                                     (or tokens []))))
                          (or (:crew config) {})))}))
 
 

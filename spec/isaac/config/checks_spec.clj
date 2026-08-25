@@ -65,7 +65,7 @@
       (binding [root/*user-home* "/tmp/isaac-home"]
         (let [{:keys [warnings]} (sut/check-crew-broad-directories
                                    {:config {:root "/tmp/isaac-home"
-                                             :crew {:scrapper {:tools {:directories ["/tmp/isaac-home"]}}}}
+                                             :crew {:scrapper {:tools {:directories {:allow ["/tmp/isaac-home"]}}}}}
                                     :root   "/tmp/isaac-home/.isaac/config"})]
           (should= 1 (count warnings))
           (should (re-find #"user home" (:value (first warnings)))))))
@@ -73,7 +73,7 @@
     (it "warns when a crew directory includes the Isaac state root"
       (let [{:keys [warnings]} (sut/check-crew-broad-directories
                                  {:config {:root "/srv/isaac-state"
-                                           :crew {:scrapper {:tools {:directories ["/srv/isaac-state"]}}}}
+                                           :crew {:scrapper {:tools {:directories {:allow ["/srv/isaac-state"]}}}}}
                                   :root   "/srv/isaac-state/config"})]
         (should= 1 (count warnings))
         (should (re-find #"Isaac state directory" (:value (first warnings))))

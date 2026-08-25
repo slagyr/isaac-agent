@@ -46,13 +46,13 @@
                 :model test-model-id
                 :soul  "You are Cordelia."
                 :tools {:allow       [:fs/read :fs/write]
-                        :directories [:cwd "/tmp/playground"]}}
+                        :directories {:allow [:cwd "/tmp/playground"]}}}
                (lexicon/conform (runtime-spec sut/crew)
                                 {:id    (keyword marigold/first-mate)
                                  :model (keyword test-model-id)
                                  :soul  "You are Cordelia."
                                  :tools {:allow       [:fs/read :fs/write]
-                                         :directories [:cwd "/tmp/playground"]}})))
+                                         :directories {:allow [:cwd "/tmp/playground"]}}})))
 
     (it "crew conforms with context-mode"
       (should= {:context-mode :reset
@@ -145,16 +145,16 @@
 
   (describe "custom validation"
 
-    (it "tools directories rejects a keyword other than :cwd or :role"
-      (let [result (lexicon/conform sut/tools {:directories [:not-cwd]})]
+    (it "tools directories rejects a keyword other than :cwd, :quarters, or :role"
+      (let [result (lexicon/conform sut/tools {:directories {:allow [:not-cwd]}})]
         (should (schema/error? result))))
 
-    (it "tools directories accepts :role"
-      (let [result (lexicon/conform sut/tools {:directories [:role]})]
+    (it "tools directories accepts :role and :quarters"
+      (let [result (lexicon/conform (runtime-spec sut/tools) {:directories {:allow [:role :quarters]}})]
         (should-not (schema/error? result))))
 
     (it "tools directories rejects non-keyword non-string entries"
-      (let [result (lexicon/conform sut/tools {:directories [42]})]
+      (let [result (lexicon/conform sut/tools {:directories {:allow [42]}})]
         (should (schema/error? result))))
 
     (it "crew accepts an absolute cwd path"

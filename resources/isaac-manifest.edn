@@ -342,7 +342,20 @@
       :description "Global allowed tools: :all or a vector of namespaced keywords / ns/* globs"}
      :deny
      {:type :ignore,
-      :description "Global denied tools: :all or a vector of namespaced keywords / ns/* globs"}}}},
+      :description "Global denied tools: :all or a vector of namespaced keywords / ns/* globs"}
+     :directories
+     {:type :map,
+      :description
+      "Global directory allow/deny. Empty means no paths. Tokens: :cwd, :quarters, :role, or absolute paths.",
+      :schema
+      {:allow
+       {:type :seq,
+        :description "Allowed directory prefixes",
+        :spec {:type :ignore, :validations [:cwd-or-path?]}}
+       :deny
+       {:type :seq,
+        :description "Denied directory prefixes",
+        :spec {:type :ignore, :validations [:cwd-or-path?]}}}}}}},
   :crew
   {:entity-dir "crew",
    :frontmatter? true,
@@ -381,10 +394,18 @@
         {:type :ignore,
          :description "Denied tools: :all or a vector of namespaced keywords / ns/* globs"},
         :directories
-        {:type :seq,
+        {:type :map,
          :description
-         "Extra allowed directories beyond crew quarters and the session role workspace; :role and :cwd expand to session cwd, strings are absolute paths",
-         :spec {:type :ignore, :validations [:cwd-or-path?]}}}},
+         "Crew directory overlay. :allow/:deny of :cwd, :quarters, :role, or absolute paths. Overlay, not replace.",
+         :schema
+         {:allow
+          {:type :seq,
+           :description "Allowed directory prefixes",
+           :spec {:type :ignore, :validations [:cwd-or-path?]}}
+          :deny
+          {:type :seq,
+           :description "Denied directory prefixes",
+           :spec {:type :ignore, :validations [:cwd-or-path?]}}}}}},
       :cwd
       {:type :string,
        :description "Default workdir for new sessions on this crew",

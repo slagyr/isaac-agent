@@ -117,16 +117,18 @@
 
     (it "resolves '.' to session cwd"
       (let [captured (atom nil)]
-        (with-redefs [sut/available? (constantly true)
-                      sut/-run-rg   (fn [cmd] (reset! captured cmd) {:exit 1 :out "" :err ""})]
-          (sut/grep-tool {"pattern" "needle" "path" "." "session_key" @session-key}))
+        (helper/with-config {:defaults {} :tools {:directories {:allow [:cwd]}} :crew {} :models {} :providers {}}
+          (with-redefs [sut/available? (constantly true)
+                        sut/-run-rg   (fn [cmd] (reset! captured cmd) {:exit 1 :out "" :err ""})]
+            (sut/grep-tool {"pattern" "needle" "path" "." "session_key" @session-key})))
         (should= @cwd (last @captured))))
 
     (it "resolves an empty path to session cwd"
       (let [captured (atom nil)]
-        (with-redefs [sut/available? (constantly true)
-                      sut/-run-rg   (fn [cmd] (reset! captured cmd) {:exit 1 :out "" :err ""})]
-          (sut/grep-tool {"pattern" "needle" "path" "" "session_key" @session-key}))
+        (helper/with-config {:defaults {} :tools {:directories {:allow [:cwd]}} :crew {} :models {} :providers {}}
+          (with-redefs [sut/available? (constantly true)
+                        sut/-run-rg   (fn [cmd] (reset! captured cmd) {:exit 1 :out "" :err ""})]
+            (sut/grep-tool {"pattern" "needle" "path" "" "session_key" @session-key})))
         (should= @cwd (last @captured))))
 
     (it "resolves a relative path against session cwd"
@@ -135,5 +137,6 @@
         (.mkdirs (io/file subdir))
         (with-redefs [sut/available? (constantly true)
                       sut/-run-rg   (fn [cmd] (reset! captured cmd) {:exit 1 :out "" :err ""})]
-          (sut/grep-tool {"pattern" "needle" "path" "src" "session_key" @session-key}))
+          (helper/with-config {:defaults {} :tools {:directories {:allow [:cwd]}} :crew {} :models {} :providers {}}
+            (sut/grep-tool {"pattern" "needle" "path" "src" "session_key" @session-key})))
         (should= subdir (last @captured))))))

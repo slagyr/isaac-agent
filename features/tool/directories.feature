@@ -1,4 +1,3 @@
-@wip
 Feature: Global and crew directory allow/deny
   Path permission is a yes/no per (crew, path). Empty means no paths.
   Longest matching prefix wins; same-length uses the tool cascade

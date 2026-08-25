@@ -9,7 +9,8 @@ Feature: Per-crew filesystem boundaries
       """
       {:defaults  {:crew :main :model :echo}
        :providers {:grover {:base-url "http://test" :api "grover"}}
-       :models    {:echo {:model "echo" :provider :grover :context-window 32768}}}
+       :models    {:echo {:model "echo" :provider :grover :context-window 32768}}
+       :tools     {:directories {:allow [:cwd :quarters]}}}
       """
 
   Scenario: crew can read files in their quarters
@@ -34,7 +35,7 @@ Feature: Per-crew filesystem boundaries
     Given config file "crew/main.edn" containing:
       """
       {:tools {:allow       [:fs/read]
-               :directories ["/tmp/isaac-playground"]}}
+               :directories {:allow ["/tmp/isaac-playground"]}}}
       """
     And file "/tmp/isaac-playground/data.txt" contains "hello"
     And the following sessions exist:
@@ -87,7 +88,7 @@ Feature: Per-crew filesystem boundaries
     Given config file "crew/main.edn" containing:
       """
       {:tools {:allow       [:fs/read]
-               :directories [:cwd]}}
+               :directories {:allow [:cwd]}}
       """
     And file "/work/project/hello.txt" contains "hi there"
     And the following sessions exist:
@@ -102,8 +103,14 @@ Feature: Per-crew filesystem boundaries
       | type    | message.role | message.isError |
       | message | toolResult   |                 |
 
-  Scenario: crew can access the session role workspace without explicit :directories opt-in (isaac-dwjy)
-    Given config file "crew/main.edn" containing:
+  Scenario: crew cannot access the session role workspace without a directory grant (isaac-ukg4)
+    Given config file "isaac.edn" containing:
+      """
+      {:defaults  {:crew :main :model :echo}
+       :providers {:grover {:base-url "http://test" :api "grover"}}
+       :models    {:echo {:model "echo" :provider :grover :context-window 32768}}}
+      """
+    And config file "crew/main.edn" containing:
       """
       {:tools {:allow [:fs/read]}}
       """
@@ -114,11 +121,11 @@ Feature: Per-crew filesystem boundaries
     And the following model responses are queued:
       | type      | tool | arguments                               |
       | tool_call | fs__read | {"file_path": "/work/project/hello.txt"} |
-      | text      |      | Got it                                  |
+      | text      |      | Sorry                                  |
     When the user sends "read hello" on session "fence-test"
     Then session "fence-test" has transcript matching:
       | type    | message.role | message.isError |
-      | message | toolResult   |                 |
+      | message | toolResult   | true            |
 
   Scenario: a crew scoped to its role workspace cannot write outside it (isaac-dwjy)
     Given config file "crew/main.edn" containing:
