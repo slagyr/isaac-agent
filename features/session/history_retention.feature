@@ -1,8 +1,9 @@
 Feature: Compaction history retention policy
-  After compaction, retention determines whether the previous current
-  transcript is frozen. Under :retain (default), current.ednl is copied
-  to n.ednl and replaced with the compaction + kept tail. Under :prune,
-  current.ednl is replaced and no frozen segment is written.
+  After compaction, retention determines whether the compacted prefix
+  is frozen. Under :retain (default), the prefix (header + discarded
+  messages) is written to n.ednl and current.ednl is replaced with the
+  compaction + kept tail. Under :prune, current.ednl is replaced and
+  no frozen segment is written.
 
   Retention is resolved once at session creation (cascade:
   explicit create-time override > crew > model > provider > :defaults

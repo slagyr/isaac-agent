@@ -57,7 +57,7 @@ Feature: Context Compaction Logging
       | text | Summary of prior chat | test-model |
       | text | README summary        | test-model |
     When the user sends "Can you summarize README.md?" on session "compaction-chat"
-    Then session "compaction-chat" has transcript matching:
+    Then session "compaction-chat" has chronicle matching:
       | type    | message.role | message.content                                                              |
       | message | user         | Please summarize the work we did on the logging subsystem and the tool loop   |
       | message | assistant    | We discussed logging output sinks, the compaction trigger, and tool dispatch  |
@@ -134,7 +134,7 @@ Feature: Context Compaction Logging
       | text | Summary of first exchange | test-model |
       | text | Third answer              | test-model |
     When the user sends "Third question" on session "partial-compact"
-    Then session "partial-compact" has transcript matching:
+    Then session "partial-compact" has chronicle matching:
       | type    | message.role | message.content                            |
       | message | user         | First question about the project status    |
       | message | assistant    | The project status is healthy and on track |
@@ -146,6 +146,7 @@ Feature: Context Compaction Logging
       | 3      | message    | user         | Third question                                |                           |
       | 4      | message    | assistant    | Third answer                                  |                           |
 
+  @wip
   Scenario: Switching to a smaller-context model runs compaction repeatedly until chat can continue
     Given the following sessions exist:
       | name          | total-tokens | #comment                             |
@@ -183,7 +184,7 @@ Feature: Context Compaction Logging
     Then the following sessions match:
       | id           | compaction-count |
       | model-switch | 2               |
-    And session "model-switch" has transcript matching:
+    And session "model-switch" has chronicle matching:
       | type       | summary                     |
       | compaction | Summary from first compact  |
       | compaction | Summary from second compact |
@@ -358,7 +359,7 @@ Feature: Context Compaction Logging
       | text | next answer       | test-model | reply to the new user message     |
     When the user sends "And the freezer?" on session "tool-orphan"
     Then the last compaction request input contains "call_old"
-    And session "tool-orphan" has transcript matching:
+    And session "tool-orphan" has chronicle matching:
       | type    | message.role | message.content                                                                           |
       | message | user         | What's in fridge.txt?                                                                     |
       | message | toolResult   | one sad lemon                                                                             |

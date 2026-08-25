@@ -2,11 +2,14 @@
   (:require
     [cheshire.core :as json]
     [isaac.fs :as fs]
-    [isaac.tool.memory :as memory]
     [isaac.session.cli :as sut]
-    [isaac.session.store.spi :as store]
+    [isaac.session.context :as session-ctx]
     [isaac.session.spec-helper :as helper]
+    [isaac.session.store.spi :as store]
     [isaac.nexus :as nexus]
+    [isaac.tool.builtin :as builtin]
+    [isaac.tool.memory :as memory]
+    [isaac.tool.registry :as tool-registry]
     [speclj.core :refer :all]))
 
 (describe "session cli"
@@ -51,6 +54,23 @@
     (with-redefs [store/get-transcript (fn [& _] (throw (ex-info "list must not parse transcripts" {})))]
       (let [output (with-out-str (should= 0 (sut/run-fn {:home "/test" :_raw-args ["list"]})))]
         (should-contain "joe" output))))
+
+  (it "shows the crew allow-list tool count after registering builtins"
+    (helper/create-session! "/test/sessions" "workbench" {:crew "toolsmith"})
+    (tool-registry/clear!)
+    (let [registered (atom nil)]
+      (with-redefs [session-ctx/resolve-behavior (fn [_ _]
+                                                   {:crew     "toolsmith"
+                                                    :crew-cfg {:tools {:allow [:fs/read :fs/write]}}
+                                                    :model    "echo"
+                                                    :provider nil})
+                    builtin/register-all!       (fn [allowed]
+                                                  (reset! registered allowed)
+                                                  (tool-registry/register! {:name "fs__read" :description "r"})
+                                                  (tool-registry/register! {:name "fs__write" :description "w"}))]
+        (let [output (with-out-str (should= 0 (sut/run-fn {:home "/test" :_raw-args ["show" "workbench"]})))]
+          (should= #{:fs/read :fs/write} (set @registered))
+          (should (re-find #"Tools\s+2" output))))))
 
   (it "renders show output as JSON"
     (helper/create-session! "/test/sessions" "joe" {:crew "main" :tags #{:project/x}})

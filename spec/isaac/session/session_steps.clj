@@ -192,6 +192,9 @@
 (defn- get-active-transcript [session-key]
   (store/active-transcript (session-store) session-key))
 
+(defn- get-chronicle-transcript [session-key]
+  (store/chronicle-transcript (session-store) session-key))
+
 (defn- open-session! [session-name opts]
   (store/open-session! (session-store) session-name opts))
 
@@ -659,11 +662,12 @@
             history-retention (some-> (get row-map "history-retention") keyword)
             tags        (some-> (get row-map "tags") edn/read-string)
             entry       (or (open-session name)
-                            (open-session! name {:crew agent :agent agent :cwd (root-dir)
-                                                 :nonce (get row-map "nonce")
-                                                 :tags tags
-                                                 :history-retention history-retention
-                                                  :origin origin}))
+                            (with-current-time
+                              #(open-session! name {:crew agent :agent agent :cwd (root-dir)
+                                                    :nonce (get row-map "nonce")
+                                                    :tags tags
+                                                    :history-retention history-retention
+                                                    :origin origin})))
             compaction  (cond-> {}
                            (get row-map "compaction.strategy")  (assoc :strategy (keyword (get row-map "compaction.strategy")))
                            (get row-map "compaction.threshold") (assoc :threshold (Double/parseDouble (get row-map "compaction.threshold")))
@@ -1250,11 +1254,13 @@
     (g/should= expected (:id entry))))
 
 (defn- session-transcript-count* [transcript-fn key-str n]
+  (await-turn!)
+  (await-acp-turn!)
   (let [transcript (with-feature-fs #(transcript-fn key-str))]
     (g/should= (parse-long n) (count transcript))))
 
 (defn session-transcript-count [key-str n]
-  (session-transcript-count* get-transcript key-str n))
+  (session-transcript-count* get-chronicle-transcript key-str n))
 
 (defn session-active-transcript-count [key-str n]
   (session-transcript-count* get-active-transcript key-str n))
@@ -1288,6 +1294,9 @@
 
 (defn session-active-transcript-matching [key-str table]
   (session-transcript-matching* get-active-transcript key-str table))
+
+(defn session-chronicle-transcript-matching [key-str table]
+  (session-transcript-matching* get-chronicle-transcript key-str table))
 
 (defn session-transcript-not-matching [key-str table]
   (await-turn!)
@@ -1766,10 +1775,15 @@
 
 (defthen "session {key:string} has transcript matching:" isaac.session.session-steps/session-transcript-matching
   "Awaits both the in-memory turn-future AND any ACP turn, then matches
-   table rows against the transcript. By default skips 'session' header
-   entries and uses a column-aware matcher that includes compaction
-    summaries unless a 'summary' column is present. Use '#index' in any
-     row to force strict positional match.")
+   table rows against the current (post-splice) transcript. By default
+   skips 'session' header entries and uses a column-aware matcher that
+   includes compaction summaries unless a 'summary' column is present.
+   Use '#index' in any row to force strict positional match.")
+
+(defthen "session {key:string} has chronicle matching:" isaac.session.session-steps/session-chronicle-transcript-matching
+  "Matches against the full chronicle (frozen segments + current). Use
+   this when a scenario asserts pre-splice messages that :retain parked
+   in a frozen segment.")
 
 (defthen "session {key:string} has active transcript matching:" isaac.session.session-steps/session-active-transcript-matching
   "Matches against the LLM-visible transcript view after any effective

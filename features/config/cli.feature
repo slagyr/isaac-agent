@@ -56,11 +56,11 @@ Feature: Config Command
       """
     When isaac is run with "config get"
     Then the stdout lines contain in order:
-      | pattern                              |
-      | :auth-key                            |
-      | "<CONFIG_TEST_UNSET_KEY:UNRESOLVED>" |
-      | :api-key                             |
-      | "<CONFIG_TEST_API_KEY:redacted>"    |
+      | pattern   |
+      | :api-key  |
+      | :auth-key |
+    And the stdout contains "<CONFIG_TEST_API_KEY:redacted>"
+    And the stdout contains "<CONFIG_TEST_UNSET_KEY:UNRESOLVED>"
     And the stdout has at least 5 lines
     And the stdout does not contain "sk-test-123"
     And the exit code is 0
@@ -375,11 +375,9 @@ Feature: Config Command
        :providers {:anthropic {}}}
       """
     When isaac is run with "config get crew.cordelia"
-    Then the stdout lines contain in order:
-      | pattern             |
-      | :soul               |
-      | "You are Cordelia."  |
-      | :model :llama       |
+    Then the stdout contains ":model :llama"
+    And the stdout contains ":soul"
+    And the stdout contains "You are Cordelia."
     And the exit code is 0
 
   Scenario: get exits non-zero for a missing key

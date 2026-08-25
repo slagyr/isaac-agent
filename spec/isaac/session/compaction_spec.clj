@@ -162,6 +162,25 @@
         (should= "compaction" (:type result))
         (should= "Summary of conversation" (:summary result))))
 
+    (it "unwraps a tool-loop response envelope to the assistant summary"
+      (let [key-str  "isaac:main:cli:chat:tool-loop-wrap"
+            _session (storage/create-session! test-root key-str)
+            _msg1    (storage/append-message! test-root key-str
+                       {:role "user" :content "Hello"})
+            _msg2    (storage/append-message! test-root key-str
+                       {:role "assistant" :content "Hi there!"})
+            mock-chat (fn [_request _tool-fn]
+                        {:response {:message {:content "Summary of conversation"}}
+                         :tool-calls []
+                         :token-counts {:input-tokens 1 :output-tokens 1}})
+            result   (sut/compact! key-str
+                       {:model          "test-model"
+                        :soul           "You are helpful."
+                        :context-window 10000
+                        :chat-fn        mock-chat})]
+        (should= "compaction" (:type result))
+        (should= "Summary of conversation" (:summary result))))
+
     (it "stores a non-blank summary when the model returns empty content"
       (let [key-str  "isaac:main:cli:chat:blank-summary"
             _session (storage/create-session! test-root key-str)

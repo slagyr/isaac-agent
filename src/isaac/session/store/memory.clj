@@ -5,6 +5,7 @@
     [isaac.fs :as fs]
     [isaac.logger :as log]
     [isaac.naming :as naming]
+    [isaac.session.schema :as session-schema]
     [isaac.session.store.impl-common :as c]
     [isaac.session.store.spi :as store]
     [isaac.tool.memory :as memory])
@@ -193,9 +194,12 @@
     (let [id (c/session-id name)]
       (swap! state update-in [:sessions id]
              (fn [entry]
-               (let [updates (if-let [compaction (:compaction updates)]
-                               (assoc updates :compaction (merge (or (:compaction entry) {}) compaction))
-                               updates)]
+               (let [updates (-> updates
+                                 session-schema/kebabize-legacy-keys
+                                 (as-> u
+                                   (if-let [compaction (:compaction u)]
+                                     (assoc u :compaction (merge (or (:compaction entry) {}) compaction))
+                                     u)))]
                  (merge entry updates))))
       (get-in @state [:sessions id])))
 
@@ -281,11 +285,12 @@
           retention  (or (get-in @state [:sessions id :history-retention]) resolve/default-history-retention)
           now        (now-iso)
           [compaction-entry new-current] (c/compacted-current transcript compactedEntryIds firstKeptEntryId summary tokensBefore now turnRequest)
+          prefix     (c/frozen-segment transcript new-current)
           n          (or (get-in @state [:sessions id :segment]) 0)]
       (swap! state (fn [s]
                      (cond-> s
                        (= :retain retention)
-                       (update-in [:frozen id] (fnil conj []) transcript)
+                       (update-in [:frozen id] (fnil conj []) prefix)
                        true
                        (assoc-in [:transcripts id] new-current)
                        true
@@ -297,7 +302,7 @@
                                        (update :compaction-count inc))))))
       (when root
         (when (= :retain retention)
-          (c/write-ednl! (fs/instance) (c/frozen-transcript-path root id n) transcript))
+          (c/write-ednl! (fs/instance) (c/frozen-transcript-path root id n) prefix))
         (persist-transcript! root id new-current))
       compaction-entry))
 

@@ -55,11 +55,23 @@
   (let [{:keys [name]} (token-parts token)]
     (= "*" name)))
 
+(defn- family-prefix [token]
+  (let [bare (cond
+               (and (keyword? token) (nil? (namespace token))) (name token)
+               (and (string? token)
+                    (not (str/includes? token "/"))
+                    (not (str/includes? token "__"))) token
+               :else nil)]
+    (when bare (str bare "__"))))
+
 (defn matches?
-  "True when allow-token covers wire-name. Exact token or ns/* family glob."
+  "True when allow-token covers wire-name. Exact token, ns/* family glob,
+   or an unqualified family prefix (exec → exec__run)."
   [token wire]
-  (let [canonical (wire-name token)]
+  (let [canonical (wire-name token)
+        prefix    (family-prefix token)]
     (cond
+      (and prefix (string? wire) (str/starts-with? wire prefix)) true
       (nil? canonical) false
       (glob-token? token) (and (string? wire) (str/starts-with? wire canonical))
       :else (= canonical wire))))

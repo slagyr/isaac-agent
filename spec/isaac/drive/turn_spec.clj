@@ -558,21 +558,19 @@
                       :reason :too-many-failures}
                      (event events "compaction-disabled"))))))
 
-    (it "resets failure state and rechecks compaction after successful progress"
+    (it "resets failure state after a successful non-chunked compact without rechecking"
       (let [provider      (->TestProvider marigold/starcore {:api marigold/sky-api})
             session-key   "compact-success"
             session-store (store/registered-store)
-            events        (atom [])
-            follow-up     (atom nil)]
+            events        (atom [])]
         (helper/create-session! test-dir session-key)
         (helper/update-session! test-dir session-key {:last-input-tokens   800
                                                       :compaction-disabled true
                                                       :compaction          {:consecutive-failures 2}})
-        (with-redefs [compaction/compact!              (fn [& _] {:summary "Shorter now"})
-                      compaction/estimate-prompt-tokens (fn [_ _] 200)
-                      sut/run-compaction-check!        (fn [next-session-key next-opts next-attempt allow-async?]
-                                                         (reset! follow-up [next-session-key next-opts next-attempt allow-async?]))]
-          (#'sut/perform-compaction! session-key 2 800 {:comm           (memory-comm/channel events)
+        (with-redefs [compaction/compact!               (fn [& _] {:summary "Shorter now"})
+                      compaction/estimate-prompt-tokens (fn [_ _] 850)
+                      sut/run-compaction-check!         (fn [& _] (throw (ex-info "should not re-run" {})))]
+          (#'sut/perform-compaction! session-key 2 900 {:comm           (memory-comm/channel events)
                                                         :context-window 1000
                                                         :model          "test-model"
                                                         :provider       provider
@@ -585,11 +583,48 @@
             (should= {:consecutive-failures 0} (:compaction session))
             (should-not-be-nil success)
             (should= "Shorter now" (:summary success))
-            (should= 600 (:tokens-saved success))
-            (should (number? (:duration-ms success)))
-            (should= session-key (first @follow-up))
-            (should= 3 (nth @follow-up 2))
-            (should= false (nth @follow-up 3))))))
+            (should= 50 (:tokens-saved success))
+            (should (number? (:duration-ms success)))))))
+
+    (it "does not recheck a non-chunked compact even when the estimate stays over threshold"
+      (let [provider      (->TestProvider marigold/starcore {:api marigold/sky-api})
+            session-key   "compact-floor"
+            session-store (store/registered-store)
+            events        (atom [])]
+        (helper/create-session! test-dir session-key)
+        (with-redefs [compaction/compact!               (fn [& _] {:summary "Floor still high"})
+                      compaction/estimate-prompt-tokens (fn [_ _] 850)
+                      compaction/should-compact?        (fn [tokens _entry window]
+                                                          (>= tokens (* 0.8 window)))
+                      sut/run-compaction-check!         (fn [& _] (throw (ex-info "should not re-run" {})))]
+          (#'sut/perform-compaction! session-key 1 900 {:comm           (memory-comm/channel events)
+                                                        :context-window 1000
+                                                        :model          "test-model"
+                                                        :provider       provider
+                                                        :soul           "You are Isaac."
+                                                        :root           test-dir
+                                                        :session-store  session-store})
+          (should-not-be-nil (event events "compaction-success")))))
+
+    (it "does not recheck when the first splice already dropped below threshold"
+      (let [provider      (->TestProvider marigold/starcore {:api marigold/sky-api})
+            session-key   "compact-once"
+            session-store (store/registered-store)
+            events        (atom [])]
+        (helper/create-session! test-dir session-key)
+        (with-redefs [compaction/compact!               (fn [& _] {:summary "One pass"})
+                      compaction/estimate-prompt-tokens (fn [_ _] 200)
+                      compaction/should-compact?        (fn [tokens _entry window]
+                                                          (>= tokens (* 0.8 window)))
+                      sut/run-compaction-check!         (fn [& _] (throw (ex-info "should not re-run" {})))]
+          (#'sut/perform-compaction! session-key 1 800 {:comm           (memory-comm/channel events)
+                                                        :context-window 1000
+                                                        :model          "test-model"
+                                                        :provider       provider
+                                                        :soul           "You are Isaac."
+                                                        :root           test-dir
+                                                        :session-store  session-store})
+          (should-not-be-nil (event events "compaction-success")))))
 
     (it "stops when compaction makes no token progress"
       (let [provider      (->TestProvider marigold/starcore {:api marigold/sky-api})
@@ -622,10 +657,10 @@
             follow-up     (atom nil)]
         (helper/create-session! test-dir session-key)
         (with-redefs [compaction/compact!               (fn [& _] {:summary "Chunked summary" :chunked true})
-                      compaction/estimate-prompt-tokens (fn [_ _] 200)
+                      compaction/estimate-prompt-tokens (fn [_ _] 850)
                       sut/run-compaction-check!         (fn [next-session-key next-opts next-attempt allow-async?]
                                                           (reset! follow-up [next-session-key next-opts next-attempt allow-async?]))]
-          (#'sut/perform-compaction! session-key 1 800 {:comm           (memory-comm/channel events)
+          (#'sut/perform-compaction! session-key 1 900 {:comm           (memory-comm/channel events)
                                                         :context-window 1000
                                                         :model          "test-model"
                                                         :provider       provider

@@ -21,6 +21,7 @@
     [isaac.session.migrate :as migrate]
     [isaac.session.store.impl-common :as store-common]
     [isaac.session.store.spi :as store]
+    [isaac.tool.builtin :as builtin]
     [isaac.tool.memory :as memory]
     [isaac.tool.registry :as tool-registry])
   (:import
@@ -253,10 +254,14 @@
             (let [ctx     (assoc (session-ctx/resolve-behavior session-id {})
                                  :boot-files (session-ctx/read-boot-files (:cwd session))
                                  :root root)
+                  ;; CLI never boots modules. Register the crew allow-list
+                  ;; builtins first — session-allowed-tools only sees tools
+                  ;; already in the registry, so an empty registry used to
+                  ;; report Tools 0 (isaac-wczf / isaac-zcb9).
+                  allow   (get-in ctx [:crew-cfg :tools :allow])
+                  _       (when (seq allow)
+                            (builtin/register-all! allow))
                   allowed (bridge/session-allowed-tools ctx)
-                  ;; the CLI path never boots modules, so activate just this
-                  ;; crew's allow-listed tools into the registry so the count
-                  ;; reflects what the live session would have (isaac-wczf)
                   _       (when (seq allowed)
                             (tool-registry/tool-definitions allowed (:module-index config)))
                   status  (bridge/status-data session-id (assoc ctx :allowed-tools allowed))]

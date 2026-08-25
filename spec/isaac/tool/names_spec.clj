@@ -112,6 +112,10 @@
     (it "allows an unqualified token as an exact wire name"
       (should (sut/allowed? [:spyglass] "spyglass")))
 
+    (it "treats an unqualified family token as covering that family's wire names"
+      (should (sut/allowed? [:exec] "exec__run"))
+      (should (sut/allowed? [:fs] "fs__read")))
+
     (it "returns nil policy as deny-all"
       (should-not (sut/allowed? nil "fs__read")))
     )

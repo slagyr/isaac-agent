@@ -197,17 +197,31 @@
     (when (exists?* fs path)
       (edn/read-string (slurp* fs path)))))
 
+(defn- read-marker [fs path session-id]
+  (when (exists?* fs path)
+    (some-> (edn/read-string (slurp* fs path))
+            (assoc :session-id (str session-id)))))
+
 (defn turn-markers* [root fs]
-  (let [dir (sessions-dir root)]
-    (if-let [children (children* fs dir)]
-      (->> children
-           (keep (fn [name]
-                   (let [path (turn-marker-path root name)]
-                     (when (exists?* fs path)
-                       (some-> (edn/read-string (slurp* fs path))
-                               (assoc :session-id name))))))
-           vec)
-      [])))
+  (let [dir          (sessions-dir root)
+        product      (if-let [children (children* fs dir)]
+                       (->> children
+                            (keep (fn [name]
+                                    (read-marker fs (turn-marker-path root name) name)))
+                            vec)
+                       [])
+        product-ids  (set (map :session-id product))
+        turns-dir    (turns-dir root)
+        legacy       (if-let [children (children* fs turns-dir)]
+                       (->> children
+                            (keep (fn [name]
+                                    (when (str/ends-with? name ".edn")
+                                      (let [id (subs name 0 (- (count name) 4))]
+                                        (when-not (contains? product-ids id)
+                                          (read-marker fs (legacy-turn-marker-path root id) id))))))
+                            vec)
+                       [])]
+    (into product legacy)))
 
 ;; endregion ^^^^^ Turn markers ^^^^^
 
@@ -689,6 +703,14 @@
                                         e))))]
     [compaction-entry (drop-orphan-toolcalls (into [compaction-entry] after))])))
 
+(defn frozen-segment
+  "Pre-splice entries that do not appear in the compacted current.
+   Under :retain this is the unique compacted prefix (header + discarded
+   messages). The kept tail lives only in the new current."
+  [transcript new-current]
+  (let [kept-ids (set (map :id new-current))]
+    (vec (remove #(contains? kept-ids (:id %)) transcript))))
+
 (defn splice-compaction! [get-session-fn update-entry-fn now-fn root identifier {:keys [compactedEntryIds firstKeptEntryId summary tokensBefore turnRequest]} fs]
   (let [entry      (get-session-fn root identifier fs)
         id         (:id entry)
@@ -696,10 +718,11 @@
         retention  (or (:history-retention entry) resolve/default-history-retention)
         now        (now-fn)
         [compaction-entry new-current] (compacted-current transcript compactedEntryIds firstKeptEntryId summary tokensBefore now turnRequest)
+        prefix     (frozen-segment transcript new-current)
         n          (or (:segment entry) 0)
         current-path (current-transcript-path root id)]
     (when (= :retain retention)
-      (fs/copy fs current-path (frozen-transcript-path root id n)))
+      (write-ednl! fs (frozen-transcript-path root id n) prefix))
     (let [tmp (str current-path ".tmp")]
       (write-ednl! fs tmp new-current)
       (fs/move fs tmp current-path))

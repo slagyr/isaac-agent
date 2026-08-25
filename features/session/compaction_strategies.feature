@@ -71,7 +71,7 @@ Feature: Compaction Strategies
     When the user sends "hello" on session "rb-test"
     Then session "rb-test" has 6 transcript entries
     And session "rb-test" has 3 active transcript entries
-    And session "rb-test" has transcript matching:
+    And session "rb-test" has chronicle matching:
       | type    | message.role | message.content            |
       | message | user         | Tell me about compaction   |
       | message | assistant    | It summarizes old messages |
@@ -107,7 +107,7 @@ Feature: Compaction Strategies
     When the user sends "hello" on session "slinky-test"
     Then session "slinky-test" has 8 transcript entries
     And session "slinky-test" has 5 active transcript entries
-    And session "slinky-test" has transcript matching:
+    And session "slinky-test" has chronicle matching:
       | type    | message.role | message.content |
       | message | user         | old topic       |
       | message | assistant    | old reply       |

@@ -68,7 +68,17 @@
         (store/update-session! s "chat" {:compaction {:strategy :slinky :threshold 80}})
         (store/update-session! s "chat" {:compaction {:tail 40}})
         (should= {:strategy :slinky :threshold 80 :tail 40}
-                 (:compaction (store/get-session s "chat"))))))
+                 (:compaction (store/get-session s "chat")))))
+
+    (it "kebabizes legacy :createdAt and :chatType on write"
+      (let [s (sut/create-store)]
+        (store/open-session! s "chat" {:crew "main"})
+        (store/update-session! s "chat" {:createdAt "2026-04-28T10:00:00" :chatType "direct"})
+        (let [entry (store/get-session s "chat")]
+          (should= "2026-04-28T10:00:00" (:created-at entry))
+          (should= "direct" (:chat-type entry))
+          (should-not (contains? entry :createdAt))
+          (should-not (contains? entry :chatType))))))
 
   (describe "drop-orphan-toolcalls"
 
@@ -155,5 +165,26 @@
             (should= ["compaction" "message"] (mapv :type transcript))
             (should= transcript active)
             (should= 1 (:segment session))))))
+
+    (it "chronicle-transcript concatenates the frozen compacted prefix then compacted current"
+      (let [s (sut/create-store)]
+        (store/open-session! s "chat" {:crew "main"})
+        (let [m1 (store/append-message! s "chat" {:role "user" :content "First"})
+              m2 (store/append-message! s "chat" {:role "assistant" :content "Second"})
+              m3 (store/append-message! s "chat" {:role "user" :content "Third"})]
+          (store/splice-compaction! s "chat" {:summary "Summary"
+                                              :firstKeptEntryId (:id m3)
+                                              :tokensBefore 20
+                                              :compactedEntryIds [(:id m1) (:id m2)]})
+          (let [chronicle (store/chronicle-transcript s "chat")
+                types     (mapv :type chronicle)]
+            ;; retain freezes only the compacted prefix (header + discarded
+            ;; messages). Kept tail lives only in the new current, so
+            ;; chronicle is a unique timeline.
+            (should= ["session" "message" "message" "compaction" "message"] types)
+            (should= 5 (count chronicle))
+            (should= (:id m1) (:id (nth chronicle 1)))
+            (should= (:id m2) (:id (nth chronicle 2)))
+            (should= (:id m3) (:id (last chronicle)))))))
 
   ))
