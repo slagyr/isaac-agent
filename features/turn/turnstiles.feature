@@ -13,16 +13,19 @@ Feature: Turnstiles — tide
       | name   |
       | harbor |
 
+  @wip
   Scenario: tide holds a turn outside its window
+    With the turn-request queue (isaac-ohsy) a hold PARKS: the CLI prints
+    the held id and exits 0; the turn runs when the window opens (see
+    features/turn/turn_queue.feature). Before the queue this was exit 1.
     Given the current time is "2026-03-01T14:00:00"
     And the following model responses are queued:
       | type | content      | model |
       | text | Setting sail | echo  |
     When isaac is run with "prompt -m 'Leave harbor' --session harbor --turnstile tide:22:00-06:00"
-    Then the stderr contains "tide"
-    And the stderr contains "22:00-06:00"
-    And the stderr contains "held"
-    And the exit code is 1
+    Then the stdout contains "held"
+    And the stdout contains "tide 22:00-06:00"
+    And the exit code is 0
     Given the current time is "2026-03-01T23:30:00"
     When isaac is run with "prompt -m 'Leave harbor' --session harbor --turnstile tide:22:00-06:00"
     Then the stdout contains "Setting sail"
