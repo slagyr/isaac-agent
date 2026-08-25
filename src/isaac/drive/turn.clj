@@ -1094,6 +1094,7 @@
               result        (provider-wall/normalize result config provider-name)]
           (cond
             (or (= :cancelled (:error result))
+                (:cancelled? result)
                 (bridge/cancelled-response? result)
                 (bridge/cancelled? session-key))
             (suspend/interrupt-result session-key)

@@ -1543,4 +1543,33 @@
           (let [result (#'sut/execute-llm-turn! "mid-exhaust" "go" ctx)]
             (should= true (:unavailable? result))
             (should= :context-exhausted (:reason result))
-            (should= 1 (count @captured))))))))
+            (should= 1 (count @captured)))))))
+
+  (describe "cancel after a tool cycle"
+    #_{:clj-kondo/ignore [:unresolved-symbol]}
+    (around [example]
+      (nexus/-with-nexus {:root test-dir :fs (fs/mem-fs)}
+        (helper/with-memory-store
+          (example))))
+
+    (it "returns stopReason cancelled when the tool-loop stops with :cancelled? after tools"
+      (helper/create-session! test-dir "loop-cancel")
+      (let [provider (->TestProvider marigold/starcore {:api marigold/sky-api :stream-supports-tool-calls false})
+            ctx      (assoc (base-execution-ctx provider
+                                                {:model  "test-model"
+                                                 :soul   "You are Isaac."
+                                                 :crew   "main"
+                                                 :comm   null-comm/channel})
+                       :allowed-tools #{"ping"})]
+        (tool-registry/clear!)
+        (tool-registry/register! {:name        "ping"
+                                  :description "Tiny ping"
+                                  :parameters  {:type "object"}
+                                  :handler     (fn [_] {:result "pong"})})
+        (with-redefs [tool-loop/run (fn [_chat _followup _request _tool-fn & _]
+                                      {:response    nil
+                                       :tool-calls  [{:id "tc1" :name "ping"}]
+                                       :token-counts {:input-tokens 1 :output-tokens 1 :cache-read 0 :cache-write 0}
+                                       :cancelled?  true})]
+          (let [result (#'sut/execute-llm-turn! "loop-cancel" "go" ctx)]
+            (should= "cancelled" (:stopReason result))))))))
