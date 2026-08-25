@@ -1,4 +1,3 @@
-@wip
 Feature: Turn-request queue — the waiting room in front of the turnstiles
   A submitted turn whose turnstile stack answers :hold is PARKED, not dropped:
   a durable held record under the isaac root, visible via `isaac turns list`

@@ -7,7 +7,8 @@
     [isaac.episodes.cli]
     [isaac.module.protocol :as module]
     [isaac.recall.cli]
-    [isaac.recall.embedding]))
+    [isaac.recall.embedding]
+    [isaac.turn.cli]))
 
 (defn create-module []
   (module/module))

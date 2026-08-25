@@ -78,6 +78,10 @@
   {:usage "prompt -m <message> [options]",
    :summary "Run a single prompt turn and exit",
    :namespace isaac.bridge.prompt-cli},
+  :turns
+  {:usage "turns [subcommand] [options]",
+   :summary "Inspect and evict held turn requests",
+   :namespace isaac.turn.cli},
   :sessions
   {:usage "sessions [subcommand] [options]",
    :summary "Manage stored conversation sessions",

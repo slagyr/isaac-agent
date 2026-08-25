@@ -21,6 +21,7 @@
     [isaac.session.frequencies-cli :as frequencies-cli]
     [isaac.session.store.spi :as store]
     [isaac.tool.builtin :as builtin]
+    [isaac.tool.memory :as memory]
     [isaac.turnstile :as turnstile]))
 
 (defn- stderr-line! [text]
@@ -157,22 +158,38 @@
       (do
         (builtin/register-all!)
         (let [result (bridge/dispatch!
-                       (charge/build (cond-> {:session-key    session-key
-                                              :input          (:message opts)
-                                              :config         cfg
-                                              :crew           (or (:with-crew override) (:crew session))
-                                              :model-override (or (:with-model override) (:model opts))
-                                              :origin         {:kind :cli}
-                                              :comm           comm}
-                                             (seq obs-refs) (assoc :observers obs-refs)
-                                             (seq ts-refs) (assoc :turnstiles ts-refs))))]
-          (if (or (:error result)
-                  (:unavailable? result)
-                  (get-in result [:response :error]))
+                       (assoc (charge/build (cond-> {:session-key    session-key
+                                                     :input          (:message opts)
+                                                     :config         cfg
+                                                     :crew           (or (:with-crew override) (:crew session))
+                                                     :model-override (or (:with-model override) (:model opts))
+                                                     :origin         {:kind :cli}
+                                                     :comm           comm
+                                                     :session-store  session-store}
+                                                    (seq obs-refs) (assoc :observers obs-refs)
+                                                    (seq ts-refs) (assoc :turnstiles ts-refs)))
+                              :root (root-of opts)
+                              :session-store session-store
+                              :now (memory/now)))]
+          (cond
+            (:held result)
+            (do
+              (println (str "held: " (:id result)
+                            " (" (or (:message result)
+                                     (str (or (first (:turnstiles result)) "turnstile")
+                                          " held"))
+                            ")"))
+              0)
+
+            (or (:error result)
+                (:unavailable? result)
+                (get-in result [:response :error]))
             (do
               (binding [*out* *err*]
                 (println (single-turn/error-message result)))
               1)
+
+            :else
             (do
               (cond
                 (:json opts)

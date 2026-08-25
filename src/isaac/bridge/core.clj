@@ -25,6 +25,7 @@
     [isaac.session.store.spi :as store]
     [isaac.slash.builtin :as slash-builtin]
     [isaac.slash.registry :as slash-registry]
+    [isaac.turn.queue :as turn-queue]
     [isaac.turnstile :as turnstile]))
 
 ;; region ----- Helpers -----
@@ -250,6 +251,55 @@
                (string? reason)  reason
                :else             (pr-str reason))))))
 
+(defn- persist-parked-user-message! [charge]
+  (when-not (:from-queue? charge)
+    (when-let [session-key (:session-key charge)]
+      (when-let [input (:input charge)]
+        (when-let [ss (or (:session-store charge) (nexus/get-in [:sessions :store]))]
+          (store/append-message! ss session-key {:role "user" :content input}))))))
+
+(defn- format-turnstile-refs [refs]
+  (->> refs
+       (map (fn [ts-ref]
+              (cond
+                (satisfies? turnstile/Turnstile ts-ref) nil
+                (sequential? ts-ref) (str (name (first ts-ref))
+                                          (when (seq (rest ts-ref))
+                                            (str ":" (str/join "/" (rest ts-ref)))))
+                (keyword? ts-ref) (name ts-ref)
+                :else (str ts-ref))))
+       (remove nil?)
+       vec))
+
+(defn- charge-root [charge]
+  (or (:root charge)
+      (get-in charge [:config :root])
+      (nexus/get :root)
+      (loader/root)))
+
+(defn- park-held-charge! [charge decision]
+  (persist-parked-user-message! charge)
+  (let [record (binding [turn-queue/*root* (charge-root charge)]
+                 (turn-queue/enqueue!
+                   (cond-> {:session    (:session-key charge)
+                            :input      (:input charge)
+                            :turnstiles (:turnstiles charge)
+                            :crew       (:crew charge)
+                            :origin     (:origin charge)
+                            :cwd        (:cwd charge)
+                            :observers  (:observers charge)
+                            :message    (:message decision)
+                            :reason     :hold
+                            :state      :held}
+                     (:held-id charge) (assoc :id (:held-id charge)))))
+        refs   (format-turnstile-refs (:turnstiles charge))
+        label  (or (first refs) "turnstile")]
+    {:held    true
+     :id      (:id record)
+     :reason  :hold
+     :message (or (:message decision) (str label " held"))
+     :turnstiles refs}))
+
 (defn- maybe-log-gateless! [charge]
   (when (and (empty? (:turnstiles charge))
              (seq (turnstile/registered-names)))
@@ -292,11 +342,17 @@
            :ref     (:ref obs-check)}
           (let [charge   (or (:charge obs-check) charge)
                 ts-check (admit-charge-turnstiles charge)]
-            (if (:error ts-check)
+            (cond
+              (and (:error ts-check) (= :hold (:reason ts-check)))
+              (park-held-charge! charge ts-check)
+
+              (:error ts-check)
               {:error   (:error ts-check)
                :reason  (:reason ts-check)
                :message (:message ts-check)
                :ref     (:ref ts-check)}
+
+              :else
               (let [charge (or (:charge ts-check) charge)]
                 (if-let [session-key (:session-key charge)]
                   (let [session-store* (or (:session-store charge) (nexus/get-in [:sessions :store]))]

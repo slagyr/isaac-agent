@@ -951,58 +951,62 @@
                                :tokensBefore      tokens-before
                                :compactedEntryIds compacted-ids}))))))
 
-(defn user-sends-on-session [content key-str]
-  (g/assoc! :current-key key-str)
-  (grover/clear-provider-requests!)
-  (isaac.llm.http/clear-outbound-requests!)
-  (drive-dispatch/clear-last-request!)
-  (let [cfg           (loader/normalize-config (loaded-config))
-        _             (config/dangerously-install-config! cfg "spec")
-        _             (commit-feature-config!)
-        agent-cfg     (current-agent-config)
-        model-cfg     (current-model-config)
-        provider-name (:provider model-cfg)
-        max-loops     (g/get :tool-loop-max-loops)
-        events        (atom [])
-        channel       (memory-comm/channel events)
-        p-cfg         (provider-config)
-        send-opts     {:soul           (:soul agent-cfg)
-                       :provider       (when provider-name
-                                         (llm-provider/make-provider provider-name p-cfg))
-                       :context-window (:context-window model-cfg)
-                       :origin         {:kind :cli}
-                       :comm           channel}]
-    (g/assoc! :channel-events events)
-    (g/assoc! :memory-comm-events @events)
-    (let [existing-turn-future (g/get :turn-future)
-          turn-future          (future
-                        (let [result (atom nil)
-                              output (with-out-str
-                                        (with-feature-fs
-                                          (fn []
-                                            (with-current-time
-                                              (fn []
-                                                (try
-                                                  (reset! result ((fn []
-                                                                    (let [request (assoc send-opts :session-key key-str :input content)]
-                                                                      (if max-loops
-                                                                        (with-redefs [tool-loop/default-max-loops max-loops]
-                                                                          (bridge/dispatch! (root-dir) request))
-                                                                        (bridge/dispatch! (root-dir) request))))))
-                                                  (catch Exception e
-                                                    (reset! result {:error :exception :message (.getMessage e)}))))))))]
-                          {:output  output
-                            :request (or (drive-dispatch/last-request)
-                                         (grover/last-request))
-                           :result  @result}))]
-      (let [result (deref turn-future 50 ::pending)]
-        (if (= ::pending result)
-          (g/assoc! :turn-future turn-future)
-          (do
-            (when existing-turn-future
-              (g/assoc! :turn-future existing-turn-future))
-            (record-turn-result! result)))))
-    (g/assoc! :memory-comm-events @events)))
+(defn user-sends-on-session
+  ([content key-str]
+   (user-sends-on-session content key-str nil))
+  ([content key-str turnstiles]
+   (g/assoc! :current-key key-str)
+   (grover/clear-provider-requests!)
+   (isaac.llm.http/clear-outbound-requests!)
+   (drive-dispatch/clear-last-request!)
+   (let [cfg           (loader/normalize-config (loaded-config))
+         _             (config/dangerously-install-config! cfg "spec")
+         _             (commit-feature-config!)
+         agent-cfg     (current-agent-config)
+         model-cfg     (current-model-config)
+         provider-name (:provider model-cfg)
+         max-loops     (g/get :tool-loop-max-loops)
+         events        (atom [])
+         channel       (memory-comm/channel events)
+         p-cfg         (provider-config)
+         send-opts     (cond-> {:soul           (:soul agent-cfg)
+                                :provider       (when provider-name
+                                                  (llm-provider/make-provider provider-name p-cfg))
+                                :context-window (:context-window model-cfg)
+                                :origin         {:kind :cli}
+                                :comm           channel}
+                         (seq turnstiles) (assoc :turnstiles turnstiles))]
+     (g/assoc! :channel-events events)
+     (g/assoc! :memory-comm-events @events)
+     (let [existing-turn-future (g/get :turn-future)
+           turn-future          (future
+                                  (let [result (atom nil)
+                                        output (with-out-str
+                                                 (with-feature-fs
+                                                   (fn []
+                                                     (with-current-time
+                                                       (fn []
+                                                         (try
+                                                           (reset! result ((fn []
+                                                                             (let [request (assoc send-opts :session-key key-str :input content)]
+                                                                               (if max-loops
+                                                                                 (with-redefs [tool-loop/default-max-loops max-loops]
+                                                                                   (bridge/dispatch! (root-dir) request))
+                                                                                 (bridge/dispatch! (root-dir) request))))))
+                                                           (catch Exception e
+                                                             (reset! result {:error :exception :message (.getMessage e)}))))))))]
+                                    {:output  output
+                                     :request (or (drive-dispatch/last-request)
+                                                  (grover/last-request))
+                                     :result  @result}))]
+       (let [result (deref turn-future 50 ::pending)]
+         (if (= ::pending result)
+           (g/assoc! :turn-future turn-future)
+           (do
+             (when existing-turn-future
+               (g/assoc! :turn-future existing-turn-future))
+             (record-turn-result! result)))))
+     (g/assoc! :memory-comm-events @events))))
 
 (defn turn-ends-on-session [key-str]
   (when-let [turn-future (g/get :turn-future)]

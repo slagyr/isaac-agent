@@ -374,23 +374,26 @@
             (should (str/includes? (:message result) "member-locked"))))
         (should-not @called?)))
 
-    (it "surfaces a tide hold as refusal naming tide, the window, and held"
+    (it "parks a tide hold, names tide and the window, and does not run the turn"
       (let [called? (atom false)]
+        (helper/create-session! (or (nexus/get :root) *root*) "testuser")
         (with-redefs [single-turn/run-turn! (fn [_]
                                               (reset! called? true)
                                               {:content "should not run"})]
           (let [result (bridge/dispatch! {:charge/type    :charge
                                           :session-key    "testuser"
                                           :input          "hello"
+                                          :root           *root*
                                           :turnstiles     [[:tide "22:00-06:00"]]
                                           :now            (java.time.Instant/parse "2026-03-01T14:00:00Z")
                                           :session-store  (store/registered-store)
                                           :comm           nil})]
-            (should= :refused (:error result))
+            (should (:held result))
+            (should (string? (:id result)))
             (should= :hold (:reason result))
             (should (str/includes? (:message result) "tide"))
             (should (str/includes? (:message result) "22:00-06:00"))
-            (should (str/includes? (:message result) "held"))))
+            (should-be-nil (:error result))))
         (should-not @called?)))
 
     (it "clears in-flight even when marker cleanup throws"

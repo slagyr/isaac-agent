@@ -1021,7 +1021,8 @@
                        :max-bytes (get-in config [:tools :defaults :max-bytes])}
         ch            (or comm cli-comm/channel)
         p             provider]
-    (append-message! ctx session-key {:role "user" :content input})
+    (when-not (:from-queue? charge)
+      (append-message! ctx session-key {:role "user" :content input}))
     (let [transcript      (with-transcript-lock session-key #(store/active-transcript (or (:session-store ctx) (nexus/get-in [:sessions :store])) session-key))
           transcript      (if (= :reset context-mode)
                             (if-let [current-user (last transcript)] [current-user] [])

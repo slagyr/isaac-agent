@@ -13,7 +13,6 @@ Feature: Turnstiles — tide
       | name   |
       | harbor |
 
-  @wip
   Scenario: tide holds a turn outside its window
     With the turn-request queue (isaac-ohsy) a hold PARKS: the CLI prints
     the held id and exits 0; the turn runs when the window opens (see

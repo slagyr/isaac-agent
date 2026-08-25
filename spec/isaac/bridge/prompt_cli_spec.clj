@@ -261,6 +261,19 @@
         (finally
           (turnstile/unregister! :worksite))))
 
+    (it "prints held: <id> (<turnstile> <reason>) and returns 0 when dispatch parks"
+      (with-redefs [bridge/dispatch! (fn [_]
+                                       {:held       true
+                                        :id         "c62b1e28"
+                                        :reason     :hold
+                                        :message    "tide 22:00-06:00 held"
+                                        :turnstiles ["tide:22:00-06:00"]})]
+        (let [output (with-out-str
+                       (should= 0 (sut/run (assoc base-opts :message "Leave harbor"
+                                                  :turnstile ["tide:22:00-06:00"]))))]
+          (should (str/includes? output "held: c62b1e28"))
+          (should (str/includes? output "tide 22:00-06:00")))))
+
     (it "refuses unknown --turnstile names before dispatch"
       (let [dispatched? (atom false)]
         (with-redefs [bridge/dispatch! (fn [_]

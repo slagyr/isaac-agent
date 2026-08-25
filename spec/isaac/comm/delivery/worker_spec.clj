@@ -119,4 +119,14 @@
         (should= [{:id :delivery/tick :trigger {:kind :interval :ms 10000}}]
                  (mapv #(select-keys % [:id :trigger]) (scheduler/list-tasks scheduler)))
         (scheduler/stop! scheduler))))
+
+  (it "starts the turn-queue worker on the same scheduler"
+    (nexus/-with-nexus {}
+      (let [scheduler (-> (scheduler/create {:clock (fn [] (Instant/parse "2026-04-21T10:00:00Z"))})
+                          scheduler/start!)]
+        (nexus/register! [:scheduler] scheduler)
+        (sut/start! {:tick-ms 10000})
+        (should= #{:delivery/tick :turn.queue/tick}
+                 (set (map :id (scheduler/list-tasks scheduler))))
+        (scheduler/stop! scheduler))))
   )

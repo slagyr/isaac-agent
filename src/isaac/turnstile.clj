@@ -176,6 +176,23 @@
 (defn- refuse-message [decision]
   (when (map? decision) (:message decision)))
 
+(defonce ^:private wake-hook* (atom nil))
+
+(defn set-wake-hook!
+  "Register a zero-arg fn invoked after release-all! finishes. The turn-queue
+   worker uses this so a finished turn's tokens nudge an immediate wake."
+  [f]
+  (reset! wake-hook* f))
+
+(defn- nudge-wake! []
+  (when-let [hook @wake-hook*]
+    (try
+      (hook)
+      (catch Throwable t
+        (log/warn :turnstile/wake-failed
+                  :error (.getMessage t)
+                  :ex-class (.getName (class t)))))))
+
 (defn- release-one! [{:keys [turnstile token]}]
   (try
     (release! turnstile token)
@@ -184,12 +201,17 @@
                 :error (.getMessage t)
                 :ex-class (.getName (class t))))))
 
-(defn release-all!
-  "Invoke acquired tokens in reverse acquisition order. Isolated: a throwing
-   release is logged and the rest still run."
-  [tokens]
+(defn- release-acquired! [tokens]
   (doseq [acquired (reverse tokens)]
     (release-one! acquired)))
+
+(defn release-all!
+  "Invoke acquired tokens in reverse acquisition order. Isolated: a throwing
+   release is logged and the rest still run. After all tokens fire, nudge the
+   registered wake hook so the turn-request queue can re-admit waiters."
+  [tokens]
+  (release-acquired! tokens)
+  (nudge-wake!))
 
 (defn admit-all!
   "Ask every turnstile to admit. On :pass, collect a release token. On
@@ -203,7 +225,7 @@
         (if-let [token (->token decision)]
           (recur (rest remaining) (conj acquired {:turnstile ts :token token}))
           (do
-            (release-all! acquired)
+            (release-acquired! acquired)
             (cond-> {:error :refused :reason (refuse-reason decision) :tokens []}
               (refuse-message decision) (assoc :message (refuse-message decision))))))
       {:tokens acquired})))

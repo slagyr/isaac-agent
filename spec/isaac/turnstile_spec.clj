@@ -18,8 +18,10 @@
 
 (describe "turnstile registry"
 
-  (before (sut/clear!))
-  (after (sut/clear!))
+  (before (sut/clear!)
+          (sut/set-wake-hook! nil))
+  (after (sut/clear!)
+         (sut/set-wake-hook! nil))
 
   (it "resolves a registered turnstile by name"
     (let [gate (recording-turnstile (atom []))]
@@ -186,6 +188,17 @@
           {:keys [tokens]} (sut/admit-all! [a b] {})]
       (sut/release-all! tokens)
       (should= [:b :a] @order)))
+
+  (it "nudges the wake hook after releasing tokens"
+    (let [wakes (atom 0)
+          gate  (recording-turnstile (atom []))
+          {:keys [tokens]} (sut/admit-all! [gate] {})]
+      (sut/set-wake-hook! (fn [] (swap! wakes inc)))
+      (try
+        (sut/release-all! tokens)
+        (should= 1 @wakes)
+        (finally
+          (sut/set-wake-hook! nil)))))
 
   (it "isolates a throwing release so remaining tokens still fire"
     (let [second (atom false)
