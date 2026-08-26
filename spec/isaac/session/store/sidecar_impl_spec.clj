@@ -271,7 +271,28 @@
         (should= "main" (:crew entry))
         (should-not (contains? entry :agent))
         (should= "main" (:crew message))
-        (should-not (contains? message :agent)))))
+        (should-not (contains? message :agent))))
+
+    (it "stamps content-based tokens on appended transcript messages"
+      (sut/create-session! test-dir test-key)
+      (store/append-message! (s) test-key {:role "user" :content "Read my notes please"})
+      (store/append-message! (s) test-key {:role "assistant"
+                                           :content [{:type "toolCall"
+                                                      :id "tc-1"
+                                                      :name "fs__read"
+                                                      :arguments {:file_path "notes.txt"}}]})
+      (store/append-message! (s) test-key {:role "toolResult"
+                                           :toolCallId "tc-1"
+                                           :content (apply str (repeat 80 "x"))})
+      (store/append-message! (s) test-key {:role "assistant"
+                                           :content "Forty chars of reply text, exactly forty"})
+      (let [[user tool-call tool-result assistant]
+            (->> (store/get-transcript (s) test-key)
+                 rest)]
+        (should= 5 (:tokens user))
+        (should (pos? (:tokens tool-call)))
+        (should= 20 (:tokens tool-result))
+        (should= 10 (:tokens assistant)))))
 
   ;; endregion ^^^^^ append-message! ^^^^^
 

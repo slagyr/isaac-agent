@@ -248,8 +248,7 @@
                               :content  (or (:content result)
                                             (get-in result [:response :message :content]))
                               :model    resolved-model
-                              :provider provider
-                              :tokens   total-tokens}
+                              :provider provider}
                              usage (assoc :usage usage)
                              stop-reason (assoc :stopReason stop-reason)
                              reasoning (assoc :reasoning reasoning)))
@@ -264,10 +263,28 @@
                                    cache-write (assoc :cache-write (+ (or (:cache-write session-entry) 0) cache-write))))
     nil))
 
+(defn- transcript-stamped-prompt-tokens [session-store session-key]
+  (->> (or (store/active-transcript session-store session-key) [])
+       (keep :tokens)
+       (reduce + 0)))
+
+(defn- log-token-drift! [ctx session-key result]
+  (let [session-store   (or (:session-store ctx) (nexus/get-in [:sessions :store]))
+        provider-tokens (:input-tokens (extract-tokens result))]
+    (when (pos? provider-tokens)
+      (let [stamped (transcript-stamped-prompt-tokens session-store session-key)]
+        (log/debug :session/token-drift
+                   :session  session-key
+                   :stamped  stamped
+                   :provider provider-tokens
+                   :ratio    (/ (double provider-tokens) (double (max 1 stamped))))))))
+
 (defn- process-response* [ctx session-key result {:keys [model provider]}]
   (if (:error result)
     (report-error! ctx session-key provider result {:model model :provider provider})
-    (store-response! ctx session-key result {:model model :provider provider})))
+    (do
+      (log-token-drift! ctx session-key result)
+      (store-response! ctx session-key result {:model model :provider provider}))))
 
 (defn process-response!
   ([session-key result {:keys [model provider]}]

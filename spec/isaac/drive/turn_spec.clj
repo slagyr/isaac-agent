@@ -189,7 +189,27 @@
         (should= 7 (:output-tokens session))
         (should= 227 (:total-tokens session))
         (should= 2 (:cache-read session))
-        (should= 1 (:cache-write session)))))
+        (should= 1 (:cache-write session))))
+
+    (it "logs token drift from stamped prompt entries against provider prompt tokens"
+      (helper/create-session! test-dir "drift-test")
+      (helper/append-message! test-dir "drift-test" {:role "user" :content "earlier ask" :tokens 100})
+      (helper/append-message! test-dir "drift-test" {:role "assistant" :content "earlier reply" :tokens 100})
+      (helper/append-message! test-dir "drift-test" {:role "user" :content "now this"})
+      (log/capture-logs
+        (sut/process-response! {:root test-dir :fs (fs/mem-fs)}
+                               "drift-test"
+                               {:content      "ok"
+                                :token-counts {:input-tokens 260 :output-tokens 1}
+                                :response     {:message {:role "assistant" :content "ok"}
+                                               :usage   {:input_tokens 260
+                                                         :output_tokens 1}}}
+                               {:model "echo" :provider "grover:grok"})
+        (let [event (first (filter #(= :session/token-drift (:event %)) @log/captured-logs))]
+          (should-not-be-nil event)
+          (should= 202 (:stamped event))
+          (should= 260 (:provider event))
+          (should= (/ 260.0 202) (:ratio event))))))
 
   (describe "empty terminal response guard"
 

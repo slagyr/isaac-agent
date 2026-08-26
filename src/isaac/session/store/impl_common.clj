@@ -6,10 +6,12 @@
     [isaac.config.loader :as loader]
     [isaac.config.resolve :as resolve]
     [isaac.fs :as fs]
+    [isaac.llm.prompt.builder :as prompt-builder]
     [isaac.logger :as log]
     [isaac.naming :as naming]
     [isaac.session.schema :as session-schema]
-    [isaac.session.store.spi :as session-store])
+    [isaac.session.store.spi :as session-store]
+    [isaac.session.transcript :as transcript])
   (:import
     (java.nio.charset StandardCharsets)
     (java.util UUID)))
@@ -79,6 +81,38 @@
   (let [role (:role message)]
     (cond-> (assoc message :content (normalize-message-content role (:content message)))
       (keyword? (:error message)) (update :error str))))
+
+(defn ceil-chars->tokens [chars]
+  (long (Math/ceil (/ (double (max 0 (long chars))) 4.0))))
+
+(defn- text-tokens [text]
+  (when (and (string? text) (not (str/blank? text)))
+    (ceil-chars->tokens (count text))))
+
+(defn- tool-call-args-text [content]
+  (when (vector? content)
+    (some->> content
+             (filter #(= "toolCall" (:type %)))
+             seq
+             (map :arguments)
+             (map pr-str)
+             (str/join "\n"))))
+
+(defn message-tokens [message]
+  (let [role    (:role message)
+        content (:content message)]
+    (or (text-tokens (transcript/content->text content))
+        (when (= "toolResult" role)
+          (text-tokens (str content)))
+        (when (= "assistant" role)
+          (text-tokens (tool-call-args-text content))))))
+
+(defn compaction-tokens [{:keys [summary turnRequest] :as compaction}]
+  (text-tokens (prompt-builder/compaction-summary-text {:summary summary :turnRequest turnRequest})))
+
+(defn stamp-message-tokens [message]
+  (cond-> message
+    (nil? (:tokens message)) (assoc :tokens (or (message-tokens message) 0))))
 
 (defn slugify [s]
   (let [slug (-> (or s "")
@@ -607,14 +641,15 @@
         resolved-agent   (or (:crew message)
                              (when (#{"assistant" "error" "toolResult"} (:role message)) (:crew entry))
                              (when (= "assistant" (:role message)) "main"))
-        normalized-msg   (normalize-message (cond-> message
-                                              resolved-agent (assoc :crew resolved-agent)))
-        transcript-entry (cond-> {:type      "message"
-                                  :id        msg-id
-                                  :parentId  parent-id
-                                  :timestamp now
-                                  :message   normalized-msg}
-                           (:tokens message) (assoc :tokens (:tokens message)))]
+        normalized-msg   (stamp-message-tokens
+                           (normalize-message (cond-> message
+                                                resolved-agent (assoc :crew resolved-agent))))
+        transcript-entry {:type      "message"
+                          :id        msg-id
+                          :parentId  parent-id
+                          :timestamp now
+                          :message   normalized-msg
+                          :tokens    (:tokens normalized-msg)}]
     (append-entry! root id transcript-entry fs)
     (update-entry-fn root identifier
                      (fn [e]
@@ -644,19 +679,21 @@
     (update-entry-fn root identifier #(assoc % :updated-at now) fs)
     transcript-entry))
 
-(defn append-compaction! [get-session-fn update-entry-fn now-fn root identifier {:keys [summary firstKeptEntryId tokensBefore]} fs]
+(defn append-compaction! [get-session-fn update-entry-fn now-fn root identifier {:keys [summary firstKeptEntryId tokensBefore turnRequest]} fs]
   (let [entry         (get-session-fn root identifier fs)
         id            (:id entry)
         parent-id     (:id (last-transcript-entry fs (current-transcript-path root id)))
         compaction-id (new-id)
         now           (now-fn)
-        compaction    {:type             "compaction"
-                       :id               compaction-id
-                       :parentId         parent-id
-                       :timestamp        now
-                       :summary          summary
-                       :firstKeptEntryId firstKeptEntryId
-                       :tokensBefore     tokensBefore}]
+        compaction    (cond-> {:type             "compaction"
+                               :id               compaction-id
+                               :parentId         parent-id
+                               :timestamp        now
+                               :summary          summary
+                               :firstKeptEntryId firstKeptEntryId
+                               :tokensBefore     tokensBefore}
+                        turnRequest (assoc :turnRequest turnRequest)
+                        true        (assoc :tokens (or (compaction-tokens {:summary summary :turnRequest turnRequest}) 0)))]
     (append-entry! root id compaction fs)
     (update-entry-fn root identifier
                      (fn [e]
@@ -693,7 +730,8 @@
                                   :timestamp        now
                                   :summary          summary
                                   :firstKeptEntryId firstKeptEntryId
-                                  :tokensBefore     tokensBefore}
+                                  :tokensBefore     tokensBefore
+                                  :tokens           (or (compaction-tokens {:summary summary :turnRequest turnRequest}) 0)}
                            turnRequest (assoc :turnRequest turnRequest))
         after            (->> (subvec transcript (or first-kept-index (count transcript)))
                               (remove #(contains? removable-ids (:id %)))

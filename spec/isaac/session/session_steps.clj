@@ -977,7 +977,7 @@
                                 :comm           channel}
                          (seq turnstiles) (assoc :turnstiles turnstiles))]
      (g/assoc! :channel-events events)
-     (g/assoc! :memory-comm-events @events)
+     (g/assoc! :memory-comm-events events)
      (let [existing-turn-future (g/get :turn-future)
            turn-future          (future
                                   (let [result (atom nil)
@@ -1006,7 +1006,7 @@
              (when existing-turn-future
                (g/assoc! :turn-future existing-turn-future))
              (record-turn-result! result)))))
-     (g/assoc! :memory-comm-events @events))))
+     (g/assoc! :memory-comm-events events))))
 
 (defn turn-ends-on-session [key-str]
   (when-let [turn-future (g/get :turn-future)]

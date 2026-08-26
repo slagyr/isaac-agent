@@ -175,7 +175,7 @@ Feature: Context Management
 
   Scenario: Assistant response persists per-entry token count
     Each persisted assistant message carries its own :tokens field so the
-    summarizer and diagnostic tooling can see per-turn cost without
+    summarizer and diagnostic tooling can see content-based size without
     re-estimating from content length.
     Given the following sessions exist:
       | name           |
@@ -186,8 +186,8 @@ Feature: Context Management
     When the user sends "hi" on session "context-entry"
     Then session "context-entry" has transcript matching:
       | type    | message.role | message.content | tokens |
-      | message | user         | hi              |        |
-      | message | assistant    | hello           | 35     |
+      | message | user         | hi              | 1      |
+      | message | assistant    | hello           | 2      |
 
   Scenario: Assistant response persists usage breakdown in transcript entry
     Per-turn input and output token counts are stored on the transcript entry

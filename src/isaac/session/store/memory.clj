@@ -213,14 +213,15 @@
           resolved-agent (or (:crew message)
                              (when (#{"assistant" "error" "toolResult"} (:role message)) (:crew session))
                              (when (= "assistant" (:role message)) "main"))
-          normalized-msg (c/normalize-message (cond-> message
-                                                resolved-agent (assoc :crew resolved-agent)))
-          entry          (cond-> {:type      "message"
-                                  :id        msg-id
-                                  :parentId  parent-id
-                                  :timestamp now
-                                  :message   normalized-msg}
-                           (:tokens message) (assoc :tokens (:tokens message)))]
+          normalized-msg (c/stamp-message-tokens
+                           (c/normalize-message (cond-> message
+                                                 resolved-agent (assoc :crew resolved-agent))))
+          entry          {:type      "message"
+                          :id        msg-id
+                          :parentId  parent-id
+                          :timestamp now
+                          :message   normalized-msg
+                          :tokens    (:tokens normalized-msg)}]
       (swap! state (fn [s]
                      (-> s
                          (update-in [:transcripts id] (fnil conj []) entry)
@@ -257,19 +258,21 @@
         (append-transcript-line! root id entry))
       entry))
 
-  (append-compaction! [_ name {:keys [summary firstKeptEntryId tokensBefore]}]
+  (append-compaction! [_ name {:keys [summary firstKeptEntryId tokensBefore turnRequest]}]
     (let [id            (c/session-id name)
           transcript    (get-in @state [:transcripts id] [])
           parent-id     (c/last-entry-id transcript)
           compaction-id (c/new-id)
           now           (now-iso)
-          entry         {:type             "compaction"
-                         :id               compaction-id
-                         :parentId         parent-id
-                         :timestamp        now
-                         :summary          summary
-                         :firstKeptEntryId firstKeptEntryId
-                         :tokensBefore     tokensBefore}]
+          entry         (cond-> {:type             "compaction"
+                                 :id               compaction-id
+                                 :parentId         parent-id
+                                 :timestamp        now
+                                 :summary          summary
+                                 :firstKeptEntryId firstKeptEntryId
+                                 :tokensBefore     tokensBefore
+                                 :tokens           (or (c/compaction-tokens {:summary summary :turnRequest turnRequest}) 0)}
+                          turnRequest (assoc :turnRequest turnRequest))]
       (swap! state (fn [s]
                      (-> s
                          (update-in [:transcripts id] (fnil conj []) entry)

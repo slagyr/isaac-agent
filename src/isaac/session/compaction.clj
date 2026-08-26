@@ -241,9 +241,8 @@
             (str (subs t 0 turn-request-max-chars) "\n[request truncated]")
             t))))))
 
-(defn- message-token-count [entry message]
-  (or (:tokens entry)
-      (llm/estimate-tokens {:messages [message]})))
+(defn- message-token-count [entry _message]
+  (or (:tokens entry) 0))
 
 (def ^:private memory-tool-names #{"memory__get" "memory__search" "memory__write"})
 

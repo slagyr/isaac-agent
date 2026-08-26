@@ -171,10 +171,11 @@
     (g/assoc! :output output)))
 
 (defn memory-channel-events-match [table]
-  (let [events    (mapv (fn [event]
+  (let [events*   (g/get :memory-comm-events)
+        events    (mapv (fn [event]
                           (cond-> event
                             (get-in event [:tool :name]) (assoc :tool-name (get-in event [:tool :name]))))
-                        (g/get :memory-comm-events))
+                        (if (instance? clojure.lang.IDeref events*) @events* events*))
         expected  (map (fn [row]
                          (into {}
                                (keep (fn [[header value]]

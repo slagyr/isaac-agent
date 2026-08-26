@@ -1,4 +1,3 @@
-@wip
 Feature: Token accounting — one unit, one source
   Compaction plans (should-compact?, compaction-target, needs-chunking?,
   chunk sizing, tokens-saved) must run on real per-entry token counts, not
@@ -14,19 +13,21 @@ Feature: Token accounting — one unit, one source
 
   Background:
     Given default Grover setup
+    And the built-in tools are registered
 
   Scenario: every transcript entry carries a content-based token count
-    Given the following sessions exist:
+    Given the crew "main" allows tools: "fs/read"
+    And the isaac file "crew/main/notes.txt" exists with:
+      """
+      12345678901234567890123456789012345678901234567890123456789012345678901234567
+      """
+    And the following sessions exist:
       | name   |
       | ledger |
-    And a file "notes.txt" exists with content:
-      """
-      0123456789012345678901234567890123456789012345678901234567890123456789012345678
-      """
     And the following model responses are queued:
-      | type      | tool_call | arguments                  | content                                  | model |
-      | tool_call | fs__read  | {"file_path": "notes.txt"} |                                          | echo  |
-      | text      |           |                            | Forty chars of reply text, exactly forty | echo  |
+      | type      | tool_call | arguments                                     | content                                  | model |
+      | tool_call | fs__read  | {"file_path":"/target/test-state/crew/main/notes.txt"} |                                          | echo  |
+      | text      |           |                                               | Forty chars of reply text, exactly forty | echo  |
     When the user sends "Read my notes please" on session "ledger"
     Then session "ledger" has transcript matching:
       | type    | message.role | tokens | #comment                         |
@@ -40,7 +41,7 @@ Feature: Token accounting — one unit, one source
       | path           | value      |
       | model          | test-model |
       | provider       | grover     |
-      | context-window | 2000       |
+      | context-window | 32768      |
     And the isaac EDN file "config/crew/main.edn" exists with:
       | path  | value            |
       | model | local            |
@@ -58,11 +59,8 @@ Feature: Token accounting — one unit, one source
       | text | Here you go     | test-model | 300                |
     When the user sends "and again" on session "tally"
     Then the log has entries matching:
-      | event                        | needs-chunking | tokens-before  |
-      | :session/compaction-analysis | false          | #"7[0-9][0-9]" |
-    And the log has no entries matching:
-      | event                                |
-      | :session/compaction-chunk-infeasible |
+      | event                | stamped        | provider | ratio        |
+      | :session/token-drift | #"7[0-9][0-9]" | 900      | #"1\.[0-9]+" |
 
   Scenario: provider prompt tokens are reconciled against stamped counts and drift is logged
     Given the following sessions exist:

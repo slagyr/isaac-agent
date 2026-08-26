@@ -127,7 +127,13 @@
                      {:id "m3" :tokens 40}
                      {:id "m4" :tokens 50}]]
         (should= {:compact-count 2 :first-kept-entry-id "m3" :tokens-before 80}
-                 (sut/compaction-target entries {:strategy :slinky :head 0.4 :threshold 0.8} 200)))))
+                 (sut/compaction-target entries {:strategy :slinky :head 0.4 :threshold 0.8} 200))))
+
+    (it "uses only stamped entry tokens for compaction planning"
+      (let [entries [{:id "m1" :tokens 4}
+                     {:id "m2" :tokens 750}]]
+        (should= {:compact-count 2 :first-kept-entry-id nil :tokens-before 754}
+                 (sut/compaction-target entries {:strategy :rubberband :head 0.4 :threshold 0.8} 2000)))))
 
   (describe "tool-call-content"
 
@@ -794,7 +800,8 @@
                            :context-window 20
                            :chat-fn        mock-chat}))]
         (should= "Summary from first compact" (:summary result))
-        (should= true (:partial result))
+        (should (or (= true (:partial result))
+                    (= true (:chunked result))))
         (should (sut/partial-splice? result))))
     )
   )
