@@ -38,7 +38,7 @@ Feature: Claude subscription provider via CLI shell-out
       | --model                  | sonnet|
       | --system-prompt          |       |
       | (system prompt contains soul text) | |
-      | (conversation prompt as final arg) | |
+      | (conversation prompt on stdin) | |
       | (user prompt does not contain soul text) | |
 
   Scenario: streaming response from claude subscription provider
@@ -58,7 +58,7 @@ Feature: Claude subscription provider via CLI shell-out
       | --no-session-persistence |               |
       | --model                  | sonnet        |
       | --system-prompt          |               |
-      | (conversation prompt as final arg) |      |
+      | (conversation prompt on stdin) |      |
 
   Scenario: tool-using turn with Isaac-managed tools
     Given the isaac EDN file "config/crew/thinker.edn" exists with:
@@ -82,7 +82,7 @@ Feature: Claude subscription provider via CLI shell-out
       | --system-prompt          |       |
       | (system prompt contains protocol contract) | |
       | (user prompt does not contain protocol contract) | |
-      | (conversation prompt as final arg) | |
+      | (conversation prompt on stdin) | |
 
   Scenario: error from claude binary is reported
     Given the claude binary is stubbed to fail with exit code 1 and message "claude: boom"
@@ -162,7 +162,7 @@ Feature: Claude subscription provider via CLI shell-out
       | --no-session-persistence |       |
       | --model                  | sonnet|
       | --system-prompt          |       |
-      | (prompt arg contains full history) | |
+      | (stdin contains full history) | |
       | (no --continue or --resume) | |
 
   Scenario: claude subscription provider uses subscription login (no raw API key)

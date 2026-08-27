@@ -77,13 +77,22 @@
                :messages [{:role "system" :content "Be wise."}
                           {:role "user" :content "yo"}]}
               "claude" {:command "claude"})
-    (let [argv   (:argv (first (sut/invocations)))
+    (let [inv    (first (sut/invocations))
+          argv   (:argv inv)
           idx    (.indexOf argv "--system-prompt")
-          system (when (<= 0 idx) (nth argv (inc idx)))
-          prompt (last argv)]
+          system (when (<= 0 idx) (nth argv (inc idx)))]
       (should (str/includes? system "Be wise."))
-      (should-not (str/includes? prompt "Be wise."))
-      (should= "User: yo" prompt)))
+      (should-not (some #(str/includes? (str %) "User: yo") argv))
+      (should= "User: yo" (:in inv))))
+
+  (it "puts the conversation on stdin so large transcripts do not blow ARG_MAX"
+    (sut/clear-invocations!)
+    (let [body (apply str (repeat 100 "the reef is long. "))]
+      (sut/chat {:model "sonnet" :messages [{:role "user" :content body}]}
+                "claude" {:command "claude"})
+      (let [inv (first (sut/invocations))]
+        (should (str/includes? (:in inv) body))
+        (should-not (some #(str/includes? (str %) body) (:argv inv))))))
 
   (it "puts the tool protocol contract in --system-prompt when tools are present"
     (sut/clear-invocations!)
@@ -92,14 +101,14 @@
                           {:role "user" :content "run it"}]
                :tools    [{:type "function" :function {:name "exec"}}]}
               "claude" {:command "claude"})
-    (let [argv   (:argv (first (sut/invocations)))
+    (let [inv    (first (sut/invocations))
+          argv   (:argv inv)
           idx    (.indexOf argv "--system-prompt")
-          system (when (<= 0 idx) (nth argv (inc idx)))
-          prompt (last argv)]
+          system (when (<= 0 idx) (nth argv (inc idx)))]
       (should (str/includes? system sut/tool-protocol-contract))
       (should (str/includes? system "## Tools"))
-      (should-not (str/includes? prompt sut/tool-protocol-contract))
-      (should-not (str/includes? prompt "## Tools"))))
+      (should-not (str/includes? (str (:in inv)) sut/tool-protocol-contract))
+      (should-not (str/includes? (str (:in inv)) "## Tools"))))
 
   (it "suppresses all tools with --tools \"\" and never emits the bad flags"
     (sut/clear-invocations!)

@@ -193,29 +193,28 @@
 
 (defn- build-argv [cfg request streaming?]
   (let [system (build-system-prompt request)
-        prompt (conversation->prompt-text request)
         base   (into [(command-path cfg)]
                      (concat (extra-args cfg)
                              (flag-args streaming?)
-                             ["--model" (:model request)]))
-        flags  (if (seq (str/trim system))
-                 (into base ["--system-prompt" system])
-                 base)]
-    (into flags [prompt])))
+                             ["--model" (:model request)]))]
+    (if (seq (str/trim system))
+      (into base ["--system-prompt" system])
+      base)))
 
-(defn- run-process! [argv env]
+(defn- run-process! [argv env in]
   (if-let [stub @stub-state*]
-    (stub {:argv argv :env env})
-    (let [result @(process/process argv {:env env :err :string :out :string})]
+    (stub {:argv argv :env env :in in})
+    (let [result @(process/process argv {:env env :err :string :out :string :in (or in "")})]
       {:exit (:exit result)
        :out  (:out result)
        :err  (:err result)})))
 
 (defn- invoke! [cfg request streaming?]
-  (let [argv (build-argv cfg request streaming?)
-        env  (subprocess-env)]
-    (record-invocation! {:argv argv :env env})
-    (run-process! argv env)))
+  (let [argv   (build-argv cfg request streaming?)
+        prompt (conversation->prompt-text request)
+        env    (subprocess-env)]
+    (record-invocation! {:argv argv :env env :in prompt})
+    (run-process! argv env prompt)))
 
 (defn- stream-json-event [line]
   (when (seq (str/trim line))

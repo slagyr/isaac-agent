@@ -43,26 +43,31 @@
                      (assoc m a ""))))
           (recur (rest args) m))))))
 
-(defn- prompt-arg [argv]
-  (when (seq argv) (last argv)))
+(defn- prompt-text [inv]
+  (:in inv))
 
 (defn- system-prompt-arg [argv]
   (get (argv->arg-map argv) "--system-prompt"))
 
-(defn- match-invocation-table [argv env table]
-  (let [arg-map  (argv->arg-map argv)
-        prompt   (prompt-arg argv)
+(defn- match-invocation-table [inv table]
+  (let [{:keys [argv env]} inv
+        arg-map  (argv->arg-map argv)
+        prompt   (prompt-text inv)
         failures (atom [])]
     (doseq [row (:rows table)]
       (let [[arg value] row]
         (cond
           (= arg "(full prompt text as arg)")
-          (when (or (nil? prompt) (str/starts-with? prompt "--"))
-            (swap! failures conj "expected full prompt text as final arg"))
+          (when (str/blank? prompt)
+            (swap! failures conj "expected conversation prompt on stdin"))
 
           (= arg "(conversation prompt as final arg)")
-          (when (or (nil? prompt) (str/starts-with? prompt "--"))
-            (swap! failures conj "expected conversation prompt as final arg"))
+          (when (str/blank? prompt)
+            (swap! failures conj "expected conversation prompt on stdin"))
+
+          (= arg "(conversation prompt on stdin)")
+          (when (str/blank? prompt)
+            (swap! failures conj "expected conversation prompt on stdin"))
 
           (= arg "(system prompt contains protocol contract)")
           (let [system (system-prompt-arg argv)]
@@ -87,6 +92,12 @@
                          (str/includes? prompt "previous turn")
                          (str/includes? prompt "previous reply"))
             (swap! failures conj "prompt missing prior transcript history"))
+
+          (= arg "(stdin contains full history)")
+          (when-not (and prompt
+                         (str/includes? prompt "previous turn")
+                         (str/includes? prompt "previous reply"))
+            (swap! failures conj "stdin missing prior transcript history"))
 
           (= arg "(no --continue or --resume)")
           (when (or (some #(= % "--continue") argv)
@@ -197,17 +208,15 @@
   (session-steps/await-turn!)
   (let [invocations (claude-cli/invocations)]
     (g/should= 1 (count invocations))
-    (let [{:keys [argv env]} (first invocations)
-          failures (match-invocation-table argv env table)]
-      (g/should= [] failures))))
+    (g/should= [] (match-invocation-table (first invocations) table))))
 
 (defn claude-binary-at-invoked-once-with [path table]
   (session-steps/await-turn!)
   (let [invocations (claude-cli/invocations)]
     (g/should= 1 (count invocations))
-    (let [{:keys [argv env]} (first invocations)]
-      (g/should= path (first argv))
-      (g/should= [] (match-invocation-table argv env table)))))
+    (let [inv (first invocations)]
+      (g/should= path (first (:argv inv)))
+      (g/should= [] (match-invocation-table inv table)))))
 
 (defn claude-binary-invoked-exactly [n]
   (session-steps/await-turn!)
@@ -217,8 +226,7 @@
   (session-steps/await-turn!)
   (let [invocations (claude-cli/invocations)]
     (g/should (<= 2 (count invocations)))
-    (let [argv   (:argv (second invocations))
-          prompt (prompt-arg argv)]
+    (let [prompt (:in (second invocations))]
       (g/should (and prompt (str/includes? prompt "Tool result for exec"))))))
 
 ;; endregion ^^^^^ Then: Claude binary invocation ^^^^^
