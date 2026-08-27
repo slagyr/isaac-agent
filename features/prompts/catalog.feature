@@ -6,9 +6,9 @@ Feature: Prepared-prompt catalog (commands + skills)
    ones of the same name. Bodies are loaded lazily; this feature covers the
   frontmatter index (name, type, description).
 
-  (Timing of resolution is logged at debug — elapsed-ms + counts — to inform a
-  later caching decision; debug isn't spec-asserted, so it's an acceptance
-  requirement, not a scenario here.)
+  (The catalog is cached for the duration of a turn so build-turn and
+  skill tools share one scan. Debug :prompt/catalog-resolved fires once
+  per actual scan, not per lookup. Next turn scans again.)
 
   Background:
     Given an Isaac root at "target/test-state"

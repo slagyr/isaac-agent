@@ -243,7 +243,22 @@
     :skill   (assoc-in catalog [:skills (:name entry)] entry)
     catalog))
 
-(defn resolve-catalog [{:keys [config cwd fs root]}]
+(def ^:dynamic *turn-catalog* nil)
+
+(defn- catalog-cache-key [{:keys [config cwd root]}]
+  {:config-paths (select-keys (or config {}) [:prompt-paths :command-paths :skill-paths :prompt-dir-names])
+   :cwd          cwd
+   :root         root})
+
+(defmacro with-turn-catalog
+  "Bind a turn-scoped catalog cache around body. Nested calls share the same cache."
+  [& body]
+  `(if *turn-catalog*
+     (do ~@body)
+     (binding [*turn-catalog* (atom {})]
+       ~@body)))
+
+(defn- scan-catalog [{:keys [config cwd fs root]}]
   (let [fs*           fs
         config        (or config {})
         dir-names     (normalize-prompt-dir-names config)
@@ -265,6 +280,16 @@
                :rule-count (count (:rules catalog))
                :skill-count (count (:skills catalog)))
     catalog))
+
+(defn resolve-catalog [opts]
+  (if-let [cache *turn-catalog*]
+    (let [key (catalog-cache-key opts)]
+      (if-let [cached (get @cache key)]
+        cached
+        (let [catalog (scan-catalog opts)]
+          (swap! cache assoc key catalog)
+          catalog)))
+    (scan-catalog opts)))
 
 (defn resolve-command-prompt [{:keys [config cwd fs root]} command-name args]
   (let [catalog (resolve-catalog {:config config :cwd cwd :fs fs :root root})]

@@ -20,6 +20,7 @@
     [isaac.nexus :as nexus]
     [isaac.session.compaction :as compaction]
     [isaac.session.context :as session-ctx]
+    [isaac.prompt.catalog :as prompt-catalog]
     [isaac.session.store.spi :as store]
     [isaac.tool.names :as names]
     [isaac.tool.registry :as tool-registry]
@@ -1206,31 +1207,32 @@
   "Drives a single turn from a resolved charge. The bridge rejects unresolved
    charges before they reach here."
   [charge]
-  (let [session-key (:session-key charge)
-        input       (:input charge)
-        ctx         (build-turn charge)
-        ch          (or (:comm charge) cli-comm/channel)
-        turn-id     (bridge/begin-turn! session-key)
-        observers   (observer/for-turn (:observers charge))
-        finish!     #(finish-turn! ch session-key % observers)]
-    (try
-      (comm/on-turn-start ch session-key input)
-      (notify-observers! observers :on-turn-started (observer-ctx session-key) nil)
-      (finish! (run-turn-body! session-key input ctx))
-      (catch ExceptionInfo e
-        (if (= :cancelled (:type (ex-data e)))
-          (finish! (suspend/interrupt-result session-key))
-          (finish! (record-exception! session-key e ctx))))
-      (catch Exception e
-        (if (bridge/cancelled? session-key)
-          (finish! (suspend/interrupt-result session-key))
-          (finish! (record-exception! session-key e ctx))))
-      (catch Throwable t
-        (if (bridge/cancelled? session-key)
-          (finish! (suspend/interrupt-result session-key))
-          (finish! (record-exception! session-key t ctx))))
-      (finally
-        (turnstile/release-all! (:turnstile-tokens charge))
-        (bridge/end-turn! session-key turn-id)))))
+  (prompt-catalog/with-turn-catalog
+    (let [session-key (:session-key charge)
+          input       (:input charge)
+          ctx         (build-turn charge)
+          ch          (or (:comm charge) cli-comm/channel)
+          turn-id     (bridge/begin-turn! session-key)
+          observers   (observer/for-turn (:observers charge))
+          finish!     #(finish-turn! ch session-key % observers)]
+      (try
+        (comm/on-turn-start ch session-key input)
+        (notify-observers! observers :on-turn-started (observer-ctx session-key) nil)
+        (finish! (run-turn-body! session-key input ctx))
+        (catch ExceptionInfo e
+          (if (= :cancelled (:type (ex-data e)))
+            (finish! (suspend/interrupt-result session-key))
+            (finish! (record-exception! session-key e ctx))))
+        (catch Exception e
+          (if (bridge/cancelled? session-key)
+            (finish! (suspend/interrupt-result session-key))
+            (finish! (record-exception! session-key e ctx))))
+        (catch Throwable t
+          (if (bridge/cancelled? session-key)
+            (finish! (suspend/interrupt-result session-key))
+            (finish! (record-exception! session-key t ctx))))
+        (finally
+          (turnstile/release-all! (:turnstile-tokens charge))
+          (bridge/end-turn! session-key turn-id))))))
 
 ;; endregion ^^^^^ Public API ^^^^^

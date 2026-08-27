@@ -338,4 +338,60 @@
     (let [config (:config (loader/load-config-result {:root root
                                                       :fs        (nexus/get :fs)}))]
       (should= ["vendor/prompts"] (:prompt-paths config))
-      (should= {"abilities" "skill"} (:prompt-dir-names config)))))
+      (should= {"abilities" "skill"} (:prompt-dir-names config))))
+  )
+
+(describe "prompt catalog turn-scoped cache"
+
+  (helper/with-captured-logs)
+
+  #_{:clj-kondo/ignore [:unresolved-symbol]}
+  (around [example]
+    (nexus/-with-nested-nexus {:fs (fs/mem-fs)}
+      (example)))
+
+  (it "scans twice when resolve-catalog is called without a turn bind"
+    (write-config-file! "prompts/commands/work.md"
+                        (str "---\n"
+                             "type: command\n"
+                             "description: Start work on a ready bean\n"
+                             "---\n\n"
+                             "Start work on bean {{bean}}."))
+    (resolve-catalog)
+    (resolve-catalog)
+    (should= 2 (count (filter #(= :prompt/catalog-resolved (:event %)) @log/captured-logs))))
+
+  (it "reuses one scan under a turn bind when root cwd and prompt paths match"
+    (write-config-file! "prompts/commands/work.md"
+                        (str "---\n"
+                             "type: command\n"
+                             "description: Start work on a ready bean\n"
+                             "---\n\n"
+                             "Start work on bean {{bean}}."))
+    (let [first-catalog (atom nil)
+          second-catalog (atom nil)]
+      (sut/with-turn-catalog
+        (reset! first-catalog (resolve-catalog))
+        (reset! second-catalog (resolve-catalog)))
+      (should= 1 (count (filter #(= :prompt/catalog-resolved (:event %)) @log/captured-logs)))
+      (should= (select-keys (get-in @first-catalog [:commands "work"]) [:name :type :description])
+               (select-keys (get-in @second-catalog [:commands "work"]) [:name :type :description]))))
+
+  (it "scans again under a turn bind when cwd discovers another project"
+    (write-file! "/workspace/proj-a/.isaac/prompts/commands/work.md"
+                 (str "---\n"
+                      "type: command\n"
+                      "description: PROJECT A work\n"
+                      "---\n\n"
+                      "Project A work prompt."))
+    (write-file! "/workspace/proj-b/.isaac/prompts/commands/work.md"
+                 (str "---\n"
+                      "type: command\n"
+                      "description: PROJECT B work\n"
+                      "---\n\n"
+                      "Project B work prompt."))
+    (sut/with-turn-catalog
+      (resolve-catalog {:cwd "/workspace/proj-a"})
+      (resolve-catalog {:cwd "/workspace/proj-b"}))
+    (should= 2 (count (filter #(= :prompt/catalog-resolved (:event %)) @log/captured-logs))))
+)
