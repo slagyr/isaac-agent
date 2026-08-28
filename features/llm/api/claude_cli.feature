@@ -5,6 +5,10 @@ Feature: Claude subscription provider via CLI shell-out
   and tool loop. The binary is invoked with --print, no claude tools,
   no claude session management.
 
+  Named secrets from <isaac-home>/.env are copied into the child env
+  (`:forward-env` on the provider; default CLAUDE_CODE_OAUTH_TOKEN).
+  ANTHROPIC_API_KEY is never forwarded. (isaac-1awj)
+
   Background:
     Given an Isaac root at "target/test-state"
     And config:
@@ -244,3 +248,81 @@ Feature: Claude subscription provider via CLI shell-out
     And session "main" has transcript matching:
       | #index | type    | message.role | message.usage.input-tokens | message.usage.output-tokens |
       | -1     | message | assistant    | 0                          | 0                           |
+
+  @wip
+  Scenario: CLAUDE_CODE_OAUTH_TOKEN from .env is forwarded to the claude subprocess
+    Given the isaac .env file contains:
+      """
+      CLAUDE_CODE_OAUTH_TOKEN=marigold-oauth
+      """
+    And the claude binary is stubbed to return "ok"
+    When the user sends "hi" on session "main"
+    Then the response is "ok"
+    And the claude binary was invoked exactly once with:
+      | arg                                             | value |
+      | --print                                         |       |
+      | --output-format                                 | json  |
+      | --model                                         | sonnet|
+      | (env CLAUDE_CODE_OAUTH_TOKEN is marigold-oauth) |       |
+
+  @wip
+  Scenario: an unlisted .env secret is not forwarded to the claude subprocess
+    Given the isaac .env file contains:
+      """
+      CLAUDE_CODE_OAUTH_TOKEN=marigold-oauth
+      LONGWAVE_DISCORD_TOKEN=sk-longwave
+      """
+    And the claude binary is stubbed to return "ok"
+    When the user sends "hi" on session "main"
+    Then the response is "ok"
+    And the claude binary was invoked exactly once with:
+      | arg                                             | value |
+      | --print                                         |       |
+      | --output-format                                 | json  |
+      | --model                                         | sonnet|
+      | (env CLAUDE_CODE_OAUTH_TOKEN is marigold-oauth) |       |
+      | (no env LONGWAVE_DISCORD_TOKEN)                 |       |
+
+  @wip
+  Scenario: a name listed in forward-env is forwarded to the claude subprocess
+    Given the isaac EDN file "config/providers/claude.edn" exists with:
+      | path        | value                                       |
+      | command     | claude                                      |
+      | forward-env | ["CLAUDE_CODE_OAUTH_TOKEN","SKYBEAM_TOKEN"] |
+    And the isaac .env file contains:
+      """
+      CLAUDE_CODE_OAUTH_TOKEN=marigold-oauth
+      SKYBEAM_TOKEN=skybeam-secret
+      """
+    And the claude binary is stubbed to return "ok"
+    When the user sends "hi" on session "main"
+    Then the response is "ok"
+    And the claude binary was invoked exactly once with:
+      | arg                                             | value |
+      | --print                                         |       |
+      | --output-format                                 | json  |
+      | --model                                         | sonnet|
+      | (env CLAUDE_CODE_OAUTH_TOKEN is marigold-oauth) |       |
+      | (env SKYBEAM_TOKEN is skybeam-secret)           |       |
+
+  @wip
+  Scenario: ANTHROPIC_API_KEY is stripped even when listed in forward-env
+    Given the isaac EDN file "config/providers/claude.edn" exists with:
+      | path        | value                                           |
+      | command     | claude                                          |
+      | forward-env | ["CLAUDE_CODE_OAUTH_TOKEN","ANTHROPIC_API_KEY"] |
+    And the isaac .env file contains:
+      """
+      CLAUDE_CODE_OAUTH_TOKEN=marigold-oauth
+      ANTHROPIC_API_KEY=sk-marigold
+      """
+    And the claude binary is stubbed to return "ok"
+    When the user sends "hi" on session "main"
+    Then the response is "ok"
+    And the claude binary was invoked exactly once with:
+      | arg                                             | value |
+      | --print                                         |       |
+      | --output-format                                 | json  |
+      | --model                                         | sonnet|
+      | (env CLAUDE_CODE_OAUTH_TOKEN is marigold-oauth) |       |
+      | (no ANTHROPIC_API_KEY in env)                   |       |
