@@ -343,6 +343,18 @@
           (when root
             (persist-transcript! root id new-transcript))))))
 
+  (drop-last-user-message! [_ name]
+    (let [id         (c/session-id name)
+          transcript (get-in @state [:transcripts id] [])
+          last       (peek transcript)]
+      (when (and (= "message" (:type last))
+                 (= "user" (get-in last [:message :role])))
+        (let [kept (pop (vec transcript))]
+          (swap! state assoc-in [:transcripts id] kept)
+          (when root
+            (persist-transcript! root id kept))
+          true))))
+
   (record-turn-marker! [_ session-id marker]
     (swap! state assoc-in [:turn-markers (str session-id)]
            (assoc marker :session-id (str session-id))))

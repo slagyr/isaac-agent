@@ -94,7 +94,6 @@ Feature: Provider wall classification
     When the user sends "knock knock" on session "trash-can"
     Then the turn result is unavailable with retry-after-ms 300000 and reason auth
 
-  @wip
   Scenario: a provider 400 for prompt length classifies as context-exhausted
     Given the isaac EDN file "config/models/snuffy.edn" exists with:
       | path           | value          |
@@ -116,7 +115,6 @@ Feature: Provider wall classification
       | level | event                            | provider | status |
       | :warn | :chat/provider-context-exhausted | chatgpt  | 400    |
 
-  @wip
   Scenario: a generic provider 400 stays an api-error
     Given the isaac EDN file "config/models/snuffy.edn" exists with:
       | path           | value          |
@@ -138,7 +136,6 @@ Feature: Provider wall classification
       | level | event                            |
       | :warn | :chat/provider-context-exhausted |
 
-  @wip
   Scenario: overflow weather does not leave the rejected user turn on the transcript
     Given the isaac EDN file "config/models/snuffy.edn" exists with:
       | path           | value          |

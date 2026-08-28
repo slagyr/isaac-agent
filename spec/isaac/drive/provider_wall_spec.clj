@@ -47,4 +47,31 @@
       (should= 120000 (:retry-after-ms (sut/classify result cfg "grover")))))
 
   (it "returns nil for genuine tool errors"
-    (should= nil (sut/classify {:error :tool-loop-limit} {} "grover"))))
+    (should= nil (sut/classify {:error :tool-loop-limit} {} "grover")))
+
+  (it "classifies a 400 for maximum prompt length as context-exhausted"
+    (let [result {:error :api-error
+                  :status 400
+                  :message "maximum prompt length is 128000 but request contains 130000"}
+          classified (sut/classify result {} "chatgpt")]
+      (should= {:unavailable? true
+                :retry-after-ms 300000
+                :reason :context-exhausted
+                :provider "chatgpt"
+                :message "maximum prompt length is 128000 but request contains 130000"}
+               classified)))
+
+  (it "classifies overflow from the HTTP body message, not just top-level :message"
+    (let [result {:error :api-error
+                  :status 400
+                  :body {:error {:message "prompt is too long"}}}
+          classified (sut/classify result {} "xai")]
+      (should= :context-exhausted (:reason classified))
+      (should= 300000 (:retry-after-ms classified))))
+
+  (it "leaves a generic 400 as a genuine api-error"
+    (should= nil (sut/classify {:error :api-error
+                                :status 400
+                                :message "invalid request: unknown field"}
+                               {}
+                               "chatgpt"))))

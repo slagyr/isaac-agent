@@ -1117,7 +1117,14 @@
             (suspend/interrupt-result session-key)
 
             (:unavailable? result)
-            result
+            (do
+              (when (and (= :context-exhausted (:reason result))
+                         (not (:from-queue? charge)))
+                (with-transcript-lock session-key
+                  #(store/drop-last-user-message!
+                     (or (:session-store ctx) (nexus/get-in [:sessions :store]))
+                     session-key)))
+              result)
 
             :else
             (do

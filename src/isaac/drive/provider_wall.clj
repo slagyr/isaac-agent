@@ -43,6 +43,18 @@
   (or (= :auth-failed (:error result))
       (contains? #{401 403} (:status result))))
 
+(def ^:private overflow-phrases
+  ["maximum prompt length"
+   "prompt is too long"
+   "maximum context length"
+   "context_length_exceeded"
+   "context length exceeded"])
+
+(defn- overflow-message? [message]
+  (let [lower (some-> message str/lower-case)]
+    (and (seq lower)
+         (some #(str/includes? lower %) overflow-phrases))))
+
 (defn- retry-after-secs [value]
   (cond
     (nil? value) nil
@@ -84,12 +96,28 @@
                :provider     provider}
         (seq (response-message result)) (assoc :message (response-message result))))))
 
+(defn- classify-overflow
+  [result cfg provider]
+  (when (overflow-message? (response-message result))
+    (let [retry-ms (provider-auth-retry-after-ms cfg)
+          message  (response-message result)]
+      (log/warn :chat/provider-context-exhausted
+                :provider provider
+                :status (:status result)
+                :retry-after-ms retry-ms)
+      (cond-> {:unavailable? true
+               :retry-after-ms retry-ms
+               :reason       :context-exhausted
+               :provider     provider}
+        (seq message) (assoc :message message)))))
+
 (defn classify
   "Classify provider weather into {:unavailable? true :retry-after-ms N :reason ...}.
    Returns nil when the response is a genuine failure."
   [result cfg provider]
   (or (classify-auth result cfg provider)
-      (classify-wall result cfg provider)))
+      (classify-wall result cfg provider)
+      (classify-overflow result cfg provider)))
 
 (defn normalize
   "Pass through pre-classified unavailable results; classify auth and wall errors."

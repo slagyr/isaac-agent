@@ -660,6 +660,19 @@
                      fs)
     transcript-entry))
 
+(defn- last-user-message? [entry]
+  (and (= "message" (:type entry))
+       (= "user" (get-in entry [:message :role]))))
+
+(defn drop-last-user-message! [get-session-fn root identifier fs]
+  (let [entry      (get-session-fn root identifier fs)
+        id         (:id entry)
+        transcript (read-transcript-raw root id fs)
+        last       (peek transcript)]
+    (when (last-user-message? last)
+      (write-transcript! root id (pop (vec transcript)) fs)
+      true)))
+
 (defn append-error! [get-session-fn update-entry-fn now-fn root identifier error-entry fs]
   (let [entry            (get-session-fn root identifier fs)
         id               (:id entry)

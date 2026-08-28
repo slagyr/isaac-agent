@@ -28,6 +28,7 @@
   (append-compaction! [this name compaction])
   (splice-compaction! [this name compaction])
   (truncate-after-compaction! [this name])
+  (drop-last-user-message! [this name])
   ;; Durable turn markers (isaac-7li9): resume ROUTING for an in-flight turn,
   ;; kept at sessions/turns/<session-id>.edn (a store-private detail). The bridge
   ;; is the only writer. `turn-markers` returns each marker map (including its

@@ -151,6 +151,8 @@
     (c/splice-compaction! get-session update-sidecar-entry! now-iso root name compaction fs))
   (truncate-after-compaction! [_ name]
     (c/truncate-after-compaction! get-session root name fs))
+  (drop-last-user-message! [_ name]
+    (c/drop-last-user-message! get-session root name fs))
 
   (record-turn-marker! [_ session-id marker]
     (c/record-turn-marker!* root session-id marker fs))

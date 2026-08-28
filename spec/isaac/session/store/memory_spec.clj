@@ -58,7 +58,17 @@
         (store/append-message! s "chat" {:role "user" :content "Hello" :channel marigold/longwave :to marigold/captain})
         (let [entry (store/get-session s "chat")]
           (should= marigold/longwave (:last-channel entry))
-          (should= marigold/captain (:last-to entry))))))
+          (should= marigold/captain (:last-to entry)))))
+
+    (it "drops the last user message this turn appended"
+      (let [s (sut/create-store)]
+        (store/open-session! s "chat" {:crew "main"})
+        (store/append-message! s "chat" {:role "assistant" :content "Ready"})
+        (store/append-message! s "chat" {:role "user" :content "knock knock"})
+        (should (store/drop-last-user-message! s "chat"))
+        (let [transcript (store/get-transcript s "chat")]
+          (should= ["session" "message"] (mapv :type transcript))
+          (should= "assistant" (get-in (last transcript) [:message :role]))))))
 
   (describe "update-session!"
 
