@@ -284,6 +284,10 @@
       {:type :seq,
        :description "Extra CLI args forwarded before the prompt (claude-cli)",
        :spec {:type :string}},
+      :forward-env
+      {:type :seq,
+       :description "Env var names copied into the claude-cli subprocess (default CLAUDE_CODE_OAUTH_TOKEN)",
+       :spec {:type :string}},
       :compaction
       {:type :map,
        :description "Compaction policy override for this provider",

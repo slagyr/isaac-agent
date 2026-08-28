@@ -4,6 +4,7 @@
     [clojure.string :as str]
     [isaac.drive.turn :as drive-turn]
     [isaac.fs :as fs]
+    [isaac.config.env]
     [isaac.llm.api.claude-cli :as sut]
     [isaac.llm.api.protocol :as api]
     [isaac.marigold :as marigold]
@@ -228,3 +229,68 @@
               usage (:usage assistant)]
           (should (pos? (:input-tokens usage)))
           (should (pos? (:output-tokens usage))))))))
+
+(describe "claude-cli subprocess env forwarding (isaac-1awj)"
+  (before
+    (sut/clear-stub!)
+    (sut/clear-invocations!)
+    (sut/set-stub! (constantly {:exit 0
+                                :out  (json/generate-string {:type "result" :result "hi"})
+                                :err  ""})))
+
+  (it "forwards CLAUDE_CODE_OAUTH_TOKEN from env/env by schema default"
+    (with-redefs [isaac.config.env/env (fn [name]
+                                         (get {"CLAUDE_CODE_OAUTH_TOKEN" "marigold-oauth"} name))]
+      (sut/clear-invocations!)
+      (sut/chat {:model "sonnet" :messages [{:role "user" :content "yo"}]}
+                "claude" {:command "claude"})
+      (should= "marigold-oauth"
+               (get-in (first (sut/invocations)) [:env "CLAUDE_CODE_OAUTH_TOKEN"]))))
+
+  (it "does not forward unlisted secrets"
+    (with-redefs [isaac.config.env/env (fn [name]
+                                         (get {"CLAUDE_CODE_OAUTH_TOKEN" "marigold-oauth"
+                                               "LONGWAVE_DISCORD_TOKEN"  "sk-longwave"}
+                                              name))]
+      (sut/clear-invocations!)
+      (sut/chat {:model "sonnet" :messages [{:role "user" :content "yo"}]}
+                "claude" {:command "claude"})
+      (let [env (:env (first (sut/invocations)))]
+        (should= "marigold-oauth" (get env "CLAUDE_CODE_OAUTH_TOKEN"))
+        (should-not (contains? env "LONGWAVE_DISCORD_TOKEN")))))
+
+  (it "forwards names listed in :forward-env instead of the default"
+    (with-redefs [isaac.config.env/env (fn [name]
+                                         (get {"CLAUDE_CODE_OAUTH_TOKEN" "marigold-oauth"
+                                               "SKYBEAM_TOKEN"           "skybeam-secret"}
+                                              name))]
+      (sut/clear-invocations!)
+      (sut/chat {:model "sonnet" :messages [{:role "user" :content "yo"}]}
+                "claude"
+                {:command     "claude"
+                 :forward-env ["CLAUDE_CODE_OAUTH_TOKEN" "SKYBEAM_TOKEN"]})
+      (let [env (:env (first (sut/invocations)))]
+        (should= "marigold-oauth" (get env "CLAUDE_CODE_OAUTH_TOKEN"))
+        (should= "skybeam-secret" (get env "SKYBEAM_TOKEN")))))
+
+  (it "strips ANTHROPIC_API_KEY even when listed in :forward-env"
+    (with-redefs [isaac.config.env/env (fn [name]
+                                         (get {"CLAUDE_CODE_OAUTH_TOKEN" "marigold-oauth"
+                                               "ANTHROPIC_API_KEY"       "sk-marigold"}
+                                              name))]
+      (sut/clear-invocations!)
+      (sut/chat {:model "sonnet" :messages [{:role "user" :content "yo"}]}
+                "claude"
+                {:command     "claude"
+                 :forward-env ["CLAUDE_CODE_OAUTH_TOKEN" "ANTHROPIC_API_KEY"]})
+      (let [env (:env (first (sut/invocations)))]
+        (should= "marigold-oauth" (get env "CLAUDE_CODE_OAUTH_TOKEN"))
+        (should-not (contains? env "ANTHROPIC_API_KEY")))))
+
+  (it "omits a listed name whose env value is missing"
+    (with-redefs [isaac.config.env/env (constantly nil)]
+      (sut/clear-invocations!)
+      (sut/chat {:model "sonnet" :messages [{:role "user" :content "yo"}]}
+                "claude"
+                {:command "claude" :forward-env ["MISSING_TOKEN"]})
+      (should-not (contains? (:env (first (sut/invocations))) "MISSING_TOKEN")))))

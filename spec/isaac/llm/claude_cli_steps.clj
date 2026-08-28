@@ -4,6 +4,7 @@
     [clojure.edn :as edn]
     [clojure.string :as str]
     [gherclj.core :as g :refer [defgiven defthen helper!]]
+    [isaac.config.env :as env]
     [isaac.fs :as fs]
     [isaac.tool.tools-steps :as tools-steps]
     [isaac.llm.api.claude-cli :as claude-cli]
@@ -108,6 +109,16 @@
           (when (contains? env "ANTHROPIC_API_KEY")
             (swap! failures conj "ANTHROPIC_API_KEY present in subprocess env"))
 
+          (re-matches #"\(env ([A-Z0-9_]+) is (.+)\)" arg)
+          (let [[_ name expected] (re-matches #"\(env ([A-Z0-9_]+) is (.+)\)" arg)]
+            (when-not (= expected (get env name))
+              (swap! failures conj (str "expected env " name " = " expected " got " (get env name)))))
+
+          (re-matches #"\(no env ([A-Z0-9_]+)\)" arg)
+          (let [[_ name] (re-matches #"\(no env ([A-Z0-9_]+)\)" arg)]
+            (when (contains? env name)
+              (swap! failures conj (str name " present in subprocess env"))))
+
           (str/starts-with? arg "--")
           (if (str/blank? value)
             (when-not (contains? arg-map arg)
@@ -119,8 +130,22 @@
           (swap! failures conj (str "unknown table arg " arg)))))
     @failures))
 
+(defn- parse-dotenv [content]
+  (into {}
+        (keep (fn [line]
+                (when-let [[_ k v] (re-matches #"\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)" line)]
+                  [k (str/trim v)]))
+              (str/split-lines content))))
+
 (defn- install-stub! [f]
   (g/dissoc! :feature-config)
+  (when-let [root (or (g/get :root) (nexus/get :root))]
+    (env/lock-dotenv! root)
+    (let [fs*  (or (g/get :mem-fs) (nexus/get :fs))
+          path (str root "/.env")]
+      (when (and fs* (fs/exists? fs* path))
+        (doseq [[k v] (parse-dotenv (fs/slurp fs* path))]
+          (env/set-env-override! k v)))))
   (claude-cli/clear-invocations!)
   (claude-cli/set-stub! f))
 

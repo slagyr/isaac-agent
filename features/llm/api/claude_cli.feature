@@ -249,7 +249,6 @@ Feature: Claude subscription provider via CLI shell-out
       | #index | type    | message.role | message.usage.input-tokens | message.usage.output-tokens |
       | -1     | message | assistant    | 0                          | 0                           |
 
-  @wip
   Scenario: CLAUDE_CODE_OAUTH_TOKEN from .env is forwarded to the claude subprocess
     Given the isaac .env file contains:
       """
@@ -265,7 +264,6 @@ Feature: Claude subscription provider via CLI shell-out
       | --model                                         | sonnet|
       | (env CLAUDE_CODE_OAUTH_TOKEN is marigold-oauth) |       |
 
-  @wip
   Scenario: an unlisted .env secret is not forwarded to the claude subprocess
     Given the isaac .env file contains:
       """
@@ -283,7 +281,6 @@ Feature: Claude subscription provider via CLI shell-out
       | (env CLAUDE_CODE_OAUTH_TOKEN is marigold-oauth) |       |
       | (no env LONGWAVE_DISCORD_TOKEN)                 |       |
 
-  @wip
   Scenario: a name listed in forward-env is forwarded to the claude subprocess
     Given the isaac EDN file "config/providers/claude.edn" exists with:
       | path        | value                                       |
@@ -305,7 +302,6 @@ Feature: Claude subscription provider via CLI shell-out
       | (env CLAUDE_CODE_OAUTH_TOKEN is marigold-oauth) |       |
       | (env SKYBEAM_TOKEN is skybeam-secret)           |       |
 
-  @wip
   Scenario: ANTHROPIC_API_KEY is stripped even when listed in forward-env
     Given the isaac EDN file "config/providers/claude.edn" exists with:
       | path        | value                                           |

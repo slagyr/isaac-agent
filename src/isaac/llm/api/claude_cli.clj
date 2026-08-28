@@ -3,6 +3,7 @@
     [babashka.process :as process]
     [cheshire.core :as json]
     [clojure.string :as str]
+    [isaac.config.env :as env]
     [isaac.llm.api.protocol :as api]
     [isaac.llm.followup :as followup]
     [isaac.llm.prompt.builder :as prompt]))
@@ -188,8 +189,25 @@
 (defn- command-path [cfg]
   (or (:command cfg) "claude"))
 
-(defn- subprocess-env []
-  (dissoc (into {} (System/getenv)) "ANTHROPIC_API_KEY"))
+(def ^:private DEFAULT-FORWARD-ENV ["CLAUDE_CODE_OAUTH_TOKEN"])
+
+(defn- forward-env-names [cfg]
+  (if (contains? cfg :forward-env)
+    (mapv str (:forward-env cfg))
+    DEFAULT-FORWARD-ENV))
+
+(defn- subprocess-env [cfg]
+  (let [base (dissoc (into {} (System/getenv)) "ANTHROPIC_API_KEY")]
+    (reduce (fn [acc name]
+              (if (= "ANTHROPIC_API_KEY" name)
+                (dissoc acc "ANTHROPIC_API_KEY")
+                (let [value (env/env name)]
+                  (cond
+                    (nil? value) acc
+                    (and (string? value) (str/blank? value)) acc
+                    :else (assoc acc name value)))))
+            base
+            (forward-env-names cfg))))
 
 (defn- build-argv [cfg request streaming?]
   (let [system (build-system-prompt request)
@@ -212,7 +230,7 @@
 (defn- invoke! [cfg request streaming?]
   (let [argv   (build-argv cfg request streaming?)
         prompt (conversation->prompt-text request)
-        env    (subprocess-env)]
+        env    (subprocess-env cfg)]
     (record-invocation! {:argv argv :env env :in prompt})
     (run-process! argv env prompt)))
 
