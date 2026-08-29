@@ -856,10 +856,11 @@
             total-tokens   (compaction/estimate-prompt-tokens session-key opts)]
         (context-exhausted-result (or config (nexus/get :config)) session-key total-tokens context-window))
       (let [opts (mid-turn-compaction-opts ctx)
-            _    (compaction/compact! session-key opts)
-            rebuilt (rebuild-chat-request session-key ctx)]
-        (reset! current-request rebuilt)
-        rebuilt))))
+            total (compaction/estimate-prompt-tokens session-key opts)]
+        (perform-compaction! session-key 1 total opts)
+        (let [rebuilt (rebuild-chat-request session-key ctx)]
+          (reset! current-request rebuilt)
+          rebuilt)))))
 
 (defn- maybe-mid-turn-compact!
   "After tools persist, compact the disk transcript if needed and rebuild

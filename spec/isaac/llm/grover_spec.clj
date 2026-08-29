@@ -187,6 +187,18 @@
                    {:stream-supports-tool-calls "false"})]
         (should-be-nil (get-in resp [:message :tool_calls]))))
 
+    (it "returns a scripted http-error without streaming chunks"
+      (sut/enqueue! [{:type "http-error" :status 400 :message "maximum prompt length is 200 but the request contains 250"}])
+      (let [chunks (atom [])
+            resp   (sut/chat-stream
+                     {:model "echo" :messages [{:role "user" :content "go"}]}
+                     (fn [c] (swap! chunks conj c))
+                     "grover" {})]
+        (should= [] @chunks)
+        (should= :api-error (:error resp))
+        (should= 400 (:status resp))
+        (should= "maximum prompt length is 200 but the request contains 250" (:message resp))))
+
   ;; endregion ^^^^^ Streaming ^^^^^
 
   ;; region ----- Tool Call Loop -----
