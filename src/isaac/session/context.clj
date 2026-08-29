@@ -79,8 +79,8 @@
 
 
 (defn- effective-config [passed-config]
-  (or passed-config
-      (loader/snapshot "session behavior resolution — ambient fallback when caller passes no :config")
+  (or (loader/snapshot "session behavior resolution — prefer live snapshot over caller :config")
+      passed-config
       {}))
 
 (defn- default-cwd [root crew-id]

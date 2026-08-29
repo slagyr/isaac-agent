@@ -57,6 +57,19 @@
           (should-be-nil (:parent-episode ep))
           (should= "2026-03-01-1000-ab12" (:id (session-store/get-session @ss (:id ep))))))))
 
+  (it "logs :episodes/opened with the origin kind when origin is supplied"
+    (with-redefs [isaac.episodes.ids/chaos-suffix (constantly "acp1")]
+      (binding [memory/*now* (java.time.Instant/parse "2026-03-01T10:00:00Z")]
+        (log/capture-logs
+          (sut/open-episode! {:fs @mem :root @root :crew "cordelia"
+                              :thread "reef-chat" :session-store @ss
+                              :cwd "/tmp" :origin {:kind :acp}})
+          (let [entry (first (filter #(= :episodes/opened (:event %)) @log/captured-logs))]
+            (should-not-be-nil entry)
+            (should= "reef-chat" (:thread entry))
+            (should= "cordelia" (:crew entry))
+            (should= :acp (:origin entry)))))))
+
   (it "opens a successor with :parent-episode"
     (with-redefs [isaac.episodes.ids/chaos-suffix (constantly "cd34")]
       (binding [memory/*now* (java.time.Instant/parse "2026-03-01T11:45:00Z")]

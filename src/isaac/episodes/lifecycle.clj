@@ -123,7 +123,8 @@
     (when-let [summary (:summary seed-compaction)]
       (when ss
         (session-store/append-compaction! ss id {:summary summary})))
-    (log/info :episodes/opened :episode id :crew crew :thread thread)
+    (log/info :episodes/opened :episode id :crew crew :thread thread
+              :origin (or (:kind origin) :cli))
     episode))
 
 (defn- index-after-close!

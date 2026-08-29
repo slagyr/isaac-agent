@@ -109,9 +109,10 @@
   "Opts for resolve-behavior: crew plus explicit model overrides only.
    Resolved provider model ids from the request's :model are omitted so a
    stale dispatch-time model cannot pin behavior across config reload."
-  [crew-id {:keys [model-override model-ref]} session-entry]
+  [crew-id {:keys [model-override model-ref config]} session-entry]
   (let [session-model (session-model-override session-entry)]
     (cond-> {:crew crew-id}
+      config (assoc :config config)
       model-override (assoc :model (session-ctx/normalize-model-ref model-override))
       model-ref (assoc :model (session-ctx/normalize-model-ref model-ref))
       (and (nil? model-override) (nil? model-ref) session-model)
@@ -141,7 +142,8 @@
         session-context (delay (session-ctx/resolve-behavior session-key
                                                              (behavior-opts crew-id
                                                                             {:model-override model-override
-                                                                             :model-ref      model-ref}
+                                                                             :model-ref      model-ref
+                                                                             :config         config*}
                                                                             session-entry)))
         model*          (delay (or model (get-in @session-context [:model-cfg :model]) (:model @session-context)))
         base            (cond-> {:session-key   session-key

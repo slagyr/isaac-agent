@@ -153,22 +153,24 @@
         (let [charge (sut/build {:session-key "s1" :input "hi" :soul-prepend "Addendum."})]
           (should= "Base.\n\nAddendum." (:soul charge)))))
 
-    (it "forwards crew and explicit model overrides to resolve-behavior without pinning config"
-      (let [seen (atom nil)]
-        (with-redefs [loader/snapshot             (fn [_] {:defaults  {:crew "main"}
-                                                         :crew      {"main" (crew-cfg marigold/captain test-model-id "Base.")}
-                                                         :models    {test-model-id (model-cfg test-model-id 4096)}
-                                                         :root "/tmp/isaac/.isaac"})
+    (it "forwards crew, charge config, and explicit model overrides to resolve-behavior"
+      (let [seen (atom nil)
+            cfg  {:defaults  {:crew "main"}
+                  :crew      {"main" (crew-cfg marigold/captain test-model-id "Base.")}
+                  :models    {test-model-id (model-cfg test-model-id 4096)}
+                  :root      "/tmp/isaac/.isaac"}]
+        (with-redefs [loader/snapshot              (fn [_] cfg)
                       session-ctx/resolve-behavior (fn [_ opts]
                                                      (reset! seen opts)
                                                      (stub-behavior "main" "Base." test-model-id 4096))]
           (let [charge (sut/build {:session-key    "s1"
                                    :input          "hi"
+                                   :config         cfg
                                    :model-override "beta"})]
             (should= "/tmp/isaac/.isaac" (get-in charge [:config :root]))
             (should= "main" (:crew @seen))
             (should= "beta" (:model @seen))
-            (should-be-nil (:config @seen))))))
+            (should= cfg (:config @seen))))))
 
     (it "re-resolves crew model from live config when the caller passes a stale config snapshot"
       (let [test-root "/test/charge-reload"
