@@ -60,9 +60,12 @@
       (should-not (sut/should-compact? 159 {:compaction {:strategy :slinky :threshold 0.8 :head 0.4}} 200))
       (should (sut/should-compact? 160 {:compaction {:strategy :slinky :threshold 0.8 :head 0.4}} 200)))
 
-    (it "keys off the live prompt estimate, not lagging last-input-tokens"
+    (it "uses the max of the live prompt estimate and last-input-tokens"
       (should (sut/should-compact? 310778 {:last-input-tokens 100000} 278528))
-      (should-not (sut/should-compact? 30 {:total-tokens 5000 :last-input-tokens 5000
+      (should (sut/should-compact? 30 {:last-input-tokens 850
+                                       :compaction {:strategy :slinky :threshold 0.8 :head 0.4}}
+                                     1000))
+      (should-not (sut/should-compact? 30 {:total-tokens 5000 :last-input-tokens 30
                                             :compaction {:strategy :slinky :threshold 0.8 :head 0.4}}
                                           200)))
 

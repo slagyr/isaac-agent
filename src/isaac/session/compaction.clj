@@ -30,8 +30,10 @@
   (session-ctx/resolve-compaction-config {} session-entry {:crew-cfg {} :model-cfg {} :provider-cfg {}} context-window))
 
 (defn should-compact? [estimated-tokens session-entry context-window]
-  (let [{:keys [threshold]} (resolve-config session-entry context-window)]
-    (>= estimated-tokens (* threshold context-window))))
+  (let [{:keys [threshold]} (resolve-config session-entry context-window)
+        last-input          (or (:last-input-tokens session-entry) 0)
+        gauge               (max (or estimated-tokens 0) last-input)]
+    (>= gauge (* threshold context-window))))
 
 (defn partial-splice?
   "True when compactable material remains after this splice.

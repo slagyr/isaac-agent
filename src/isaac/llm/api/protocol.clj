@@ -248,11 +248,25 @@
 
 ;; --- Compaction Utilities ---
 
+(defn- content-chars [value]
+  (cond
+    (string? value) (count value)
+    (map? value) (+ (content-chars (:content value))
+                    (content-chars (:text value))
+                    (content-chars (:arguments value))
+                    (content-chars (:messages value))
+                    (content-chars (:tools value)))
+    (sequential? value) (reduce + 0 (map content-chars value))
+    :else 0))
+
 (defn estimate-tokens
-  "Estimate token count using chars/4 heuristic."
+  "Estimate token count using content chars/4. Maps are measured from
+  message/tool content, never from (str map)."
   [request]
-  (let [text (str request)]
-    (max 1 (quot (count text) 4))))
+  (let [chars (if (string? request)
+                (count request)
+                (content-chars request))]
+    (max 1 (long (Math/ceil (/ (double (max 0 chars)) 4.0))))))
 
 (defn build-summary-request
   "Build a compaction summary request for the given api instance. When `api`

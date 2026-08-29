@@ -385,7 +385,7 @@
   "Streaming chat. Calls on-chunk with synthetic chunks, returns final."
   [request on-chunk provider-name cfg]
   (let [response (chat request provider-name cfg)]
-    (if (:error response)
+    (if (or (:error response) (:unavailable? response))
       response
       (let [supports-tool-calls? (stream-supports-tool-calls? cfg)
             content              (get-in response [:message :content])

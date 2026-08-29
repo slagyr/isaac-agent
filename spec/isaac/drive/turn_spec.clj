@@ -897,6 +897,74 @@
 
     )
 
+  (describe "prompt-too-long overflow compact-and-retry"
+    #_{:clj-kondo/ignore [:unresolved-symbol]}
+    (around [example]
+      (nexus/-with-nexus {:root test-dir :fs (fs/mem-fs)}
+        (helper/with-memory-store
+          (example))))
+
+    (it "compacts and retries after a prompt-too-long 400"
+      (helper/create-session! test-dir "overflow-retry")
+      (helper/append-message! test-dir "overflow-retry" {:role "user" :content "older ask"})
+      (helper/append-message! test-dir "overflow-retry" {:role "assistant" :content "older reply"})
+      (let [calls     (atom 0)
+            compact-n (atom 0)
+            ctx       (base-execution-ctx
+                        (->TestProvider marigold/starcore {:api marigold/sky-api})
+                        {:model          "test-model"
+                         :soul           "You are Isaac."
+                         :crew           "main"
+                         :comm           null-comm/channel
+                         :context-window 200
+                         :config         {}})]
+        (with-redefs [tool-loop/run (fn [_ _ _ _ _]
+                                      (swap! calls inc)
+                                      (if (= 1 @calls)
+                                        {:error   :api-error
+                                         :status  400
+                                         :message "maximum prompt length is 200 but the request contains 250"}
+                                        {:message {:role "assistant" :content "here is my answer"}
+                                         :model   "test-model"
+                                         :usage   {}}))
+                      compaction/compact! (fn [session-key _opts]
+                                            (swap! compact-n inc)
+                                            (helper/splice-compaction! test-dir session-key
+                                                                       {:summary           "summary of A"
+                                                                        :tokensBefore      250
+                                                                        :compactedEntryIds []
+                                                                        :firstKeptEntryId  nil})
+                                            {:summary "summary of A"})]
+          (let [result (#'sut/execute-llm-turn! "overflow-retry" "go" ctx)]
+            (should= 1 @compact-n)
+            (should= 2 @calls)
+            (should-be-nil (:error result))
+            (should-not (:unavailable? result))))))
+
+    (it "returns context-exhausted weather when overflow happens with compaction disabled"
+      (helper/create-session! test-dir "overflow-disabled")
+      (helper/update-session! test-dir "overflow-disabled" {:compaction-disabled true})
+      (let [compact-n (atom 0)
+            ctx       (base-execution-ctx
+                        (->TestProvider marigold/starcore {:api marigold/sky-api})
+                        {:model          "test-model"
+                         :soul           "You are Isaac."
+                         :crew           "main"
+                         :comm           null-comm/channel
+                         :context-window 200
+                         :config         {}})]
+        (with-redefs [tool-loop/run (fn [_ _ _ _ _]
+                                      {:error   :api-error
+                                       :status  400
+                                       :message "maximum prompt length is 200 but the request contains 250"})
+                      compaction/compact! (fn [& _]
+                                            (swap! compact-n inc)
+                                            {:summary "should-not-run"})]
+          (let [result (#'sut/execute-llm-turn! "overflow-disabled" "one more" ctx)]
+            (should= 0 @compact-n)
+            (should= true (:unavailable? result))
+            (should= :context-exhausted (:reason result)))))))
+
   (describe "1-arg run-turn! (charge arity)"
     #_{:clj-kondo/ignore [:unresolved-symbol]}
     (around [example]

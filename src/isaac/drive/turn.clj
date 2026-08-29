@@ -320,6 +320,28 @@
       (get-in chunk [:delta :text])
       (seq (:tool-calls chunk))))
 
+(defn- overflow-message? [message]
+  (let [lower (some-> message str/lower-case)]
+    (and (seq lower)
+         (or (str/includes? lower "maximum prompt length")
+             (str/includes? lower "prompt is too long")
+             (str/includes? lower "prompt too long")
+             (str/includes? lower "context_length_exceeded")
+             (str/includes? lower "context length exceeded")
+             (str/includes? lower "request contains")))))
+
+(defn- prompt-too-long? [result]
+  (boolean
+    (some (fn [err]
+            (and err
+                 (or (= 400 (:status err))
+                     (= :api-error (:error err))
+                     (= :llm-error (:error err)))
+                 (overflow-message? (or (:message err)
+                                        (when (or (:error err) (:status err))
+                                          (error-message err))))))
+          [result (:response result)])))
+
 (defn stream-response! [p request on-chunk]
   (let [full-content (atom "")
         final-resp   (atom nil)
@@ -331,8 +353,14 @@
                                                           (on-chunk piece)))
                                                       (when (:done chunk)
                                                         (reset! final-resp chunk))))]
-    (if (:error result)
+    (cond
+      (:error result)
       result
+
+      (prompt-too-long? result)
+      result
+
+      :else
       {:content  (or (not-empty @full-content) (get-in result [:message :content]) "")
        :response (if (meaningful-final-chunk? @final-resp) @final-resp result)})))
 
@@ -367,6 +395,7 @@
   [result]
   (cond
     (:error result) result
+    (prompt-too-long? result) result
     (:response result) (:response result)
     :else result))
 
@@ -390,7 +419,7 @@
 
     :else
     (fn [req] (let [result (dispatch/dispatch-chat p req)]
-                (if (:error result)
+                (if (or (:error result) (prompt-too-long? result))
                   result
                   (let [joined (emit-response-content! channel-impl session-key result)]
                     (assoc-in result [:message :content] joined)))))))
@@ -817,6 +846,21 @@
                                   :transcript      transcript
                                   :tools           tools})))
 
+(defn- overflow-compact-retry!
+  [session-key ctx current-request result]
+  (when (prompt-too-long? result)
+    (if (compaction-cannot-save-turn? session-key ctx)
+      (let [opts           (mid-turn-compaction-opts ctx)
+            context-window (:context-window (:charge ctx))
+            config         (:config (:charge ctx))
+            total-tokens   (compaction/estimate-prompt-tokens session-key opts)]
+        (context-exhausted-result (or config (nexus/get :config)) session-key total-tokens context-window))
+      (let [opts (mid-turn-compaction-opts ctx)
+            _    (compaction/compact! session-key opts)
+            rebuilt (rebuild-chat-request session-key ctx)]
+        (reset! current-request rebuilt)
+        rebuilt))))
+
 (defn- maybe-mid-turn-compact!
   "After tools persist, compact the disk transcript if needed and rebuild
    the next LLM request from the post-compaction active transcript.
@@ -1084,22 +1128,33 @@
                                                       :ctx            ctx})]
       (when-let [done (:compaction-llm-done (active-compaction-state session-key))]
         (deref done 5000 nil))
-      (let [chat-fn     (chat-fn-for ch session-key p request)
+      (let [chat-fn     (chat-fn-for ch session-key p @current-request)
             followup-fn (fn [req response tool-calls tool-results]
                           (let [messages (api/followup-messages p req response tool-calls tool-results)]
                             (reset! current-request (assoc req :messages messages))
                             messages))
-            result      (let [provider-name (api/display-name p)
-                              request*     (assoc request :provider provider-name)]
-                          (-> (tool-loop/run chat-fn followup-fn request* tool-fn
-                                             {:max-loops   tool-loop-max
-                                              :cancelled?  #(bridge/cancelled? session-key)
-                                              :after-tools #(maybe-mid-turn-compact! session-key ctx % current-request)})
-                              (provider-wall/normalize config provider-name)
-                              (final-loop-summary chat-fn @current-request)
-                              (#(canned-loop-exhausted-message % input @current-request))
-                              (guard-empty-terminal-response chat-fn @current-request)
-                              finalize-turn-result))]
+            run-loop    (fn [req]
+                          (let [provider-name (api/display-name p)
+                                request*      (assoc req :provider provider-name)
+                                chat-fn*      (chat-fn-for ch session-key p request*)]
+                            (tool-loop/run chat-fn* followup-fn request* tool-fn
+                                           {:max-loops   tool-loop-max
+                                            :cancelled?  #(bridge/cancelled? session-key)
+                                            :after-tools #(maybe-mid-turn-compact! session-key ctx % current-request)})))
+            first-result (run-loop request)
+            retry        (overflow-compact-retry! session-key ctx current-request first-result)
+            loop-result  (cond
+                           (nil? retry) first-result
+                           (:unavailable? retry) retry
+                           :else (run-loop retry))
+            result       (if (:unavailable? loop-result)
+                           loop-result
+                           (-> loop-result
+                               (provider-wall/normalize config (api/display-name p))
+                               (final-loop-summary chat-fn @current-request)
+                               (#(canned-loop-exhausted-message % input @current-request))
+                               (guard-empty-terminal-response chat-fn @current-request)
+                               finalize-turn-result))]
         (log/debug :turn/model-response-summary
                    :session session-key
                    :provider (api/display-name p)

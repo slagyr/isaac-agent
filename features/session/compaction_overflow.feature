@@ -1,4 +1,3 @@
-@wip
 Feature: Compact from the last provider count; overflow compact-and-retry
   Compaction must fire from the last successful provider prompt_tokens
   (session :last-input-tokens) when that is over the threshold, even if

@@ -389,7 +389,14 @@
       (should= 1 (sut/estimate-tokens "")))
 
     (it "estimates based on chars/4"
-      (should= 5 (sut/estimate-tokens (apply str (repeat 20 "a"))))))
+      (should= 5 (sut/estimate-tokens (apply str (repeat 20 "a")))))
+
+    (it "estimates a prompt map from content, not the stringified map"
+      (let [prompt {:model    "echo"
+                    :messages [{:role "user" :content "0123456789"}]}]
+        (should= 3 (sut/estimate-tokens prompt))
+        (should (< (sut/estimate-tokens prompt)
+                   (max 1 (quot (count (str prompt)) 4)))))))
 
   (context "truncate-tool-result"
 
