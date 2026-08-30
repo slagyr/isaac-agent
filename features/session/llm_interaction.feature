@@ -90,6 +90,7 @@ Feature: LLM Interaction
       | type  | error               |
       | error | :connection-refused |
 
+  @wip
   Scenario: tools-using turns stream text deltas as they arrive
     Given the built-in tools are registered
     And the crew "main" allows tools: "fs/grep"
@@ -101,10 +102,10 @@ Feature: LLM Interaction
       | text-stream | ["chunkA","chunkB","chunkC"] | echo  |
     When the user sends "hi" on session "stream-test"
     Then the memory comm has events matching:
-      | event      | text  |
-      | text-chunk | chunkA |
-      | text-chunk | chunkB |
-      | text-chunk | chunkC |
+      | event   | text   |
+      | chatter | chunkA |
+      | chatter | chunkB |
+      | chatter | chunkC |
 
   Scenario: tool loop produces a real final message when the LLM keeps requesting tools
     Given the tool loop max is 1

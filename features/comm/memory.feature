@@ -9,6 +9,7 @@ Feature: Memory Comm
       | name        |
       | memory-chat |
 
+  @wip
   Scenario: Text response is recorded as a single chunk
     Given the following model responses are queued:
       | type | content       | model |
@@ -17,7 +18,8 @@ Feature: Memory Comm
     Then the memory comm has events matching:
       | event      | text          |
       | turn-start |               |
-      | text-chunk | Four, I think |
+      | chatter    | Four, I think |
+      | reply      | Four, I think |
       | turn-end   |               |
 
   Scenario: Streaming chunks are recorded into the memory-channel turn result

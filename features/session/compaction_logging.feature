@@ -17,6 +17,7 @@ Feature: Context Compaction Logging
       | model | local |
       | soul | You are Atticus. |
 
+  @wip
   Scenario: Chat logs the compaction trigger with provider and model context
     Given the isaac EDN file "config/models/local.edn" exists with:
       | path | value |
@@ -36,8 +37,8 @@ Feature: Context Compaction Logging
       | text | README summary        | test-model |
     When the user sends "Can you summarize README.md?" on session "compaction-chat"
     Then the memory comm has events matching:
-      | event             | provider | model      | total-tokens | context-window |
-      | compaction-start  | grover   | test-model | #"\d+"      | 200            |
+      | event    | kind             | provider | model      | total-tokens | context-window |
+      | bulletin | compaction/start | grover   | test-model | #"\d+"      | 200            |
 
   Scenario: The new user message is preserved after compaction
     Given the isaac EDN file "config/models/local.edn" exists with:
@@ -88,6 +89,7 @@ Feature: Context Compaction Logging
       | type    | message.role | message.content |
       | message | assistant    | README summary  |
 
+  @wip
   Scenario: Compaction failure is logged and chat proceeds without looping
     Given the following sessions exist:
       | name         | total-tokens | #comment                  |
@@ -102,9 +104,9 @@ Feature: Context Compaction Logging
       | text  | Here is my answer       | test-model |
     When the user sends "What was decided?" on session "failure-chat"
     Then the memory comm has events matching:
-      | event              | error      | consecutive-failures |
-      | compaction-start   |            |                      |
-      | compaction-failure | :llm-error | 1                    |
+      | event    | kind               | error      | consecutive-failures |
+      | bulletin | compaction/start   |            |                      |
+      | bulletin | compaction/failure | :llm-error | 1                    |
     And session "failure-chat" has transcript matching:
       | type    | message.role | message.content   |
       | message | assistant    | Here is my answer |
@@ -223,6 +225,7 @@ Feature: Context Compaction Logging
       | message    | user         | You there?                       |                          |
       | message    | assistant    | Second reply without re-compacts |                          |
 
+  @wip
   Scenario: compaction succeeds and chat continues when the head exceeds the context window
     Given the isaac EDN file "config/models/local.edn" exists with:
       | path           | value      |
@@ -250,9 +253,9 @@ Feature: Context Compaction Logging
       | text | here is my answer    | test-model |
     When the user sends "go" on session "huge-head"
     Then the memory comm has events matching:
-      | event               | summary              |
-      | compaction-start    |                      |
-      | compaction-success  | summary of A         |
+      | event    | kind               | summary      |
+      | bulletin | compaction/start   |              |
+      | bulletin | compaction/success | summary of A |
     And session "huge-head" has transcript matching:
       | type       | message.role | message.content   | summary              |
       | compaction |              |                   | summary of A         |
