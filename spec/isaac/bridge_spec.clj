@@ -425,6 +425,7 @@
       (let [called (atom nil)
             cfg    {:crew {"cordelia" {:conversation :episodes :soul "You are Cordelia" :model "echo"}}
                     :models {"echo" {:model "echo" :provider "grover"}}}]
+        (helper/create-session! *root* "2026-03-01-1000-ab12" {:crew "cordelia"})
         (with-redefs [single-turn/run-turn! (fn [_] {:message {:role "assistant" :content "ok"}})
                       isaac.episodes.lifecycle/maybe-seal! (fn [opts]
                                                              (reset! called opts)

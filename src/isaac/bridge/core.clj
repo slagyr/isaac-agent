@@ -370,13 +370,22 @@
                   (maybe-live-seal! charge (turn/run-turn! charge))))))))
       result)))
 
+(defn- existing-session? [m]
+  (let [session-key (:session-key m)
+        ss          (or (:session-store m) (nexus/get-in [:sessions :store]))]
+    (boolean (and session-key ss (store/get-session ss session-key)))))
+
 (defn dispatch!
   "Comm-facing entry point. Accepts a charge (built via charge/build) or a
    request map (which gets passed through charge/build). Slash commands are
-   handled here; normal turns delegate to run-turn!. Bridge -> drive only."
+   handled here; normal turns delegate to run-turn!. Bridge -> drive only.
+   Pre-built charges run the same episode router as request maps unless the
+   session-key already names a session (CLI prompt routes before build)."
   ([input]
     (if (charge/charge? input)
-      (dispatch-charge! input)
+      (dispatch-charge! (if (or (charge/unresolved? input) (existing-session? input))
+                          input
+                          (ensure-session! input)))
       (let [request (ensure-session! (merge (nexus/necho) input))]
         (dispatch-charge! (charge/build request)))))
   ([_root request]

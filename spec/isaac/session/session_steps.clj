@@ -30,6 +30,7 @@
     [isaac.bridge.core :as bridge]
     [isaac.bridge.suspend :as bridge-suspend]
     [isaac.bridge.resume :as bridge-resume]
+    [isaac.charge :as charge]
     [isaac.session.context :as session-ctx]
     [isaac.logger :as log]
     [isaac.comm.memory :as memory-comm]
@@ -1008,6 +1009,48 @@
              (record-turn-result! result)))))
      (g/assoc! :memory-comm-events events))))
 
+(defn charge-dispatched-with
+  "Builds a charge via charge/build then dispatch! — the pre-built skip path."
+  [table]
+  (let [kv (into {}
+                 (map (fn [[k v]] [(keyword k) (str v)])
+                      (or (:rows table) [])))
+        session-key (:session-key kv)
+        crew        (:crew kv)
+        input       (:input kv)]
+    (g/assoc! :current-key session-key)
+    (grover/clear-provider-requests!)
+    (isaac.llm.http/clear-outbound-requests!)
+    (drive-dispatch/clear-last-request!)
+    (let [cfg     (loader/normalize-config (loaded-config))
+          _       (config/dangerously-install-config! cfg "spec")
+          _       (commit-feature-config!)
+          events  (atom [])
+          channel (memory-comm/channel events)
+          result  (atom nil)
+          output  (with-out-str
+                   (with-feature-fs
+                     (fn []
+                       (with-current-time
+                         (fn []
+                           (try
+                             (reset! result
+                                     (bridge/dispatch!
+                                       (charge/build {:session-key session-key
+                                                      :input       input
+                                                      :crew        crew
+                                                      :config      cfg
+                                                      :origin      {:kind :cli}
+                                                      :comm        channel})))
+                             (catch Exception e
+                               (reset! result {:error :exception :message (.getMessage e)}))))))))]
+      (record-turn-result! {:output output
+                            :request (or (drive-dispatch/last-request)
+                                         (grover/last-request))
+                            :result  @result})
+      (g/assoc! :memory-comm-events events)
+      (g/assoc! :channel-events events))))
+
 (defn turn-ends-on-session [key-str]
   (when-let [turn-future (g/get :turn-future)]
     (helper/await-condition #(or (realized? turn-future)
@@ -1713,6 +1756,10 @@
   isaac.session.session-steps/effective-history-starts-after-transcript-entry-index
   "Sets :effective-history-offset to the byte position after the indexed transcript
    line (0 = session header). Exercises read-transcript-from-offset without a turn.")
+
+(defwhen "a charge is dispatched with:" isaac.session.session-steps/charge-dispatched-with
+  "Builds a charge via charge/build then dispatch! (the skip path Discord/ACP
+   use). Table rows are key/value: session-key, crew, input.")
 
 (defwhen #"the user sends \"(.+)\" on session \"([^\"]+)\"$" isaac.session.session-steps/user-sends-on-session
   "Drives a full turn via single-turn/run-turn! (in-memory,

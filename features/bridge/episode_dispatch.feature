@@ -1,4 +1,3 @@
-@wip
 Feature: Bridge dispatch of a pre-built charge runs the episode router
   For crews with :conversation :episodes the inbound session-key is the
   conversation thread (not a process thread). resolve-thread! maps it to
