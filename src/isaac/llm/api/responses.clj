@@ -169,8 +169,11 @@
         send!   (fn []
                   (llm-http/post-sse! url (shared/auth-headers provider-name config) body
                                       (fn [chunk]
-                                        (when (= "response.output_text.delta" (:type chunk))
-                                          (on-delta {:delta {:text (:delta chunk)}})))
+                                        (cond
+                                          (= "response.output_text.delta" (:type chunk))
+                                          (on-delta {:delta {:text (:delta chunk)}})
+                                          (= "response.reasoning_summary_text.delta" (:type chunk))
+                                          (on-delta {:reasoning (:delta chunk)})))
                                       process-responses-sse-event initial (shared/llm-http-opts config)))
         result  (shared/with-oauth-refresh-retry provider-name config send!)]
     (cond

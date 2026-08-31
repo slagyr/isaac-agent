@@ -9,7 +9,6 @@ Feature: Memory Comm
       | name        |
       | memory-chat |
 
-  @wip
   Scenario: Text response is recorded as a single chunk
     Given the following model responses are queued:
       | type | content       | model |

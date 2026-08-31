@@ -14,19 +14,12 @@
   (:import
     (java.time Instant)))
 
-(deftype StubComm [result]
+(deftype StubComm [result])
+
+(extend StubComm
   comm/Comm
-  (on-turn-start [_ _ _] nil)
-  (on-text-chunk [_ _ _] nil)
-  (on-tool-call [_ _ _] nil)
-  (on-tool-cancel [_ _ _] nil)
-  (on-tool-result [_ _ _ _] nil)
-  (on-compaction-start [_ _ _] nil)
-  (on-compaction-success [_ _ _] nil)
-  (on-compaction-failure [_ _ _] nil)
-  (on-compaction-disabled [_ _ _] nil)
-  (on-turn-end [_ _ _] nil)
-  (send! [_ _] result))
+  (merge comm/defaults
+         {:send! (fn [this _] (.-result this))}))
 
 (describe "comm.delivery.worker"
 
@@ -116,8 +109,9 @@
                           scheduler/start!)]
         (nexus/register! [:scheduler] scheduler)
         (sut/start! {:tick-ms 10000})
-        (should= [{:id :delivery/tick :trigger {:kind :interval :ms 10000}}]
-                 (mapv #(select-keys % [:id :trigger]) (scheduler/list-tasks scheduler)))
+        (should= {:id :delivery/tick :trigger {:kind :interval :ms 10000}}
+                 (select-keys (first (filter #(= :delivery/tick (:id %)) (scheduler/list-tasks scheduler)))
+                              [:id :trigger]))
         (scheduler/stop! scheduler))))
 
   (it "starts the turn-queue worker on the same scheduler"

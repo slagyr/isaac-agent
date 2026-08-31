@@ -8,8 +8,8 @@
 
   (it "prints text chunks directly to stdout"
     (let [output (with-out-str
-                   (comm/on-text-chunk sut/channel "agent:main:cli:direct:user1" "Hello")
-                   (comm/on-text-chunk sut/channel "agent:main:cli:direct:user1" " world"))]
+                   (comm/on-chatter sut/channel "agent:main:cli:direct:user1" {:n 1} "Hello")
+                   (comm/on-chatter sut/channel "agent:main:cli:direct:user1" {:n 1} " world"))]
       (should= "Hello world" output)))
 
   (it "prints tool call indicator"

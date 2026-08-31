@@ -1,4 +1,3 @@
-@wip
 Feature: Scuttlebutt — mid-turn signals on the Comm surface
   A turn's tool loop runs CYCLES (one LLM call each). Two voices stream
   during a cycle: CHATTER, the model's outward voice, live, not yet

@@ -1,8 +1,8 @@
 (ns isaac.comm.telly
   (:require
-    [isaac.comm.factory :as factory]
     [c3kit.apron.env :as c3env]
     [isaac.api :as api]
+    [isaac.comm.factory :as factory]
     [isaac.comm.protocol :as comm]
     [isaac.logger :as log]))
 
@@ -12,39 +12,35 @@
                    :module-id :isaac.comm.telly
                    :type      :module/activation-failed})))
 
-(deftype Telly [host state]
+(deftype Telly [host state])
+
+(extend Telly
   comm/Comm
-  (on-turn-start [_ _ _] nil)
-  (on-text-chunk [_ _ _] nil)
-  (on-tool-call [_ _ _] nil)
-  (on-tool-cancel [_ _ _] nil)
-  (on-tool-result [_ _ _ _] nil)
-  (on-compaction-start [_ _ _] nil)
-  (on-compaction-success [_ _ _] nil)
-  (on-compaction-failure [_ _ _] nil)
-  (on-compaction-disabled [_ _ _] nil)
-  (on-turn-end [_ _ _] nil)
-  (send! [_ _] {:ok false :transient? false})
+  (merge comm/defaults
+         {:send! (fn [_ _] {:ok false :transient? false})})
   api/Reconfigurable
-  (on-load [_ slice]
-    (log/info :telly/started
-              :module (let [name (:name host)]
-                        (if (keyword? name) (clojure.core/name name) (str name))))
-    (reset! state {:slice      slice
-                   :started?   true
-                   :host       host
-                   :last-event :started}))
-  (on-config-change! [_ old-slice new-slice]
-    (swap! state assoc
-           :slice new-slice
-           :last-event :changed
-           :prior old-slice))
-  (on-unload [_ old-slice]
-    (reset! state {:slice      nil
-                   :started?   false
-                   :host       host
-                   :last-event :stopped
-                   :prior      old-slice})))
+  {:on-load
+   (fn [this slice]
+     (log/info :telly/started
+               :module (let [name (:name (.-host this))]
+                         (if (keyword? name) (clojure.core/name name) (str name))))
+     (reset! (.-state this) {:slice      slice
+                             :started?   true
+                             :host       (.-host this)
+                             :last-event :started}))
+   :on-config-change!
+   (fn [this old-slice new-slice]
+     (swap! (.-state this) assoc
+            :slice new-slice
+            :last-event :changed
+            :prior old-slice))
+   :on-unload
+   (fn [this old-slice]
+     (reset! (.-state this) {:slice      nil
+                             :started?   false
+                             :host       (.-host this)
+                             :last-event :stopped
+                             :prior      old-slice}))})
 
 (defn make [host]
   (->Telly host (atom {})))

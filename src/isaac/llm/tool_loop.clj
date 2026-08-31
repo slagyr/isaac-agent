@@ -72,10 +72,11 @@
       :loop-request?  true when the budget was exhausted with tools still pending}
 
    Returns on error: the error response from chat-fn."
-  [chat-fn followup-fn request tool-fn & [{:keys [max-loops cancelled? after-tools]
+  [chat-fn followup-fn request tool-fn & [{:keys [max-loops cancelled? after-tools on-cycle]
                                             :or   {max-loops   default-max-loops
                                                    cancelled?  (constantly false)
-                                                   after-tools identity}}]]
+                                                   after-tools identity
+                                                   on-cycle    nil}}]]
   (loop [req          (dissoc request :previous_response_id)
          all-tools    []
          token-counts {:input-tokens 0 :output-tokens 0 :cache-read 0 :cache-write 0}
@@ -87,7 +88,9 @@
        :tool-calls   all-tools
        :token-counts token-counts
        :cancelled?   true}
-      (let [call-req (with-chain req chain-id)
+      (let [cycle-n  (inc loops)
+            call-req (with-chain req chain-id)
+            _        (when on-cycle (on-cycle :start cycle-n call-req))
             response (chat-fn call-req)]
         (if (previous-response-not-found? response)
           (do
@@ -113,19 +116,23 @@
                   budget-left? (< loops max-loops)
                   next-chain   (or (response-id response) chain-id)]
               (if (and (seq tool-calls) budget-left?)
-                (let [tool-results (mapv (fn [tc] (tool-fn (:name tc) (:arguments tc)))
-                                         tool-calls)
-                      new-messages (followup-fn req response tool-calls tool-results)
-                      next-req     (after-tools (assoc req :messages new-messages))]
-                  (if (or (:error next-req) (:unavailable? next-req))
-                    next-req
-                    (recur next-req
-                           (into all-tools tool-calls)
-                           new-tokens
-                           (inc loops)
-                           next-chain
-                           (assoc full-context :messages (:messages next-req)))))
-                {:response      response
-                 :tool-calls    all-tools
-                 :token-counts  new-tokens
-                 :loop-request? (boolean (and (seq tool-calls) (not budget-left?)))}))))))))
+                (do
+                  (when on-cycle (on-cycle :end cycle-n response))
+                  (let [tool-results (mapv (fn [tc] (tool-fn (:name tc) (:arguments tc)))
+                                           tool-calls)
+                        new-messages (followup-fn req response tool-calls tool-results)
+                        next-req     (after-tools (assoc req :messages new-messages))]
+                    (if (or (:error next-req) (:unavailable? next-req))
+                      next-req
+                      (recur next-req
+                             (into all-tools tool-calls)
+                             new-tokens
+                             (inc loops)
+                             next-chain
+                             (assoc full-context :messages (:messages next-req))))))
+                (do
+                  (when on-cycle (on-cycle :end cycle-n response))
+                  {:response      response
+                   :tool-calls    all-tools
+                   :token-counts  new-tokens
+                   :loop-request? (boolean (and (seq tool-calls) (not budget-left?)))})))))))))

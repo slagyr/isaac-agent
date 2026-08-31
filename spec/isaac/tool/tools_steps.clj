@@ -667,4 +667,20 @@
 
 (defwhen "the {tool:string} tool is initialized" isaac.tool.tools-steps/web-search-initialized)
 
+(defn streaming-tool-registered [name progress-edn result]
+  (let [chunks (edn/read-string progress-edn)]
+    (registry/register!
+      {:name        name
+       :description (str "streaming mock " name)
+       :parameters  {:type "object" :properties {}}
+       :handler     (fn [args]
+                      (let [progress! (or (:progress! args) (get args "progress!"))]
+                        (doseq [c chunks]
+                          (when progress! (progress! c))))
+                      {:result result})})))
+
+(defgiven #"a streaming tool \"([^\"]+)\" is registered that emits progress (.+) and returns \"([^\"]+)\""
+  isaac.tool.tools-steps/streaming-tool-registered
+  "Registers a mock tool whose handler calls ctx :progress! for each chunk then returns the given string.")
+
 ;; endregion ^^^^^ Routing ^^^^^

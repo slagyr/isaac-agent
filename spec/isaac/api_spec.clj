@@ -23,15 +23,19 @@
     (it "a type implementing api/Comm satisfies api/Comm"
       (let [r (reify sut/Comm
                 (on-turn-start [_ _ _] nil)
-                (on-text-chunk [_ _ _] nil)
+                (on-turn-end [_ _ _] nil)
+                (on-cycle-start [_ _ _] nil)
+                (on-cycle-end [_ _ _ _] nil)
+                (on-chatter [_ _ _ _] nil)
+                (on-reckoning [_ _ _ _] nil)
+                (on-aside [_ _ _ _] nil)
+                (on-reply [_ _ _] nil)
                 (on-tool-call [_ _ _] nil)
                 (on-tool-cancel [_ _ _] nil)
                 (on-tool-result [_ _ _ _] nil)
-                (on-compaction-start [_ _ _] nil)
-                (on-compaction-success [_ _ _] nil)
-                (on-compaction-failure [_ _ _] nil)
-                (on-compaction-disabled [_ _ _] nil)
-                (on-turn-end [_ _ _] nil))]
+                (on-tool-progress [_ _ _ _] nil)
+                (on-bulletin [_ _ _] nil)
+                (send! [_ _] {:ok false}))]
         (should (satisfies? sut/Comm r)))))
 
   (describe "Reconfigurable"

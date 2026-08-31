@@ -679,6 +679,21 @@
     (update-entry-fn root identifier #(assoc % :updated-at now) fs)
     transcript-entry))
 
+(defn append-reckoning! [get-session-fn update-entry-fn now-fn root identifier {:keys [text]} fs]
+  (let [entry            (get-session-fn root identifier fs)
+        id               (:id entry)
+        parent-id        (:id (last-transcript-entry fs (current-transcript-path root id)))
+        rec-id           (new-id)
+        now              (now-fn)
+        transcript-entry {:type      "reckoning"
+                          :id        rec-id
+                          :parentId  parent-id
+                          :timestamp now
+                          :text      text}]
+    (append-entry! root id transcript-entry fs)
+    (update-entry-fn root identifier #(assoc % :updated-at now) fs)
+    transcript-entry))
+
 (defn append-compaction! [get-session-fn update-entry-fn now-fn root identifier {:keys [summary firstKeptEntryId tokensBefore turnRequest]} fs]
   (let [entry         (get-session-fn root identifier fs)
         id            (:id entry)

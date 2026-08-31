@@ -27,8 +27,11 @@
 
 (def test-dir marigold/home)
 
-(defn- event [events kind]
-  (first (filter #(= kind (:event %)) @events)))
+(defn- event
+  ([events kind]
+   (first (filter #(= kind (:event %)) @events)))
+  ([events kind bulletin-kind]
+   (first (filter #(and (= kind (:event %)) (= bulletin-kind (:kind %))) @events))))
 
 (defn- base-execution-ctx [provider charge]
   {:provider      provider
@@ -270,9 +273,9 @@
       (let [events (atom [])
             comm   (memory-comm/channel events)]
         (should= "ab"
-                 (#'sut/emit-response-content! comm "stream-session" {:message {:content ["a" "b"]}}))
-        (should= [{:event "text-chunk" :session "stream-session" :text "a"}
-                  {:event "text-chunk" :session "stream-session" :text "b"}]
+                 (#'sut/emit-response-content! comm "stream-session" {:n 1} {:message {:content ["a" "b"]}}))
+        (should= [{:event "chatter" :session "stream-session" :cycle 1 :text "a"}
+                  {:event "chatter" :session "stream-session" :cycle 1 :text "b"}]
                  @events)))
 
     (it "merges token counts from accumulated totals and a response usage block"
@@ -309,7 +312,9 @@
                                                {"query" "logs"})]
             (should= {:result "ok"} result)
             (should= "search" (first @args-seen))
-            (should= {"query" "logs" "session_key" "tool-success"} (second @args-seen))
+            (should= "logs" (get (second @args-seen) "query"))
+            (should= "tool-success" (get (second @args-seen) "session_key"))
+            (should (fn? (:progress! (second @args-seen))))
             (should= "tool-success" (first @registered))
             (should= 1 @tool-count)
             (should= ["tool-call" "tool-result"] (mapv :event @events)))))
@@ -567,16 +572,18 @@
           (let [session (helper/get-session test-dir session-key)]
             (should= true (:compaction-disabled session))
             (should= {:consecutive-failures 5} (:compaction session))
-            (should= {:event "compaction-failure"
+            (should= {:event "bulletin"
+                      :kind "compaction/failure"
                       :session session-key
                       :consecutive-failures 5
                       :error :rate-limited
                       :message "Please retry later"}
-                     (event events "compaction-failure"))
-            (should= {:event "compaction-disabled"
+                     (event events "bulletin" "compaction/failure"))
+            (should= {:event "bulletin"
+                      :kind "compaction/disabled"
                       :session session-key
                       :reason :too-many-failures}
-                     (event events "compaction-disabled"))))))
+                     (event events "bulletin" "compaction/disabled"))))))
 
     (it "resets failure state after a successful non-chunked compact without rechecking"
       (let [provider      (->TestProvider marigold/starcore {:api marigold/sky-api})
@@ -598,7 +605,7 @@
                                                         :root      test-dir
                                                         :session-store  session-store})
           (let [session (helper/get-session test-dir session-key)
-                success (event events "compaction-success")]
+                success (event events "bulletin" "compaction/success")]
             (should= false (:compaction-disabled session))
             (should= {:consecutive-failures 0} (:compaction session))
             (should-not-be-nil success)
@@ -624,7 +631,7 @@
                                                         :soul           "You are Isaac."
                                                         :root           test-dir
                                                         :session-store  session-store})
-          (should-not-be-nil (event events "compaction-success")))))
+          (should-not-be-nil (event events "bulletin" "compaction/success")))))
 
     (it "does not recheck when the first splice already dropped below threshold"
       (let [provider      (->TestProvider marigold/starcore {:api marigold/sky-api})
@@ -644,7 +651,7 @@
                                                         :soul           "You are Isaac."
                                                         :root           test-dir
                                                         :session-store  session-store})
-          (should-not-be-nil (event events "compaction-success")))))
+          (should-not-be-nil (event events "bulletin" "compaction/success")))))
 
     (it "stops when compaction makes no token progress"
       (let [provider      (->TestProvider marigold/starcore {:api marigold/sky-api})
@@ -667,7 +674,7 @@
             (let [entry (first (filter #(= :session/compaction-stopped (:event %)) @log/captured-logs))]
               (should-not-be-nil entry)
               (should= :no-progress (:reason entry))
-              (should-not-be-nil (event events "compaction-success")))))))
+              (should-not-be-nil (event events "bulletin" "compaction/success")))))))
 
     (it "rechecks after a successful chunked compaction"
       (let [provider      (->TestProvider marigold/starcore {:api marigold/sky-api})
@@ -687,7 +694,7 @@
                                                         :soul           "You are Isaac."
                                                         :root           test-dir
                                                         :session-store  session-store})
-          (should-not-be-nil (event events "compaction-success"))
+          (should-not-be-nil (event events "bulletin" "compaction/success"))
           (should= session-key (first @follow-up))
           (should= 2 (nth @follow-up 2))
           (should= false (nth @follow-up 3)))))
@@ -712,7 +719,7 @@
                                                         :soul           "You are Isaac."
                                                         :root           test-dir
                                                         :session-store  session-store})
-          (should-not-be-nil (event events "compaction-success"))
+          (should-not-be-nil (event events "bulletin" "compaction/success"))
           (should= session-key (first @follow-up))
           (should= 2 (nth @follow-up 2))
           (should= false (nth @follow-up 3))))))

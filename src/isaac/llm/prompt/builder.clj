@@ -157,9 +157,10 @@
   "Convert a transcript entry to an LLM message, or nil if the entry has no message shape."
   [entry]
   (case (:type entry)
-    "message" (:message entry)
-    "error"   {:role    "assistant"
-               :content (str "Error: " (or (:content entry) (:error entry) "Unknown error"))}
+    "message"   (:message entry)
+    "error"     {:role    "assistant"
+                 :content (str "Error: " (or (:content entry) (:error entry) "Unknown error"))}
+    "reckoning" nil
     nil))
 
 (defn- transcript->messages

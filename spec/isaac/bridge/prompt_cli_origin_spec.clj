@@ -34,7 +34,7 @@
 
   (it "creates prompt sessions with a cli origin"
     (with-redefs [bridge/dispatch! (fn [charge]
-                                     (comm/on-text-chunk (:comm charge) (:session-key charge) "Hello")
+                                     (comm/on-chatter (:comm charge) (:session-key charge) nil "Hello")
                                      {})]
       (with-out-str
         (should= 0 (sut/run (assoc base-opts :message "Hi"))))
@@ -45,7 +45,7 @@
     (let [captured (atom nil)]
       (with-redefs [bridge/dispatch! (fn [charge]
                                        (reset! captured charge)
-                                       (comm/on-text-chunk (:comm charge) (:session-key charge) "Hello")
+                                       (comm/on-chatter (:comm charge) (:session-key charge) nil "Hello")
                                        {})]
         (with-out-str
           (should= 0 (sut/run (assoc base-opts :message "Hi")))))

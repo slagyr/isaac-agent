@@ -147,6 +147,8 @@
     (c/append-error! get-session update-sidecar-entry! now-iso root name error fs))
   (append-compaction! [_ name compaction]
     (c/append-compaction! get-session update-sidecar-entry! now-iso root name compaction fs))
+  (append-reckoning! [_ name reckoning]
+    (c/append-reckoning! get-session update-sidecar-entry! now-iso root name reckoning fs))
   (splice-compaction! [_ name compaction]
     (c/splice-compaction! get-session update-sidecar-entry! now-iso root name compaction fs))
   (truncate-after-compaction! [_ name]

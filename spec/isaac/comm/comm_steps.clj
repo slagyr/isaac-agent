@@ -170,29 +170,38 @@
     (g/assoc! :memory-comm-events @events)
     (g/assoc! :output output)))
 
+(defn- normalize-event [event]
+  (cond-> event
+    (get-in event [:tool :name]) (assoc :tool-name (get-in event [:tool :name]))
+    (:cycle event) (assoc :cycle (str (:cycle event)))
+    (keyword? (:kind event)) (assoc :kind (subs (str (:kind event)) 1))
+    (keyword? (:outcome event)) (assoc :outcome (name (:outcome event)))
+    (keyword? (:error event)) (assoc :error (str (:error event)))))
+
+(defn- event-matches-row? [event headers row-map]
+  (every? (fn [header]
+            (let [expected (get row-map header)]
+              (if (or (nil? expected) (str/blank? (str expected)))
+                true
+                (let [actual (or (get event (keyword header))
+                                 (get event header))]
+                  (boolean (:match (match/match-value expected actual)))))))
+          headers))
+
 (defn memory-channel-events-match [table]
-  (let [events*   (g/get :memory-comm-events)
-        events    (mapv (fn [event]
-                          (cond-> event
-                            (get-in event [:tool :name]) (assoc :tool-name (get-in event [:tool :name]))))
-                        (if (instance? clojure.lang.IDeref events*) @events* events*))
-        expected  (map (fn [row]
-                         (into {}
-                               (keep (fn [[header value]]
-                                       (when (seq value)
-                                         [header value]))
-                                     (zipmap (:headers table) row))))
-                       (:rows table))]
+  (let [events*  (g/get :memory-comm-events)
+        events   (mapv normalize-event
+                       (if (instance? clojure.lang.IDeref events*) @events* events*))
+        headers  (:headers table)
+        expected (map (fn [row] (zipmap headers row)) (:rows table))]
     (loop [remaining events
            expected  expected]
       (if (empty? expected)
         (g/should true)
         (if-let [event (first remaining)]
-          (let [row    (mapv #(get (first expected) %) (:headers table))
-                result (match/match-entries {:headers (:headers table) :rows [row]} [event])]
-            (if (empty? (:failures result))
-              (recur (rest remaining) (rest expected))
-              (recur (rest remaining) expected)))
+          (if (event-matches-row? event headers (first expected))
+            (recur (rest remaining) (rest expected))
+            (recur (rest remaining) expected))
           (g/should false))))))
 
 
@@ -207,3 +216,12 @@
   "Reads :memory-comm-events captured by the preceding 'via memory
    comm' When step. Matches rows as an in-order subsequence — extra
    events between matched rows are allowed.")
+
+(defn last-llm-request-does-not-contain [needle]
+  (let [req  (or (g/get :llm-request) (drive-dispatch/last-request) (grover/last-request))
+        text (pr-str req)]
+    (g/should-not (str/includes? text needle))))
+
+(defthen "the LLM request does not contain {needle:string}"
+  isaac.comm.comm-steps/last-llm-request-does-not-contain
+  "Absence assert on the last outbound LLM request (pr-str of the map).")
