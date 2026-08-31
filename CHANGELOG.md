@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.40
+
+- Token accounting (isaac-pqjn), compact-from-provider-tokens + overflow compact-and-retry (isaac-p9zy, isaac-x2up), fixture/expectation repairs (isaac-0oqd).
+
 ### Added
 
 - `isaac config keys` / `list` with no path list top-level resolved config keys (foundation pin) (isaac-rg61).

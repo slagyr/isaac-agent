@@ -69,10 +69,10 @@ Feature: Prompt single-turn command
 
   Scenario: Provider error prints a readable message to stderr
     Given the following model responses are queued:
-      | model | type  | content                 |
-      | echo  | error | context length exceeded |
+      | model | type  | content                    |
+      | echo  | error | upstream provider mishap   |
     When isaac is run with "prompt -m 'Hi'"
-    Then the stderr contains "context length exceeded"
+    Then the stderr contains "upstream provider mishap"
     And the exit code is 1
 
   Scenario: --crew resolves the crew member's model on the crew session

@@ -66,8 +66,8 @@ Feature: Chat and Provider Logging
       | provider       | grover |
       | context-window | 200   |
     And the following sessions exist:
-      | name             | compaction.head |
-      | log-compact-test | 0.1             |
+      | name             | last-input-tokens | compaction.head |
+      | log-compact-test | 165               | 0.1             |
     And session "log-compact-test" has transcript:
       | type    | message.role | message.content                                                              |
       | message | user         | Please summarize the work we did on the logging subsystem and the tool loop   |
@@ -95,8 +95,8 @@ Feature: Chat and Provider Logging
       | provider       | grover |
       | context-window | 200   |
     And the following sessions exist:
-      | name           | compaction.head |
-      | log-order-test | 0.1             |
+      | name           | last-input-tokens | compaction.head |
+      | log-order-test | 165               | 0.1             |
     And session "log-order-test" has transcript:
       | type    | message.role | message.content                                                              |
       | message | user         | Please summarize the work we did on the logging subsystem and the tool loop   |
