@@ -116,7 +116,8 @@
                           scheduler/start!)]
         (nexus/register! [:scheduler] scheduler)
         (sut/start! {:tick-ms 10000})
-        (should= [{:id :delivery/tick :trigger {:kind :interval :ms 10000}}]
+        (should= [{:id :delivery/tick :trigger {:kind :interval :ms 10000}}
+                  {:id :turn.queue/tick :trigger {:kind :interval :ms 10000}}]
                  (mapv #(select-keys % [:id :trigger]) (scheduler/list-tasks scheduler)))
         (scheduler/stop! scheduler))))
 

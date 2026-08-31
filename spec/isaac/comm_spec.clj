@@ -48,7 +48,7 @@
     (let [channels [cli-comm/channel
                     (memory-comm/channel (atom []))
                     null-comm/channel
-                    (prompt-cli/->PromptComm (atom ""))]]
+                    (prompt-cli/->PromptComm (atom "") false)]]
       (doseq [ch channels]
         (let [stderr (java.io.StringWriter.)]
           (binding [*err* stderr]
