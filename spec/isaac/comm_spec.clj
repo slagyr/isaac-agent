@@ -2,7 +2,6 @@
   (:require
     [clojure.string :as str]
     [isaac.bridge.prompt-cli :as prompt-cli]
-    [isaac.comm.cli :as cli-comm]
     [isaac.comm.memory :as memory-comm]
     [isaac.comm.null :as null-comm]
     [isaac.comm.protocol :as sut]
@@ -80,10 +79,9 @@
       (should= 14 (count @events))))
 
   (it "built-in comm implementations dispatch every protocol method without AbstractMethodError"
-    (let [channels [cli-comm/channel
-                    (memory-comm/channel (atom []))
+    (let [channels [(memory-comm/channel (atom []))
                     null-comm/channel
-                    (prompt-cli/->PromptComm (atom "") false)]]
+                    (prompt-cli/->PromptComm (atom "") false)]]])
       (doseq [ch channels]
         (let [stderr (java.io.StringWriter.)]
           (binding [*err* stderr]
@@ -92,9 +90,8 @@
                 (should-not-throw (f ch)))))))))
 
   (it "in-tree comms take at most one of {on-chatter} / {on-aside, on-reply} (memory exempt)"
-    (let [cli    cli-comm/channel
-          null   null-comm/channel
+    (let [null   null-comm/channel
           prompt (prompt-cli/->PromptComm (atom "") false)]
-      (doseq [ch [cli null prompt]]
+      (doseq [ch [null prompt]]
         (should (silent-aside-and-reply? ch)))))
   )

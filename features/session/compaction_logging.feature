@@ -17,7 +17,6 @@ Feature: Context Compaction Logging
       | model | local |
       | soul | You are Atticus. |
 
-  @wip
   Scenario: Chat logs the compaction trigger with provider and model context
     Given the isaac EDN file "config/models/local.edn" exists with:
       | path | value |

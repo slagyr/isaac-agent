@@ -5,7 +5,7 @@
     [isaac.attention :as attention]
     [isaac.bridge.cancellation :as bridge]
     [isaac.bridge.suspend :as suspend]
-    [isaac.comm.cli :as cli-comm]
+    [isaac.comm.null :as null-comm]
     [isaac.comm.protocol :as comm]
     [isaac.config.loader :as loader]
     [isaac.drive.dispatch :as dispatch]
@@ -168,8 +168,8 @@
                      {:role    "assistant"
                       :content [{:type      "toolCall"
                                  :id        (:id tc)
-                                 :name      (:name tc)
-                                 :arguments (:arguments tc)}]})))
+                                 :name      (or (:name tc) (get-in tc [:function :name]))
+                                 :arguments (or (:arguments tc) (get-in tc [:function :arguments]))}]})))
 
 (defn- persist-tool-result!
   "Write the toolResult entry as soon as the tool returns."
@@ -409,21 +409,17 @@
                (get provider-config :streamNonToolTurns))))
 
 (defn- unwrap-stream-result
-  "stream-response! returns {:content streamed-text :response chat-response}.
-   The tool loop wants the inner chat-response so it can read :message and :tool-calls."
+  "Prefer the outer dispatch result when it carries tool_calls; otherwise the
+   inner :response. Streaming adapters sometimes stash tool_calls only on the
+   outer map."
   [result]
   (cond
     (:error result) result
     (prompt-too-long? result) result
-    (:response result)
-    (let [inner     (:response result)
-          content   (or (not-empty (:content result))
-                        (get-in inner [:message :content]))
-          tool-calls (or (:tool-calls inner)
-                         (get-in inner [:message :tool_calls]))]
-      (cond-> inner
-        content (assoc-in [:message :content] content)
-        (seq tool-calls) (assoc :tool-calls tool-calls)))
+    (or (seq (get-in result [:message :tool_calls]))
+        (seq (:tool-calls result)))
+    result
+    (:response result) (:response result)
     :else result))
 
 (defn- chat-fn-for
@@ -1128,7 +1124,7 @@
         tool-loop-max (resolve-tool-loop-max {:config config :crew crew :crew-cfg crew-cfg})
         caps          {:max-lines (get-in config [:tools :defaults :max-lines])
                        :max-bytes (get-in config [:tools :defaults :max-bytes])}
-        ch            (or comm cli-comm/channel)
+        ch            (or comm null-comm/channel)
         p             provider]
     (when-not (:from-queue? charge)
       (append-message! ctx session-key {:role "user" :content input}))
@@ -1341,7 +1337,7 @@
   (let [session-key (:session-key charge)
         input       (:input charge)
         ctx         (build-turn charge)
-        ch          (or (:comm charge) cli-comm/channel)
+        ch          (or (:comm charge) null-comm/channel)
         turn-id     (bridge/begin-turn! session-key)
         observers   (observer/for-turn (:observers charge))
         finish!     #(finish-turn! ch session-key % observers)]
