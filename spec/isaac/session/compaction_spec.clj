@@ -113,7 +113,23 @@
                                                            :context-window 10000
                                                            :model          "test-model"})]
           (should (> estimate 1000))
-          (should (< estimate 10000))))))
+          (should (< estimate 10000)))))
+
+    (it "counts tool-result content in the live prompt estimate"
+      (let [key-str "isaac:main:cli:chat:tooldump"
+            dump    (apply str (repeat 80 "HUGE-LEMON-PAYLOAD "))]
+        (storage/create-session! test-root key-str)
+        (storage/append-message! test-root key-str {:role "user" :content "What's in fridge.txt?"})
+        (storage/append-message! test-root key-str {:role    "assistant"
+                                                   :content [{:type      "toolCall"
+                                                              :id        "tc1"
+                                                              :name      "fs__read"
+                                                              :arguments {:file_path "fridge.txt"}}]})
+        (storage/append-message! test-root key-str {:role "toolResult" :toolCallId "tc1" :content dump})
+        (let [estimate (sut/estimate-prompt-tokens key-str {:soul  "You are helpful."
+                                                           :model "echo"})]
+          (should (>= estimate 320))
+          (should (>= estimate (* 0.8 400)))))))
 
   (describe "sliding compaction target"
     (it "for rubberband compacts the whole effective history"

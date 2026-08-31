@@ -21,8 +21,8 @@ Feature: Compaction summary template
       | soul | You are Atticus. |
     And the current time is "2026-04-21T10:00:00Z"
     And the following sessions exist:
-      | name       | compaction.head |
-      | log-keeper | 0.1             |
+      | name       | last-input-tokens | compaction.head |
+      | log-keeper | 165               | 0.1             |
     And session "log-keeper" has transcript:
       | type    | message.role | message.content                                                            |
       | message | user         | I take tea with two sugars and a splash of milk first thing every morning  |

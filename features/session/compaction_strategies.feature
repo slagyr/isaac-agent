@@ -31,8 +31,8 @@ Feature: Compaction Strategies
       | model | local |
       | soul | You are Atticus. |
     And the following sessions exist:
-      | name         | total-tokens |
-      | no-config-test | 85         |
+      | name         | last-input-tokens |
+      | no-config-test | 85              |
     And session "no-config-test" has transcript:
       | type    | message.role | message.content     |
       | message | user         | old message one     |
@@ -58,8 +58,8 @@ Feature: Compaction Strategies
       | model | local |
       | soul | You are Atticus. |
     And the following sessions exist:
-      | name    | total-tokens |
-      | rb-test | 95          |
+      | name    | last-input-tokens |
+      | rb-test | 140               |
     And session "rb-test" has transcript:
       | type    | message.role | message.content            |
       | message | user         | Tell me about compaction   |
@@ -92,8 +92,8 @@ Feature: Compaction Strategies
       | model | local |
       | soul | You are Atticus. |
     And the following sessions exist:
-      | name        | total-tokens | compaction.strategy | compaction.threshold | compaction.head |
-      | slinky-test | 170         | slinky              | 0.8                 | 0.4             |
+      | name        | last-input-tokens | compaction.strategy | compaction.threshold | compaction.head |
+      | slinky-test | 170               | slinky              | 0.8                 | 0.4             |
     And session "slinky-test" has transcript:
       | type    | message.role | message.content  | tokens |
       | message | user         | old topic        | 40     |

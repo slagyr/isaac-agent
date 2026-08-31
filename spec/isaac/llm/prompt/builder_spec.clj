@@ -223,7 +223,13 @@
 
     (it "includes token estimate"
       (let [p (sut/build {:model "test" :soul "Test." :transcript sample-transcript})]
-        (should (pos? (:tokenEstimate p))))))
+        (should (pos? (:tokenEstimate p)))))
+
+    (it "counts tool-result content in the token estimate"
+      (let [dump (apply str (repeat 80 "HUGE-LEMON-PAYLOAD "))
+            tr   (assoc-in tool-transcript [3 :message :content] dump)
+            p    (sut/build {:model "echo" :soul "You are helpful." :transcript tr})]
+        (should (>= (:tokenEstimate p) 320)))))
 
   (context "compaction"
 

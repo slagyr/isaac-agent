@@ -65,8 +65,8 @@ Feature: Scuttlebutt — mid-turn signals on the Comm surface
       | provider       | grover |
       | context-window | 200    |
     And the following sessions exist:
-      | name        | total-tokens |
-      | memory-chat | 190          |
+      | name        | last-input-tokens |
+      | memory-chat | 165               |
     And session "memory-chat" has transcript:
       | type    | message.role | message.content            |
       | message | user         | Tell me about compaction   |

@@ -29,11 +29,15 @@
 (defn resolve-config [session-entry context-window]
   (session-ctx/resolve-compaction-config {} session-entry {:crew-cfg {} :model-cfg {} :provider-cfg {}} context-window))
 
+(defn context-gauge
+  "Token gauge for compaction / context-window decisions: max of the live
+  prompt estimate and last successful provider prompt_tokens."
+  [estimated-tokens session-entry]
+  (max (or estimated-tokens 0) (or (:last-input-tokens session-entry) 0)))
+
 (defn should-compact? [estimated-tokens session-entry context-window]
-  (let [{:keys [threshold]} (resolve-config session-entry context-window)
-        last-input          (or (:last-input-tokens session-entry) 0)
-        gauge               (max (or estimated-tokens 0) last-input)]
-    (>= gauge (* threshold context-window))))
+  (let [{:keys [threshold]} (resolve-config session-entry context-window)]
+    (>= (context-gauge estimated-tokens session-entry) (* threshold context-window))))
 
 (defn partial-splice?
   "True when compactable material remains after this splice.
@@ -71,7 +75,6 @@
                                              :guidance          guidance
                                              :origin            origin
                                              :transcript        transcript
-                                             :context-window    context-window
                                              :model             model
                                              :tools                        tools
                                               :include-tool-batching-hint? false})]

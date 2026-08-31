@@ -25,8 +25,8 @@ Feature: Compaction with memory flush
       | provider | grover |
       | context-window | 200 |
     And the following sessions exist:
-      | name         | compaction.head |
-      | mundane-chat | 0.1             |
+      | name         | last-input-tokens | compaction.head |
+      | mundane-chat | 165               | 0.1             |
     And session "mundane-chat" has transcript:
       | type    | message.role | message.content                                                              |
       | message | user         | I take tea with two sugars and a splash of milk first thing every morning    |
@@ -48,8 +48,8 @@ Feature: Compaction with memory flush
 
   Scenario: compaction turn with no memory calls still produces a summary
     Given the following sessions exist:
-      | name      | total-tokens |
-      | quiet-day | 95          |
+      | name      | last-input-tokens |
+      | quiet-day | 85                |
     And session "quiet-day" has transcript:
       | type    | message.role | message.content                  |
       | message | user         | What is the weather doing?       |
@@ -70,8 +70,8 @@ Feature: Compaction with memory flush
       | provider | grover |
       | context-window | 200 |
     And the following sessions exist:
-      | name       | compaction.head |
-      | tea-ledger | 0.1             |
+      | name       | last-input-tokens | compaction.head |
+      | tea-ledger | 165               | 0.1             |
     And session "tea-ledger" has transcript:
       | type    | message.role | message.content                                                            |
       | message | user         | I take tea with two sugars and a splash of milk first thing every morning  |

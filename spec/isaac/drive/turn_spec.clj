@@ -965,6 +965,30 @@
             (should= true (:unavailable? result))
             (should= :context-exhausted (:reason result)))))))
 
+  (describe "maybe-context-exhausted!"
+    #_{:clj-kondo/ignore [:unresolved-symbol]}
+    (around [example]
+      (nexus/-with-nexus {:root test-dir :fs (fs/mem-fs)}
+        (helper/with-memory-store
+          (example))))
+
+    (it "defers when compaction is disabled and last-input-tokens is over the guard even if the live estimate is under"
+      (helper/create-session! test-dir "wedged")
+      (helper/update-session! test-dir "wedged" {:compaction-disabled true
+                                                :last-input-tokens   99})
+      (let [ctx (base-execution-ctx
+                  (->TestProvider marigold/starcore {:api marigold/sky-api})
+                  {:model          "test-model"
+                   :soul           "You are Isaac."
+                   :crew           "main"
+                   :comm           null-comm/channel
+                   :context-window 100
+                   :config         {}})]
+        (with-redefs [compaction/estimate-prompt-tokens (fn [_ _] 20)]
+          (let [result (#'sut/maybe-context-exhausted! "wedged" "one more" ctx)]
+            (should= true (:unavailable? result))
+            (should= :context-exhausted (:reason result)))))))
+
   (describe "1-arg run-turn! (charge arity)"
     #_{:clj-kondo/ignore [:unresolved-symbol]}
     (around [example]

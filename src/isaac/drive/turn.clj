@@ -788,7 +788,9 @@
                        :module-index    module-index
                        :allowed-tools   allowed-tools
                        :tools           (when provider (active-tools provider allowed-tools module-index))}
-        total-tokens  (compaction/estimate-prompt-tokens session-key estimate-opts)
+        estimated     (compaction/estimate-prompt-tokens session-key estimate-opts)
+        entry         (session-entry ctx session-key)
+        total-tokens  (compaction/context-gauge estimated entry)
         guard-line    (context-window-guard-line-tokens context-window)]
     (when (and (pos? context-window)
                (>= total-tokens guard-line)

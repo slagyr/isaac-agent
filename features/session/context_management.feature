@@ -37,8 +37,8 @@ Feature: Context Management
       | provider | grover |
       | context-window | 200 |
     And the following sessions exist:
-      | name            | compaction.head |
-      | context-compact | 0.1             |
+      | name            | last-input-tokens | compaction.head |
+      | context-compact | 165               | 0.1             |
     And session "context-compact" has transcript:
       | type    | message.role | message.content                                                              |
       | message | user         | Please summarize the work we did on the logging subsystem and the tool loop   |
@@ -83,8 +83,8 @@ Feature: Context Management
       | provider | grover |
       | context-window | 200 |
     And the following sessions exist:
-      | name            | compaction.head |
-      | context-summary | 0.1             |
+      | name            | last-input-tokens | compaction.head |
+      | context-summary | 165               | 0.1             |
     And session "context-summary" has transcript:
       | type    | message.role | message.content                                                              |
       | message | user         | What is Clojure and how does it differ from other Lisps running on the JVM    |
@@ -116,8 +116,8 @@ Feature: Context Management
       | provider | grover |
       | context-window | 160 |
     And the following sessions exist:
-      | name              | compaction.head | compaction.threshold |
-      | context-summarize | 0.1             | 0.9                  |
+      | name              | last-input-tokens | compaction.head | compaction.threshold |
+      | context-summarize | 150               | 0.1             | 0.9                  |
     And session "context-summarize" has transcript:
       | type       | message.role | message.content                                                                                                                                                                                            |
       | message    | user         | Read the big file                                                                                                                                                                                           |

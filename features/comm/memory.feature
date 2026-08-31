@@ -55,8 +55,8 @@ Feature: Memory Comm
       | provider | grover |
       | context-window | 200 |
     And the following sessions exist:
-      | name        | compaction.head |
-      | memory-chat | 0.1             |
+      | name        | last-input-tokens | compaction.head |
+      | memory-chat | 165               | 0.1             |
     And session "memory-chat" has transcript:
       | type    | message.role | message.content                                                              |
       | message | user         | Please summarize the work we did on the logging subsystem and the tool loop   |

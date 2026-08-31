@@ -359,12 +359,15 @@
             ss      (or (session-store/registered-store)
                         (nexus/get-in [:sessions :store]))
             head    (get kv :compaction.head)
+            last-in (get kv :last-input-tokens)
             create-opts (cond-> {:crew crew :cwd (root-dir) :origin {:kind :cli}
                                  :session-store ss}
                           head (assoc :compaction {:head head}))]
         (store/write-episode! (mem-fs) (root-dir) episode [])
         (when ss
-          (session-ctx/create-with-resolved-behavior! id create-opts))
+          (session-ctx/create-with-resolved-behavior! id create-opts)
+          (when last-in
+            (session-store/update-session! ss id {:last-input-tokens last-in})))
         (g/assoc! :current-episode (assoc episode :crew crew))))))
 
 (defthen "that episode's backing session has transcript matching:"

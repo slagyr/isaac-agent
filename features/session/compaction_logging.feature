@@ -25,8 +25,8 @@ Feature: Context Compaction Logging
       | provider | grover |
       | context-window | 200 |
     And the following sessions exist:
-      | name            | total-tokens | compaction.head | #comment                       |
-      | compaction-chat | 95          | 0.1             | live estimate exceeds threshold |
+      | name            | last-input-tokens | compaction.head | #comment                       |
+      | compaction-chat | 165               | 0.1             | last provider tokens over line |
     And session "compaction-chat" has transcript:
       | type    | message.role | message.content                                                              |
       | message | user         | Please summarize the work we did on the logging subsystem and the tool loop   |
@@ -47,8 +47,8 @@ Feature: Context Compaction Logging
       | provider | grover |
       | context-window | 200 |
     And the following sessions exist:
-      | name            | total-tokens | compaction.head | #comment                       |
-      | compaction-chat | 95          | 0.1             | live estimate exceeds threshold |
+      | name            | last-input-tokens | compaction.head | #comment                       |
+      | compaction-chat | 165               | 0.1             | last provider tokens over line |
     And session "compaction-chat" has transcript:
       | type    | message.role | message.content                                                              |
       | message | user         | Please summarize the work we did on the logging subsystem and the tool loop   |
@@ -74,8 +74,8 @@ Feature: Context Compaction Logging
       | provider | grover |
       | context-window | 200 |
     And the following sessions exist:
-      | name            | total-tokens | compaction.head | #comment                       |
-      | compaction-chat | 95          | 0.1             | live estimate exceeds threshold |
+      | name            | last-input-tokens | compaction.head | #comment                       |
+      | compaction-chat | 165               | 0.1             | last provider tokens over line |
     And session "compaction-chat" has transcript:
       | type    | message.role | message.content                                                              |
       | message | user         | Please summarize the work we did on the logging subsystem and the tool loop   |
@@ -92,8 +92,8 @@ Feature: Context Compaction Logging
   @wip
   Scenario: Compaction failure is logged and chat proceeds without looping
     Given the following sessions exist:
-      | name         | total-tokens | #comment                  |
-      | failure-chat | 95          | exceeds 90% of 100 window |
+      | name         | last-input-tokens | #comment                  |
+      | failure-chat | 85                | exceeds 80% of 100 window |
     And session "failure-chat" has transcript:
       | type    | message.role | message.content                |
       | message | user         | Please summarize our work      |
@@ -118,8 +118,8 @@ Feature: Context Compaction Logging
 
   Scenario: Compaction targets only the oldest messages when history exceeds the model context window
     Given the following sessions exist:
-      | name            | total-tokens | compaction.strategy | compaction.threshold | compaction.head | #comment                                  |
-      | partial-compact | 95          | slinky              | 0.8                  | 0.2             | head 0.2*200=40 keeps last exchange (2 msgs) |
+      | name            | last-input-tokens | compaction.strategy | compaction.threshold | compaction.head | #comment                                  |
+      | partial-compact | 165               | slinky              | 0.8                  | 0.2             | head 0.2*200=40 keeps last exchange (2 msgs) |
     And the isaac EDN file "config/models/local.edn" exists with:
       | path | value |
       | model | test-model |
@@ -151,8 +151,8 @@ Feature: Context Compaction Logging
   # isaac-5cr6: leftover-material splice is :partial so recheck still loops
   Scenario: Switching to a smaller-context model runs compaction repeatedly until chat can continue
     Given the following sessions exist:
-      | name          | total-tokens | #comment                             |
-      | model-switch  | 200         | accumulated under large-window model |
+      | name          | last-input-tokens | #comment                             |
+      | model-switch  | 200               | accumulated under large-window model |
     And the isaac EDN file "config/models/claude-long.edn" exists with:
       | path | value |
       | model | claude-opus-4-6 |
@@ -201,8 +201,8 @@ Feature: Context Compaction Logging
       | provider | grover |
       | context-window | 200 |
     And the following sessions exist:
-      | name          | input-tokens | output-tokens | total-tokens | compaction.head | #comment                         |
-      | rebound-test  | 120         | 30           | 150         | 0.1             | stale accumulators cause rebound |
+      | name          | input-tokens | output-tokens | last-input-tokens | compaction.head | #comment                         |
+      | rebound-test  | 120         | 30           | 165               | 0.1             | last provider tokens over line   |
     And session "rebound-test" has transcript:
       | type    | message.role | message.content                                                                                       |
       | message | user         | Please summarize our previous context about the logging subsystem and tool loop before we continue.    |
@@ -238,8 +238,8 @@ Feature: Context Compaction Logging
       | model | local          |
       | soul  | You are Atticus. |
     And the following sessions exist:
-      | name      | total-tokens | compaction.head |
-      | huge-head | 620          | 0.1             |
+      | name      | last-input-tokens | compaction.head |
+      | huge-head | 620               | 0.1             |
     And session "huge-head" has transcript:
       | type    | message.role | message.content                                                              | tokens |
       | message | user         | block A oldest: planning notes about logging, tools, and the dispatch loop    | 60     |
@@ -268,8 +268,8 @@ Feature: Context Compaction Logging
       | provider       | grover     |
       | context-window | 60         |
     And the following sessions exist:
-      | name      | total-tokens | compaction.consecutive-failures |
-      | giving-up | 95           | 5                               |
+      | name      | last-input-tokens | compaction.consecutive-failures |
+      | giving-up | 50                | 5                               |
     And session "giving-up" has transcript:
       | type    | message.role | message.content |
       | message | user         | earlier prompt  |
@@ -318,8 +318,8 @@ Feature: Context Compaction Logging
       | model | codex          |
       | soul  | You are Atticus. |
     And the following sessions exist:
-      | name          | total-tokens | model |
-      | codex-compact | 95           | codex |
+      | name          | last-input-tokens | model |
+      | codex-compact | 85                | codex |
     And session "codex-compact" has transcript:
       | type    | message.role | message.content |
       | message | user         | older prompt    |
@@ -339,8 +339,8 @@ Feature: Context Compaction Logging
 
   Scenario: Compaction keeps toolCall and toolResult together
     Given the following sessions exist:
-      | name        | total-tokens | compaction.strategy | compaction.threshold | compaction.head | #comment                                              |
-      | tool-orphan | 95           | slinky              | 0.8                  | 0.075           | head=0.075*200=15 splits between toolResult & last asst |
+      | name        | last-input-tokens | compaction.strategy | compaction.threshold | compaction.head | #comment                                              |
+      | tool-orphan | 165               | slinky              | 0.8                  | 0.075           | head=0.075*200=15 splits between toolResult & last asst |
     And the isaac EDN file "config/models/local.edn" exists with:
       | path           | value      |
       | model          | test-model |

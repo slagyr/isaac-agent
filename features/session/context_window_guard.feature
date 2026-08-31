@@ -17,8 +17,8 @@ Feature: Context-window guard when compaction cannot save the turn
 
   Scenario: compaction disabled over the guard line defers without an LLM request
     Given the following sessions exist:
-      | name   | total-tokens | compaction-disabled | compaction.consecutive-failures |
-      | wedged | 99           | true                | 5                               |
+      | name   | last-input-tokens | compaction-disabled | compaction.consecutive-failures |
+      | wedged | 99                | true                | 5                               |
     And session "wedged" has transcript:
       | type    | message.role | message.content |
       | message | user         | earlier prompt  |
@@ -35,8 +35,8 @@ Feature: Context-window guard when compaction cannot save the turn
       | path           | value      |
       | context-window | 200        |
     And the following sessions exist:
-      | name      | total-tokens | compaction.head |
-      | huge-head | 620          | 0.1             |
+      | name      | last-input-tokens | compaction.head |
+      | huge-head | 620               | 0.1             |
     And session "huge-head" has transcript:
       | type    | message.role | message.content                                                              | tokens |
       | message | user         | block A oldest: planning notes about logging, tools, and the dispatch loop    | 60     |
@@ -60,8 +60,8 @@ Feature: Context-window guard when compaction cannot save the turn
       | attention.notify.comm   | discord     |
       | attention.notify.target | boiler-room |
     And the following sessions exist:
-      | name      | total-tokens | compaction.consecutive-failures |
-      | giving-up | 95           | 5                               |
+      | name      | last-input-tokens | compaction.consecutive-failures |
+      | giving-up | 85                | 5                               |
     And session "giving-up" has transcript:
       | type    | message.role | message.content |
       | message | user         | earlier prompt  |

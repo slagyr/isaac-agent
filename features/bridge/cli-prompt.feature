@@ -406,8 +406,8 @@ Feature: Prompt single-turn command
       | provider       | grover |
       | context-window | 200   |
     Given the following sessions exist:
-      | name           | compaction.head |
-      | prompt-default | 0.1             |
+      | name           | last-input-tokens | compaction.head |
+      | prompt-default | 165               | 0.1             |
     And session "prompt-default" has transcript:
       | type    | message.role | message.content                                                              |
       | message | user         | Please summarize the work we did on the logging subsystem and the tool loop   |
@@ -445,8 +445,8 @@ Feature: Prompt single-turn command
       | provider       | grover |
       | context-window | 100   |
     Given the following sessions exist:
-      | name           | total-tokens |
-      | prompt-default | 95           |
+      | name           | last-input-tokens |
+      | prompt-default | 85                |
     And session "prompt-default" has transcript:
       | type    | message.role | message.content |
       | message | user         | older prompt    |
@@ -469,8 +469,8 @@ Feature: Prompt single-turn command
       | provider       | grover |
       | context-window | 100   |
     Given the following sessions exist:
-      | name           | total-tokens | compaction.consecutive-failures |
-      | prompt-default | 95           | 4                               |
+      | name           | last-input-tokens | compaction.consecutive-failures |
+      | prompt-default | 85                | 4                               |
     And session "prompt-default" has transcript:
       | type    | message.role | message.content |
       | message | user         | older prompt    |

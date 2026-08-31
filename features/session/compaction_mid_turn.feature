@@ -40,8 +40,8 @@ Feature: Mid-turn compaction keeps the request in flight
       HUGE-LEMON-PAYLOAD HUGE-LEMON-PAYLOAD HUGE-LEMON-PAYLOAD HUGE-LEMON-PAYLOAD
       """
     And the following sessions exist:
-      | name   |
-      | mid-rb |
+      | name   | last-input-tokens |
+      | mid-rb | 50                |
     And the following model responses are queued:
       | type      | tool_call | arguments                                              | content                      | model |
       | tool_call | fs__read  | {"file_path":"/target/test-state/crew/main/fridge.txt"} |                              | echo  |

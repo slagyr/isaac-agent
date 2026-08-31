@@ -165,7 +165,8 @@ Feature: Episodes — live (router + lifecycle)
       {:episodes {:gist-model :gist}}
       """
     And crew "cordelia" has an open episode on thread "reef-chat" with:
-      | compaction.head | 0.1 |
+      | compaction.head   | 0.1 |
+      | last-input-tokens | 165 |
     And that episode's backing session has transcript:
       | type    | message.role | message.content                                                              |
       | message | user         | Please summarize the work we did on the logging subsystem and the tool loop  |
