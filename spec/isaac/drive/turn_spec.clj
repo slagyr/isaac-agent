@@ -405,6 +405,28 @@
             (should= tc-id (:id (second last-two)))
             (should= {:result "ok"} (:content (second last-two)))))))
 
+    (it "marks toolResult isError when the tool-fn returns an Error: string"
+      (helper/create-session! test-dir "mid-flush-error")
+      (let [events     (atom [])
+            tool-count (atom 0)
+            ctx        {:session-store (store/registered-store)}]
+        (with-redefs [bridge/on-cancel!     (fn [_ _] nil)
+                      tool-registry/tool-fn (fn [_ _ _]
+                                              (fn [_ _] "Error: unknown tool: exec__run"))]
+          (#'sut/record-tool-call! {:comm           (memory-comm/channel events)
+                                    :session-key    "mid-flush-error"
+                                    :allowed-tools  #{}
+                                    :tool-count     tool-count
+                                    :ctx            ctx}
+                                   "exec__run"
+                                   {"command" "ls"})
+          (let [result (->> (helper/get-transcript test-dir "mid-flush-error")
+                            (map :message)
+                            (filter #(= "toolResult" (:role %)))
+                            last)]
+            (should= true (:isError result))
+            (should= "Error: unknown tool: exec__run" (:content result))))))
+
     (it "leaves a dangling toolCall and no result when the tool reports cancelled"
       (helper/create-session! test-dir "mid-flush-cancel")
       (let [events         (atom [])

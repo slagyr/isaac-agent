@@ -153,13 +153,13 @@
   ([name arguments]
    (run-handler name arguments nil))
   ([name arguments allowed-tools]
-   (if (or (nil? allowed-tools) (allowed-tool? allowed-tools name))
+   (if (allowed-tool? allowed-tools name)
       (run-handler name arguments nil)
       (unknown-tool-error name)))
   ([name arguments allowed-tools module-index]
    (execute name arguments allowed-tools module-index nil))
   ([name arguments allowed-tools module-index caps]
-   (if (or (nil? allowed-tools) (allowed-tool? allowed-tools name))
+   (if (allowed-tool? allowed-tools name)
      (do
        (when (and module-index (not (lookup name)))
          (activate-missing-tool! module-index name))

@@ -175,7 +175,8 @@
   "Write the toolResult entry as soon as the tool returns."
   [ctx session-key tc result]
   (when (and ctx session-key tc)
-    (let [error? (and (string? result) (str/starts-with? result "Error:"))]
+    (let [error? (boolean (or (and (string? result) (str/starts-with? result "Error:"))
+                              (and (map? result) (:isError result))))]
       (append-message! ctx session-key
                        (cond-> {:role "toolResult" :id (:id tc) :content result}
                                error? (assoc :isError true))))))
