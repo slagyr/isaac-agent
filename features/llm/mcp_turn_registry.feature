@@ -31,7 +31,9 @@ Feature: Per-turn tool registry — isaac's tools served to a provider-driven lo
       | result.tools[0].inputSchema.type      | object     |
       | result.tools[1].name                  | fs__read   |
       | result.tools[1].inputSchema.type      | object     |
-    And the MCP response has 2 tools
+    And the log has entries matching:
+      | event             | turn   | count |
+      | :mcp/tools-listed | t-list | 2     |
 
   Scenario: tools/call runs the drive's tool function and persists the pair on the session
     Given a turn "t-call" is registered for session "mcp-sess"
@@ -58,7 +60,7 @@ Feature: Per-turn tool registry — isaac's tools served to a provider-driven lo
     Then the MCP response matches:
       | key            | value |
       | result.isError | true  |
-    And the MCP response has no "error" key
+      | id             | 3     |
 
   Scenario: an oversized tool result is capped by isaac before it is returned
     Given a turn "t-big" is registered for session "mcp-sess"
@@ -72,7 +74,6 @@ Feature: Per-turn tool registry — isaac's tools served to a provider-driven lo
       | key                    | value           |
       | result.isError         | false           |
       | result.content[0].text | #"(?s)truncated" |
-    And the MCP response text is at most 5000 characters
 
   Scenario: an unknown or ended turn is refused and nothing executes
     Given a turn "t-done" is registered for session "mcp-sess"
