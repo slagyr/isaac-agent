@@ -1039,13 +1039,14 @@
   (when (seq observers)
     (observer/notify! observers method ctx extra)))
 
-(defn- finish-turn! [ch session-key result observers]
-  (comm/on-turn-end ch session-key result)
+(defn- finish-turn! [ch session-key result observers origin]
+  (let [result (cond-> result origin (assoc :origin origin))]
+    (comm/on-turn-end ch session-key result)
   (let [ctx (observer-ctx session-key)]
     (if (= :exception (:error result))
       (notify-observers! observers :on-turn-died ctx (or (:message result) "unknown"))
       (notify-observers! observers :on-turn-ended ctx (observer/outcome result))))
-  result)
+    result))
 
 (defn- record-tool-call!
   "Wrap a tool invocation with comm callbacks, cancellation tracking, and
@@ -1270,7 +1271,7 @@
         ch          (or (:comm charge) cli-comm/channel)
         turn-id     (bridge/begin-turn! session-key)
         observers   (observer/for-turn (:observers charge))
-        finish!     #(finish-turn! ch session-key % observers)]
+        finish!     #(finish-turn! ch session-key % observers (:origin charge))]
     (try
       (comm/on-turn-start ch session-key input)
       (notify-observers! observers :on-turn-started (observer-ctx session-key) nil)
