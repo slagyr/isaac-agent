@@ -29,11 +29,21 @@
 (defn resolve-config [session-entry context-window]
   (session-ctx/resolve-compaction-config {} session-entry {:crew-cfg {} :model-cfg {} :provider-cfg {}} context-window))
 
+(defn- clamp-drift-ratio [ratio]
+  (-> (double (or ratio 1.0))
+      (max 1.0)
+      (min 3.0)))
+
+(defn calibration-ratio [session-entry]
+  (clamp-drift-ratio (:token-drift-ratio session-entry)))
+
 (defn context-gauge
-  "Token gauge for compaction / context-window decisions: max of the live
-  prompt estimate and last successful provider prompt_tokens."
+  "Token gauge for compaction / context-window decisions: max of the calibrated
+  live prompt estimate and last successful provider prompt_tokens."
   [estimated-tokens session-entry]
-  (max (or estimated-tokens 0) (or (:last-input-tokens session-entry) 0)))
+  (let [estimated  (or estimated-tokens 0)
+        calibrated (long (Math/ceil (* (double estimated) (calibration-ratio session-entry))))]
+    (max calibrated (or (:last-input-tokens session-entry) 0))))
 
 (defn should-compact? [estimated-tokens session-entry context-window]
   (let [{:keys [threshold]} (resolve-config session-entry context-window)]

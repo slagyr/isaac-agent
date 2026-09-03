@@ -66,6 +66,7 @@
 
 (defn- usage-cache-read [usage]
   (or (:cache-read usage)
+      (:cache_read_input_tokens usage)
       (:cached-tokens usage)
       (get-in usage [:input_tokens_details :cached_tokens])))
 
@@ -92,6 +93,11 @@
   (let [resp  (:response result)
         usage (response-usage result)]
     (usage->tokens usage resp)))
+
+(defn- provider-prompt-tokens [{:keys [input-tokens cache-read cache-write]}]
+  (+ (or input-tokens 0)
+     (or cache-read 0)
+     (or cache-write 0)))
 
 (defn extract-tokens [result]
   (let [resp  (:response result)
@@ -229,12 +235,30 @@
 (defn- response-model [result model]
   (or (get-in result [:response :model]) model))
 
+(defn- normalized-provider-prompt-tokens [ctx session-key result]
+  (let [context-window (get-in ctx [:charge :context-window])
+        raw-prompt     (provider-prompt-tokens (response-tokens result))]
+    (if (and (pos? (or context-window 0)) (> raw-prompt context-window))
+      (do
+        (log/warn :session/stamp-implausible
+                  :session session-key
+                  :prompt-tokens raw-prompt
+                  :context-window context-window)
+        context-window)
+      raw-prompt)))
+
+(defn- stamp-provider-prompt! [ctx session-key result]
+  (let [ss            (or (:session-store ctx) (nexus/get-in [:sessions :store]))
+        prompt-tokens (normalized-provider-prompt-tokens ctx session-key result)]
+    (when (pos? prompt-tokens)
+      (store/update-session! ss session-key {:last-input-tokens prompt-tokens}))
+    prompt-tokens))
+
 (defn- store-response! [ctx session-key result {:keys [model provider]}]
   (let [ss                (or (:session-store ctx) (nexus/get-in [:sessions :store]))
         turn-tokens       (extract-tokens result)
         final-tokens      (response-tokens result)
         usage             (normalize-usage result)
-        total-tokens      (+ (:input-tokens turn-tokens 0) (:output-tokens turn-tokens 0))
         resolved-model    (response-model result model)
         reasoning         (or (get-in result [:response :reasoning])
                               (get-in result [:response :response :reasoning]))
@@ -242,7 +266,7 @@
                               (get-in result [:response :done_reason]))
         session-entry     (or (store/get-session ss session-key) {})
         turn-input-tokens (:input-tokens turn-tokens 0)
-        input-tokens      (:input-tokens final-tokens 0)
+        prompt-tokens     (normalized-provider-prompt-tokens ctx session-key {:response {:usage final-tokens}})
         output-tokens     (:output-tokens turn-tokens 0)
         cache-read        (:cache-read turn-tokens)
         cache-write       (:cache-write turn-tokens)]
@@ -262,7 +286,7 @@
     (store/update-session! ss session-key
                            (cond-> {:input-tokens      (+ (or (:input-tokens session-entry) 0) turn-input-tokens)
                                     :turn-input-tokens turn-input-tokens
-                                    :last-input-tokens input-tokens
+                                    :last-input-tokens prompt-tokens
                                     :output-tokens     (+ (or (:output-tokens session-entry) 0) output-tokens)
                                     :total-tokens      (+ (+ (or (:input-tokens session-entry) 0) turn-input-tokens)
                                                           (+ (or (:output-tokens session-entry) 0) output-tokens))}
@@ -277,14 +301,16 @@
 
 (defn- log-token-drift! [ctx session-key result]
   (let [session-store   (or (:session-store ctx) (nexus/get-in [:sessions :store]))
-        provider-tokens (:input-tokens (extract-tokens result))]
+        provider-tokens (provider-prompt-tokens (response-tokens result))]
     (when (pos? provider-tokens)
-      (let [stamped (transcript-stamped-prompt-tokens session-store session-key)]
+      (let [stamped (transcript-stamped-prompt-tokens session-store session-key)
+            ratio   (/ (double provider-tokens) (double (max 1 stamped)))]
+        (store/update-session! session-store session-key {:token-drift-ratio ratio})
         (log/debug :session/token-drift
                    :session  session-key
                    :stamped  stamped
                    :provider provider-tokens
-                   :ratio    (/ (double provider-tokens) (double (max 1 stamped))))))))
+                   :ratio    ratio)))))
 
 (defn- process-response* [ctx session-key result {:keys [model provider]}]
   (if (:error result)
@@ -756,12 +782,16 @@
         total-tokens  (compaction/estimate-prompt-tokens session-key estimate-opts)
         config        (or (:compaction estimate-opts)
                           (compaction/resolve-config entry context-window))
+        gauge         (compaction/context-gauge total-tokens entry)
+        ratio         (compaction/calibration-ratio entry)
         prov-name     (when provider (api/display-name provider))]
     (log/debug :session/compaction-check
                :session session-key
                :provider prov-name
                :model model
                :total-tokens total-tokens
+               :gauge gauge
+               :ratio ratio
                :context-window context-window)
     (cond
       (= :reset (:context-mode estimate-opts))
@@ -1181,6 +1211,7 @@
                                 (do (reset! pending-aside* nil)
                                     (comm/on-cycle-start ch session-key cycle))
                                 (when-not (or (:error response-or-req) (:unavailable? response-or-req))
+                                  (stamp-provider-prompt! ctx session-key response-or-req)
                                   (let [text       (or (get-in response-or-req [:message :content]) "")
                                         tool-calls (or (:tool-calls response-or-req)
                                                        (get-in response-or-req [:message :tool_calls])

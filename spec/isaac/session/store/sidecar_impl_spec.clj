@@ -660,7 +660,7 @@
 
   (describe "update-tokens!"
 
-    (it "accumulates token counts"
+    (it "accumulates token counts without inferring last-input-tokens from cumulative input"
       (sut/create-session! test-dir test-key)
       (sut/update-tokens! test-dir test-key {:input-tokens 10 :output-tokens 5})
       (sut/update-tokens! test-dir test-key {:input-tokens 20 :output-tokens 15})
@@ -669,12 +669,12 @@
         (should= 20 (:turn-input-tokens entry))
         (should= 20 (:output-tokens entry))
         (should= 50 (:total-tokens entry))
-        (should= 20 (:last-input-tokens entry))))
+        (should= 0 (:last-input-tokens entry))))
 
-    (it "replaces last-input-tokens instead of accumulating it"
+    (it "replaces last-input-tokens when provided explicitly"
       (sut/create-session! test-dir test-key)
-      (sut/update-tokens! test-dir test-key {:input-tokens 10 :output-tokens 5})
-      (sut/update-tokens! test-dir test-key {:input-tokens 42 :output-tokens 1})
+      (sut/update-tokens! test-dir test-key {:input-tokens 10 :output-tokens 5 :last-input-tokens 10})
+      (sut/update-tokens! test-dir test-key {:input-tokens 42 :output-tokens 1 :last-input-tokens 42})
       (let [entry (first (store/list-sessions-by-agent (s) "main"))]
         (should= 42 (:last-input-tokens entry))
         (should= 58 (:total-tokens entry))))

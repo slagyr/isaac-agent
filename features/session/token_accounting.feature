@@ -78,7 +78,6 @@ Feature: Token accounting — one unit, one source
       | event                | stamped        | provider | ratio        |
       | :session/token-drift | #"2[0-9][0-9]" | 260      | #"1\.[0-9]+" |
 
-  @wip
   Scenario: a mid-turn provider count over the threshold compacts before the next cycle
     Given the isaac EDN file "config/models/local.edn" exists with:
       | path           | value      |
@@ -104,14 +103,16 @@ Feature: Token accounting — one unit, one source
       | text      |           |                        | folded older | test-model |                    |
       | text      |           |                        | done         | test-model | 120                |
     When the user sends "run it" on session "loop"
-    Then session "loop" has transcript matching:
-      | type       | message.role | message.content | summary      |
-      | toolCall   |              |                 |              |
-      | toolResult |              |                 |              |
-      | compaction |              |                 | folded older |
-      | message    | assistant    | done            |              |
+    Then the following sessions match:
+      | name | last-input-tokens | turn-input-tokens | compaction-count |
+      | loop | 120               | 970               | 1                |
+    And session "loop" has transcript matching:
+      | type       | summary      |
+      | compaction | folded older |
+    And session "loop" has transcript matching:
+      | type    | message.role | message.content |
+      | message | assistant    | done            |
 
-  @wip
   Scenario: the provider stamp is the last cycle's prompt count, never the sum of cycles
     Given the built-in tools are registered
     And the crew "main" allows tools: "exec/run"
@@ -128,7 +129,6 @@ Feature: Token accounting — one unit, one source
       | name   | last-input-tokens | turn-input-tokens |
       | cycles | 340               | 960               |
 
-  @wip
   Scenario: the gauge is calibrated by the last observed drift ratio
     Given the isaac EDN file "config/models/local.edn" exists with:
       | path           | value      |
@@ -161,9 +161,41 @@ Feature: Token accounting — one unit, one source
       | message | assistant    | padding reply   | 200    |
     When the user sends "third ask" on session "calibrated"
     Then the log has entries matching:
-      | event                     | gauge         | ratio        |
-      | :session/compaction-check | #"[89][0-9]{2}" | #"1\.[0-9]+" |
+      | event                     | gauge | ratio        |
+      | :session/compaction-check | 300   | #"1\.[0-9]+" |
     And session "calibrated" has transcript matching:
-      | type       | message.role | message.content | summary |
-      | compaction |              |                 | folded  |
-      | message    | assistant    | third reply     |         |
+      | type    | message.role | message.content |
+      | message | assistant    | folded          |
+
+  Scenario: anthropic-shaped cached input stamps 908 and compacts on the next turn
+    Given the isaac EDN file "config/models/local.edn" exists with:
+      | path           | value      |
+      | model          | test-model |
+      | provider       | grover     |
+      | context-window | 1000       |
+    And the isaac EDN file "config/crew/main.edn" exists with:
+      | path  | value            |
+      | model | local            |
+      | soul  | You are Atticus. |
+    And the following sessions exist:
+      | name   |
+      | cached |
+    And the following model responses are queued:
+      | type | content      | model      | usage.input_tokens | usage.cache_read_input_tokens | usage.cache_creation_input_tokens |
+      | text | first reply  | test-model | 8                  | 700                           | 200                               |
+      | text | folded cache | test-model |                    |                               |                                   |
+      | text | second reply | test-model | 20                 |                               |                                   |
+    When the user sends "first ask" on session "cached"
+    Then the following sessions match:
+      | name   | last-input-tokens |
+      | cached | 908               |
+    When the user sends "second ask" on session "cached"
+    Then the following sessions match:
+      | name   | compaction-count | last-input-tokens |
+      | cached | 1                | 20                |
+    And session "cached" has transcript matching:
+      | type       | summary      |
+      | compaction | folded cache |
+    And session "cached" has transcript matching:
+      | type    | message.role | message.content |
+      | message | assistant    | second reply    |

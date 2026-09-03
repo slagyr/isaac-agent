@@ -371,6 +371,7 @@
      "message"
      "usage.input_tokens"
      "usage.output_tokens"
+     "usage.cache_read_input_tokens"
      "usage.cache_creation_input_tokens"
     "usage.output_tokens_details.reasoning_tokens"
     "usage.input_tokens_details.cached_tokens"
@@ -385,6 +386,7 @@
   (let [m                 (zipmap headers row)
          tool-name         (or (get m "tool_call") (get m "tool"))
          arguments         (get m "arguments")
+         cache-read        (some-> (get m "usage.cache_read_input_tokens") not-empty parse-long)
          cache-write       (some-> (get m "usage.cache_creation_input_tokens") not-empty parse-long)
          input-tokens      (some-> (get m "usage.input_tokens") not-empty parse-long)
          output-tokens     (some-> (get m "usage.output_tokens") not-empty parse-long)
@@ -446,11 +448,14 @@
       reasoning-tokens
       (assoc-in [:usage :output_tokens_details :reasoning_tokens] reasoning-tokens)
 
-       cached-tokens
-       (assoc-in [:usage :input_tokens_details :cached_tokens] cached-tokens)
+      cached-tokens
+      (assoc-in [:usage :input_tokens_details :cached_tokens] cached-tokens)
 
-       cache-write
-       (assoc-in [:usage :cache_creation_input_tokens] cache-write)
+      cache-read
+      (assoc-in [:usage :cache_read_input_tokens] cache-read)
+
+      cache-write
+      (assoc-in [:usage :cache_creation_input_tokens] cache-write)
 
        wait?
        (assoc :wait true)
@@ -697,6 +702,7 @@
                                                                         (str (root-dir) "/" cwd))))
                            (get row-map "total-tokens")  (assoc :total-tokens (parse-long (get row-map "total-tokens")))
                            (get row-map "last-input-tokens") (assoc :last-input-tokens (parse-long (get row-map "last-input-tokens")))
+                           (get row-map "token-drift-ratio") (assoc :token-drift-ratio (Double/parseDouble (get row-map "token-drift-ratio")))
                             (get row-map "input-tokens")  (assoc :input-tokens (parse-long (get row-map "input-tokens")))
                             (get row-map "output-tokens") (assoc :output-tokens (parse-long (get row-map "output-tokens")))
                             (get row-map "compaction-count") (assoc :compaction-count (parse-long (get row-map "compaction-count")))

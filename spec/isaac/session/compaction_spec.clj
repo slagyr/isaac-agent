@@ -60,7 +60,7 @@
       (should-not (sut/should-compact? 159 {:compaction {:strategy :slinky :threshold 0.8 :head 0.4}} 200))
       (should (sut/should-compact? 160 {:compaction {:strategy :slinky :threshold 0.8 :head 0.4}} 200)))
 
-    (it "uses the max of the live prompt estimate and last-input-tokens"
+    (it "uses the max of the calibrated estimate and last-input-tokens"
       (should (sut/should-compact? 310778 {:last-input-tokens 100000} 278528))
       (should (sut/should-compact? 30 {:last-input-tokens 850
                                        :compaction {:strategy :slinky :threshold 0.8 :head 0.4}}
@@ -68,6 +68,12 @@
       (should-not (sut/should-compact? 30 {:total-tokens 5000 :last-input-tokens 30
                                             :compaction {:strategy :slinky :threshold 0.8 :head 0.4}}
                                           200)))
+
+    (it "calibrates the estimate by the persisted drift ratio"
+      (should= 900 (sut/context-gauge 600 {:token-drift-ratio 1.5}))
+      (should= 900 (sut/context-gauge 600 {:token-drift-ratio 1.5 :last-input-tokens 850}))
+      (should= 600 (sut/context-gauge 600 {:token-drift-ratio 0.5}))
+      (should= 1800 (sut/context-gauge 600 {:token-drift-ratio 5.0})))
 
     (it "returns true when the estimate reaches the default threshold"
       (should (sut/should-compact? 9000 {} 10000)))
