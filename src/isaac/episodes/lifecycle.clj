@@ -25,6 +25,7 @@
     (java.time Duration Instant)))
 
 (def DEFAULT_TTL_MINUTES 60)
+(def DEFAULT_IDLE_MINUTES 3)
 
 (defn- now-instant []
   (let [n (memory/now)]
@@ -52,6 +53,9 @@
 
 (defn ttl-minutes [cfg]
   (or (get-in cfg [:episodes :ttl-minutes]) DEFAULT_TTL_MINUTES))
+
+(defn idle-minutes [cfg]
+  (or (get-in cfg [:episodes :seal :idle-minutes]) DEFAULT_IDLE_MINUTES))
 
 (defn episodes-crew?
   "True when the crew is opted into :conversation :episodes."
@@ -286,7 +290,8 @@
   (let [seal (get-in (or cfg {}) [:episodes :seal] {})]
     {:size-cap         (or (:size-cap seal) segment/DEFAULT_SIZE_CAP)
      :drift-threshold  (:drift-threshold seal)
-     :min-tail         (:min-tail seal)}))
+     :min-tail         (:min-tail seal)
+     :idle-minutes     (or (:idle-minutes seal) DEFAULT_IDLE_MINUTES)}))
 
 (defn- message-entries [transcript]
   (filterv #(= "message" (:type %)) (or transcript [])))
@@ -353,11 +358,11 @@
         (assoc :indexed (:new indexed))))))
 
 (defn maybe-seal!
-  "Post-reply live seal. Order: update rolling open-scene vector → check
-   drift/cap triggers → segment tail → seal all-but-last (hard-cap
-   single-scene seals entirely) → index → reset vector.
+  "Live seal. Order: update rolling open-scene vector → check
+   idle/drift/cap triggers → segment tail → seal (idle/hard-cap
+   single-scene seals the whole tail; otherwise leave-open 1) → index → reset vector.
    Failure is loud-logged and leaves the turn / episode unharmed."
-  [{:keys [fs root crew episode-id session-store provider model cfg]}]
+  [{:keys [fs root crew episode-id session-store provider model cfg trigger]}]
   (let [fs*  (runtime-fs fs)
         root (runtime-root root)
         ss   (runtime-store session-store)
@@ -374,7 +379,7 @@
 
       :else
       (try
-        (let [{:keys [size-cap drift-threshold min-tail]} (seal-knobs cfg)
+        (let [{:keys [size-cap drift-threshold min-tail idle-minutes]} (seal-knobs cfg)
               transcript (session-store/chronicle-transcript ss episode-id)
               sealed     (vec (remove nil? (store/list-scenes fs* root crew episode-id)))
               tail       (tail-after-sealed (message-entries transcript) sealed)
@@ -389,7 +394,15 @@
                                   (>= n min-tail)
                                   (number? cosine)
                                   (< cosine drift-threshold)))
+              idle-fired? (boolean
+                            (and (= :idle trigger)
+                                 (pos? n)
+                                 (let [ts (parse-timestamp (last-message-timestamp transcript))]
+                                   (and ts
+                                        (>= (.toMinutes (Duration/between ts (now-instant)))
+                                            idle-minutes)))))
               trigger    (cond
+                           idle-fired?   :idle
                            cap-fired?    :size-cap
                            drift-fired?  :drift
                            :else         nil)
@@ -416,10 +429,11 @@
                                 :raw (:raw result))
                       {:status :error :reason (:error result)})
                     (let [resolved   (:ok result)
-                          leave-open (if (and (= :size-cap trigger)
-                                              (= 1 (count resolved)))
+                          leave-open (if (or (= :idle trigger)
+                                             (and (= :size-cap trigger)
+                                                  (= 1 (count resolved))))
                                        0 1)
-                          new-scenes (segment/seal-scenes distilled resolved :live
+                          new-scenes (segment/seal-scenes distilled resolved trigger
                                                           {:leave-open leave-open})]
                       (if (empty? new-scenes)
                         (do
@@ -431,6 +445,35 @@
           (log/warn :episodes/seal-failed :episode episode-id
                     :reason :exception :error (.getMessage e))
           {:status :error :reason :exception :message (.getMessage e)})))))
+
+(defn maybe-close-if-cold!
+  "TTL close after the idle-seal pass. Skips in-flight / already-closed /
+   still-warm episodes. Returns {:status :closed :reason :ttl} on close."
+  [{:keys [fs root crew episode-id session-store provider model cfg]}]
+  (let [fs*      (runtime-fs fs)
+        root     (runtime-root root)
+        ss       (runtime-store session-store)
+        crew     (or crew "main")
+        existing (when (and root episode-id)
+                   (store/read-episode fs* root crew episode-id))]
+    (cond
+      (or (nil? existing) (not= :open (:status existing)))
+      {:status :skipped :reason :not-open}
+
+      (and ss (session-store/in-flight? ss episode-id))
+      {:status :skipped :reason :in-flight}
+
+      :else
+      (let [transcript (when ss (session-store/chronicle-transcript ss episode-id))
+            ttl        (ttl-minutes cfg)]
+        (if (warm? transcript ttl)
+          {:status :skipped :reason :warm}
+          (let [closed (close-episode! {:fs fs* :root root :crew crew
+                                        :episode-id episode-id
+                                        :session-store ss
+                                        :provider provider :model model :cfg cfg})]
+            (log/info :episodes/closed :episode episode-id :crew crew :reason :ttl-sweep)
+            {:status :closed :reason :ttl :episode (:episode closed)}))))))
 
 (defn compact-close!
   "Compaction on an episode crew: close the current episode and open a

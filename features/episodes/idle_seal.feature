@@ -1,4 +1,3 @@
-@wip
 Feature: Idle sealing — a quiet thread becomes recallable within minutes
   Recall only sees sealed, indexed scenes. Today a scene seals on size cap,
   on topic drift, or when the episode closes — and an episode closes only

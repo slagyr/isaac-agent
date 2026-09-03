@@ -7,6 +7,7 @@
     [isaac.scheduler.runtime :as scheduler]
     [isaac.nexus :as nexus]
     [isaac.tool.memory :as memory]
+    [isaac.episodes.worker :as episodes-worker]
     [isaac.turn.worker :as turn-worker])
   (:import
     (java.time Instant)))
@@ -95,6 +96,7 @@
                           :trigger {:kind :interval :ms tick-ms}
                           :handler (fn [_] (tick! {}))})
     (turn-worker/start! {:tick-ms tick-ms})
+    (episodes-worker/start! {})
     {:scheduler shared-scheduler
      :task-id   :delivery/tick}))
 

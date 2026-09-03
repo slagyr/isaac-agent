@@ -3,8 +3,10 @@
   (:require
     [clojure.string :as str]
     [clojure.edn :as edn]
-    [gherclj.core :as g :refer [defgiven defthen helper!]]
+    [gherclj.core :as g :refer [defgiven defthen defwhen helper!]]
+    [isaac.config.loader :as loader]
     [isaac.episodes.store :as store]
+    [isaac.episodes.worker :as worker]
     [isaac.drive.dispatch :as drive-dispatch]
     [isaac.foundation.cli-steps :as fcli]
     [isaac.fs :as fs]
@@ -18,6 +20,16 @@
     [isaac.tool.memory :as memory]))
 
 (helper! isaac.episodes.episode-steps)
+
+(defonce ^:private isaac-edn-ensures-root?
+  (do
+    (alter-var-root #'isaac.foundation.fs-steps/isaac-edn-file-exists
+      (fn [orig]
+        (fn [path table]
+          (when-not (or (g/get :root) (g/get :runtime-root-dir))
+            (session-steps/default-grover-setup))
+          (orig path table))))
+    true))
 
 (fcli/register-isaac-run-wrapper!
   (fn [thunk]
@@ -73,7 +85,7 @@
         (boolean (re-find (re-pattern pattern) (str actual))))
 
       :else
-      (= expected (str actual)))))
+      (= expected (if (keyword? actual) (name actual) (str actual))))))
 
 (defn- ensure-current-episode!
   "Prefer remembered episode; otherwise pick the only/most recent episode on disk."
@@ -157,6 +169,58 @@
 
 (defthen #"crew \"([^\"]+)\" has (\d+) episodes?" isaac.episodes.episode-steps/crew-has-n-episodes
   "Counts episode directories under episodes/<crew>/. Accepts episode/episodes.")
+
+(defn that-episode-has-n-scenes [n]
+  (with-feature-fs
+    (fn []
+      (let [ep (or (current-episode) (ensure-current-episode!))
+            n  (if (string? n) (parse-long n) n)]
+        (g/should-not-be-nil ep)
+        (g/should= n (count (store/list-scenes (mem-fs) (root-dir) (:crew ep) (:id ep))))))))
+
+(defthen "that episode has {n:int} scenes" isaac.episodes.episode-steps/that-episode-has-n-scenes
+  "Count variant of 'has scenes matching'. Zero means no sealed scenes.")
+
+(defn index-for-crew-has-row-for-gist [crew gist]
+  (with-feature-fs
+    (fn []
+      (let [rows   (recall-index/read-index (mem-fs) (root-dir) crew)
+            scenes (mapcat (fn [ep]
+                             (store/list-scenes (mem-fs) (root-dir) crew (:id ep)))
+                           (store/list-episodes (mem-fs) (root-dir) crew))
+            scene  (some #(when (= gist (:gist %)) %) scenes)
+            hit    (when scene
+                     (some #(when (= (:id scene) (:scene-id %)) %) rows))]
+        (g/should-not-be-nil scene)
+        (g/should-not-be-nil hit)))))
+
+(defthen "the index for crew {crew:string} has a row for gist {gist:string}"
+  isaac.episodes.episode-steps/index-for-crew-has-row-for-gist
+  "Looks up a sealed scene by gist and asserts the packed index has a row
+   for that scene id. Live seals do not pin ids/vectors.")
+
+(defn- parse-iso [iso]
+  (let [s (if (re-find #"[zZ]|[+-]\d{2}:?\d{2}$" iso) iso (str iso "Z"))]
+    (java.time.Instant/parse s)))
+
+(defn episodes-worker-ticks-at [iso]
+  (let [now (parse-iso iso)]
+    (g/assoc! :current-time now)
+    (with-feature-fs
+      (fn []
+        (binding [memory/*now* now]
+          (let [cfg (or (loader/snapshot "episodes worker tick") {})]
+            (nexus/-with-nested-nexus {:root (root-dir) :fs (mem-fs)
+                                      :sessions {:store (session-store/registered-store)}}
+              (worker/tick! {:now           now
+                             :cfg           cfg
+                             :root          (root-dir)
+                             :fs            (mem-fs)
+                             :session-store (session-store/registered-store)}))))))))
+
+(defwhen "the episodes worker ticks at {iso:string}"
+  isaac.episodes.episode-steps/episodes-worker-ticks-at
+  "Sets memory/now to the given ISO instant and runs one episodes worker tick.")
 
 (defn that-episode-has-flagged-spans-matching [table]
   "Asserts :flagged-spans on the current episode. Table columns: span, raw."

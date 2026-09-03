@@ -2,6 +2,7 @@
   (:require
     [isaac.episodes.lifecycle :as sut]
     [isaac.episodes.store :as store]
+    [isaac.episodes.worker :as worker]
     [isaac.fs :as fs]
     [isaac.llm.api.grover :as grover]
     [isaac.llm.provider :as llm-provider]
@@ -425,4 +426,56 @@
         (should-not (contains? ep :open-scene-vector))
         (should-not (contains? ep :open-scene-vector-n))))
     )
+  )
+
+(describe "isaac.episodes.worker"
+
+  (with mem (fs/mem-fs))
+  (with root "/isaac-root")
+  (with ss (memory-store/create-store @root))
+
+  (before
+    (grover/install-test-fixture!)
+    (grover/reset-queue!)
+    (fs/mkdirs @mem @root)
+    (session-store/register-store! @ss))
+
+  (around [example]
+    (nexus/-with-nested-nexus {:fs @mem :sessions {:store @ss} :root @root}
+      (example)))
+
+  (it "idle-seals a quiet open episode on the tick"
+    (let [session  (binding [memory/*now* (java.time.Instant/parse "2026-03-01T10:00:00Z")]
+                     (seed-open-episode! @ss @mem @root 1))
+          provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+          cfg      {:crew     {"cordelia" {:conversation :episodes :model "echo" :soul "You are Cordelia"}}
+                    :episodes {:gist-model :gist :seal {:idle-minutes 3} :ttl-minutes 60}
+                    :embedding {:source :provider :provider "grover" :model "mini-embed"}}]
+      (grover/enqueue! [{:type "text" :content "1-2: Wine pairing for pheasant"}])
+      (binding [memory/*now* (java.time.Instant/parse "2026-03-01T10:10:00Z")]
+        (worker/tick! {:now (java.time.Instant/parse "2026-03-01T10:10:00Z")
+                       :cfg cfg :fs @mem :root @root
+                       :session-store @ss :provider provider :model "gist"}))
+      (let [scenes (store/list-scenes @mem @root "cordelia" (:id session))
+            ep     (store/read-episode @mem @root "cordelia" (:id session))]
+        (should= :open (:status ep))
+        (should= 1 (count scenes))
+        (should= :idle (:seal-reason (first scenes)))
+        (should= "Wine pairing for pheasant" (:gist (first scenes))))))
+
+  (it "skips an in-flight episode on the tick"
+    (let [session  (seed-open-episode! @ss @mem @root 1)
+          provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+          cfg      {:crew     {"cordelia" {:conversation :episodes :model "echo" :soul "You are Cordelia"}}
+                    :episodes {:gist-model :gist :seal {:idle-minutes 3} :ttl-minutes 60}
+                    :embedding {:source :provider :provider "grover" :model "mini-embed"}}]
+      (grover/enqueue! [{:type "text" :content "1-2: Wine pairing for pheasant"}])
+      (session-store/mark-in-flight! @ss (:id session))
+      (binding [memory/*now* (java.time.Instant/parse "2026-03-01T10:10:00Z")]
+        (worker/tick! {:now (java.time.Instant/parse "2026-03-01T10:10:00Z")
+                       :cfg cfg :fs @mem :root @root
+                       :session-store @ss :provider provider :model "gist"}))
+      (session-store/clear-in-flight! @ss (:id session))
+      (should= 0 (count (store/list-scenes @mem @root "cordelia" (:id session))))
+      (should= :open (:status (store/read-episode @mem @root "cordelia" (:id session))))))
   )
