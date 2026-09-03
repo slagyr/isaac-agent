@@ -667,17 +667,22 @@
 
 (defwhen "the {tool:string} tool is initialized" isaac.tool.tools-steps/web-search-initialized)
 
-(defn streaming-tool-registered [name progress-edn result]
-  (let [chunks (edn/read-string progress-edn)]
+(defn streaming-tool-registered [tool-name progress-edn result]
+  (let [chunks (edn/read-string progress-edn)
+        token  (or (names/config-token tool-name) (keyword tool-name))
+        allow  (when (and token (namespace token))
+                 (str (namespace token) "/" (clojure.core/name token)))]
     (registry/register!
-      {:name        name
-       :description (str "streaming mock " name)
+      {:name        tool-name
+       :description (str "streaming mock " tool-name)
        :parameters  {:type "object" :properties {}}
        :handler     (fn [args]
                       (let [progress! (or (:progress! args) (get args "progress!"))]
                         (doseq [c chunks]
                           (when progress! (progress! c))))
-                      {:result result})})))
+                      {:result result})})
+    (when allow
+      (session-steps/crew-tool-allow "main" allow))))
 
 (defgiven #"a streaming tool \"([^\"]+)\" is registered that emits progress (.+) and returns \"([^\"]+)\""
   isaac.tool.tools-steps/streaming-tool-registered

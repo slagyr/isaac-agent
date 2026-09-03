@@ -291,7 +291,7 @@
              sort
              vec)))))
 
-(defn- active-crew-id []
+(defn active-crew-id []
   (or (:crew (current-session))
       (:agent (current-session))
       (when (= 1 (count (configured-crew-ids)))

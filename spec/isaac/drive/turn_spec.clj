@@ -319,6 +319,31 @@
             (should= 1 @tool-count)
             (should= ["tool-call" "tool-result"] (mapv :event @events)))))
 
+    (it "emits tool-progress when the handler calls :progress!"
+      (let [events     (atom [])
+            tool-count (atom 0)]
+        (tool-registry/clear!)
+        (tool-registry/register! {:name        "test__sounding"
+                                  :description "streaming mock"
+                                  :parameters  {:type "object" :properties {}}
+                                  :handler     (fn [args]
+                                                 (let [progress! (:progress! args)]
+                                                   (when progress!
+                                                     (progress! "by the mark three")
+                                                     (progress! "and a half three")))
+                                                 {:result "depth 4"})})
+        (with-redefs [bridge/on-cancel! (fn [_ _] nil)]
+          (#'sut/record-tool-call! {:comm          (memory-comm/channel events)
+                                    :session-key   "sounding"
+                                    :allowed-tools #{"test__sounding"}
+                                    :tool-count    tool-count}
+                                   "test__sounding"
+                                   {})
+          (should= ["tool-call" "tool-progress" "tool-progress" "tool-result"]
+                   (mapv :event @events))
+          (should= ["by the mark three" "and a half three"]
+                   (->> @events (filter #(= "tool-progress" (:event %))) (mapv :text))))))
+
     (it "cancels and throws when a tool reports cancellation"
       (let [events         (atom [])
             tool-count     (atom 0)

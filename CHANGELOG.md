@@ -5,6 +5,7 @@
 ## 0.1.42
 
 - Scuttlebutt Comm protocol: cycle/chatter/reckoning/aside/reply/bulletin/tool-progress replace the old text-chunk + four compaction callbacks; CliComm deleted (null fallback); memory comm is the reference implementor (isaac-5nxf, isaac-jarr).
+- Train-gate repairs: streaming mock tools now land on the crew allow-list so `on-tool-progress` fires (scuttlebutt.feature:91); cancel-between-tools is a known flake in the full suite and green in isolation (isaac-jarr).
 
 ## 0.1.41
 
