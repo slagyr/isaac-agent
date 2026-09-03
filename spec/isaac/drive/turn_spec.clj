@@ -188,11 +188,65 @@
                  (:usage assistant))
         (should= 220 (:input-tokens session))
         (should= 220 (:turn-input-tokens session))
-        (should= 120 (:last-input-tokens session))
+        (should= 123 (:last-input-tokens session))
         (should= 7 (:output-tokens session))
         (should= 227 (:total-tokens session))
         (should= 2 (:cache-read session))
         (should= 1 (:cache-write session))))
+
+    (it "stamps each cycle with provider prompt tokens before the turn ends"
+      (helper/create-session! test-dir "cycle-stamp")
+      (#'sut/stamp-provider-prompt! {:session-store (store/registered-store)
+                                     :charge        {:context-window 1000}}
+                                    "cycle-stamp"
+                                    {:usage {:input_tokens 850}})
+      (let [session (helper/get-session test-dir "cycle-stamp")]
+        (should= 850 (:last-input-tokens session))))
+
+    (it "includes cached input in the provider stamp for anthropic-shaped usage"
+      (helper/create-session! test-dir "claude-cache-stamp")
+      (sut/process-response! "claude-cache-stamp"
+                             {:content  "Done"
+                              :response {:message {:role "assistant" :content "Done"}
+                                         :usage   {:input_tokens 8
+                                                   :output_tokens 3
+                                                   :cache_read_input_tokens 700
+                                                   :cache_creation_input_tokens 200}}}
+                             {:model "sonnet" :provider "claude-cli"})
+      (let [session (helper/get-session test-dir "claude-cache-stamp")]
+        (should= 908 (:last-input-tokens session))))
+
+    (it "caps an implausible provider stamp at the context window"
+      (helper/create-session! test-dir "implausible-stamp")
+      (log/capture-logs
+        (#'sut/stamp-provider-prompt! {:session-store (store/registered-store)
+                                       :charge        {:context-window 1000}}
+                                      "implausible-stamp"
+                                      {:usage {:input_tokens 8
+                                               :cache_read_input_tokens 700
+                                               :cache_creation_input_tokens 2000}})
+        (let [session (helper/get-session test-dir "implausible-stamp")
+              event   (first (filter #(= :session/stamp-implausible (:event %)) @log/captured-logs))]
+          (should= 1000 (:last-input-tokens session))
+          (should-not-be-nil event)
+          (should= 2708 (:prompt-tokens event))
+          (should= 1000 (:context-window event)))))
+
+    (it "persists the last observed token drift ratio on the session entry"
+      (helper/create-session! test-dir "drift-ratio")
+      (helper/append-message! test-dir "drift-ratio" {:role "user" :content "earlier ask" :tokens 100})
+      (helper/append-message! test-dir "drift-ratio" {:role "assistant" :content "earlier reply" :tokens 100})
+      (helper/append-message! test-dir "drift-ratio" {:role "user" :content "now this"})
+      (sut/process-response! {:root test-dir :fs (fs/mem-fs)}
+                             "drift-ratio"
+                             {:content      "ok"
+                              :token-counts {:input-tokens 260 :output-tokens 1}
+                              :response     {:message {:role "assistant" :content "ok"}
+                                             :usage   {:input_tokens 260
+                                                       :output_tokens 1}}}
+                             {:model "echo" :provider "grover:grok"})
+      (let [session (helper/get-session test-dir "drift-ratio")]
+        (should= (/ 260.0 202) (:token-drift-ratio session))))
 
     (it "logs token drift from stamped prompt entries against provider prompt tokens"
       (helper/create-session! test-dir "drift-test")

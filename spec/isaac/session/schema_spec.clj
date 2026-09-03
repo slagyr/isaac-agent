@@ -51,6 +51,7 @@
                       :output-tokens       2
                      :total-tokens        3
                      :last-input-tokens   1
+                     :token-drift-ratio   1.5
                       :cache-read          4
                       :cache-write         5})))
 

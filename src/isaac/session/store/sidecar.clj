@@ -98,19 +98,19 @@
   ([root identifier {:keys [cache-read cache-write] :as updates} fs]
    (let [input-tokens      (:input-tokens updates)
          turn-input-tokens (or (:turn-input-tokens updates) input-tokens)
-         last-input-tokens (or (:last-input-tokens updates) input-tokens)
+         last-input-tokens (:last-input-tokens updates)
          output-tokens     (:output-tokens updates)]
      (update-sidecar-entry! root identifier
                             (fn [entry]
                               (cond-> (-> entry
                                           (update :input-tokens + (or input-tokens 0))
                                           (assoc :turn-input-tokens (or turn-input-tokens 0))
-                                          (assoc :last-input-tokens (or last-input-tokens 0))
                                           (update :output-tokens + (or output-tokens 0))
                                           (assoc :total-tokens (+ (+ (:input-tokens entry) (or input-tokens 0))
                                                                   (+ (:output-tokens entry) (or output-tokens 0)))))
-                                cache-read  (update :cache-read (fnil + 0) cache-read)
-                                cache-write (update :cache-write (fnil + 0) cache-write)))
+                                (some? last-input-tokens) (assoc :last-input-tokens last-input-tokens)
+                                cache-read                (update :cache-read (fnil + 0) cache-read)
+                                cache-write               (update :cache-write (fnil + 0) cache-write)))
                             fs))))
 
 ;; endregion ^^^^^ Public API ^^^^^
