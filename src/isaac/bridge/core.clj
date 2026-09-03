@@ -10,6 +10,7 @@
     [isaac.bridge.status :as status]
     [isaac.bridge.suspend :as suspend]
     [isaac.comm.render :as render]
+    [isaac.conversation.router :as conversation]
     [isaac.charge :as charge]
     [isaac.comm.protocol :as comm]
     [isaac.config.loader :as loader]
@@ -92,11 +93,12 @@
                    name))})
 
 (defn- ensure-session! [request]
-  (let [session-key    (:session-key request)
-        session-store* (or (:session-store request) (nexus/get-in [:sessions :store]))
+  (let [session-store* (or (:session-store request) (nexus/get-in [:sessions :store]))
         cfg            (or (when (map? (:config request)) (:config request)) (loader/snapshot "turn dispatch entry — falls back to ambient config when charge carries none") {})
         crew-id        (or (:crew request) (get-in cfg [:defaults :crew]) "main")
         crew-cfg       (get (:crew cfg) crew-id)
+        request        (conversation/route-conversation! (assoc request :crew-cfg crew-cfg))
+        session-key    (:session-key request)
         resolved-cwd   (resolve-session-cwd (:cwd request) crew-cfg nil)]
     (if (and session-key (lifecycle/episodes-crew? cfg crew-id))
       (let [resolved (lifecycle/resolve-thread!
