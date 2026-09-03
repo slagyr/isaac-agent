@@ -21,6 +21,16 @@
 
 (helper! isaac.episodes.episode-steps)
 
+(defonce ^:private isaac-edn-ensures-root?
+  (do
+    (alter-var-root #'isaac.foundation.fs-steps/isaac-edn-file-exists
+      (fn [orig]
+        (fn [path table]
+          (when-not (or (g/get :root) (g/get :runtime-root-dir))
+            (session-steps/default-grover-setup))
+          (orig path table))))
+    true))
+
 (fcli/register-isaac-run-wrapper!
   (fn [thunk]
     (if-let [current-time (g/get :current-time)]

@@ -12,8 +12,7 @@ Feature: Idle sealing — a quiet thread becomes recallable within minutes
   tick. Closing is housekeeping; sealing is what makes memory visible.
 
   Background:
-    Given default Grover setup
-    And the isaac EDN file "config/crew/cordelia.edn" exists with:
+    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
