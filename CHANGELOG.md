@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.43
+
+- Token accounting locked in: per-cycle provider stamp, last-cycle stamp never a sum, drift-calibrated gauge, implausible-stamp cap with `:session/stamp-implausible`, claude-cli counts cached input (isaac-vuto).
+- Idle sealing: quiet episodes seal and index within minutes on the episodes tick; TTL close rides the same tick (isaac-q34y).
+- Scuttlebutt train repairs on main after the 5nxf merge (isaac-jarr).
+
 ## 0.1.42
 
 - Scuttlebutt Comm protocol: cycle/chatter/reckoning/aside/reply/bulletin/tool-progress replace the old text-chunk + four compaction callbacks; CliComm deleted (null fallback); memory comm is the reference implementor (isaac-5nxf, isaac-jarr).
