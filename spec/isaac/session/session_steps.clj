@@ -485,7 +485,7 @@
                                    last
                                    :result)
         event-text        (->> (or (some-> (g/get :channel-events) deref) [])
-                               (filter #(= "text-chunk" (:event %)))
+                               (filter #(#{"text-chunk" "chatter"} (:event %)))
                                (map :text)
                                (clojure.string/join))
         full-output       (str output event-text)]

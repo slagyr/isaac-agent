@@ -72,8 +72,8 @@ Feature: Context-window guard when compaction cannot save the turn
       | text  | here is my answer       | test-model |
     When the user sends "next thing" on session "giving-up"
     Then the memory comm has events matching:
-      | event               | reason             |
-      | compaction-disabled | :too-many-failures |
+      | event    | kind                | reason             |
+      | bulletin | compaction/disabled | :too-many-failures |
     And session "giving-up" matches:
       | key                 | value |
       | compaction-disabled | true  |

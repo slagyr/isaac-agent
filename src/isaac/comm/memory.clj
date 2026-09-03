@@ -94,12 +94,12 @@
 
           :on-bulletin
           (fn [this session-key bulletin]
-            (let [kind (or (:kind bulletin) (:kind (:payload bulletin)))
-                  kind (if (keyword? kind) (subs (str kind) 1) (str kind))]
+            (let [kind     (or (:kind bulletin) (:kind (:payload bulletin)))
+                  kind-str (if (keyword? kind) (subs (str kind) 1) (str kind))]
               (append! (.-events this) (merge (dissoc bulletin :kind)
                                               {:event   "bulletin"
                                                :session session-key
-                                               :kind    kind}))))
+                                               :kind    kind-str}))))
 
           :send!
           (fn [this record]

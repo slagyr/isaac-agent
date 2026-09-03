@@ -142,15 +142,7 @@
            token-counts)))
 
 (defn- scripted-response [scripted model]
-  (let [scripted       (if (and (= "text" (:type scripted))
-                                (nil? (:content scripted))
-                                (:tool_call scripted)
-                                (not (str/includes? (str (:tool_call scripted)) "__")))
-                         (-> scripted
-                             (assoc :content (:tool_call scripted))
-                             (dissoc :tool_call))
-                         scripted)
-        resp-model     (if (contains? scripted :model) (:model scripted) model)
+  (let [resp-model     (if (contains? scripted :model) (:model scripted) model)
         input-tokens   (or (get-in scripted [:usage :input_tokens]) (:prompt_eval_count scripted) (:prompt_tokens scripted) (:input_tokens scripted) (:usage.input_tokens scripted) (:prompt_eval_count token-counts))
         output-tokens  (or (get-in scripted [:usage :output_tokens]) (:eval_count scripted) (:completion_tokens scripted) (:output_tokens scripted) (:usage.output_tokens scripted) (:eval_count token-counts))
         token-overrides {:prompt_eval_count input-tokens
@@ -429,9 +421,7 @@
                                         (assoc :done true))
                               (not supports-tool-calls?) (update :message dissoc :tool_calls))]
           (on-chunk final)
-          (if (seq (get-in response [:message :tool_calls]))
-            response
-            final))))))
+          final)))))
 
 (defn followup-messages
   "Build the next iteration's :messages vector for the Grover test provider.

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.42
+
+- Scuttlebutt Comm protocol: cycle/chatter/reckoning/aside/reply/bulletin/tool-progress replace the old text-chunk + four compaction callbacks; CliComm deleted (null fallback); memory comm is the reference implementor (isaac-5nxf, isaac-jarr).
+
 ## 0.1.41
 
 - Conversation routing seam: surfaces pass an explicit `:conversation {:kind :thread :id ...}` plus `:origin`; the bridge alone resolves chronicle vs episode; turn results carry the preserved origin for delivery; `:episodes/opened` logs origin (isaac-7dkp, supersedes isaac-mrfu's charge-skip fix).

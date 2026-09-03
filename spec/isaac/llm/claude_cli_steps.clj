@@ -246,7 +246,7 @@
   (session-steps/await-turn!)
   (let [expected (parse-stream-chunks raw)
         events   (->> (or (some-> (g/get :channel-events) deref) [])
-                      (filter #(= "text-chunk" (:event %)))
+                      (filter #(#{"text-chunk" "chatter"} (:event %)))
                       (mapv :text))
         joined   (apply str expected)]
     (g/should= expected events)))

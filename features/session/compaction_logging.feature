@@ -277,9 +277,9 @@ Feature: Context Compaction Logging
       | text  | here is my answer       | test-model |
     When the user sends "next thing" on session "giving-up"
     Then the memory comm has events matching:
-      | event                | error      | consecutive-failures | reason             |
-      | compaction-failure   | :llm-error | 6                    |                    |
-      | compaction-disabled  |            |                      | :too-many-failures |
+      | event    | kind                  | error      | consecutive-failures | reason             |
+      | bulletin | compaction/failure    | :llm-error | 6                    |                    |
+      | bulletin | compaction/disabled   |            |                      | :too-many-failures |
     And session "giving-up" matches:
       | key                 | value |
       | compaction-disabled | true  |

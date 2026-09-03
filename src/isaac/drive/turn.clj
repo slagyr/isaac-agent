@@ -855,7 +855,7 @@
             :soul            soul
             :context-window  context-window
             :provider        provider
-            :comm            comm
+            :comm            (or comm null-comm/channel)
             :guidance        guidance
             :nonce           nonce
             :origin          origin
@@ -1303,7 +1303,7 @@
                                                 :soul            soul
                                                 :context-window  context-window
                                                 :provider        provider
-                                                :comm            comm
+                                                :comm            (or comm null-comm/channel)
                                                 :input           input
                                                 :guidance        guidance
                                                 :nonce           nonce
