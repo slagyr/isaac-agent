@@ -1,4 +1,3 @@
-@wip
 Feature: Idle sealing — a quiet thread becomes recallable within minutes
   Recall only sees sealed, indexed scenes. Today a scene seals on size cap,
   on topic drift, or when the episode closes — and an episode closes only
@@ -13,7 +12,8 @@ Feature: Idle sealing — a quiet thread becomes recallable within minutes
   tick. Closing is housekeeping; sealing is what makes memory visible.
 
   Background:
-    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
+    Given default Grover setup
+    And the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |

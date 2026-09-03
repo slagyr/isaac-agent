@@ -719,7 +719,10 @@
          :description "Cosine below which the new exchange has drifted from the rolling open-scene vector"},
         :min-tail
         {:type :int,
-         :description "Minimum unsealed-tail messages before drift may fire"}}}}}},
+         :description "Minimum unsealed-tail messages before drift may fire"},
+        :idle-minutes
+        {:type :int,
+         :description "Minutes of quiet before the episodes worker idle-seals the whole tail (default 3)"}}}}}},
    :recall
    {:schema
     {:name :recall,
