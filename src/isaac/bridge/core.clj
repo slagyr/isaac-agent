@@ -3,7 +3,7 @@
 
   Reply layering: core formatters and slash :message strings are plain text at
   ground level. Fixed-width slash output (e.g. /status) is tagged as
-  :preformatted in on-text-chunk so markdown comms can fence it; CLI and LLM
+  :preformatted in on-chatter so markdown comms can fence it; CLI and LLM
   paths stay raw. See isaac.comm.render."
   (:require
     [clojure.string :as str]
@@ -67,7 +67,7 @@
   (let [chunk  (reply-chunk result)
         output (render/chunk-text chunk)]
     (when ch
-      (comm/on-text-chunk ch session-key chunk)
+      (comm/on-chatter ch session-key nil chunk)
       (comm/on-turn-end ch session-key (assoc result
                                               :content output
                                               :format  (render/chunk-format chunk))))

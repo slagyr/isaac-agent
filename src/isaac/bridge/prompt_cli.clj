@@ -53,31 +53,52 @@
       (some-> (:error payload) str)
       "unknown error"))
 
-(deftype PromptComm [text-atom live?]
+(defn- bulletin-kind [bulletin]
+  (or (:kind bulletin) (:kind (:payload bulletin))))
+
+(defn- bulletin-payload [bulletin]
+  (or (:payload bulletin) (dissoc bulletin :kind :event :session)))
+
+(deftype PromptComm [text-atom live?])
+
+(extend PromptComm
   comm/Comm
-  (on-turn-start [_ _ _] nil)
-  (on-text-chunk [_ _ text]
-    (let [plain (render/chunk-text text)]
-      (swap! text-atom str plain)
-      (when live?
-        (print plain)
-        (flush))))
-  (on-tool-call [_ _ tool-call]
-    (stderr-line! (str (tool-icon (:name tool-call)) " " (:name tool-call)
-                       (when-let [summary (not-empty (str (tool-summary tool-call)))]
-                         (str " " summary)))))
-  (on-tool-cancel [_ _ _] nil)
-  (on-tool-result [_ _ tool-call _]
-    (stderr-line! (str "← " (:name tool-call))))
-  (on-compaction-start [_ _ payload]
-    (stderr-line! (str "🥬 compacting… " (:total-tokens payload))))
-  (on-compaction-success [_ _ _]
-    (stderr-line! "✨ compacted"))
-  (on-compaction-failure [_ _ payload]
-    (stderr-line! (str "🥀 compaction failed: " (compaction-error-text payload))))
-  (on-compaction-disabled [_ _ payload]
-    (stderr-line! (str "🪦 compaction disabled: " (name (:reason payload)))))
-  (on-turn-end [_ _ _] nil))
+  (merge comm/defaults
+         {:on-chatter
+          (fn [this _ _ text]
+            (let [plain (render/chunk-text text)]
+              (swap! (.-text-atom this) str plain)
+              (when (.-live? this)
+                (print plain)
+                (flush))))
+
+          :on-tool-call
+          (fn [_ _ tool-call]
+            (stderr-line! (str (tool-icon (:name tool-call)) " " (:name tool-call)
+                               (when-let [summary (not-empty (str (tool-summary tool-call)))]
+                                 (str " " summary)))))
+
+          :on-tool-result
+          (fn [_ _ tool-call _]
+            (stderr-line! (str "← " (:name tool-call))))
+
+          :on-bulletin
+          (fn [_ _ bulletin]
+            (let [kind    (bulletin-kind bulletin)
+                  payload (bulletin-payload bulletin)]
+              (case kind
+                :compaction/start
+                (stderr-line! (str "🥬 compacting… " (:total-tokens payload)))
+                :compaction/success
+                (stderr-line! "✨ compacted")
+                :compaction/failure
+                (stderr-line! (str "🥀 compaction failed: " (compaction-error-text payload)))
+                :compaction/disabled
+                (stderr-line! (str "🪦 compaction disabled: " (name (:reason payload))))
+                nil)))
+
+          :send!
+          (fn [_ _] {:ok false :transient? false})}))
 
 (defn- make-prompt-comm
   ([] (make-prompt-comm false))

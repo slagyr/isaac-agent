@@ -35,7 +35,7 @@
 
 (defn- fake-dispatch! [text]
   (fn [charge]
-    (comm/on-text-chunk (:comm charge) (:session-key charge) text)
+    (comm/on-chatter (:comm charge) (:session-key charge) nil text)
     {}))
 
 (defn- fake-charge [request]
@@ -60,13 +60,13 @@
             channel     (:comm collector)
             err-writer  (java.io.StringWriter.)]
         (binding [*err* err-writer]
-          (comm/on-compaction-start channel "prompt-default" {:total-tokens 95})
+          (comm/on-bulletin channel "prompt-default" {:kind :compaction/start :total-tokens 95})
           (comm/on-tool-call channel "prompt-default" {:id "tc" :name "fs__grep" :arguments {:pattern "lettuce" :path "src"}})
           (comm/on-tool-result channel "prompt-default" {:id "tc" :name "fs__grep" :arguments {:pattern "lettuce" :path "src"}} "ok")
-          (comm/on-compaction-success channel "prompt-default" {:tokens-saved 40})
-          (comm/on-compaction-failure channel "prompt-default" {:error :llm-error :consecutive-failures 2})
-          (comm/on-compaction-disabled channel "prompt-default" {:reason :too-many-failures})
-          (comm/on-text-chunk channel "prompt-default" "here is the answer"))
+          (comm/on-bulletin channel "prompt-default" {:kind :compaction/success :tokens-saved 40})
+          (comm/on-bulletin channel "prompt-default" {:kind :compaction/failure :error :llm-error :consecutive-failures 2})
+          (comm/on-bulletin channel "prompt-default" {:kind :compaction/disabled :reason :too-many-failures})
+          (comm/on-chatter channel "prompt-default" {:n 1} "here is the answer"))
         (should= "here is the answer" @(:text collector))
         (let [stderr (str err-writer)]
           (should (str/includes? stderr "🥬 compacting"))
@@ -140,7 +140,7 @@
       (let [used-key (atom nil)]
         (with-redefs [bridge/dispatch! (fn [charge]
                                          (reset! used-key (:session-key charge))
-                                         (comm/on-text-chunk (:comm charge) (:session-key charge) "Hi")
+                                         (comm/on-chatter (:comm charge) (:session-key charge) nil "Hi")
                                          {})]
           (with-out-str (sut/run (assoc base-opts :message "Hi"))))
         (should= "prompt-default" @used-key)))
@@ -150,7 +150,7 @@
       (let [used-key (atom nil)]
         (with-redefs [bridge/dispatch! (fn [charge]
                                          (reset! used-key (:session-key charge))
-                                         (comm/on-text-chunk (:comm charge) (:session-key charge) "Ok")
+                                         (comm/on-chatter (:comm charge) (:session-key charge) nil "Ok")
                                          {})]
            (with-out-str
              (sut/run (assoc base-opts :message "Next" :session (str "agent:" crew-name ":cli:direct:user1")))))
@@ -161,7 +161,7 @@
       (let [captured (atom nil)]
         (with-redefs [bridge/dispatch! (fn [charge]
                                          (reset! captured charge)
-                                         (comm/on-text-chunk (:comm charge) (str "agent:" crew-name ":cli:direct:user1") "Ok")
+                                         (comm/on-chatter (:comm charge) (str "agent:" crew-name ":cli:direct:user1") nil "Ok")
                                          {})]
           (with-out-str
             (sut/run {:root "/test/prompt"
@@ -175,7 +175,7 @@
       (let [captured (atom nil)]
         (with-redefs [bridge/dispatch! (fn [charge]
                                          (reset! captured charge)
-                                         (comm/on-text-chunk (:comm charge) (str "agent:" crew-name ":cli:direct:user1") "Ok")
+                                         (comm/on-chatter (:comm charge) (str "agent:" crew-name ":cli:direct:user1") nil "Ok")
                                          {})]
           (with-out-str
             (sut/run {:root        "/test/prompt"
@@ -190,7 +190,7 @@
       (let [used-key (atom nil)]
         (with-redefs [bridge/dispatch! (fn [charge]
                                          (reset! used-key (:session-key charge))
-                                         (comm/on-text-chunk (:comm charge) (:session-key charge) "Ok")
+                                         (comm/on-chatter (:comm charge) (:session-key charge) nil "Ok")
                                          {})]
           (with-out-str
             (sut/run (assoc base-opts :message "hello" :crew "ketch"))))
@@ -231,7 +231,7 @@
       (let [captured (atom nil)]
         (with-redefs [bridge/dispatch! (fn [charge]
                                          (reset! captured charge)
-                                         (comm/on-text-chunk (:comm charge) (:session-key charge) "Ok")
+                                         (comm/on-chatter (:comm charge) (:session-key charge) nil "Ok")
                                          {})]
           (with-out-str
             (should= 0 (sut/run (assoc base-opts :message "Hi" :observer ["lookout"])))))
@@ -241,7 +241,7 @@
       (let [seen-during (atom nil)]
         (with-out-str
           (with-redefs [bridge/dispatch! (fn [charge]
-                                           (comm/on-text-chunk (:comm charge) (:session-key charge) "Land ho ahead")
+                                           (comm/on-chatter (:comm charge) (:session-key charge) nil "Land ho ahead")
                                            (reset! seen-during (str *out*))
                                            {})]
             (should= 0 (sut/run (assoc base-opts :message "Hi" :observer ["lookout"])))))
@@ -253,7 +253,7 @@
         (let [captured (atom nil)]
           (with-redefs [bridge/dispatch! (fn [charge]
                                            (reset! captured charge)
-                                           (comm/on-text-chunk (:comm charge) (:session-key charge) "Ok")
+                                           (comm/on-chatter (:comm charge) (:session-key charge) nil "Ok")
                                            {})]
             (with-out-str
               (should= 0 (sut/run (assoc base-opts :message "Hi" :turnstile ["worksite:chart-room"])))))
@@ -320,7 +320,7 @@
       (let [used-key (atom nil)]
         (with-redefs [bridge/dispatch! (fn [charge]
                                          (reset! used-key (:session-key charge))
-                                         (comm/on-text-chunk (:comm charge) (:session-key charge) "Ok")
+                                         (comm/on-chatter (:comm charge) (:session-key charge) nil "Ok")
                                          {})]
           (with-out-str
             (sut/run (assoc base-opts :message "Hi" :resume true))))
@@ -330,7 +330,7 @@
       (let [used-key (atom nil)]
         (with-redefs [bridge/dispatch! (fn [charge]
                                          (reset! used-key (:session-key charge))
-                                         (comm/on-text-chunk (:comm charge) (:session-key charge) "Ok")
+                                         (comm/on-chatter (:comm charge) (:session-key charge) nil "Ok")
                                          {})]
           (with-out-str
             (sut/run (assoc base-opts :message "Hi" :resume true))))
@@ -342,7 +342,7 @@
             ss       (store/registered-store)]
         (with-redefs [bridge/dispatch! (fn [charge]
                                          (reset! used-key (:session-key charge))
-                                         (comm/on-text-chunk (:comm charge) (:session-key charge) "Charted")
+                                         (comm/on-chatter (:comm charge) (:session-key charge) nil "Charted")
                                          {})]
           (with-out-str
             (should= 0 (sut/run (assoc base-opts :message "Chart the reef" :session "reef-chat" :crew crew-name)))))
@@ -362,7 +362,7 @@
                                          (store/append-message! (store/registered-store)
                                                                 (:session-key charge)
                                                                 {:role "assistant" :content "y"})
-                                         (comm/on-text-chunk (:comm charge) (:session-key charge) "Ok")
+                                         (comm/on-chatter (:comm charge) (:session-key charge) nil "Ok")
                                          {})]
           (with-out-str
             (sut/run (assoc base-opts :message "first" :session "reef-chat" :crew crew-name))
@@ -375,7 +375,7 @@
       (reset! loader-stub {:config (assoc-in synthetic-config [:crew crew-name :conversation] :episodes)})
       (let [sealed (atom nil)]
         (with-redefs [bridge/dispatch! (fn [charge]
-                                         (comm/on-text-chunk (:comm charge) (:session-key charge) "Charted")
+                                         (comm/on-chatter (:comm charge) (:session-key charge) nil "Charted")
                                          {})
                       isaac.episodes.lifecycle/maybe-seal! (fn [opts]
                                                              (reset! sealed opts)

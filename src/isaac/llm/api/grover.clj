@@ -142,7 +142,15 @@
            token-counts)))
 
 (defn- scripted-response [scripted model]
-  (let [resp-model     (if (contains? scripted :model) (:model scripted) model)
+  (let [scripted       (if (and (= "text" (:type scripted))
+                                (nil? (:content scripted))
+                                (:tool_call scripted)
+                                (not (str/includes? (str (:tool_call scripted)) "__")))
+                         (-> scripted
+                             (assoc :content (:tool_call scripted))
+                             (dissoc :tool_call))
+                         scripted)
+        resp-model     (if (contains? scripted :model) (:model scripted) model)
         input-tokens   (or (get-in scripted [:usage :input_tokens]) (:prompt_eval_count scripted) (:prompt_tokens scripted) (:input_tokens scripted) (:usage.input_tokens scripted) (:prompt_eval_count token-counts))
         output-tokens  (or (get-in scripted [:usage :output_tokens]) (:eval_count scripted) (:completion_tokens scripted) (:output_tokens scripted) (:usage.output_tokens scripted) (:eval_count token-counts))
         token-overrides {:prompt_eval_count input-tokens
@@ -170,6 +178,21 @@
       (= "error" (:type scripted))
       {:error :llm-error :message (:content scripted) :model resp-model}
 
+      (= "reasoning" (:type scripted))
+      (let [summary (:content scripted)]
+        (if-let [next (dequeue!)]
+          (assoc (scripted-response next model) :reasoning {:summary summary})
+          (cond-> (merge {:model       resp-model
+                          :message     {:role "assistant" :content ""}
+                          :reasoning   {:summary summary}
+                          :done        true
+                          :done_reason "stop"}
+                         metadata
+                         token-counts
+                         token-overrides)
+            (:id scripted) (assoc :response-id (:id scripted)
+                                  :response {:id (:id scripted)}))))
+
       (or (seq (:tool_calls scripted)) (:tool_call scripted))
       (let [calls (if (seq (:tool_calls scripted))
                     (:tool_calls scripted)
@@ -177,7 +200,7 @@
                                  :arguments (:arguments scripted)}}])]
         (cond-> (merge {:model   resp-model
                         :message {:role       "assistant"
-                                  :content    ""
+                                  :content    (or (:content scripted) "")
                                   :tool_calls calls}
                         :done    true
                         :done_reason "stop"}
@@ -394,6 +417,9 @@
                                    (seq content)     (str/split content #"(?<=\s)")
                                    :else             [""])]
         ;; Emit word-by-word chunks
+        (when-let [summary (or (get-in response [:reasoning :summary])
+                               (:summary (:reasoning response)))]
+          (on-chunk {:reasoning summary :done false}))
         (doseq [w words]
           (on-chunk {:message {:role "assistant" :content w} :done false}))
         ;; Final chunk
@@ -403,7 +429,9 @@
                                         (assoc :done true))
                               (not supports-tool-calls?) (update :message dissoc :tool_calls))]
           (on-chunk final)
-          final)))))
+          (if (seq (get-in response [:message :tool_calls]))
+            response
+            final))))))
 
 (defn followup-messages
   "Build the next iteration's :messages vector for the Grover test provider.

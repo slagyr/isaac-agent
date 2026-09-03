@@ -90,7 +90,6 @@ Feature: LLM Interaction
       | type  | error               |
       | error | :connection-refused |
 
-  @wip
   Scenario: tools-using turns stream text deltas as they arrive
     Given the built-in tools are registered
     And the crew "main" allows tools: "fs/grep"

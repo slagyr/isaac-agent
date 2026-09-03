@@ -38,21 +38,15 @@
         (str/starts-with? value "\"")) (edn/read-string value)
     :else value))
 
-(deftype StubComm []
+(deftype StubComm [])
+
+(extend StubComm
   comm/Comm
-  (on-turn-start [_ _ _] nil)
-  (on-text-chunk [_ _ _] nil)
-  (on-tool-call [_ _ _] nil)
-  (on-tool-cancel [_ _ _] nil)
-  (on-tool-result [_ _ _ _] nil)
-  (on-compaction-start [_ _ _] nil)
-  (on-compaction-success [_ _ _] nil)
-  (on-compaction-failure [_ _ _] nil)
-  (on-compaction-disabled [_ _ _] nil)
-  (on-turn-end [_ _ _] nil)
-  (send! [_ record]
-    (g/update! :stub-comm-calls #(conj (or % []) record))
-    (or (g/get :stub-comm-result) {:ok true})))
+  (merge comm/defaults
+         {:send!
+          (fn [_ record]
+            (g/update! :stub-comm-calls #(conj (or % []) record))
+            (or (g/get :stub-comm-result) {:ok true}))}))
 
 (def ^:private default-stub-comm-names
   #{"stub" "longwave" "skybeam" "logbook"})

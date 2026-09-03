@@ -5,7 +5,7 @@
     [isaac.attention :as attention]
     [isaac.bridge.cancellation :as bridge]
     [isaac.bridge.suspend :as suspend]
-    [isaac.comm.cli :as cli-comm]
+    [isaac.comm.null :as null-comm]
     [isaac.comm.protocol :as comm]
     [isaac.config.loader :as loader]
     [isaac.drive.dispatch :as dispatch]
@@ -154,6 +154,12 @@
 (defn- append-error! [ctx session-key error-entry]
   (with-transcript-lock session-key #(store/append-error! (or (:session-store ctx) (nexus/get-in [:sessions :store])) session-key error-entry)))
 
+(defn- append-reckoning! [ctx session-key text]
+  (when (and ctx session-key (seq (str text)))
+    (with-transcript-lock session-key
+      #(store/append-reckoning! (or (:session-store ctx) (nexus/get-in [:sessions :store]))
+                                session-key {:text text}))))
+
 (defn- persist-tool-call!
   "Write the assistant toolCall entry as soon as the call is known."
   [ctx session-key tc]
@@ -162,8 +168,8 @@
                      {:role    "assistant"
                       :content [{:type      "toolCall"
                                  :id        (:id tc)
-                                 :name      (:name tc)
-                                 :arguments (:arguments tc)}]})))
+                                 :name      (or (:name tc) (get-in tc [:function :name]))
+                                 :arguments (or (:arguments tc) (get-in tc [:function :arguments]))}]})))
 
 (defn- persist-tool-result!
   "Write the toolResult entry as soon as the tool returns."
@@ -342,11 +348,18 @@
                                           (error-message err))))))
           [result (:response result)])))
 
+(defn- chunk-reasoning [chunk]
+  (or (when (string? (:reasoning chunk)) (:reasoning chunk))
+      (get-in chunk [:reasoning :summary])
+      (get-in chunk [:delta :reasoning])))
+
 (defn stream-response! [p request on-chunk]
   (let [full-content (atom "")
         final-resp   (atom nil)
         result       (dispatch/dispatch-chat-stream p request
                                                     (fn [chunk]
+                                                      (when-let [reasoning (chunk-reasoning chunk)]
+                                                        (on-chunk {:reasoning reasoning}))
                                                       (when-let [piece (chunk-piece @full-content chunk)]
                                                         (when (seq piece)
                                                           (swap! full-content str piece)
@@ -361,11 +374,17 @@
       result
 
       :else
-      {:content  (or (not-empty @full-content) (get-in result [:message :content]) "")
-       :response (if (meaningful-final-chunk? @final-resp) @final-resp result)})))
+      (let [content  (or (not-empty @full-content) (get-in result [:message :content]) "")
+            inner    (if (meaningful-final-chunk? @final-resp) @final-resp result)
+            inner    (cond-> inner
+                       (seq (get-in result [:message :tool_calls]))
+                       (assoc-in [:message :tool_calls] (get-in result [:message :tool_calls]))
+                       (seq (:tool-calls result))
+                       (assoc :tool-calls (:tool-calls result)))]
+        {:content content :response inner}))))
 
 
-(defn- emit-response-content! [channel-impl session-key response]
+(defn- emit-response-content! [channel-impl session-key cycle response]
   (let [content (get-in response [:message :content])
         chunks  (cond
                   (vector? content) (mapv str content)
@@ -373,7 +392,7 @@
                   (nil? content) []
                   :else [(str content)])]
     (doseq [chunk chunks]
-      (comm/on-text-chunk channel-impl session-key chunk))
+      (comm/on-chatter channel-impl session-key cycle chunk))
     (apply str chunks)))
 
 (defn- stream-supports-tool-calls? [provider-config]
@@ -390,12 +409,16 @@
                (get provider-config :streamNonToolTurns))))
 
 (defn- unwrap-stream-result
-  "stream-response! returns {:content streamed-text :response chat-response}.
-   The tool loop wants the inner chat-response so it can read :message and :tool-calls."
+  "Prefer the outer dispatch result when it carries tool_calls; otherwise the
+   inner :response. Streaming adapters sometimes stash tool_calls only on the
+   outer map."
   [result]
   (cond
     (:error result) result
     (prompt-too-long? result) result
+    (or (seq (get-in result [:message :tool_calls]))
+        (seq (:tool-calls result)))
+    result
     (:response result) (:response result)
     :else result))
 
@@ -404,25 +427,37 @@
 
    - Tools requested, streaming supports tools: stream deltas via Comm callbacks.
    - Otherwise (no tools, or tools but streaming not supported): one-shot chat,
-     emit content as a single Comm chunk."
-  [channel-impl session-key p request]
-  (cond
-    (and (:tools request) (stream-supports-tool-calls? (api/config p)))
-    (fn [req] (unwrap-stream-result
-                (stream-response! p req
-                                  (fn [chunk] (comm/on-text-chunk channel-impl session-key chunk)))))
+     emit content as a single Comm chunk.
+   `cycle*` is an atom of {:n n :model ...} updated by the tool-loop on-cycle hook."
+  [channel-impl session-key p request cycle*]
+  (let [cycle-now #(or (when cycle* @cycle*) {:n 1 :model (:model request)})]
+    (cond
+      (and (:tools request) (stream-supports-tool-calls? (api/config p)))
+      (fn [req] (unwrap-stream-result
+                  (stream-response! p req
+                                    (fn [chunk]
+                                      (if (and (map? chunk) (:reasoning chunk))
+                                        (comm/on-reckoning channel-impl session-key (cycle-now) (:reasoning chunk))
+                                        (comm/on-chatter channel-impl session-key (cycle-now) chunk))))))
 
-    (and (not (seq (:tools request))) (stream-non-tool-turns? (api/config p)))
-    (fn [req] (unwrap-stream-result
-                (stream-response! p req
-                                  (fn [chunk] (comm/on-text-chunk channel-impl session-key chunk)))))
+      (and (not (seq (:tools request))) (stream-non-tool-turns? (api/config p)))
+      (fn [req] (unwrap-stream-result
+                  (stream-response! p req
+                                    (fn [chunk]
+                                      (if (and (map? chunk) (:reasoning chunk))
+                                        (comm/on-reckoning channel-impl session-key (cycle-now) (:reasoning chunk))
+                                        (comm/on-chatter channel-impl session-key (cycle-now) chunk))))))
 
-    :else
-    (fn [req] (let [result (dispatch/dispatch-chat p req)]
-                (if (or (:error result) (prompt-too-long? result))
-                  result
-                  (let [joined (emit-response-content! channel-impl session-key result)]
-                    (assoc-in result [:message :content] joined)))))))
+      :else
+      (fn [req] (let [result (dispatch/dispatch-chat p req)]
+                  (if (or (:error result) (prompt-too-long? result))
+                    result
+                    (do
+                      (when-let [summary (or (get-in result [:reasoning :summary])
+                                             (get-in result [:response :reasoning :summary]))]
+                        (comm/on-reckoning channel-impl session-key (cycle-now) summary))
+                      (let [joined (emit-response-content! channel-impl session-key (cycle-now) result)]
+                        (assoc-in result [:message :content] joined)))))))))
 
 (defn- resolve-tool-loop-max [{:keys [config crew crew-cfg]}]
   (let [raw (or (:tool-loop-max crew-cfg)
@@ -608,10 +643,11 @@
                   :total-tokens prompt-tokens
                   :context-window context-window)
         (when ch
-          (comm/on-compaction-start ch session-key {:provider       provider-name
-                                                    :model          model
-                                                    :total-tokens   prompt-tokens
-                                                    :context-window context-window}))
+          (comm/on-bulletin ch session-key {:kind            :compaction/start
+                                            :provider        provider-name
+                                            :model           model
+                                            :total-tokens    prompt-tokens
+                                            :context-window  context-window}))
         (let [result (compaction/compact! session-key
                                           {:model               model
                                            :api                 provider
@@ -627,13 +663,14 @@
             (let [failures (inc (consecutive-compaction-failures (session-entry opts session-key)))]
               (store/update-session! (or (:session-store opts) (nexus/get-in [:sessions :store])) session-key {:compaction {:consecutive-failures failures}})
               (when ch
-                (comm/on-compaction-failure ch session-key {:consecutive-failures failures
-                                                            :error                (:error result)
-                                                            :message              (:message result)}))
+                (comm/on-bulletin ch session-key {:kind                  :compaction/failure
+                                                  :consecutive-failures  failures
+                                                  :error                 (:error result)
+                                                  :message               (:message result)}))
               (when (>= failures max-compaction-attempts)
                 (store/update-session! (or (:session-store opts) (nexus/get-in [:sessions :store])) session-key {:compaction-disabled true})
                 (when ch
-                  (comm/on-compaction-disabled ch session-key {:reason :too-many-failures}))
+                  (comm/on-bulletin ch session-key {:kind :compaction/disabled :reason :too-many-failures}))
                 (attention/maybe-notify-compaction-disabled!
                   (loader/snapshot "compaction-disabled attention")
                   session-key
@@ -659,9 +696,10 @@
                                                                                                                :compaction          {:consecutive-failures 0}})
               (let [updated-total (compaction/estimate-prompt-tokens session-key opts)]
                 (when ch
-                  (comm/on-compaction-success ch session-key {:summary      (:summary result)
-                                                              :tokens-saved (max 0 (- prompt-tokens updated-total))
-                                                              :duration-ms  (- (System/currentTimeMillis) started-at)}))
+                  (comm/on-bulletin ch session-key {:kind         :compaction/success
+                                                    :summary      (:summary result)
+                                                    :tokens-saved (max 0 (- prompt-tokens updated-total))
+                                                    :duration-ms  (- (System/currentTimeMillis) started-at)}))
                 ;; Recheck iff compactable material remains after the splice
                 ;; (isaac-5cr6). Chunked splices and true oversized-single
                 ;; splices (a compactable body > window) are partial. A
@@ -1052,18 +1090,21 @@
   "Wrap a tool invocation with comm callbacks, cancellation tracking, and
    mid-loop transcript persist: toolCall before exec, toolResult after return.
    Increments tool-count for loop telemetry."
-  [{:keys [session-key allowed-tools module-index tool-count caps ctx] ch :comm} name arguments]
+  [{:keys [session-key allowed-tools module-index tool-count caps ctx end-aside!] ch :comm} name arguments]
   (let [tc         {:id (str (java.util.UUID/randomUUID)) :name name :arguments arguments :type "toolCall"}
         tool-state (atom :pending)
         cancel!    #(when (compare-and-set! tool-state :pending :cancelled)
                       (comm/on-tool-cancel ch session-key tc))]
     (comm/on-tool-call ch session-key tc)
+    (when end-aside! (end-aside!))
     (persist-tool-call! ctx session-key tc)
     (bridge/on-cancel! session-key cancel!)
-    (let [tool-fn* #_{:clj-kondo/ignore [:invalid-arity]} (tool-registry/tool-fn allowed-tools module-index caps)
-          result                                          (tool-fn*
-                                                            name
-                                                            (assoc arguments "session_key" session-key))]
+    (let [progress! (fn [chunk] (comm/on-tool-progress ch session-key tc chunk))
+          tool-fn*  #_{:clj-kondo/ignore [:invalid-arity]} (tool-registry/tool-fn allowed-tools module-index caps)
+          args      (cond-> (or arguments {})
+                     true (assoc "session_key" session-key)
+                     true (assoc :progress! progress!))
+          result    (tool-fn* name args)]
       (when (= :cancelled (:error result))
         (cancel!)
         (throw (ex-info "cancelled" {:type :cancelled})))
@@ -1084,7 +1125,7 @@
         tool-loop-max (resolve-tool-loop-max {:config config :crew crew :crew-cfg crew-cfg})
         caps          {:max-lines (get-in config [:tools :defaults :max-lines])
                        :max-bytes (get-in config [:tools :defaults :max-bytes])}
-        ch            (or comm cli-comm/channel)
+        ch            (or comm null-comm/channel)
         p             provider]
     (when-not (:from-queue? charge)
       (append-message! ctx session-key {:role "user" :content input}))
@@ -1122,29 +1163,58 @@
                                      :tool-selection-reason tool-reason
                                      :request-keys (-> request keys sort vec))
           current-request (atom request)
-          tool-count      (atom 0)
-          tool-fn         (partial record-tool-call! {:comm           ch
+          tool-count      (atom 0)]
+      (when-let [done (:compaction-llm-done (active-compaction-state session-key))]
+        (deref done 5000 nil))
+      (let [cycle*      (atom {:n 1 :model model})
+            chat-fn     (chat-fn-for ch session-key p @current-request cycle*)
+            followup-fn (fn [req response tool-calls tool-results]
+                          (let [messages (api/followup-messages p req response tool-calls tool-results)]
+                            (reset! current-request (assoc req :messages messages))
+                            messages))
+            pending-aside* (atom nil)
+            on-cycle      (fn [phase n response-or-req]
+                            (let [cycle {:n n :model model}]
+                              (reset! cycle* cycle)
+                              (if (= :start phase)
+                                (do (reset! pending-aside* nil)
+                                    (comm/on-cycle-start ch session-key cycle))
+                                (when-not (or (:error response-or-req) (:unavailable? response-or-req))
+                                  (let [text       (or (get-in response-or-req [:message :content]) "")
+                                        tool-calls (or (:tool-calls response-or-req)
+                                                       (get-in response-or-req [:message :tool_calls])
+                                                       [])
+                                        summary    (or (get-in response-or-req [:reasoning :summary])
+                                                       (get-in response-or-req [:response :reasoning :summary]))]
+                                    (when (seq (str summary))
+                                      (append-reckoning! ctx session-key summary))
+                                    (if (seq tool-calls)
+                                      (reset! pending-aside* {:cycle cycle :text text :tool-calls tool-calls})
+                                      (do
+                                        (comm/on-cycle-end ch session-key cycle {:outcome :reply :text text :tool-calls []})
+                                        (comm/on-reply ch session-key text))))))))
+            end-aside!    (fn []
+                            (when-let [{:keys [cycle text tool-calls]} @pending-aside*]
+                              (reset! pending-aside* nil)
+                              (comm/on-cycle-end ch session-key cycle {:outcome :aside :text text :tool-calls tool-calls})
+                              (comm/on-aside ch session-key cycle text)))
+            tool-fn       (partial record-tool-call! {:comm           ch
                                                       :session-key    session-key
                                                       :allowed-tools  allowed-tools
                                                       :module-index   module-index
                                                       :caps           caps
                                                       :tool-count     tool-count
-                                                      :ctx            ctx})]
-      (when-let [done (:compaction-llm-done (active-compaction-state session-key))]
-        (deref done 5000 nil))
-      (let [chat-fn     (chat-fn-for ch session-key p @current-request)
-            followup-fn (fn [req response tool-calls tool-results]
-                          (let [messages (api/followup-messages p req response tool-calls tool-results)]
-                            (reset! current-request (assoc req :messages messages))
-                            messages))
-            run-loop    (fn [req]
-                          (let [provider-name (api/display-name p)
-                                request*      (assoc req :provider provider-name)
-                                chat-fn*      (chat-fn-for ch session-key p request*)]
-                            (tool-loop/run chat-fn* followup-fn request* tool-fn
-                                           {:max-loops   tool-loop-max
-                                            :cancelled?  #(bridge/cancelled? session-key)
-                                            :after-tools #(maybe-mid-turn-compact! session-key ctx % current-request)})))
+                                                      :ctx            ctx
+                                                      :end-aside!     end-aside!})
+            run-loop      (fn [req]
+                            (let [provider-name (api/display-name p)
+                                  request*      (assoc req :provider provider-name)
+                                  chat-fn*      (chat-fn-for ch session-key p request* cycle*)]
+                              (tool-loop/run chat-fn* followup-fn request* tool-fn
+                                             {:max-loops   tool-loop-max
+                                              :cancelled?  #(bridge/cancelled? session-key)
+                                              :after-tools #(maybe-mid-turn-compact! session-key ctx % current-request)
+                                              :on-cycle    on-cycle})))
             first-result (run-loop request)
             retry        (overflow-compact-retry! session-key ctx current-request first-result)
             loop-result  (cond
@@ -1268,7 +1338,7 @@
   (let [session-key (:session-key charge)
         input       (:input charge)
         ctx         (build-turn charge)
-        ch          (or (:comm charge) cli-comm/channel)
+        ch          (or (:comm charge) null-comm/channel)
         turn-id     (bridge/begin-turn! session-key)
         observers   (observer/for-turn (:observers charge))
         finish!     #(finish-turn! ch session-key % observers (:origin charge))]
