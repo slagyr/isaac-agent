@@ -110,6 +110,9 @@
 (defn last-compaction-request []
   @last-compaction-request*)
 
+(defn clear-last-compaction-request! []
+  (reset! last-compaction-request* nil))
+
 (defn- last-compaction [transcript]
   (->> transcript
        (filter #(= "compaction" (:type %)))

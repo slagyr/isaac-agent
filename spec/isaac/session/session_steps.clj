@@ -58,6 +58,7 @@
 (g/before-scenario #(config/dangerously-install-config! nil "spec"))
 (g/before-scenario module-loader/clear-activations!)
 (g/before-scenario grover/install-test-fixture!)
+(g/before-scenario session-compaction/clear-last-compaction-request!)
 (g/before-scenario slash-registry/clear!)
 
 ;; Capture the real `sidecar-store/create-store` once at load time so we can
