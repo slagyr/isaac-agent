@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.41
+
+- Conversation routing seam: surfaces pass an explicit `:conversation {:kind :thread :id ...}` plus `:origin`; the bridge alone resolves chronicle vs episode; turn results carry the preserved origin for delivery; `:episodes/opened` logs origin (isaac-7dkp, supersedes isaac-mrfu's charge-skip fix).
+
 ## 0.1.40
 
 - Token accounting (isaac-pqjn), compact-from-provider-tokens + overflow compact-and-retry (isaac-p9zy, isaac-x2up), fixture/expectation repairs (isaac-0oqd).
