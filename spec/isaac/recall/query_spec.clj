@@ -24,6 +24,13 @@
 
 (describe "isaac.recall.query"
 
+  (describe "heap-delta"
+    (it "reports used-heap growth across the index read"
+      (should= 1024 (sut/heap-delta 4096 5120)))
+
+    (it "floors at zero when a GC shrank the heap mid-read"
+      (should= 0 (sut/heap-delta 5120 4096))))
+
   #_{:clj-kondo/ignore [:unresolved-symbol]}
   (with mem (fs/mem-fs))
 

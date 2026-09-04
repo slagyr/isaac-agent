@@ -68,6 +68,12 @@
        (filter #(= model (:model %)))
        (group-by :scene-id)))
 
+(defn heap-delta
+  "Used-heap growth across a read, floored at 0: a GC during the read makes
+   the raw after-before delta negative, which is noise, not a measurement."
+  [before after]
+  (max 0 (- after before)))
+
 (defn query
   "Rank indexed scenes for `query-text`.
 
@@ -89,9 +95,9 @@
             t-index (System/nanoTime)
             rows  (index/read-index fs* root crew)
             index-ms (quot (- (System/nanoTime) t-index) 1000000)
-            heap-index (- (let [rt (Runtime/getRuntime)]
-                            (- (.totalMemory rt) (.freeMemory rt)))
-                          heap-before)
+            heap-index (heap-delta heap-before
+                                   (let [rt (Runtime/getRuntime)]
+                                     (- (.totalMemory rt) (.freeMemory rt))))
             model (configured-model cfg)
             matching (filter #(= model (:model %)) rows)]
         (if (and (seq rows) (empty? matching))
