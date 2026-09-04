@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.44
+
+- Cycle map carries the turn's `:origin` (charge inbound origin) on on-cycle-start/on-cycle-end so comms route cycle-scoped output — asides, the reply — to the originating channel even when the session key is an episode id; memory comm records `origin-kind` (isaac-ay0s).
+
 ## 0.1.43
 
 - Token accounting locked in: per-cycle provider stamp, last-cycle stamp never a sum, drift-calibrated gauge, implausible-stamp cap with `:session/stamp-implausible`, claude-cli counts cached input (isaac-vuto).
