@@ -163,3 +163,30 @@ Feature: Context-window guard when compaction cannot save the turn
     And session "skybeam" matches:
       | key          | value              |
       | block.reason | :compaction-failed |
+
+  @wip
+  Scenario: Unset block accepts the next needing turn
+    Given the isaac EDN file "config/models/local.edn" exists with:
+      | path           | value      |
+      | context-window | 200        |
+    And the following sessions exist:
+      | name | last-input-tokens | block.reason         | compaction.consecutive-failures | compaction.head |
+      | keel | 165               | :compaction-failed   | 3                               | 0.1             |
+    And session "keel" has transcript:
+      | type    | message.role | message.content                                                              |
+      | message | user         | Please summarize the work we did on the logging subsystem and the tool loop   |
+      | message | assistant    | We discussed logging output sinks, the compaction trigger, and tool dispatch  |
+    And the following model responses are queued:
+      | type | content               | model      |
+      | text | Summary of prior chat | test-model |
+      | text | here is my answer     | test-model |
+    When isaac is run with "sessions unset keel.block"
+    And the user sends "go" on session "keel"
+    Then session "keel" has transcript matching:
+      | type       | message.role | message.content   | summary               |
+      | compaction |              |                   | Summary of prior chat |
+      | message    | assistant    | here is my answer |                       |
+    And session "keel" matches:
+      | key                             | value |
+      | block.reason                    |       |
+      | compaction.consecutive-failures | 0     |
