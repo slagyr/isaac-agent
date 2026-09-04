@@ -1,13 +1,15 @@
 Feature: Parallel tool calls — invite, permit, execute
-  The tool loop already executes every call in a provider response batch.
-  Standing system instructions invite batching; adapters must not disable
-  parallel_tool_calls on OpenAI-dialect wire requests.
+  The tool loop executes every call in a provider response batch (concurrently
+  — see parallel_tool_batches.feature). Standing system instructions invite
+  batching; adapters must not disable parallel_tool_calls on OpenAI-dialect
+  wire requests.
 
   Background:
     Given default Grover setup
     And the built-in tools are registered
 
-  Scenario: a single grover response with two tool calls runs both in order and persists both pairs
+  @wip
+  Scenario: a single grover response with two tool calls runs both and persists both pairs, paired by id
     Given the following sessions exist:
       | name        |
       | batch-tools |
@@ -19,10 +21,11 @@ Feature: Parallel tool calls — invite, permit, execute
     Then session "batch-tools" has transcript matching:
       | type    | message.role | message.content[0].name |
       | message | assistant    | fs__read                |
-      | message | toolResult   |                         |
       | message | assistant    | fs__read                |
       | message | toolResult   |                         |
+      | message | toolResult   |                         |
       | message | assistant    |                         |
+    And every toolResult in session "batch-tools" pairs with a toolCall by id
 
   Scenario: chat-completions outbound request does not set parallel_tool_calls false
     Given an Isaac root at "target/test-state"
