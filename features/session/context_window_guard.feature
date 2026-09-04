@@ -83,3 +83,28 @@ Feature: Context-window guard when compaction cannot save the turn
       | comm    | :discord                                       |
       | target  | boiler-room                                    |
       | content | contains "Compaction disabled" and "giving-up" |
+
+  @wip
+  Scenario: First required compact failure refuses the user turn
+    Given the following sessions exist:
+      | name         | last-input-tokens | #comment                  |
+      | logbook      | 85                | exceeds 80% of 100 window |
+    And session "logbook" has transcript:
+      | type    | message.role | message.content                |
+      | message | user         | Please summarize our work      |
+      | message | assistant    | We discussed logging and tools |
+    And the following model responses are queued:
+      | type  | content                 | model      |
+      | error | context length exceeded | test-model |
+      | text  | Here is my answer       | test-model |
+    When the user sends "What was decided?" on session "logbook"
+    Then the turn result is unavailable with retry-after-ms 300000 and reason context-exhausted
+    And the memory comm has events matching:
+      | event    | kind               | error      | consecutive-failures |
+      | bulletin | compaction/start   |            |                      |
+      | bulletin | compaction/failure | :llm-error | 1                    |
+    And session "logbook" matches:
+      | key                             | value |
+      | compaction.consecutive-failures | 1     |
+      | block.reason                    |       |
+    And session "logbook" has 2 transcript entries
