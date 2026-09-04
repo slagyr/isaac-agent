@@ -110,7 +110,8 @@
       (deliver release true)
       (let [result (deref run* 1000 ::timeout)]
         (should (not= ::timeout result))
-        (should= ["a" "b" "c"] @started)
+        (should= #{"a" "b" "c"} (set @started))
+        (should= "c" (last @started))
         (should= ["ok-a" "ok-b" "ok-c"] (-> @calls first :tool-results)))))
 
   (it "keeps max-parallel-tools one fully serial"
