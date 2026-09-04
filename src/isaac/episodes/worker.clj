@@ -6,7 +6,6 @@
     [isaac.episodes.store :as store]
     [isaac.fs :as fs]
     [clojure.string :as str]
-    [isaac.logger :as log]
     [isaac.nexus :as nexus]
     [isaac.scheduler.runtime :as scheduler]
     [isaac.session.store.spi :as session-store]
@@ -28,10 +27,11 @@
 (defn- load-cfg [cfg fs* root]
   (if (seq cfg)
     cfg
-    (or (try
-          (loader/load-config! root fs* "episodes worker tick")
+    (or (loader/snapshot "episodes worker tick — live config")
+        (try
+          (loader/load-config! root fs* "episodes worker tick — empty snapshot, load from root")
           (catch Exception _
-            (loader/snapshot "episodes worker tick")))
+            nil))
         {})))
 
 (defn- list-crew-names [fs* root]
