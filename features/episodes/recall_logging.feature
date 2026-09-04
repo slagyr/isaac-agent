@@ -5,7 +5,7 @@ Feature: Recall is visible in the logs
   nothing. Operators reading server.log (or cli.log for an ACP process)
   cannot tell whether a turn remembered anything. Every recall decision
   logs an event with enough to judge it: what was searched, what was
-  injected, the best score, and the floor (isaac-<bean>).
+  injected, the best score, and the floor (isaac-80vq).
 
   Background:
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
