@@ -118,7 +118,8 @@
         prov-cfg   (merge (or (resolve/resolve-provider cfg provider) {})
                           (or (get (g/get :provider-configs) provider) {})
                           {:module-index (:module-index cfg)})]
-    {:model          (:model model-cfg)
+    {:origin         {:kind :memory}
+     :model          (:model model-cfg)
      :crew-members   agents
      :models         models
      :soul           (:soul agent-cfg)

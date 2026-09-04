@@ -27,7 +27,9 @@
 
           :on-cycle-start
           (fn [this session-key cycle]
-            (append! (.-events this) {:event "cycle-start" :session session-key :cycle (cycle-n cycle)}))
+            (append! (.-events this) (cond-> {:event "cycle-start" :session session-key :cycle (cycle-n cycle)}
+                                       (:origin cycle) (assoc :origin (:origin cycle)
+                                                              :origin-kind (some-> (get-in cycle [:origin :kind]) name)))))
 
           :on-cycle-end
           (fn [this session-key cycle outcome]

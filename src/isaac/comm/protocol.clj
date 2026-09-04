@@ -28,7 +28,10 @@
      failed/cancelled turns.")
 
   (on-cycle-start [comm session-key cycle]
-    "Fired at the start of each LLM call. `cycle` is {:n n :model ...}.")
+    "Fired at the start of each LLM call. `cycle` is {:n n :model ... :origin ...}:
+     `:origin` is the turn's inbound origin (the charge's {:kind ... :channel-id ...}),
+     so a comm can route cycle-scoped output (asides, the reply) to where the
+     turn came from even when the session key is an episode id.")
 
   (on-cycle-end [comm session-key cycle outcome]
     "Fired after the LLM call returns. `outcome` is

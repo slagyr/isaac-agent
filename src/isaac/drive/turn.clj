@@ -1234,7 +1234,7 @@
           tool-count      (atom 0)]
       (when-let [done (:compaction-llm-done (active-compaction-state session-key))]
         (deref done 5000 nil))
-      (let [cycle*      (atom {:n 1 :model model})
+      (let [cycle*      (atom {:n 1 :model model :origin (:origin charge)})
             chat-fn     (chat-fn-for ch session-key p @current-request cycle*)
             followup-fn (fn [req response tool-calls tool-results]
                           (let [messages (api/followup-messages p req response tool-calls tool-results)]
@@ -1242,7 +1242,7 @@
                             messages))
             pending-aside* (atom nil)
             on-cycle      (fn [phase n response-or-req]
-                            (let [cycle {:n n :model model}]
+                            (let [cycle {:n n :model model :origin (:origin charge)}]
                               (reset! cycle* cycle)
                               (if (= :start phase)
                                 (do (reset! pending-aside* nil)

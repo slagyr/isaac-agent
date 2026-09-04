@@ -95,3 +95,16 @@ Feature: Scuttlebutt — mid-turn signals on the Comm surface
       | tool-progress | test__sounding | and a half three  |
       | tool-result   | test__sounding |                   |
       | reply         |                |                   |
+
+  Scenario: cycle events carry the turn's origin so comms can route by it
+    Given the following sessions exist:
+      | name       |
+      | origin-run |
+    And the following model responses are queued:
+      | type | content | model |
+      | text | done    | echo  |
+    When the user sends "hi" on session "origin-run" via memory comm
+    Then the memory comm has events matching:
+      | event       | cycle | origin-kind |
+      | cycle-start | 1     | memory      |
+      | reply       |       |             |
