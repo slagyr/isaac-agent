@@ -143,3 +143,23 @@ Feature: Context-window guard when compaction cannot save the turn
       | comm    | :discord                                       |
       | target  | boiler-room                                    |
       | content | contains "Conversation blocked" and "longwave" |
+
+  @wip
+  Scenario: A blocked conversation refuses the next turn
+    Given the following sessions exist:
+      | name    | last-input-tokens | block.reason         |
+      | skybeam | 85                | :compaction-failed   |
+    And session "skybeam" has transcript:
+      | type    | message.role | message.content |
+      | message | user         | earlier prompt  |
+      | message | assistant    | earlier reply   |
+    And the following model responses are queued:
+      | type | content           | model      |
+      | text | should not be hit | test-model |
+    When the user sends "one more" on session "skybeam"
+    Then the turn result is unavailable with retry-after-ms 300000 and reason blocked
+    And grover records zero provider requests
+    And session "skybeam" has 2 transcript entries
+    And session "skybeam" matches:
+      | key          | value              |
+      | block.reason | :compaction-failed |
