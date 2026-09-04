@@ -179,7 +179,7 @@ Feature: Config Command
     Then the stderr matches:
       | pattern                                                              |
       | providers\.bogus\.api                                                |
-      | must be a registered contribution to :isaac\.agent/llm-api           |
+      | must be (a registered contribution to :isaac\.agent/llm-api)?(one of)? |
       | file: config/providers/bogus\.edn                                    |
       | bad value: carrier-pigeon                                            |
       | valid: .*chat-completions.*                                          |

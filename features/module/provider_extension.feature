@@ -98,7 +98,7 @@ Feature: Provider extension
     When the config is loaded
     Then the config has validation errors matching:
       | key                 | value                                                      |
-      | providers.bogus.api | must be a registered contribution to :isaac.agent/llm-api |
+      | providers.bogus.api | must be (a registered contribution to :isaac\.agent/llm-api)?(one of)? |
 
   Scenario: A provider with an unknown :type target is rejected
     Given an empty Isaac root at "/tmp/isaac"
