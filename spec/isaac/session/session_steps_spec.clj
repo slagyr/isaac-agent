@@ -4,22 +4,30 @@
     [isaac.config.config-steps :as config-steps]
     [isaac.config.loader :as loader]
     [isaac.foundation.fs-steps :as ffs]
+    [isaac.foundation.root-steps :as froot]
     [isaac.fs :as fs]
     [isaac.llm.api.grover :as grover]
     [isaac.nexus :as nexus]
     [isaac.session.session-steps :as sut]
+    [isaac.session.store.sidecar :as sidecar-store]
     [speclj.core :refer [around describe it should should=]]))
 
 (describe "session feature steps"
 
   #_{:clj-kondo/ignore [:invalid-arity]}
   (around [it]
-    (g/reset!)
-    (grover/reset-queue!)
-    (nexus/-with-nested-nexus {:fs (fs/mem-fs)}
-      (it))
-    (grover/reset-queue!)
-    (g/reset!))
+    (let [create-store (var-get #'sidecar-store/create-store)]
+      (g/reset!)
+      (grover/reset-queue!)
+      (nexus/reset!)
+      (try
+        (nexus/-with-nexus {:fs (fs/mem-fs)}
+          (it))
+        (finally
+          (alter-var-root #'sidecar-store/create-store (constantly create-store))
+          (grover/reset-queue!)
+          (nexus/reset!)
+          (g/reset!)))))
 
   (it "does not wait for a Grover gate after a turn already completed"
     (g/assoc! :turn-future (future {:output "done"
@@ -56,4 +64,8 @@
   (it "matches a validation error value against a #\"...\" table cell"
     (should (#'config-steps/row-matches?
               {:key "tools.allow" :value ":all is the list, not a list item — use :allow :all, never [:all]"}
-              {"key" "tools.allow" "value" "#\":all\""}))))
+              {"key" "tools.allow" "value" "#\":all\""})))
+
+  (it "enriches an Isaac root fixture with tools.max-parallel 4"
+    (froot/in-memory-state "target/test-state")
+    (should= 4 (get-in (#'sut/loaded-config) [:tools :max-parallel]))))

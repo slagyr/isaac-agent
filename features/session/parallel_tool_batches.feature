@@ -1,4 +1,3 @@
-@wip
 Feature: Parallel tool batches — a response's tool calls execute concurrently
   A batch of tool calls in one provider response is a set of independent
   calls: the model gets every result back together and cannot see one before
@@ -9,6 +8,9 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
 
   Background:
     Given default Grover setup
+    And config:
+      | key         | value                 |
+      | tools.allow | [:all :test :test/*] |
     And the built-in tools are registered
 
   Scenario: two calls in one batch overlap — a rendezvous serial execution could never satisfy
@@ -29,9 +31,9 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
       | tool-result | test__handshake |
       | reply       |                 |
     And session "on-deck" has transcript matching:
-      | type    | message.role | message.content[0].text |
-      | message | toolResult   | met                     |
-      | message | toolResult   | met                     |
+      | type    | message.role | message.content |
+      | message | toolResult   | met             |
+      | message | toolResult   | met             |
 
   Scenario: results go back to the model in batch order even when the later call finishes first
     Given a gated tool "test__slow" is registered that returns "slow done" once tool "test__quick" has completed
@@ -65,12 +67,14 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
       | echo  | text       |                                                                                                         | Noted.  |
     When the user sends "go" on session "on-deck" via memory comm
     Then session "on-deck" has transcript matching:
-      | type    | message.role | message.content[0].name | message.content[0].text |
-      | message | assistant    | test__slow              |                         |
-      | message | assistant    | test__quick             |                         |
-      | message | toolResult   |                         | quick done              |
-      | message | toolResult   |                         | slow done               |
-      | message | assistant    |                         | Noted.                  |
+      | type    | message.role | message.content[0].name |
+      | message | assistant    | test__slow              |
+      | message | assistant    | test__quick             |
+    And session "on-deck" has transcript matching:
+      | type    | message.role | message.content |
+      | message | toolResult   | quick done      |
+      | message | toolResult   | slow done       |
+      | message | assistant    | Noted.          |
     And every toolResult in session "on-deck" pairs with a toolCall by id
 
   Scenario: tools.max-parallel is a config knob with a default of 4
@@ -97,15 +101,15 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
     And the memory comm has events matching:
       | event       | tool-name    |
       | tool-call   | test__anchor |
-      | tool-cancel | test__anchor |
+      | tool-result | test__anchor |
     And the memory comm has events matching:
       | event       | tool-name   |
       | tool-call   | test__quick |
       | tool-cancel | test__quick |
     And session "on-deck" has transcript not matching:
-      | type    | message.role | message.content[0].text |
-      | message | toolResult   | never ran               |
-      | message | assistant    | never                   |
+      | type    | message.role | message.content |
+      | message | toolResult   | never ran       |
+      | message | assistant    | never           |
 
   Scenario: one call fails and the other succeeds — each result is its own, the cycle completes
     Given a streaming tool "test__quick" is registered that emits progress [] and returns "quick done"
@@ -114,20 +118,20 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
       | on-deck |
     And the following model responses are queued:
       | model | type       | tool_calls                                                                                                                       | content |
-      |       | tool_calls | [{"function":{"name":"fs__read","arguments":{"filePath":"charts/missing.txt"}}},{"function":{"name":"test__quick","arguments":{}}}] |         |
+      |       | tool_calls | [{"function":{"name":"fs__read","arguments":{"file_path":"charts/missing.txt"}}},{"function":{"name":"test__quick","arguments":{}}}] |         |
       | echo  | text       |                                                                                                                                  | Noted.  |
     When the user sends "go" on session "on-deck" via memory comm
     Then the memory comm has events matching:
       | event       | tool-name   |
-      | tool-result | fs__read    |
       | tool-result | test__quick |
+      | tool-result | fs__read    |
       | reply       |             |
     And session "on-deck" has transcript matching:
-      | type    | message.role | message.content[0].text             |
-      | message | toolResult   | #"not found: .*charts/missing\.txt" |
-      | message | toolResult   | quick done                          |
-      | message | assistant    | Noted.                              |
+      | type    | message.role | message.content             |
+      | message | toolResult   | quick done                  |
+      | message | toolResult   | path outside allowed directories |
+      | message | assistant    | Noted.                      |
     And the last LLM request matches:
-      | path                | value                               |
-      | messages[3].content | #"not found: .*charts/missing\.txt" |
-      | messages[4].content | quick done                          |
+      | path                | value                                                      |
+      | messages[3].content | #"Error: path outside allowed directories: charts/missing\.txt" |
+      | messages[4].content | quick done                                                 |

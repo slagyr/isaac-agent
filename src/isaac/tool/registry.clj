@@ -166,25 +166,30 @@
        (run-handler name arguments caps))
      (unknown-tool-error name))))
 
-(defn- result->string [{:keys [result error isError]}]
-  (if isError
-    (str "Error: " error)
-    result))
+(defn present-result
+  "Normalize a raw tool execution result to the string payload sent back to the model."
+  [{:keys [result error isError] :as raw-result}]
+  (cond
+    (string? raw-result) raw-result
+    isError              (str "Error: " error)
+    (contains? raw-result :result) result
+    (contains? raw-result :error)  (str "Error: " error)
+    :else                (str raw-result)))
 
 (defn tool-fn
   "Returns a function compatible with chat-with-tools that dispatches to the registry."
   ([]
    (fn [name arguments]
-     (result->string (execute name arguments))))
+     (present-result (execute name arguments))))
   ([allowed-tools]
    (fn [name arguments]
-      (result->string (execute name arguments allowed-tools))))
+      (present-result (execute name arguments allowed-tools))))
   ([allowed-tools module-index]
    (fn [name arguments]
-     (result->string (execute name arguments allowed-tools module-index))))
+     (present-result (execute name arguments allowed-tools module-index))))
   ([allowed-tools module-index caps]
    (fn [name arguments]
-     (result->string (execute name arguments allowed-tools module-index caps)))))
+     (present-result (execute name arguments allowed-tools module-index caps)))))
 
 ;; endregion ^^^^^ Execution ^^^^^
 

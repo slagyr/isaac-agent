@@ -1,7 +1,7 @@
 (ns isaac.llm.tool-loop-spec
   (:require
     [isaac.llm.tool-loop :as sut]
-    [speclj.core :refer [describe it should=]]))
+    [speclj.core :refer [describe it should should=]]))
 
 (defn- queue-chat
   "Build a chat-fn that returns successive responses from the given queue.
@@ -70,9 +70,125 @@
           followup-fn (recording-followup (atom []))
           result      (sut/run chat-fn followup-fn {:messages []} tool-fn)]
       (should= 2 (count @tool-runs))
-      (should= "a" (get-in (first @tool-runs) [:args :path]))
-      (should= "b" (get-in (second @tool-runs) [:args :path]))
+      (should= #{"a" "b"} (set (map #(get-in % [:args :path]) @tool-runs)))
       (should= 2 (count (:tool-calls result)))))
+
+  (it "bounds concurrent tool execution to two while preserving batch order"
+    (let [calls        (atom [])
+          release      (promise)
+          started      (atom [])
+          started-two  (promise)
+          in-flight    (atom 0)
+          peak         (atom 0)
+          chat-fn      (queue-chat
+                         [{:tool-calls [{:id "tc1" :name "read" :arguments {:path "a"}}
+                                         {:id "tc2" :name "read" :arguments {:path "b"}}
+                                         {:id "tc3" :name "read" :arguments {:path "c"}}]
+                           :usage      {:input-tokens 10 :output-tokens 5}}
+                          {:message {:role "assistant" :content "done"}
+                           :usage   {:input-tokens 3 :output-tokens 1}}])
+          followup-fn  (recording-followup calls)
+          tool-fn      (fn [_ {:keys [path]}]
+                         (let [paths (swap! started conj path)]
+                           (when (= 2 (count paths))
+                             (deliver started-two true)))
+                         (let [now (swap! in-flight inc)]
+                           (swap! peak max now))
+                         (if (#{"a" "b"} path)
+                           (do
+                             (deref release 1000 :timeout)
+                             (swap! in-flight dec)
+                             (str "ok-" path))
+                           (do
+                             (swap! in-flight dec)
+                             (str "ok-" path))))
+          run*         (future (sut/run chat-fn followup-fn {:messages []} tool-fn {:max-parallel-tools 2}))]
+      (should= true (deref started-two 1000 nil))
+      (should= ["a" "b"] (vec (take 2 @started)))
+      (should= 2 @peak)
+      (should= 2 @in-flight)
+      (deliver release true)
+      (let [result (deref run* 1000 ::timeout)]
+        (should (not= ::timeout result))
+        (should= ["a" "b" "c"] @started)
+        (should= ["ok-a" "ok-b" "ok-c"] (-> @calls first :tool-results)))))
+
+  (it "keeps max-parallel-tools one fully serial"
+    (let [calls       (atom [])
+          order       (atom [])
+          in-flight   (atom 0)
+          peak        (atom 0)
+          chat-fn     (queue-chat
+                        [{:tool-calls [{:id "tc1" :name "read" :arguments {:path "a"}}
+                                        {:id "tc2" :name "read" :arguments {:path "b"}}]
+                          :usage      {:input-tokens 10 :output-tokens 5}}
+                         {:message {:role "assistant" :content "done"}
+                          :usage   {:input-tokens 3 :output-tokens 1}}])
+          followup-fn (recording-followup calls)
+          tool-fn     (fn [_ {:keys [path]}]
+                        (swap! order conj [:start path])
+                        (let [now (swap! in-flight inc)]
+                          (swap! peak max now)
+                          (swap! order conj [:in-flight now path]))
+                        (swap! in-flight dec)
+                        (swap! order conj [:finish path])
+                        (str "ok-" path))]
+      (sut/run chat-fn followup-fn {:messages []} tool-fn {:max-parallel-tools 1})
+      (should= 1 @peak)
+      (should= [[:start "a"] [:in-flight 1 "a"] [:finish "a"]
+                [:start "b"] [:in-flight 1 "b"] [:finish "b"]]
+               @order)
+      (should= ["ok-a" "ok-b"] (-> @calls first :tool-results))))
+
+  (it "keeps one tool error from aborting the rest of the batch"
+    (let [calls       (atom [])
+          started     (atom [])
+          chat-fn     (queue-chat
+                        [{:tool-calls [{:id "tc1" :name "read" :arguments {:path "missing"}}
+                                        {:id "tc2" :name "read" :arguments {:path "found"}}]
+                          :usage      {:input-tokens 10 :output-tokens 5}}
+                         {:message {:role "assistant" :content "done"}
+                          :usage   {:input-tokens 3 :output-tokens 1}}])
+          followup-fn (recording-followup calls)
+          tool-fn     (fn [_ {:keys [path]}]
+                        (swap! started conj path)
+                        (if (= "missing" path)
+                          "Error: missing file"
+                          "ok-found"))
+          result      (sut/run chat-fn followup-fn {:messages []} tool-fn {:max-parallel-tools 2})]
+      (should= 2 (count (:tool-calls result)))
+      (should= #{"missing" "found"} (set @started))
+      (should= ["Error: missing file" "ok-found"] (-> @calls first :tool-results))))
+
+  (it "stops queued calls before start when cancellation is observed mid-batch"
+    (let [calls        (atom [])
+          release      (promise)
+          started      (atom [])
+          started-one  (promise)
+          cancelled?*  (atom false)
+          chat-fn      (queue-chat
+                         [{:tool-calls [{:id "tc1" :name "read" :arguments {:path "a"}}
+                                         {:id "tc2" :name "read" :arguments {:path "b"}}]
+                           :usage      {:input-tokens 10 :output-tokens 5}}])
+          followup-fn  (recording-followup calls)
+          tool-fn      (fn [_ {:keys [path]}]
+                         (deliver started-one true)
+                         (swap! started conj path)
+                         (deref release 1000 :timeout)
+                         (reset! cancelled?* true)
+                         (str "ok-" path))
+          run*         (future (sut/run chat-fn followup-fn {:messages []} tool-fn
+                                        {:max-loops          1
+                                         :max-parallel-tools 1
+                                         :cancelled?         #(deref cancelled?*)}))]
+      (should= true (deref started-one 1000 nil))
+      (should= ["a"] @started)
+      (deliver release true)
+      (let [result (deref run* 1000 ::timeout)]
+        (should (not= ::timeout result))
+        (should= ["a"] @started)
+        (should= true (:cancelled? result))
+        (should= [] @calls))))
 
   (it "executes tools and recurs when the response has tool-calls"
     (let [chat-fn     (queue-chat

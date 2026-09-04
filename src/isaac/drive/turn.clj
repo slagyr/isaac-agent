@@ -486,16 +486,27 @@
                       (let [joined (emit-response-content! channel-impl session-key (cycle-now) result)]
                         (assoc-in result [:message :content] joined)))))))))
 
+(defn- parse-long-or-raw [raw]
+  (cond
+    (number? raw) (long raw)
+    (string? raw) (parse-long raw)
+    :else raw))
+
 (defn- resolve-tool-loop-max [{:keys [config crew crew-cfg]}]
   (let [raw (or (:tool-loop-max crew-cfg)
                 (get-in config [:crew (keyword crew) :tool-loop-max])
                 (get-in config [:crew crew :tool-loop-max])
                 (get-in config [:defaults :tool-loop-max])
                 tool-loop/default-max-loops)]
-    (cond
-      (number? raw) (long raw)
-      (string? raw) (parse-long raw)
-      :else raw)))
+    (parse-long-or-raw raw)))
+
+(defn- resolve-max-parallel-tools [{:keys [config crew crew-cfg]}]
+  (let [raw (or (get-in crew-cfg [:tools :max-parallel])
+                (get-in config [:crew (keyword crew) :tools :max-parallel])
+                (get-in config [:crew crew :tools :max-parallel])
+                (get-in config [:tools :max-parallel])
+                tool-loop/default-max-parallel-tools)]
+    (parse-long-or-raw raw)))
 
 (defn- finalize-turn-result [result]
   (cond-> result
@@ -1117,33 +1128,49 @@
       (notify-observers! observers :on-turn-ended ctx (observer/outcome result))))
     result))
 
-(defn- record-tool-call!
-  "Wrap a tool invocation with comm callbacks, cancellation tracking, and
-   mid-loop transcript persist: toolCall before exec, toolResult after return.
-   Increments tool-count for loop telemetry."
-  [{:keys [session-key allowed-tools module-index tool-count caps ctx end-aside!] ch :comm} name arguments]
-  (let [tc         {:id (str (java.util.UUID/randomUUID)) :name name :arguments arguments :type "toolCall"}
-        tool-state (atom :pending)
-        cancel!    #(when (compare-and-set! tool-state :pending :cancelled)
-                      (comm/on-tool-cancel ch session-key tc))]
+(defn- announce-tool-call!
+  [{:keys [session-key] ch :comm :as tool-ctx} tc]
+  (let [tool-state     (atom :announced)
+        cancel-queued! #(when (compare-and-set! tool-state :announced :cancelled)
+                          (comm/on-tool-cancel ch session-key tc))]
     (comm/on-tool-call ch session-key tc)
-    (when end-aside! (end-aside!))
-    (persist-tool-call! ctx session-key tc)
-    (bridge/on-cancel! session-key cancel!)
-    (let [progress! (fn [chunk] (comm/on-tool-progress ch session-key tc chunk))
-          tool-fn*  #_{:clj-kondo/ignore [:invalid-arity]} (tool-registry/tool-fn allowed-tools module-index caps)
-          args      (cond-> (or arguments {})
-                     true (assoc "session_key" session-key)
-                     true (assoc :progress! progress!))
-          result    (tool-fn* name args)]
-      (when (= :cancelled (:error result))
-        (cancel!)
-        (throw (ex-info "cancelled" {:type :cancelled})))
-      (when (compare-and-set! tool-state :pending :completed)
-        (persist-tool-result! ctx session-key tc result)
-        (swap! tool-count inc)
-        (comm/on-tool-result ch session-key tc result))
-      result)))
+    (when-let [end-aside! (:end-aside! tool-ctx)]
+      (end-aside!))
+    (persist-tool-call! (:ctx tool-ctx) session-key tc)
+    (bridge/on-cancel! session-key cancel-queued!)
+    {:tool-call      tc
+     :cancel-queued cancel-queued!
+     :run           (fn []
+                      (when-not (compare-and-set! tool-state :announced :running)
+                        (throw (ex-info "cancelled" {:type :cancelled})))
+                      (let [{:keys [allowed-tools module-index tool-count caps ctx]} tool-ctx
+                            progress! (fn [chunk] (comm/on-tool-progress ch session-key tc chunk))
+                            args      (cond-> (or (:arguments tc) {})
+                                         true (assoc "session_key" session-key)
+                                         true (assoc :progress! progress!))
+                            raw-result (tool-registry/execute (:name tc) args allowed-tools module-index caps)]
+                        (when (= :cancelled (:error raw-result))
+                          (when (compare-and-set! tool-state :running :cancelled)
+                            (comm/on-tool-cancel ch session-key tc))
+                          (throw (ex-info "cancelled" {:type :cancelled})))
+                        (let [result (tool-registry/present-result raw-result)]
+                          (when (compare-and-set! tool-state :running :completed)
+                            (persist-tool-result! ctx session-key tc result)
+                            (swap! tool-count inc)
+                            (comm/on-tool-result ch session-key tc result))
+                          result)))}))
+
+(defn- prepare-tool-call! [tool-ctx tc]
+  (announce-tool-call! tool-ctx tc))
+
+(defn- record-tool-call!
+  "Legacy single-call path: announce then execute one tool immediately."
+  [tool-ctx name arguments]
+  (let [{:keys [run]} (prepare-tool-call! tool-ctx {:id        (str (java.util.UUID/randomUUID))
+                                                    :name      name
+                                                    :arguments arguments
+                                                    :type      "toolCall"})]
+    (run)))
 
 (defn- execute-llm-turn!
   "Build the chat request, drive the tool-loop, and persist the final
@@ -1154,6 +1181,7 @@
         charge        (:charge ctx)
         {:keys [crew guidance model module-index nonce origin soul context-mode comm config crew-cfg]} charge
         tool-loop-max (resolve-tool-loop-max {:config config :crew crew :crew-cfg crew-cfg})
+        max-parallel  (resolve-max-parallel-tools {:config config :crew crew :crew-cfg crew-cfg})
         caps          {:max-lines (get-in config [:tools :defaults :max-lines])
                        :max-bytes (get-in config [:tools :defaults :max-bytes])}
         ch            (or comm null-comm/channel)
@@ -1230,23 +1258,26 @@
                               (reset! pending-aside* nil)
                               (comm/on-cycle-end ch session-key cycle {:outcome :aside :text text :tool-calls tool-calls})
                               (comm/on-aside ch session-key cycle text)))
-            tool-fn       (partial record-tool-call! {:comm           ch
-                                                      :session-key    session-key
-                                                      :allowed-tools  allowed-tools
-                                                      :module-index   module-index
-                                                      :caps           caps
-                                                      :tool-count     tool-count
-                                                      :ctx            ctx
-                                                      :end-aside!     end-aside!})
+            tool-ctx      {:comm           ch
+                            :session-key    session-key
+                            :allowed-tools  allowed-tools
+                            :module-index   module-index
+                            :caps           caps
+                            :tool-count     tool-count
+                            :ctx            ctx
+                            :end-aside!     end-aside!}
+            tool-fn       (partial record-tool-call! tool-ctx)
             run-loop      (fn [req]
                             (let [provider-name (api/display-name p)
                                   request*      (assoc req :provider provider-name)
                                   chat-fn*      (chat-fn-for ch session-key p request* cycle*)]
                               (tool-loop/run chat-fn* followup-fn request* tool-fn
-                                             {:max-loops   tool-loop-max
-                                              :cancelled?  #(bridge/cancelled? session-key)
-                                              :after-tools #(maybe-mid-turn-compact! session-key ctx % current-request)
-                                              :on-cycle    on-cycle})))
+                                             {:max-loops          tool-loop-max
+                                              :max-parallel-tools max-parallel
+                                              :prepare-tool-call  #(prepare-tool-call! tool-ctx %)
+                                              :cancelled?         #(bridge/cancelled? session-key)
+                                              :after-tools        #(maybe-mid-turn-compact! session-key ctx % current-request)
+                                              :on-cycle           on-cycle})))
             first-result (run-loop request)
             retry        (overflow-compact-retry! session-key ctx current-request first-result)
             loop-result  (cond

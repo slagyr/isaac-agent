@@ -6,6 +6,7 @@
     [clojure.java.io :as io]
     [clojure.string :as str]
     [gherclj.core :as g :refer [defgiven defwhen defthen helper!]]
+    [isaac.bridge.cancellation :as bridge-cancel]
     [isaac.config.loader :as loader]
     [isaac.step-tables :as match]
     [isaac.fs :as isaac-fs]
@@ -667,11 +668,35 @@
 
 (defwhen "the {tool:string} tool is initialized" isaac.tool.tools-steps/web-search-initialized)
 
+(defn- tool-completions []
+  (or (g/get :tool-completions)
+      (let [completions (atom {})]
+        (g/assoc! :tool-completions completions)
+        completions)))
+
+(defn- completion-signal [tool-name]
+  (let [completions (tool-completions)
+        existing    (get @completions tool-name)]
+    (or existing
+        (let [created (promise)]
+          (or (get (swap! completions #(if (contains? % tool-name) % (assoc % tool-name created))) tool-name)
+              created)))))
+
+(defn- mark-tool-complete! [tool-name]
+  (deliver (completion-signal tool-name) true)
+  nil)
+
+(defn- allow-mock-tool! [tool-name]
+  (let [allow (or (some->> tool-name
+                           (re-find #"^([^_]+)__")
+                           second)
+                  (some-> (names/config-token tool-name)
+                          namespace))]
+    (when allow
+      (session-steps/crew-tool-allow "main" allow))))
+
 (defn streaming-tool-registered [tool-name progress-edn result]
-  (let [chunks (edn/read-string progress-edn)
-        token  (or (names/config-token tool-name) (keyword tool-name))
-        allow  (when (and token (namespace token))
-                 (str (namespace token) "/" (clojure.core/name token)))]
+  (let [chunks (edn/read-string progress-edn)]
     (registry/register!
       {:name        tool-name
        :description (str "streaming mock " tool-name)
@@ -680,12 +705,72 @@
                       (let [progress! (or (:progress! args) (get args "progress!"))]
                         (doseq [c chunks]
                           (when progress! (progress! c))))
+                      (mark-tool-complete! tool-name)
                       {:result result})})
-    (when allow
-      (session-steps/crew-tool-allow "main" allow))))
+    (allow-mock-tool! tool-name)
+    nil))
+
+(defn rendezvous-tool-registered [tool-name result n]
+  (let [release   (promise)
+        in-flight (atom 0)
+        target    (long (if (number? n) n (parse-long n)))]
+    (registry/register!
+      {:name        tool-name
+       :description (str "rendezvous mock " tool-name)
+       :parameters  {:type "object" :properties {}}
+       :handler     (fn [_args]
+                      (let [now (swap! in-flight inc)]
+                        (when (<= target now)
+                          (deliver release true))
+                        (let [met? (= true (deref release 1000 false))]
+                          (swap! in-flight dec)
+                          (mark-tool-complete! tool-name)
+                          {:result (if met? result "alone")})))})
+    (allow-mock-tool! tool-name)
+    nil))
+
+(defn gated-tool-registered [tool-name result other-tool]
+  (let [gate (completion-signal other-tool)]
+    (registry/register!
+      {:name        tool-name
+       :description (str "gated mock " tool-name)
+       :parameters  {:type "object" :properties {}}
+       :handler     (fn [_args]
+                      (let [opened? (= true (deref gate 1000 false))]
+                        (mark-tool-complete! tool-name)
+                        {:result (if opened? result "gate never opened")}))})
+    (allow-mock-tool! tool-name)
+    nil))
+
+(defn blocking-tool-registered [tool-name]
+  (registry/register!
+    {:name        tool-name
+     :description (str "blocking mock " tool-name)
+     :parameters  {:type "object" :properties {}}
+     :handler     (fn [args]
+                    (let [session-key (or (get args "session_key") (:session_key args))
+                          cancelled   (promise)]
+                      (bridge-cancel/on-cancel! session-key #(deliver cancelled true))
+                      (if (= true (deref cancelled 1000 false))
+                        {:error :cancelled}
+                        {:result "still running"})))})
+  (allow-mock-tool! tool-name)
+  nil)
 
 (defgiven #"a streaming tool \"([^\"]+)\" is registered that emits progress (.+) and returns \"([^\"]+)\""
   isaac.tool.tools-steps/streaming-tool-registered
   "Registers a mock tool whose handler calls ctx :progress! for each chunk then returns the given string.")
+
+(defgiven #"a rendezvous tool \"([^\"]+)\" is registered that returns \"([^\"]+)\" once (\d+) calls are in flight"
+  isaac.tool.tools-steps/rendezvous-tool-registered
+  "Registers a concurrent mock tool that releases once N calls are simultaneously in flight; otherwise returns 'alone' after the ceiling.")
+
+(defgiven #"a gated tool \"([^\"]+)\" is registered that returns \"([^\"]+)\" once tool \"([^\"]+)\" has completed"
+  isaac.tool.tools-steps/gated-tool-registered
+  "Registers a mock tool that waits for the named tool to complete, then returns the given string; otherwise returns 'gate never opened' after the ceiling.")
+
+(defgiven #"a blocking tool \"([^\"]+)\" is registered that returns cancelled once the turn is cancelled"
+  isaac.tool.tools-steps/blocking-tool-registered
+  "Registers a mock tool that waits for bridge cancellation on its session_key and then reports cancellation.")
 
 ;; endregion ^^^^^ Routing ^^^^^

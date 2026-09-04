@@ -157,6 +157,13 @@
 (defn- invalidate-feature-config! []
   (g/dissoc! :feature-config))
 
+(defonce ^:private foundation-minimal-config-patched? (atom false))
+
+(when (compare-and-set! foundation-minimal-config-patched? false true)
+  (when-let [minimal-config-var (ns-resolve 'isaac.foundation.root-steps 'minimal-config)]
+    (alter-var-root minimal-config-var
+                    #(assoc % :tools (assoc (or (:tools %) {}) :max-parallel 4)))))
+
 (defn- notify-config-change! [_path]
   (invalidate-feature-config!))
 
@@ -551,7 +558,8 @@
         fs*  (mem-fs)]
     (fs/mkdirs fs* root)
     (fs/spit   fs* (str root "/isaac.edn")
-                    (pr-str {:defaults {:crew "main" :model "grover"}}))
+                    (pr-str {:defaults {:crew "main" :model "grover"}
+                             :tools    {:max-parallel 4}}))
     (fs/mkdirs fs* (str root "/models"))
     (fs/mkdirs fs* (str root "/providers"))
     (fs/mkdirs fs* (str root "/crew"))
@@ -1336,6 +1344,24 @@
                                  (transcript-match-result table transcript))]
     (g/should-not (empty? (:failures result)))))
 
+(defn tool-results-pair-with-tool-calls-by-id [key-str]
+  (await-turn!)
+  (await-acp-turn!)
+  (let [transcript      (with-feature-fs #(get-transcript key-str))
+        tool-call-ids   (->> transcript
+                             (keep #(transcript/first-tool-call (:message %)))
+                             (map :id)
+                             set)
+        tool-result-ids (->> transcript
+                             (keep (fn [entry]
+                                     (when (= "toolResult" (get-in entry [:message :role]))
+                                       (or (get-in entry [:message :toolCallId])
+                                           (get-in entry [:message :id])))))
+                             vec)]
+    (g/should (seq tool-result-ids))
+    (doseq [tool-result-id tool-result-ids]
+      (g/should (contains? tool-call-ids tool-result-id)))))
+
 (defn session-has-compaction [key-str]
   (await-turn!)
   (let [entry      (with-feature-fs #(get-session key-str))
@@ -1809,6 +1835,9 @@
    on disk but be hidden from the turn path.")
 
 (defthen "session {key:string} has transcript not matching:" isaac.session.session-steps/session-transcript-not-matching)
+
+(defthen "every toolResult in session {key:string} pairs with a toolCall by id" isaac.session.session-steps/tool-results-pair-with-tool-calls-by-id
+  "Asserts every toolResult entry references an earlier toolCall id, via message.toolCallId or legacy message.id.")
 
 (defthen "the compaction defaults are:" isaac.session.session-steps/compaction-defaults)
 

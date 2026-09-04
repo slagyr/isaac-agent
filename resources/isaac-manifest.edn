@@ -321,7 +321,12 @@
    {:type :map,
     :description "Tool configuration (per-tool config maps and global defaults)",
     :schema
-    {:defaults
+    {:max-parallel
+     {:type :int,
+      :default 4,
+      :description "Max concurrent tool calls Isaac executes from one model response batch",
+      :validations [:positive?]}
+     :defaults
      {:type :map,
       :description "Global tool output caps applied at the turn boundary",
       :schema
@@ -380,6 +385,10 @@
         :deny
         {:type :ignore,
          :description "Denied tools: :all or a vector of namespaced keywords / ns/* globs"},
+        :max-parallel
+        {:type :int,
+         :description "Crew override for max concurrent tool calls from one model response batch",
+         :validations [:positive?]},
         :directories
         {:type :seq,
          :description

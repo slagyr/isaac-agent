@@ -350,21 +350,23 @@
             tool-count     (atom 0)
             registered     (atom nil)
             args-seen      (atom nil)]
-        (with-redefs [bridge/on-cancel!      (fn [session-key cancel!]
-                                               (reset! registered [session-key cancel!])
-                                               nil)
-                      tool-registry/tool-fn   (fn [allowed-tools _module-index _caps]
-                                                (should= #{"search"} allowed-tools)
-                                                (fn [name args]
-                                                  (reset! args-seen [name args])
-                                                  {:result "ok"}))]
+        (with-redefs [bridge/on-cancel!           (fn [session-key cancel!]
+                                                    (reset! registered [session-key cancel!])
+                                                    nil)
+                      tool-registry/execute       (fn [name args allowed-tools _module-index _caps]
+                                                    (should= #{"search"} allowed-tools)
+                                                    (reset! args-seen [name args])
+                                                    {:result "ok"})
+                      tool-registry/present-result (fn [raw-result]
+                                                     (should= {:result "ok"} raw-result)
+                                                     "ok")]
           (let [result (#'sut/record-tool-call! {:comm           (memory-comm/channel events)
                                                  :session-key    "tool-success"
                                                  :allowed-tools  #{"search"}
                                                  :tool-count     tool-count}
                                                "search"
                                                {"query" "logs"})]
-            (should= {:result "ok"} result)
+            (should= "ok" result)
             (should= "search" (first @args-seen))
             (should= "logs" (get (second @args-seen) "query"))
             (should= "tool-success" (get (second @args-seen) "session_key"))
@@ -402,13 +404,13 @@
       (let [events         (atom [])
             tool-count     (atom 0)
             registered     (atom nil)]
-        (with-redefs [bridge/on-cancel!    (fn [session-key cancel!]
-                                             (reset! registered [session-key cancel!])
-                                             nil)
-                      tool-registry/tool-fn (fn [allowed-tools module-index _caps]
+        (with-redefs [bridge/on-cancel!     (fn [session-key cancel!]
+                                              (reset! registered [session-key cancel!])
+                                              nil)
+                      tool-registry/execute (fn [_ _ allowed-tools module-index _caps]
                                               (should= #{"search"} allowed-tools)
                                               (should= {:modules true} module-index)
-                                              (fn [_ _] {:error :cancelled}))]
+                                              {:error :cancelled})]
           (should-throw clojure.lang.ExceptionInfo
                         "cancelled"
                         (#'sut/record-tool-call! {:comm           (memory-comm/channel events)
@@ -436,16 +438,16 @@
             tool-count     (atom 0)
             seen-mid       (atom nil)
             ctx            {:session-store (store/registered-store)}]
-        (with-redefs [bridge/on-cancel!     (fn [_ _] nil)
-                      tool-registry/tool-fn (fn [_ _ _]
-                                              (fn [_ _]
-                                                (reset! seen-mid
-                                                        (->> (helper/get-transcript test-dir "mid-flush-call")
-                                                             (keep #(get-in % [:message :content]))
-                                                             flatten
-                                                             (filter #(= "toolCall" (:type %)))
-                                                             last))
-                                                {:result "ok"}))]
+        (with-redefs [bridge/on-cancel!           (fn [_ _] nil)
+                      tool-registry/execute       (fn [_ _ _ _ _]
+                                                    (reset! seen-mid
+                                                            (->> (helper/get-transcript test-dir "mid-flush-call")
+                                                                 (keep #(get-in % [:message :content]))
+                                                                 flatten
+                                                                 (filter #(= "toolCall" (:type %)))
+                                                                 last))
+                                                    {:result "ok"})
+                      tool-registry/present-result (fn [_] "ok")]
           (#'sut/record-tool-call! {:comm           (memory-comm/channel events)
                                     :session-key    "mid-flush-call"
                                     :allowed-tools  #{"search"}
@@ -463,9 +465,9 @@
       (let [events         (atom [])
             tool-count     (atom 0)
             ctx            {:session-store (store/registered-store)}]
-        (with-redefs [bridge/on-cancel!     (fn [_ _] nil)
-                      tool-registry/tool-fn (fn [_ _ _]
-                                              (fn [_ _] {:result "ok"}))]
+        (with-redefs [bridge/on-cancel!           (fn [_ _] nil)
+                      tool-registry/execute       (fn [_ _ _ _ _] {:result "ok"})
+                      tool-registry/present-result (fn [_] "ok")]
           (#'sut/record-tool-call! {:comm           (memory-comm/channel events)
                                     :session-key    "mid-flush-result"
                                     :allowed-tools  #{"search"}
@@ -482,16 +484,16 @@
             (should-not-be-nil tc-id)
             (should= "toolResult" (:role (second last-two)))
             (should= tc-id (:id (second last-two)))
-            (should= {:result "ok"} (:content (second last-two)))))))
+            (should= "ok" (:content (second last-two)))))))
 
     (it "marks toolResult isError when the tool-fn returns an Error: string"
       (helper/create-session! test-dir "mid-flush-error")
       (let [events     (atom [])
             tool-count (atom 0)
             ctx        {:session-store (store/registered-store)}]
-        (with-redefs [bridge/on-cancel!     (fn [_ _] nil)
-                      tool-registry/tool-fn (fn [_ _ _]
-                                              (fn [_ _] "Error: unknown tool: exec__run"))]
+        (with-redefs [bridge/on-cancel!           (fn [_ _] nil)
+                      tool-registry/execute       (fn [_ _ _ _ _] {:isError true :error "unknown tool: exec__run"})
+                      tool-registry/present-result (fn [_] "Error: unknown tool: exec__run")]
           (#'sut/record-tool-call! {:comm           (memory-comm/channel events)
                                     :session-key    "mid-flush-error"
                                     :allowed-tools  #{}
@@ -512,8 +514,7 @@
             tool-count     (atom 0)
             ctx            {:session-store (store/registered-store)}]
         (with-redefs [bridge/on-cancel!     (fn [_ _] nil)
-                      tool-registry/tool-fn (fn [_ _ _]
-                                              (fn [_ _] {:error :cancelled}))]
+                      tool-registry/execute (fn [_ _ _ _ _] {:error :cancelled})]
           (should-throw clojure.lang.ExceptionInfo
                         "cancelled"
                         (#'sut/record-tool-call! {:comm           (memory-comm/channel events)
@@ -537,9 +538,9 @@
                             :allowed-tools  #{"search" "lookup"}
                             :tool-count     tool-count
                             :ctx            ctx}]
-        (with-redefs [bridge/on-cancel!     (fn [_ _] nil)
-                      tool-registry/tool-fn (fn [_ _ _]
-                                              (fn [_ _] {:result "ok"}))]
+        (with-redefs [bridge/on-cancel!           (fn [_ _] nil)
+                      tool-registry/execute       (fn [_ _ _ _ _] {:result "ok"})
+                      tool-registry/present-result (fn [_] "ok")]
           (#'sut/record-tool-call! rec "search" {"query" "a"})
           (#'sut/record-tool-call! rec "lookup" {"query" "b"})
           (let [messages   (mapv :message (helper/get-transcript test-dir "mid-flush-two"))

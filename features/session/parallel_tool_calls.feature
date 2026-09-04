@@ -8,7 +8,6 @@ Feature: Parallel tool calls — invite, permit, execute
     Given default Grover setup
     And the built-in tools are registered
 
-  @wip
   Scenario: a single grover response with two tool calls runs both and persists both pairs, paired by id
     Given the following sessions exist:
       | name        |

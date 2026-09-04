@@ -81,6 +81,14 @@
                (lexicon/conform (runtime-spec sut/field-tools)
                                 {:defaults {:max-lines 500 :max-bytes 131072}})))
 
+    (it "root tools schema declares max-parallel default four"
+      (should= 4 (get-in sut/field-tools [:schema :max-parallel :default])))
+
+    (it "root tools config conforms max-parallel"
+      (should= {:max-parallel 2}
+               (lexicon/conform (runtime-spec sut/field-tools)
+                                {:max-parallel 2})))
+
     (it "root tools.allow :all conforms as the policy keyword, not a seq"
       (should= {:allow :all}
                (lexicon/conform (runtime-spec sut/field-tools)
