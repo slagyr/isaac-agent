@@ -345,6 +345,8 @@
           content))
       (some-> content (str/replace "\\n" "\n")))))
 
+(declare await-turn!)
+
 (defn- last-llm-request
   "The captured LLM request for prompt assertions. The `the user sends`
    path stores it in :llm-request, but the `isaac is run with` (CLI) path
@@ -352,6 +354,8 @@
    the process-global last request recorded by drive.dispatch so CLI-run
    scenarios still see the request the agent actually sent."
   []
+  (when (g/get :turn-future)
+    (await-turn!))
   (or (g/get :llm-request)
       (drive-dispatch/last-request)))
 

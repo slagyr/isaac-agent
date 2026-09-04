@@ -1153,11 +1153,20 @@
                           (when (compare-and-set! tool-state :running :cancelled)
                             (comm/on-tool-cancel ch session-key tc))
                           (throw (ex-info "cancelled" {:type :cancelled})))
-                        (let [result (tool-registry/present-result raw-result)]
+                        (let [result        (tool-registry/present-result raw-result)
+                              after-result! (when (map? raw-result) (:after-result! raw-result))]
                           (when (compare-and-set! tool-state :running :completed)
                             (persist-tool-result! ctx session-key tc result)
                             (swap! tool-count inc)
-                            (comm/on-tool-result ch session-key tc result))
+                            (comm/on-tool-result ch session-key tc result)
+                            (when after-result!
+                              (try
+                                (after-result!)
+                                (catch Exception e
+                                  (log/warn :tool/after-result-failed
+                                            :tool (:name tc)
+                                            :session session-key
+                                            :error (.getMessage e))))))
                           result)))}))
 
 (defn- prepare-tool-call! [tool-ctx tc]

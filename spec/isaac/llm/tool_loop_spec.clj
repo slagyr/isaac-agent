@@ -104,7 +104,7 @@
                              (str "ok-" path))))
           run*         (future (sut/run chat-fn followup-fn {:messages []} tool-fn {:max-parallel-tools 2}))]
       (should= true (deref started-two 1000 nil))
-      (should= ["a" "b"] (vec (take 2 @started)))
+      (should= #{"a" "b"} (set (take 2 @started)))
       (should= 2 @peak)
       (should= 2 @in-flight)
       (deliver release true)

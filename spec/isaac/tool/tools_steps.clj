@@ -705,8 +705,8 @@
                       (let [progress! (or (:progress! args) (get args "progress!"))]
                         (doseq [c chunks]
                           (when progress! (progress! c))))
-                      (mark-tool-complete! tool-name)
-                      {:result result})})
+                      {:result result
+                       :after-result! #(mark-tool-complete! tool-name)})})
     (allow-mock-tool! tool-name)
     nil))
 
@@ -724,8 +724,8 @@
                           (deliver release true))
                         (let [met? (= true (deref release 1000 false))]
                           (swap! in-flight dec)
-                          (mark-tool-complete! tool-name)
-                          {:result (if met? result "alone")})))})
+                          {:result (if met? result "alone")
+                           :after-result! #(mark-tool-complete! tool-name)})))})
     (allow-mock-tool! tool-name)
     nil))
 
@@ -737,8 +737,8 @@
        :parameters  {:type "object" :properties {}}
        :handler     (fn [_args]
                       (let [opened? (= true (deref gate 1000 false))]
-                        (mark-tool-complete! tool-name)
-                        {:result (if opened? result "gate never opened")}))})
+                        {:result (if opened? result "gate never opened")
+                         :after-result! #(mark-tool-complete! tool-name)}))})
     (allow-mock-tool! tool-name)
     nil))
 

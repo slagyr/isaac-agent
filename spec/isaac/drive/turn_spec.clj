@@ -400,6 +400,26 @@
           (should= ["by the mark three" "and a half three"]
                    (->> @events (filter #(= "tool-progress" (:event %))) (mapv :text))))))
 
+    (it "runs after-result hooks after the tool result is emitted"
+      (let [events        (atom [])
+            tool-count    (atom 0)
+            callback-seen (atom nil)]
+        (with-redefs [bridge/on-cancel!           (fn [_ _] nil)
+                      tool-registry/execute       (fn [_ _ _ _ _]
+                                                    {:result "done"
+                                                     :after-result! #(reset! callback-seen {:events     (mapv :event @events)
+                                                                                            :tool-count @tool-count})})
+                      tool-registry/present-result (fn [_] "done")]
+          (#'sut/record-tool-call! {:comm           (memory-comm/channel events)
+                                    :session-key    "tool-after-result"
+                                    :allowed-tools  #{"search"}
+                                    :tool-count     tool-count}
+                                   "search"
+                                   {"query" "depth"})
+          (should= {:events ["tool-call" "tool-result"]
+                    :tool-count 1}
+                   @callback-seen))))
+
     (it "cancels and throws when a tool reports cancellation"
       (let [events         (atom [])
             tool-count     (atom 0)

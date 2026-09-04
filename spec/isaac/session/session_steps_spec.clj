@@ -39,6 +39,14 @@
                  500.0)))
     (should= {:ok true} (g/get :llm-result)))
 
+  (it "awaits an in-flight turn before reading prompt tools"
+    (g/assoc! :turn-future (future {:output  ""
+                                    :request {:tools [{:name "fs__read"}]}
+                                    :result  {:ok true}}))
+    (sut/prompt-has-tools {:headers ["name"]
+                           :rows    [["fs__read"]]})
+    (should= {:tools [{:name "fs__read"}]} (g/get :llm-request)))
+
   (it "reuses loaded config until a feature fixture changes it"
     (let [loads* (atom 0)
           cfg    {:defaults {:crew "main"}
