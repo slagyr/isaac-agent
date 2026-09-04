@@ -108,3 +108,38 @@ Feature: Context-window guard when compaction cannot save the turn
       | compaction.consecutive-failures | 1     |
       | block.reason                    |       |
     And session "logbook" has 2 transcript entries
+
+  @wip
+  Scenario: Third consecutive compact failure sets block and posts attention once
+    Given the isaac EDN file "config/isaac.edn" exists with:
+      | path                    | value       |
+      | attention.notify.comm   | discord     |
+      | attention.notify.target | boiler-room |
+    And the following sessions exist:
+      | name     | last-input-tokens | compaction.consecutive-failures |
+      | longwave | 85                | 2                               |
+    And session "longwave" has transcript:
+      | type    | message.role | message.content |
+      | message | user         | earlier prompt  |
+      | message | assistant    | earlier reply   |
+    And the following model responses are queued:
+      | type  | content                 | model      |
+      | error | context length exceeded | test-model |
+      | text  | here is my answer       | test-model |
+    When the user sends "next thing" on session "longwave"
+    Then the turn result is unavailable with retry-after-ms 300000 and reason blocked
+    And the memory comm has events matching:
+      | event    | kind               | error      | consecutive-failures |
+      | bulletin | compaction/start   |            |                      |
+      | bulletin | compaction/failure | :llm-error | 3                    |
+    And session "longwave" matches:
+      | key                             | value               |
+      | compaction.consecutive-failures | 3                   |
+      | block.reason                    | :compaction-failed  |
+    And session "longwave" has 2 transcript entries
+    And the directory "comm/delivery/pending" has exactly 1 file
+    And the only file in "comm/delivery/pending" EDN contains:
+      | path    | value                                          |
+      | comm    | :discord                                       |
+      | target  | boiler-room                                    |
+      | content | contains "Conversation blocked" and "longwave" |
