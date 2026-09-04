@@ -61,6 +61,20 @@
     (bridge/on-cancel! session-key close!)
     close!))
 
+(defn- safe-readable-body [body]
+  (proxy [java.io.InputStream] []
+    (read
+      ([] (.read body))
+      ([b] (.read body b))
+      ([b off len] (.read body b off len)))
+    (available []
+      (try
+        (.available body)
+        (catch UnsupportedOperationException _
+          0)))
+    (close []
+      (.close body))))
+
 (defn- log-http-request! [url headers body opts stream?]
   (swap! outbound-requests* conj {:body body :headers headers :stream stream? :url url})
   (log/debug :llm/http-request
@@ -177,7 +191,7 @@
                                result)
                              (let [body-stream (:body resp)
                                    close!      (register-cancel-close! session-key body-stream)]
-                               (with-open [rdr (io/reader body-stream)]
+                               (with-open [rdr (io/reader (safe-readable-body body-stream))]
                                  (let [result (process-sse-lines (line-seq rdr) on-chunk process-event initial)]
                                    (close!)
                                    (or (cancelled-result session-key)

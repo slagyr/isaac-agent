@@ -178,6 +178,27 @@
         (let [result (sut/post-sse! "http://test" {} {} identity (fn [_ a] a) nil)]
           (should= :connection-refused (:error result)))))
 
+    (it "processes SSE streams whose body does not implement available"
+      (let [backing (ByteArrayInputStream. (.getBytes "data: {\"text\":\"Hello\"}\ndata: [DONE]\n"))]
+        (with-redefs [http/post (fn [_ _]
+                                  {:status 200
+                                   :body   (proxy [java.io.InputStream] []
+                                             (read
+                                               ([] (.read backing))
+                                               ([b] (.read backing b))
+                                               ([b off len] (.read backing b off len)))
+                                             (available []
+                                               (throw (UnsupportedOperationException. "Method not implemented: available")))
+                                             (close []
+                                               (.close backing)))})]
+          (let [chunks (atom [])
+                result (sut/post-sse! "http://test" {} {}
+                                      (fn [d] (swap! chunks conj d))
+                                      (fn [data acc] (str acc (:text data)))
+                                      "")]
+            (should= "Hello" result)
+            (should= 1 (count @chunks))))))
+
     (it "includes request headers in error response"
       (with-redefs [http/post (fn [_ _] {:status 401
                                           :body   (ByteArrayInputStream.
@@ -223,6 +244,8 @@
                                                  ([] (.read input))
                                                  ([b] (.read input b))
                                                  ([b off len] (.read input b off len)))
+                                               (available []
+                                                 (throw (UnsupportedOperationException. "Method not implemented: available")))
                                                (close []
                                                  (reset! body-closed? true)
                                                  (.close input)))})]
