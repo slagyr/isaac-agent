@@ -232,3 +232,20 @@ Feature: Session Storage
     Then session "usage-test" has transcript matching:
       | type    | message.role | message.usage.input | message.usage.output | message.stopReason | message.api |
       | message | assistant    | 100                 | 25                   | stop               | ollama      |
+
+  @wip
+  Scenario: concurrent toolResult appends stay one entry per line
+    Two independent tool results finish at the same instant on one session.
+    Each EDNL line remains one complete entry — no fused records.
+
+    Given the session store uses the file implementation
+    And the following sessions exist:
+      | name    |
+      | logbook |
+    When two large toolResult entries are appended concurrently to session "logbook"
+    Then session "logbook" has 3 transcript entries
+    And every transcript line of session "logbook" is valid EDN
+    And session "logbook" has transcript matching:
+      | type    | message.role | message.id     |
+      | message | toolResult   | call-port      |
+      | message | toolResult   | call-starboard |
