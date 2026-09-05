@@ -491,8 +491,11 @@
   (reset! test-registration-enabled* false))
 
 (defn install-test-fixture!
-  "Enable and install the Grover mock API for specs/features."
+  "Enable and install the Grover mock API for specs/features.
+   Always starts with the default (non-driven) loop so a prior scenario's
+   drive-own-tool-loop! cannot leak into the next JVM-shared example."
   []
+  (clear-own-tool-loop!)
   (reset! test-registration-enabled* true)
   (register-test-api!)
   (register-test-provider!))

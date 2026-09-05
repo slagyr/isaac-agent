@@ -267,6 +267,12 @@
       (sut/clear-own-tool-loop!)
       (should-not (:drives-tool-loop? (api/config (sut/make "grover" {})))))
 
+    (it "install-test-fixture! clears a leftover driven-loop flag so later scenarios are not driven"
+      (sut/drive-own-tool-loop!)
+      (should (:drives-tool-loop? (api/config (sut/make "grover" {}))))
+      (sut/install-test-fixture!)
+      (should-not (:drives-tool-loop? (api/config (sut/make "grover" {})))))
+
     )
 
   )

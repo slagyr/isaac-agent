@@ -71,6 +71,7 @@
 
 (g/after-scenario
   (fn []
+    (grover/clear-own-tool-loop!)
     (alter-var-root #'sidecar-store/create-store (constantly real-sidecar-create-store))))
 
 ;; The foundation root setup (isaac.foundation.root-steps/initialize-root!)
@@ -1222,11 +1223,17 @@
          :crew (or (:crew entry) (:agent entry))
          :file (str "sessions/" (:id entry) "/current.ednl")))
 
-(defn- transcript-match-entry [entry include-compaction-message? denormalize-tool-call?]
+(defn- transcript-match-entry [entry include-compaction-message? denormalize-tool-call? denormalize-tool-result?]
   (let [calls (transcript/tool-calls (:message entry))
-        type  (if (and denormalize-tool-call?
-                       (seq calls))
+        type  (cond
+                (and denormalize-tool-call? (seq calls))
                 "toolCall"
+
+                (and denormalize-tool-result?
+                     (= "toolResult" (get-in entry [:message :role])))
+                "toolResult"
+
+                :else
                 (:type entry))]
     (cond-> entry
       type (assoc :type type)
@@ -1268,43 +1275,53 @@
                               row)))
                     rows)))))
 
+(defn- transcript-row-pairs [headers row]
+  (let [meta-col? (fn [h] (and (str/starts-with? h "#") (not= "#index" h)))
+        row-map   (zipmap headers row)]
+    (->> row-map
+         (remove (fn [[header cell]]
+                   (or (= "#index" header)
+                       (meta-col? header)
+                       (str/blank? cell))))
+         vec)))
+
+(defn- match-transcript-row [headers row transcript]
+  (let [row-map    (zipmap headers row)
+        pairs      (transcript-row-pairs headers row)
+        role       (some-> (get row-map "message.role") not-empty)
+        type       (some-> (get row-map "type") not-empty)
+        candidates (cond->> transcript
+                     role (filter #(= role (get-in % [:message :role])))
+                     type (filter #(= type (:type %)))
+                     true vec)
+        candidates (if (seq candidates) candidates transcript)
+        vtable     {:rows (mapv (fn [[header cell]] [header cell]) pairs)}]
+    (or (some (fn [entry]
+                (let [match-result (match/match-object vtable entry)]
+                  (when (empty? (:failures match-result)) match-result)))
+              candidates)
+        (match/match-object vtable (first candidates)))))
+
 (defn- transcript-match-result [table transcript]
-  (let [meta-col?      (fn [h] (and (str/starts-with? h "#") (not= "#index" h)))
-        expected-count (count (:rows table))]
+  (let [headers        (:headers table)
+        rows           (:rows table)
+        expected-count (count rows)]
     (if (= 1 expected-count)
-      (let [row            (first (:rows table))
-            row-map        (zipmap (:headers table) row)
-            explicit-pairs (->> row-map
-                                (remove (fn [[header cell]]
-                                          (or (= "#index" header)
-                                              (meta-col? header)
-                                              (str/blank? cell))))
-                                vec)
-            role           (some-> (get row-map "message.role") not-empty)
-            type           (some-> (get row-map "type") not-empty)
-            candidates     (cond->> transcript
-                             role (filter #(= role (get-in % [:message :role])))
-                             type (filter #(= type (:type %)))
-                             true vec)
-            candidates     (if (seq candidates) candidates transcript)
-            vtable         {:rows (mapv (fn [[header cell]] [header cell]) explicit-pairs)}
-            result         (or (some (fn [entry]
-                                       (let [match-result (match/match-object vtable entry)]
-                                         (when (empty? (:failures match-result)) match-result)))
-                                     candidates)
-                               (match/match-object vtable (first candidates)))]
+      (let [result (match-transcript-row headers (first rows) transcript)]
         {:captures (:captures result)
          :failures (:failures result)
          :pass?    (empty? (:failures result))})
-      (let [direct (match/match-entries table transcript)]
-        (if (empty? (:failures direct))
-          direct
-          (or (some (fn [start]
-                      (let [window (subvec transcript start (min (count transcript) (+ start expected-count)))
-                            result (match/match-entries table window)]
-                        (when (empty? (:failures result)) result)))
-                    (range (count transcript)))
-              direct))))))
+      (loop [remaining rows
+             row-num   0
+             captures  {}
+             failures  []]
+        (if (empty? remaining)
+          {:pass? (empty? failures) :failures failures :captures captures}
+          (let [result (match-transcript-row headers (first remaining) transcript)]
+            (recur (rest remaining)
+                   (inc row-num)
+                   (merge captures (:captures result))
+                   (into failures (map #(str "Row " row-num ": " %) (:failures result))))))))))
 
 (defn sessions-match [table]
   ;; Await any in-flight turn first — user-sends only waits 50ms before parking
@@ -1350,10 +1367,12 @@
          include-compaction-message? (not (some #{"summary"} (:headers table)))
          denormalize-tool-call?      (some #(= "toolCall" (get % "type"))
                                            (map #(zipmap (:headers table) %) (:rows table)))
+         denormalize-tool-result?    (some #(= "toolResult" (get % "type"))
+                                           (map #(zipmap (:headers table) %) (:rows table)))
          transcript (if (or explicit-idx? wants-session?)
                       transcript
                       (vec (remove #(= "session" (:type %)) transcript)))
-         transcript   (mapv #(transcript-match-entry % include-compaction-message? denormalize-tool-call?)
+         transcript   (mapv #(transcript-match-entry % include-compaction-message? denormalize-tool-call? denormalize-tool-result?)
                             transcript)
           result     (if explicit-idx?
                        (match/match-entries table transcript)
@@ -1379,10 +1398,12 @@
         include-compaction?    (not (some #{"summary"} (:headers table)))
         denormalize-tool-call? (some #(= "toolCall" (get % "type"))
                                      (map #(zipmap (:headers table) %) (:rows table)))
+        denormalize-tool-result? (some #(= "toolResult" (get % "type"))
+                                       (map #(zipmap (:headers table) %) (:rows table)))
         transcript             (if (or explicit-idx? wants-session?)
                                  transcript
                                  (vec (remove #(= "session" (:type %)) transcript)))
-        transcript             (mapv #(transcript-match-entry % include-compaction? denormalize-tool-call?)
+        transcript             (mapv #(transcript-match-entry % include-compaction? denormalize-tool-call? denormalize-tool-result?)
                                    transcript)
         result                 (if explicit-idx?
                                  (match/match-entries table transcript)
