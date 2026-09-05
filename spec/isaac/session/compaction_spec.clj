@@ -11,6 +11,7 @@
      [isaac.logger :as log]
      [isaac.fs :as fs]
      [isaac.session.compaction :as sut]
+     [isaac.session.context :as session-ctx]
      [isaac.session.store.spi :as store]
      [isaac.session.spec-helper :as storage]
      [isaac.episodes.lifecycle]
@@ -44,16 +45,24 @@
 
   (describe "resolve-config"
     (it "defaults to rubberband with percentage threshold and head"
-      (should= {:async? false :strategy :rubberband :head 0.3 :threshold 0.8}
+      (should= {:async? false :strategy :rubberband :head 0.3 :threshold 0.8
+                :effort 2 :max-request-tokens 32000}
                (sut/resolve-config {} 32768)))
 
     (it "merges session overrides"
-      (should= {:async? false :strategy :slinky :head 0.4 :threshold 0.8}
+      (should= {:async? false :strategy :slinky :head 0.4 :threshold 0.8
+                :effort 2 :max-request-tokens 32000}
                (sut/resolve-config {:compaction {:strategy :slinky :threshold 0.8 :head 0.4}} 200)))
 
     (it "coerces string strategy values"
-      (should= {:async? false :strategy :slinky :head 0.4 :threshold 0.8}
-               (sut/resolve-config {:compaction {:strategy "slinky" :threshold 0.8 :head 0.4}} 200))))
+      (should= {:async? false :strategy :slinky :head 0.4 :threshold 0.8
+                :effort 2 :max-request-tokens 32000}
+               (sut/resolve-config {:compaction {:strategy "slinky" :threshold 0.8 :head 0.4}} 200)))
+
+    (it "merges a compaction effort override"
+      (should= {:async? false :strategy :rubberband :head 0.3 :threshold 0.8
+                :effort 5 :max-request-tokens 32000}
+               (sut/resolve-config {:compaction {:effort 5}} 32768)))))
 
   (describe "should-compact?"
     (it "uses strategy threshold percentage times context-window"
@@ -201,7 +210,50 @@
         (should= 2 (count (:messages @chat-called)))
         (should= "system" (-> @chat-called :messages first :role))
         (should= "compaction" (:type result))
-        (should= "Summary of conversation" (:summary result))))
+        (should= "Summary of conversation" (:summary result))
+        (should= 2 (:effort @chat-called))))
+
+    (it "omits effort from the summary request when the model disallows effort"
+      (let [key-str     "isaac:main:cli:chat:no-effort"
+            _session    (storage/create-session! test-root key-str)
+            _msg1       (storage/append-message! test-root key-str {:role "user" :content "Hello"})
+            _msg2       (storage/append-message! test-root key-str {:role "assistant" :content "Hi"})
+            chat-called (atom nil)
+            mock-chat   (fn [request _tool-fn]
+                          (reset! chat-called request)
+                          {:message {:content "Summary"}})]
+        (with-redefs [session-ctx/resolve-behavior
+                      (fn [_key _opts]
+                        {:compaction {:async? false :strategy :rubberband :head 0.3 :threshold 0.8
+                                      :effort 2 :max-request-tokens 32000}
+                         :model-cfg  {:allows-effort false}})]
+          (sut/compact! key-str
+                        {:model          "test-model"
+                         :soul           "You are helpful."
+                         :context-window 10000
+                         :chat-fn        mock-chat})
+          (should-not (contains? @chat-called :effort)))))
+
+    (it "uses compaction.effort 5 from resolved policy on the summary request"
+      (let [key-str     "isaac:main:cli:chat:effort-five"
+            _session    (storage/create-session! test-root key-str)
+            _msg1       (storage/append-message! test-root key-str {:role "user" :content "Hello"})
+            _msg2       (storage/append-message! test-root key-str {:role "assistant" :content "Hi"})
+            chat-called (atom nil)
+            mock-chat   (fn [request _tool-fn]
+                          (reset! chat-called request)
+                          {:message {:content "Summary"}})]
+        (with-redefs [session-ctx/resolve-behavior
+                      (fn [_key _opts]
+                        {:compaction {:async? false :strategy :rubberband :head 0.3 :threshold 0.8
+                                      :effort 5 :max-request-tokens 32000}
+                         :model-cfg  {}})]
+          (sut/compact! key-str
+                        {:model          "test-model"
+                         :soul           "You are helpful."
+                         :context-window 10000
+                         :chat-fn        mock-chat})
+          (should= 5 (:effort @chat-called)))))
 
     (it "unwraps a tool-loop response envelope to the assistant summary"
       (let [key-str  "isaac:main:cli:chat:tool-loop-wrap"
@@ -828,5 +880,96 @@
         (should (or (= true (:partial result))
                     (= true (:chunked result))))
         (should (sut/partial-splice? result))))
+
+    (it "chunks a 90k-token history under max-request-tokens 32000 on a 278k window"
+      (let [key-str   "isaac:main:cli:chat:cap90k"
+            _session  (storage/create-session! test-root key-str)
+            block     (apply str (repeat 12000 "word "))
+            _msg1     (storage/append-message! test-root key-str {:role "user" :content (str "week one " block)})
+            _msg2     (storage/append-message! test-root key-str {:role "assistant" :content (str "logged one " block)})
+            _msg3     (storage/append-message! test-root key-str {:role "user" :content (str "week two " block)})
+            _msg4     (storage/append-message! test-root key-str {:role "assistant" :content (str "logged two " block)})
+            _msg5     (storage/append-message! test-root key-str {:role "user" :content (str "week three " block)})
+            _msg6     (storage/append-message! test-root key-str {:role "assistant" :content (str "logged three " block)})
+            calls     (atom [])
+            mock-chat (fn [request _tool-fn]
+                        (swap! calls conj request)
+                        {:message {:content (str "Summary " (count @calls))}})]
+        (with-redefs [session-ctx/resolve-behavior
+                      (fn [_key _opts]
+                        {:compaction {:async? false :strategy :rubberband :head 0.3 :threshold 0.8
+                                      :effort 2 :max-request-tokens 32000}
+                         :model-cfg  {}})]
+          (log/capture-logs
+            (let [result (sut/compact! key-str
+                                       {:model          "test-model"
+                                        :soul           "You are helpful."
+                                        :context-window 278000
+                                        :chat-fn        mock-chat})]
+              (should (>= (count @calls) 3))
+              (should-not-be-nil (first (filter #(= :session/compaction-chunked (:event %)) @log/captured-logs)))
+              (should (string? (:summary result))))))))
+
+    (it "plans a single chunk when history is under the request cap"
+      (let [key-str   "isaac:main:cli:chat:cap20k"
+            _session  (storage/create-session! test-root key-str)
+            _msg1     (storage/append-message! test-root key-str {:role "user" :content "Hello from the Marigold"})
+            _msg2     (storage/append-message! test-root key-str {:role "assistant" :content "Logged."})
+            calls     (atom [])
+            mock-chat (fn [request _tool-fn]
+                        (swap! calls conj request)
+                        {:message {:content "Summary"}})]
+        (with-redefs [session-ctx/resolve-behavior
+                      (fn [_key _opts]
+                        {:compaction {:async? false :strategy :rubberband :head 0.3 :threshold 0.8
+                                      :effort 2 :max-request-tokens 32000}
+                         :model-cfg  {}})]
+          (let [result (sut/compact! key-str
+                                     {:model          "test-model"
+                                      :soul           "You are helpful."
+                                      :context-window 278000
+                                      :chat-fn        mock-chat})]
+            (should= 1 (count @calls))
+            (should= "Summary" (:summary result))))))
+
+    (it "retries a stream-stalled summary once at half size before counting a failure"
+      (let [key-str   "isaac:main:cli:chat:stall-retry"
+            _session  (storage/create-session! test-root key-str)
+            _msg1     (storage/append-message! test-root key-str {:role "user" :content "Week one: the Marigold cleared port"})
+            _msg2     (storage/append-message! test-root key-str {:role "assistant" :content "Logged week one"})
+            _msg3     (storage/append-message! test-root key-str {:role "user" :content "Week two: Joe rerouted coolant"})
+            _msg4     (storage/append-message! test-root key-str {:role "assistant" :content "Logged week two"})
+            calls     (atom [])
+            mock-chat (fn [request _tool-fn]
+                        (let [n (count (swap! calls conj request))]
+                          (if (= 1 n)
+                            {:error :stream-stalled :message "closed"}
+                            {:message {:content (str "Summary " n)}})))]
+        (log/capture-logs
+          (let [result (sut/compact! key-str
+                                     {:model          "test-model"
+                                      :soul           "You are helpful."
+                                      :context-window 10000
+                                      :chat-fn        mock-chat})]
+            (should (>= (count @calls) 2))
+            (should= "compaction" (:type result))
+            (let [retry (first (filter #(= :session/compaction-chunk-retry (:event %)) @log/captured-logs))]
+              (should-not-be-nil retry)
+              (should= 1 (:attempt retry)))))))
+
+    (it "does not retry a second stream-stalled drop on the halved chunks"
+      (let [key-str   "isaac:main:cli:chat:stall-twice"
+            _session  (storage/create-session! test-root key-str)
+            _msg1     (storage/append-message! test-root key-str {:role "user" :content "Week one: the Marigold cleared port"})
+            _msg2     (storage/append-message! test-root key-str {:role "assistant" :content "Logged week one"})
+            _msg3     (storage/append-message! test-root key-str {:role "user" :content "Week two: Joe rerouted coolant"})
+            _msg4     (storage/append-message! test-root key-str {:role "assistant" :content "Logged week two"})
+            mock-chat (fn [_request _tool-fn]
+                        {:error :stream-stalled :message "closed"})]
+        (let [result (sut/compact! key-str
+                                   {:model          "test-model"
+                                    :soul           "You are helpful."
+                                    :context-window 10000
+                                    :chat-fn        mock-chat})]
+          (should= :stream-stalled (:error result)))))
     )
-  )

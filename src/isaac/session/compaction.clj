@@ -367,23 +367,75 @@
         chunks (:chunks plan)]
     (assoc plan :chunks (when (and chunks (> (count chunks) 1)) chunks))))
 
-(defn- summarize-messages [chat-fn tool-fn model api messages tool-defs]
-  (let [request (llm/build-summary-request api model *compaction-system-prompt* messages tool-defs)]
+(defn- attach-summary-effort [request model-cfg compaction-cfg]
+  (if (false? (:allows-effort model-cfg))
+    request
+    (assoc request :effort (or (:effort compaction-cfg) 2))))
+
+(defn- transport-class-failure? [response]
+  (let [err (response-error response)
+        msg (or (:message response)
+                (get-in response [:response :message])
+                (when (string? err) err))]
+    (or (= :stream-stalled err)
+        (and (= :llm-error err) (= "closed" msg)))))
+
+(defn- summarize-messages [chat-fn tool-fn model api messages tool-defs model-cfg compaction-cfg]
+  (let [request (-> (llm/build-summary-request api model *compaction-system-prompt* messages tool-defs)
+                    (attach-summary-effort model-cfg compaction-cfg))]
     (reset! last-compaction-request* request)
     (chat-fn request tool-fn)))
 
-(defn- chunked-response [ctx key-str chat-fn model api chunks tool-defs]
+(defn- split-messages-in-half [messages]
+  (let [n (count messages)
+        mid (max 1 (quot n 2))]
+    (if (<= n 1)
+      [messages]
+      [(subvec (vec messages) 0 mid) (subvec (vec messages) mid)])))
+
+(defn- summarize-chunk [chat-fn tool-fn model api messages tool-defs model-cfg compaction-cfg]
+  (summarize-messages chat-fn tool-fn model api messages tool-defs model-cfg compaction-cfg))
+
+(defn- summarize-with-half-retry [chat-fn tool-fn model api messages tool-defs model-cfg compaction-cfg key-str]
+  (let [response (summarize-chunk chat-fn tool-fn model api messages tool-defs model-cfg compaction-cfg)]
+    (if-not (and (response-error response) (transport-class-failure? response))
+      response
+      (let [halves (split-messages-in-half messages)
+            before (llm/estimate-tokens (llm/build-summary-request api model *compaction-system-prompt* messages tool-defs))
+            after  (llm/estimate-tokens (llm/build-summary-request api model *compaction-system-prompt* (first halves) tool-defs))]
+        (log/info :session/compaction-chunk-retry
+                  :session key-str
+                  :model model
+                  :attempt 1
+                  :tokens-before before
+                  :tokens-after after)
+        (loop [remaining halves
+               summaries []]
+          (if-let [half (first remaining)]
+            (let [retry-response (summarize-chunk chat-fn tool-fn model api half tool-defs model-cfg compaction-cfg)]
+              (if (response-error retry-response)
+                retry-response
+                (recur (rest remaining) (conj summaries (response-content retry-response)))))
+            (if (> (count summaries) 1)
+              (summarize-chunk chat-fn tool-fn model api
+                               (mapv (fn [summary] {:role "user" :content summary}) summaries)
+                               tool-defs model-cfg compaction-cfg)
+              {:message {:content (first summaries)}})))))))
+
+(defn- chunked-response [ctx key-str chat-fn model api chunks tool-defs model-cfg compaction-cfg]
   (let [tool-fn (partial (compaction-tool-fn key-str) ctx)]
     (log/info :session/compaction-chunked :session key-str :model model :chunks (count chunks))
     (loop [remaining chunks
            summaries  []]
       (if-let [chunk (first remaining)]
-        (let [response (summarize-messages chat-fn tool-fn model api chunk tool-defs)]
+        (let [response (summarize-with-half-retry chat-fn tool-fn model api chunk tool-defs model-cfg compaction-cfg key-str)]
           (if (response-error response)
             response
             (recur (rest remaining) (conj summaries (response-content response)))))
         (if (> (count summaries) 1)
-          (summarize-messages chat-fn tool-fn model api (mapv (fn [summary] {:role "user" :content summary}) summaries) tool-defs)
+          (summarize-with-half-retry chat-fn tool-fn model api
+                                     (mapv (fn [summary] {:role "user" :content summary}) summaries)
+                                     tool-defs model-cfg compaction-cfg key-str)
           {:message {:content (first summaries)}})))))
 
 (defn compact!
@@ -407,6 +459,7 @@
         compactables    (compactables history-entries context-window)
         messages        (mapv :message compactables)
         strategy        (:compaction behavior)
+        model-cfg       (or (:model-cfg behavior) {})
         {:keys [compact-count first-kept-entry-id tokens-before]}
         (compaction-target compactables strategy context-window)
         compactable-head (subvec compactables 0 compact-count)
@@ -417,10 +470,13 @@
         tool-defs       (tool-registry/tool-definitions memory-tool-names)
         summary-prompt  (llm/build-summary-request api model *compaction-system-prompt* compacted tool-defs)
         summary-prompt-tokens (llm/estimate-tokens summary-prompt)
+        request-cap     (or (:max-request-tokens strategy) 32000)
+        chunk-window    (min context-window request-cap)
         needs-chunking? (or (> tokens-before context-window)
-                             (> summary-prompt-tokens context-window))
+                             (> summary-prompt-tokens context-window)
+                             (> summary-prompt-tokens request-cap))
         chunks          (when needs-chunking?
-                          (feasible-chunks model api compactable-head context-window tool-defs))
+                          (feasible-chunks model api compactable-head chunk-window tool-defs))
         chunk-messages  (:chunks chunks)
         chunked?        (seq chunk-messages)
         oversized?      (and (= :oversized-single (get-in chunks [:failure :reason]))
@@ -457,8 +513,9 @@
                                     :tokens-before tokens-before))
         _               (reset! last-compaction-request* nil)
         response        (if chunked?
-                          (chunked-response ctx key-str chat-fn model api chunk-messages tool-defs)
-                          (summarize-messages chat-fn (partial (compaction-tool-fn key-str) ctx) model api compacted tool-defs))]
+                          (chunked-response ctx key-str chat-fn model api chunk-messages tool-defs model-cfg strategy)
+                          (summarize-with-half-retry chat-fn (partial (compaction-tool-fn key-str) ctx)
+                                                     model api compacted tool-defs model-cfg strategy key-str))]
     (when compaction-llm-done
       (deliver compaction-llm-done true))
     (if (response-error response)

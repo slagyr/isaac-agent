@@ -844,7 +844,44 @@
           (should-not-be-nil (event events "bulletin" "compaction/success"))
           (should= session-key (first @follow-up))
           (should= 2 (nth @follow-up 2))
-          (should= false (nth @follow-up 3))))))
+          (should= false (nth @follow-up 3)))))
+
+    (it "does not increment consecutive-failures when compact! succeeds after a half-size retry"
+      (let [provider      (->TestProvider marigold/starcore {:api marigold/sky-api})
+            session-key   "compact-retry-ok"
+            session-store (store/registered-store)
+            events        (atom [])]
+        (helper/create-session! test-dir session-key)
+        (helper/update-session! test-dir session-key {:compaction {:consecutive-failures 0}})
+        (with-redefs [compaction/compact!               (fn [& _] {:summary "Retried summary"})
+                      compaction/estimate-prompt-tokens (fn [_ _] 200)]
+          (#'sut/perform-compaction! session-key 1 800 {:comm           (memory-comm/channel events)
+                                                        :context-window 1000
+                                                        :model          "test-model"
+                                                        :provider       provider
+                                                        :soul           "You are Isaac."
+                                                        :root           test-dir
+                                                        :session-store  session-store})
+          (let [session (helper/get-session test-dir session-key)]
+            (should= {:consecutive-failures 0} (:compaction session))))))
+
+    (it "increments consecutive-failures when compact! still errors after the half-size retry"
+      (let [provider      (->TestProvider marigold/starcore {:api marigold/sky-api})
+            session-key   "compact-retry-fail"
+            session-store (store/registered-store)
+            events        (atom [])]
+        (helper/create-session! test-dir session-key)
+        (helper/update-session! test-dir session-key {:compaction {:consecutive-failures 0}})
+        (with-redefs [compaction/compact! (fn [& _] {:error :stream-stalled :message "closed"})]
+          (#'sut/perform-compaction! session-key 1 800 {:comm           (memory-comm/channel events)
+                                                        :context-window 1000
+                                                        :model          "test-model"
+                                                        :provider       provider
+                                                        :soul           "You are Isaac."
+                                                        :root           test-dir
+                                                        :session-store  session-store})
+          (let [session (helper/get-session test-dir session-key)]
+            (should= {:consecutive-failures 1} (:compaction session)))))))
 
   (describe "build-turn"
     #_{:clj-kondo/ignore [:unresolved-symbol]}

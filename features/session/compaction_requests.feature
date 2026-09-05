@@ -1,4 +1,3 @@
-@wip
 Feature: Compaction request shaping — low effort, a size cap, and one retry at half size
   A compaction summary is extraction, not reasoning. Isaac sends it at a
   fixed low effort (compaction.effort, default 2, any compaction policy
@@ -76,11 +75,11 @@ Feature: Compaction request shaping — low effort, a size cap, and one retry at
       | path                          | value      |
       | model                         | test-model |
       | provider                      | grover     |
-      | context-window                | 200        |
-      | compaction.max-request-tokens | 60         |
+      | context-window                | 800        |
+      | compaction.max-request-tokens | 670        |
     And the following sessions exist:
       | name       | last-input-tokens | compaction.head | #comment                       |
-      | log-keeper | 165               | 0.1             | last provider tokens over line |
+      | log-keeper | 700               | 0.1             | last provider tokens over line |
     And session "log-keeper" has transcript:
       | type    | message.role | message.content                                                                  |
       | message | user         | Week one: the Marigold cleared port under Cordelia with stores for ninety days   |

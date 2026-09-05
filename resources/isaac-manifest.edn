@@ -288,6 +288,10 @@
        :description "Compaction policy override for this provider",
        :schema
        {:async? {:type :boolean},
+        :effort
+        {:type :int,
+         :description
+         "Effort used for compaction summary requests (default 2)"},
         :head
         {:type :double,
          :validations
@@ -296,6 +300,10 @@
         {:type :ignore,
          :description "Derived: head must stay below threshold",
          :validations [[:less-than? :head :threshold]]},
+        :max-request-tokens
+        {:type :int,
+         :description
+         "Cap on summarization request size in tokens (default 32000)"},
         :strategy
         {:type :keyword,
          :validations [[:one-of? :rubberband :slinky]]},
@@ -427,6 +435,10 @@
       {:type :map,
        :schema
        {:async? {:type :boolean},
+        :effort
+        {:type :int,
+         :description
+         "Effort used for compaction summary requests (default 2)"},
         :head
         {:type :double,
          :validations
@@ -435,6 +447,10 @@
         {:type :ignore,
          :description "Derived: head must stay below threshold",
          :validations [[:less-than? :head :threshold]]},
+        :max-request-tokens
+        {:type :int,
+         :description
+         "Cap on summarization request size in tokens (default 32000)"},
         :strategy
         {:type :keyword,
          :validations [[:one-of? :rubberband :slinky]]},
@@ -477,6 +493,10 @@
       :description "Default compaction policy for sessions",
       :schema
       {:async? {:type :boolean},
+       :effort
+       {:type :int,
+        :description
+        "Effort used for compaction summary requests (default 2)"},
        :head
        {:type :double,
         :validations
@@ -485,6 +505,10 @@
        {:type :ignore,
         :description "Derived: head must stay below threshold",
         :validations [[:less-than? :head :threshold]]},
+       :max-request-tokens
+       {:type :int,
+        :description
+        "Cap on summarization request size in tokens (default 32000)"},
        :strategy
        {:type :keyword, :validations [[:one-of? :rubberband :slinky]]},
        :threshold
@@ -606,6 +630,10 @@
        :description "Compaction policy override for this model",
        :schema
        {:async? {:type :boolean},
+        :effort
+        {:type :int,
+         :description
+         "Effort used for compaction summary requests (default 2)"},
         :head
         {:type :double,
          :validations
@@ -614,6 +642,10 @@
         {:type :ignore,
          :description "Derived: head must stay below threshold",
          :validations [[:less-than? :head :threshold]]},
+        :max-request-tokens
+        {:type :int,
+         :description
+         "Cap on summarization request size in tokens (default 32000)"},
         :strategy
         {:type :keyword,
          :validations [[:one-of? :rubberband :slinky]]},
