@@ -41,7 +41,8 @@
       (parse-model-ref model-override)))
 
 (defn- model-override-provider-opts [cfg provider-cfg model-cfg]
-  (merge provider-cfg
+  (merge (select-keys (get cfg :defaults {}) [:stream-idle-timeout-ms])
+         provider-cfg
          {:module-index (:module-index cfg)}
          (select-keys model-cfg [:enforce-context-window :thinking-budget-max :think-mode])))
 

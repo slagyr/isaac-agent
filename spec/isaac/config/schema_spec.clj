@@ -41,6 +41,11 @@
                (lexicon/conform (runtime-spec sut/defaults)
                                 {:crew :main :model (keyword test-model-id)})))
 
+    (it "defaults conforms stream-idle-timeout-ms"
+      (should= {:stream-idle-timeout-ms 100}
+               (lexicon/conform (runtime-spec sut/defaults)
+                                {:stream-idle-timeout-ms 100})))
+
     (it "crew conforms with tools nested"
       (should= {:id    marigold/first-mate
                 :model test-model-id
@@ -127,6 +132,11 @@
                                  :api      marigold/helm-api
                                  :auth     "oauth-device"
                                  :headers  {"X-Foo" "bar"}})))
+
+    (it "provider conforms stream-idle-timeout-ms override"
+      (should= {:stream-idle-timeout-ms 45000}
+               (lexicon/conform (runtime-spec sut/provider)
+                                {:stream-idle-timeout-ms 45000})))
 
     (it "provider conforms including oauth descriptor metadata"
       (should= {:base-url "https://api.x.ai/v1"

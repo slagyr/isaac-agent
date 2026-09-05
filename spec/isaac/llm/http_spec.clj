@@ -204,6 +204,83 @@
         (should= "https://api.openai.com/v1/responses" (:url (grover/last-provider-request)))
         (should= 2 (count @chunks)))))
 
+    (it "returns :stream-stalled when two SSE events arrive then the stream goes silent"
+      (let [body-closed? (atom false)
+            output       (java.io.PipedOutputStream.)
+            input        (java.io.PipedInputStream. output)
+            chunks       (atom [])]
+        (try
+          (with-redefs [http/post (fn [_ _]
+                                    {:status 200
+                                     :body   (proxy [java.io.InputStream] []
+                                               (read
+                                                 ([] (.read input))
+                                                 ([b] (.read input b))
+                                                 ([b off len] (.read input b off len)))
+                                               (available [] (.available input))
+                                               (close []
+                                                 (reset! body-closed? true)
+                                                 (.close input)))})]
+            (future
+              (.write output (.getBytes "data: {\"text\":\"A\"}\n"))
+              (.flush output)
+              (.write output (.getBytes "data: {\"text\":\"B\"}\n"))
+              (.flush output))
+            (log/capture-logs
+              (let [t0      (System/currentTimeMillis)
+                    result  (sut/post-sse! "http://test" {} {}
+                                           (fn [d] (swap! chunks conj d))
+                                           (fn [data acc] (str acc (:text data)))
+                                           ""
+                                           {:stream-idle-timeout-ms 100})
+                    elapsed (- (System/currentTimeMillis) t0)
+                    stalled (first (filter #(= :llm/stream-stalled (:event %)) @log/captured-logs))]
+                (should= :stream-stalled (:error result))
+                (should= true (:unavailable? result))
+                (should (pos? (:retry-after-ms result)))
+                (should= [{:text "A"} {:text "B"}] @chunks)
+                (should= true @body-closed?)
+                (should (<= elapsed 400))
+                (should= :warn (:level stalled))
+                (should (>= (:elapsed-ms stalled) 100))
+                (should (>= (:bytes-received stalled) 0)))))
+          (finally
+            (try (.close output) (catch Exception _ nil))))))
+
+    (it "does not stall an SSE stream that keeps emitting slower than the idle timeout"
+      (let [output     (java.io.PipedOutputStream.)
+            input      (java.io.PipedInputStream. output)
+            chunks     (atom [])
+            got-first  (promise)
+            got-second (promise)]
+        (try
+          (with-redefs [http/post (fn [_ _]
+                                    (future
+                                      (.write output (.getBytes "data: {\"text\":\"A\"}\n"))
+                                      (.flush output)
+                                      (deref got-first 1000 nil)
+                                      (.write output (.getBytes "data: {\"text\":\"B\"}\n"))
+                                      (.flush output)
+                                      (deref got-second 1000 nil)
+                                      (.write output (.getBytes "data: [DONE]\n"))
+                                      (.flush output)
+                                      (.close output))
+                                    {:status 200 :body input})]
+            (let [result (sut/post-sse! "http://test" {} {}
+                                        (fn [d]
+                                          (swap! chunks conj d)
+                                          (when (= 1 (count @chunks)) (deliver got-first true))
+                                          (when (= 2 (count @chunks)) (deliver got-second true)))
+                                        (fn [data acc] (str acc (:text data)))
+                                        ""
+                                        {:stream-idle-timeout-ms 100})]
+              (should= "AB" result)
+              (should= 2 (count @chunks))))
+          (finally
+            (deliver got-first true)
+            (deliver got-second true)
+            (try (.close output) (catch Exception _ nil))))))
+
     (it "closes an in-flight SSE stream and returns cancelled when the session is cancelled"
       (let [turn         (bridge/begin-turn! "sse-cancel")
             started      (promise)
@@ -223,6 +300,7 @@
                                                  ([] (.read input))
                                                  ([b] (.read input b))
                                                  ([b off len] (.read input b off len)))
+                                               (available [] (.available input))
                                                (close []
                                                  (reset! body-closed? true)
                                                  (.close input)))})]

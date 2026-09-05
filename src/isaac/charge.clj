@@ -90,7 +90,9 @@
   (cond
     (nil? provider) nil
     (string? provider) (let [prov-cfg     (resolve/resolve-provider cfg provider)
-                             enriched-cfg (merge (or prov-cfg {})
+                             enriched-cfg (merge (select-keys (get cfg :defaults {})
+                                                              [:stream-idle-timeout-ms])
+                                                 (or prov-cfg {})
                                                  {:providers    (:providers cfg)
                                                   :module-index (:module-index cfg)})]
                          (llm-provider/make-provider provider enriched-cfg))

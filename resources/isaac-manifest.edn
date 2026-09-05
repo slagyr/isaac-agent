@@ -308,7 +308,11 @@
       :api-key
       {:type :string,
        :description "API key",
-       :validations [[:present-when? :auth "api-key"]]}}}}},
+       :validations [[:present-when? :auth "api-key"]]},
+      :stream-idle-timeout-ms
+      {:type :int,
+       :description
+       "Per-provider idle-stall timeout (ms) for SSE/NDJSON streams; overrides :defaults"}}}}},
   :skill-menu-threshold
   {:schema
    {:type :int,
@@ -519,7 +523,12 @@
      {:type :int,
       :default 300000,
       :description
-      "Default retry-after (ms) when a provider auth failure blocks a turn"}}}},
+      "Default retry-after (ms) when a provider auth failure blocks a turn"},
+     :stream-idle-timeout-ms
+     {:type :int,
+      :default 90000,
+      :description
+      "Idle-stall timeout (ms) for provider SSE/NDJSON streams; close and treat as weather when no bytes arrive"}}}},
   :attention
   {:schema
    {:name :attention,

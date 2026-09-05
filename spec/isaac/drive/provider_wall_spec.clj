@@ -47,4 +47,22 @@
       (should= 120000 (:retry-after-ms (sut/classify result cfg "grover")))))
 
   (it "returns nil for genuine tool errors"
-    (should= nil (sut/classify {:error :tool-loop-limit} {} "grover"))))
+    (should= nil (sut/classify {:error :tool-loop-limit} {} "grover")))
+
+  (it "classifies :stream-stalled as unavailable weather"
+    (let [result {:error :stream-stalled :unavailable? true :retry-after-ms 90000}
+          classified (sut/classify result {} "chatgpt")]
+      (should= true (:unavailable? classified))
+      (should= :stream-stalled (:reason classified))
+      (should= 90000 (:retry-after-ms classified))
+      (should= "chatgpt" (:provider classified))))
+
+  (it "normalizes a pre-classified stream stall as unavailable weather"
+    (let [result {:error :stream-stalled :unavailable? true :retry-after-ms 5000}
+          normalized (sut/normalize result {} "chatgpt")]
+      (should= true (:unavailable? normalized))
+      (should= :stream-stalled (:reason normalized))
+      (should= 5000 (:retry-after-ms normalized))
+      (should= "chatgpt" (:provider normalized))))
+
+  )

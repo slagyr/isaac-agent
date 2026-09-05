@@ -156,8 +156,11 @@
 
 (defn- http-opts [config]
   (cond-> {}
-    (:session-key config)       (assoc :session-key (:session-key config))
-    (:simulate-provider config) (assoc :simulate-provider (:simulate-provider config))))
+    (:session-key config)            (assoc :session-key (:session-key config))
+    (:simulate-provider config)      (assoc :simulate-provider (:simulate-provider config))
+    (:timeout config)                (assoc :timeout (:timeout config))
+    (:stream-idle-timeout-ms config) (assoc :stream-idle-timeout-ms (:stream-idle-timeout-ms config))
+    (:retry-after-ms config)         (assoc :retry-after-ms (:retry-after-ms config))))
 
 (defn chat
   "Send a non-streaming Messages API request."

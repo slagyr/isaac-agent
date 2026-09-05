@@ -43,6 +43,9 @@
   (or (= :auth-failed (:error result))
       (contains? #{401 403} (:status result))))
 
+(defn- stall-response? [result]
+  (= :stream-stalled (:error result)))
+
 (defn- retry-after-secs [value]
   (cond
     (nil? value) nil
@@ -84,20 +87,34 @@
                :provider     provider}
         (seq (response-message result)) (assoc :message (response-message result))))))
 
+(defn- classify-stall
+  [result cfg provider]
+  (when (stall-response? result)
+    (let [retry-ms (or (:retry-after-ms result)
+                       (provider-retry-after-ms cfg))]
+      (log/warn :chat/provider-stream-stalled
+                :provider provider
+                :retry-after-ms retry-ms)
+      {:unavailable?   true
+       :retry-after-ms retry-ms
+       :reason         :stream-stalled
+       :provider       provider})))
+
 (defn classify
   "Classify provider weather into {:unavailable? true :retry-after-ms N :reason ...}.
    Returns nil when the response is a genuine failure."
   [result cfg provider]
   (or (classify-auth result cfg provider)
-      (classify-wall result cfg provider)))
+      (classify-wall result cfg provider)
+      (classify-stall result cfg provider)))
 
 (defn normalize
-  "Pass through pre-classified unavailable results; classify auth and wall errors."
+  "Pass through pre-classified unavailable results; classify auth, wall, and stall errors."
   [result cfg provider]
   (cond
     (:unavailable? result)
     (cond-> result
-      (nil? (:reason result)) (assoc :reason :wall)
+      (nil? (:reason result)) (assoc :reason (if (stall-response? result) :stream-stalled :wall))
       (nil? (:provider result)) (assoc :provider provider))
 
     (:error result)

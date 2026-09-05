@@ -26,8 +26,10 @@
 
 (defn- http-opts [cfg]
   (cond-> {:timeout (or (:timeout cfg) default-timeout)}
-    (:session-key cfg)       (assoc :session-key (:session-key cfg))
-    (:simulate-provider cfg) (assoc :simulate-provider (:simulate-provider cfg))))
+    (:session-key cfg)            (assoc :session-key (:session-key cfg))
+    (:simulate-provider cfg)      (assoc :simulate-provider (:simulate-provider cfg))
+    (:stream-idle-timeout-ms cfg) (assoc :stream-idle-timeout-ms (:stream-idle-timeout-ms cfg))
+    (:retry-after-ms cfg)         (assoc :retry-after-ms (:retry-after-ms cfg))))
 
 (defn chat
   "Send a chat request to Ollama. Returns the parsed response or error map."

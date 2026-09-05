@@ -13,8 +13,9 @@
 
 (defn- http-opts [cfg]
   (cond-> {:timeout (or (:timeout cfg) default-timeout)}
-    (:session-key cfg)       (assoc :session-key (:session-key cfg))
-    (:simulate-provider cfg) (assoc :simulate-provider (:simulate-provider cfg))))
+    (:session-key cfg)            (assoc :session-key (:session-key cfg))
+    (:simulate-provider cfg)      (assoc :simulate-provider (:simulate-provider cfg))
+    (:stream-idle-timeout-ms cfg) (assoc :stream-idle-timeout-ms (:stream-idle-timeout-ms cfg))))
 
 (defn- ->vectors [response]
   (or (:embeddings response)

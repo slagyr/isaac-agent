@@ -16,6 +16,14 @@
                            :originator "isaac"
                            :chatgpt-account-id? true}})
 
+(describe "openai shared http opts"
+
+  (it "passes stream idle timeout through llm-http-opts"
+    (should= {:session-key "s1" :stream-idle-timeout-ms 100}
+             (sut/llm-http-opts {:session-key "s1" :stream-idle-timeout-ms 100})))
+
+  )
+
 (describe "openai shared oauth"
 
   (with fs (fs/mem-fs))
