@@ -52,8 +52,9 @@
     (reset! last-request* request)
     (log/debug :chat/request-with-tools :provider name :model (:model request))
     (log-dispatch-result name
-                         (tool-loop/run #(api/chat p %)
-                                        #(api/followup-messages p %1 %2 %3 %4)
-                                         request
-                                         tool-fn)
+                         (tool-loop/-run-default #(api/chat p %)
+                                                 #(api/followup-messages p %1 %2 %3 %4)
+                                                 request
+                                                 tool-fn
+                                                 {})
                          :chat/error :chat/response)))

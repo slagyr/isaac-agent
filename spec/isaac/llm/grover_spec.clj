@@ -245,4 +245,28 @@
         (should-not (api/error? result))
         (should-not-throw (api/validate-response result)))))
 
-  ))
+  )
+
+  (context "drive-own-tool-loop fixture"
+
+    (after (sut/clear-own-tool-loop!))
+
+    (it "sets :drives-tool-loop? on GroverAPI config"
+      (let [p (sut/make "grover" {})]
+        (should-not (:drives-tool-loop? (api/config p)))
+        (sut/drive-own-tool-loop!)
+        (should (:drives-tool-loop? (api/config p)))))
+
+    (it "leaves the flag set when reset-queue! runs"
+      (sut/drive-own-tool-loop!)
+      (sut/reset-queue!)
+      (should (:drives-tool-loop? (api/config (sut/make "grover" {})))))
+
+    (it "clears the flag so the next scenario is not driven"
+      (sut/drive-own-tool-loop!)
+      (sut/clear-own-tool-loop!)
+      (should-not (:drives-tool-loop? (api/config (sut/make "grover" {})))))
+
+    )
+
+  )

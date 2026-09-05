@@ -4,6 +4,7 @@
    `run` is the algorithm; `chat-fn` and `followup-fn` are the hooks."
   (:require
     [clojure.string :as str]
+    [isaac.llm.api.protocol :as api]
     [isaac.logger :as log])
   (:import (clojure.lang ExceptionInfo)))
 
@@ -95,37 +96,29 @@
     {:results    (->> @results (remove nil?) vec)
      :cancelled? @cancelled*}))
 
-(defn run
-  "Drive one tool-call loop using the supplied hooks.
+(defonce ^:private provider-driver* (atom nil))
 
-   chat-fn          (fn [request] -> response) — one LLM call per cycle.
-                    Caller chooses streaming vs non-streaming when wiring this.
-   followup-fn      (fn [request response tool-calls tool-results] -> messages)
-                    — provider-specific format for the next cycle's :messages.
-   request          initial chat request (with :messages, :tools, etc.)
-   tool-fn          (fn [tool-name arguments] -> result-string) — runs one tool.
+(defn install-provider-driver!
+  "Install a provider-driven loop implementation. Test support (and later
+   claude-cli) registers a driver that receives the same hooks as `run`."
+  [driver]
+  (reset! provider-driver* driver))
 
-   Options:
-     :max-loops          budget for tool cycles (default 500)
-     :max-parallel-tools max concurrent tool calls within one response batch (default 4)
-     :after-tools        optional (fn [request] -> request-or-unavailable)
-                         after tools + followup, before the next chat-fn.
-                         A returned :unavailable? / :error map stops the loop.
+(defn clear-provider-driver! []
+  (reset! provider-driver* nil))
 
-   Returns on success:
-     {:response       last LLM response
-      :tool-calls     [executed-tool-call-maps]
-      :token-counts   accumulated usage
-      :loop-request?  true when the budget was exhausted with tools still pending}
+(defn- drives-tool-loop? [api-impl]
+  (boolean (and api-impl (:drives-tool-loop? (api/config api-impl)))))
 
-   Returns on error: the error response from chat-fn."
-  [chat-fn followup-fn request tool-fn & [{:keys [max-loops cancelled? after-tools max-parallel-tools on-cycle prepare-tool-call]
-                                            :or   {max-loops          default-max-loops
-                                                   cancelled?         (constantly false)
-                                                   after-tools        identity
-                                                   max-parallel-tools default-max-parallel-tools
-                                                   on-cycle           nil
-                                                   prepare-tool-call  nil}}]]
+(defn -run-default
+  "Isaac's built-in tool-call loop. Byte-for-byte the historical `run` body."
+  [chat-fn followup-fn request tool-fn {:keys [max-loops cancelled? after-tools max-parallel-tools on-cycle prepare-tool-call]
+                                        :or   {max-loops          default-max-loops
+                                               cancelled?         (constantly false)
+                                               after-tools        identity
+                                               max-parallel-tools default-max-parallel-tools
+                                               on-cycle           nil
+                                               prepare-tool-call  nil}}]
   (loop [req          (dissoc request :previous_response_id)
          all-tools    []
          token-counts {:input-tokens 0 :output-tokens 0 :cache-read 0 :cache-write 0}
@@ -190,3 +183,42 @@
                    :tool-calls    all-tools
                    :token-counts  new-tokens
                    :loop-request? (boolean (and (seq tool-calls) (not budget-left?)))})))))))))
+
+(defn run
+  "Drive one tool-call loop using the supplied hooks.
+
+    chat-fn          (fn [request] -> response) — one LLM call per cycle.
+                     Caller chooses streaming vs non-streaming when wiring this.
+    followup-fn      (fn [request response tool-calls tool-results] -> messages)
+                     — provider-specific format for the next cycle's :messages.
+    request          initial chat request (with :messages, :tools, etc.)
+    tool-fn          (fn [tool-name arguments] -> result-string) — runs one tool.
+
+    Options:
+      :max-loops          budget for tool cycles (default 500)
+      :max-parallel-tools max concurrent tool calls within one response batch (default 4)
+      :after-tools        optional (fn [request] -> request-or-unavailable)
+                          after tools + followup, before the next chat-fn.
+                          A returned :unavailable? / :error map stops the loop.
+      :api                optional Api instance; when its config has
+                          :drives-tool-loop? true, `run` dispatches to the
+                          installed provider driver instead of the default loop.
+
+    Returns on success:
+      {:response       last LLM response
+       :tool-calls     [executed-tool-call-maps]
+       :token-counts   accumulated usage
+       :loop-request?  true when the budget was exhausted with tools still pending}
+
+    Returns on error: the error response from chat-fn."
+  [chat-fn followup-fn request tool-fn & [opts]]
+  (let [opts      (or opts {})
+        api-impl  (:api opts)
+        driven?   (drives-tool-loop? api-impl)
+        driver-kw (if driven? :provider :default)]
+    (log/info :turn/loop-driver
+              :provider (if api-impl (api/display-name api-impl) (:provider request))
+              :driver driver-kw)
+    (if (and driven? @provider-driver*)
+      (@provider-driver* chat-fn followup-fn request tool-fn opts)
+      (-run-default chat-fn followup-fn request tool-fn opts))))

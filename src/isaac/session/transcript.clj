@@ -16,6 +16,9 @@
 
 (defn tool-calls [message]
   (cond
+    (nil? message)
+    nil
+
     (= "toolCall" (:type message))
     [{:type "toolCall" :id (:id message) :name (:name message) :arguments (:arguments message)}]
 

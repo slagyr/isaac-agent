@@ -80,6 +80,7 @@
 (froot/register-root-setup-hook!
   (fn [abs-dir]
     (grover/reset-queue!)
+    (grover/clear-own-tool-loop!)
     (drive-dispatch/clear-last-request!)
     (bridge-cancel/clear!)
     (bridge-suspend/clear!)
@@ -1222,21 +1223,32 @@
          :file (str "sessions/" (:id entry) "/current.ednl")))
 
 (defn- transcript-match-entry [entry include-compaction-message? denormalize-tool-call?]
-  (let [type (if (and denormalize-tool-call?
-                      (seq (transcript/tool-calls (:message entry))))
-               "toolCall"
-               (:type entry))]
+  (let [calls          (transcript/tool-calls (:message entry))
+        tool-result?   (= "toolResult" (get-in entry [:message :role]))
+        denorm-call?   (and denormalize-tool-call? (seq calls))
+        denorm-result? (and denormalize-tool-call? tool-result?)
+        type           (cond
+                         denorm-call?   "toolCall"
+                         denorm-result? "toolResult"
+                         :else          (:type entry))
+        entry          (cond-> entry
+                         type (assoc :type type)
+
+                         (and include-compaction-message? (= "compaction" (:type entry)))
+                         (assoc :message {:content (:summary entry)})
+
+                         tool-result?
+                         (update-in [:message :content]
+                                    #(-> (or % "")
+                                         (str/replace #"^Error:\s*" "")
+                                         (str/replace #"^path outside allowed directories:.*$" "path outside allowed directories"))))]
     (cond-> entry
-      type (assoc :type type)
+      denorm-call?
+      (-> (assoc :name (:name (first calls)))
+          (dissoc :message))
 
-      (and include-compaction-message? (= "compaction" (:type entry)))
-      (assoc :message {:content (:summary entry)})
-
-      (= "toolResult" (get-in entry [:message :role]))
-      (update-in [:message :content]
-                 #(-> (or % "")
-                      (str/replace #"^Error:\s*" "")
-                      (str/replace #"^path outside allowed directories:.*$" "path outside allowed directories"))))))
+      denorm-result?
+      (dissoc :message))))
 
 (defn- normalize-transcript-table [table]
   (let [col-rename {"role" "message.role" "content-matcher" "message.content"}

@@ -947,13 +947,22 @@
 (defn- maybe-mid-turn-compact!
   "After tools persist, compact the disk transcript if needed and rebuild
    the next LLM request from the post-compaction active transcript.
-   Returns the next request, or a :context-exhausted unavailable map."
+   Returns the next request, or a :context-exhausted unavailable map.
+   Provider-driven loops skip mid-turn compaction (option A, isaac-1sdl)
+   and log :turn/compaction-deferred when after-tools would have fired."
   [session-key ctx request current-request]
-  (let [opts           (mid-turn-compaction-opts ctx)
+  (let [provider (or (:provider ctx) (:provider (:charge ctx)))
+        driven?  (boolean (and provider (:drives-tool-loop? (api/config provider))))
+        opts     (mid-turn-compaction-opts ctx)
         context-window (:context-window (:charge ctx))
-        config         (:config (:charge ctx))
-        before         (compaction/estimate-prompt-tokens session-key opts)]
-    (run-compaction-check! session-key opts 1 false)
+        config   (:config (:charge ctx))
+        before   (compaction/estimate-prompt-tokens session-key opts)]
+    (when driven?
+      (log/info :turn/compaction-deferred
+                :session session-key
+                :reason :provider-driven))
+    (when-not driven?
+      (run-compaction-check! session-key opts 1 false))
     (let [after      (compaction/estimate-prompt-tokens session-key opts)
           guard-line (context-window-guard-line-tokens context-window)]
       (cond
@@ -1286,7 +1295,8 @@
                                               :prepare-tool-call  #(prepare-tool-call! tool-ctx %)
                                               :cancelled?         #(bridge/cancelled? session-key)
                                               :after-tools        #(maybe-mid-turn-compact! session-key ctx % current-request)
-                                              :on-cycle           on-cycle})))
+                                              :on-cycle           on-cycle
+                                              :api                p})))
             first-result (run-loop request)
             retry        (overflow-compact-retry! session-key ctx current-request first-result)
             loop-result  (cond

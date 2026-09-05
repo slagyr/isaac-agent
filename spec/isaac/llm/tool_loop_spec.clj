@@ -1,7 +1,9 @@
 (ns isaac.llm.tool-loop-spec
   (:require
+    [isaac.llm.api.protocol :as api]
     [isaac.llm.tool-loop :as sut]
-    [speclj.core :refer [describe it should should=]]))
+    [isaac.logger :as log]
+    [speclj.core :refer [after describe it should should-not-be-nil should=]]))
 
 (defn- queue-chat
   "Build a chat-fn that returns successive responses from the given queue.
@@ -398,5 +400,62 @@
       (should= 1 (count @requests))
       (should= true (:unavailable? result))
       (should= :context-exhausted (:reason result))))
+
+  )
+
+(defn- fake-api [cfg]
+  (reify api/Api
+    (chat [_ _] {})
+    (chat-stream [_ _ _] {})
+    (followup-messages [_ req _ _ _] (:messages req))
+    (config [_] cfg)
+    (display-name [_] "grover")
+    (build-prompt [_ opts] opts)
+    (format-tools [_ tools] tools)))
+
+(describe "loop-driver seam"
+
+  (after (sut/clear-provider-driver!))
+
+  (it "logs :turn/loop-driver default when the api does not drive the loop"
+    (let [response {:message {:role "assistant" :content "done"}
+                    :usage   {:input-tokens 1 :output-tokens 1}}]
+      (log/capture-logs
+        (let [result (sut/run (fn [_] response)
+                              (recording-followup (atom []))
+                              {:messages []}
+                              (fn [_ _] "nope")
+                              {:api (fake-api {})})
+              entry  (first (filter #(= :turn/loop-driver (:event %)) @log/captured-logs))]
+          (should= "done" (get-in result [:response :message :content]))
+          (should-not-be-nil entry)
+          (should= "grover" (:provider entry))
+          (should= :default (:driver entry))))))
+
+  (it "invokes the installed provider driver when :drives-tool-loop? is true"
+    (let [invoked (atom nil)
+          driver  (fn [chat-fn followup-fn request tool-fn opts]
+                    (reset! invoked {:request request :tool-fn tool-fn :opts opts})
+                    (tool-fn "exec__run" {:command "echo hi"})
+                    {:response     {:message {:role "assistant" :content "driven"}}
+                     :tool-calls   [{:name "exec__run"}]
+                     :token-counts {:input-tokens 3 :output-tokens 1 :cache-read 0 :cache-write 0}})]
+      (sut/install-provider-driver! driver)
+      (log/capture-logs
+        (let [tool-runs (atom [])
+              result    (sut/run (fn [_] {:message {:content "should-not-run"}})
+                                 (recording-followup (atom []))
+                                 {:messages [{:role "user" :content "run it"}]}
+                                 (fn [name args]
+                                   (swap! tool-runs conj [name args])
+                                   "ok")
+                                 {:api (fake-api {:drives-tool-loop? true})})
+              entry     (first (filter #(= :turn/loop-driver (:event %)) @log/captured-logs))]
+          (should-not-be-nil @invoked)
+          (should= [{:role "user" :content "run it"}] (:messages (:request @invoked)))
+          (should= [["exec__run" {:command "echo hi"}]] @tool-runs)
+          (should= "driven" (get-in result [:response :message :content]))
+          (should= :provider (:driver entry))
+          (should= "grover" (:provider entry))))))
 
   )

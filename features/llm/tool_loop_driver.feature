@@ -1,4 +1,3 @@
-@wip
 Feature: Loop driver — the drive chooses who runs the tool loop
   The drive hands the tool loop one contract: a chat function for a cycle,
   a followup builder, THE drive's tool function (record-tool-call!, which

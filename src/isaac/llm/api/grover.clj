@@ -3,12 +3,13 @@
    Default mode: echoes the last user message content.
    Scripted mode: consumes pre-queued responses in order."
   (:require
-    [isaac.bridge.cancellation :as bridge]
     [cheshire.core :as json]
     [clojure.string :as str]
+    [isaac.bridge.cancellation :as bridge]
     [isaac.llm.api.protocol :as api]
     [isaac.llm.followup :as followup]
-    [isaac.llm.prompt.builder :as prompt]))
+    [isaac.llm.prompt.builder :as prompt]
+    [isaac.llm.tool-loop :as tool-loop]))
 
 ;; region ----- Response Queue -----
 
@@ -21,6 +22,7 @@
 (defonce ^:private last-provider-request* (atom nil))
 (defonce ^:private provider-requests* (atom []))
 (defonce ^:private wait-gates* (atom {}))
+(defonce ^:private drive-own-loop?* (atom false))
 
 (defn enqueue! [responses]
   (swap! queue into responses))
@@ -435,12 +437,44 @@
     tool-calls
     tool-results))
 
+(defn grover-loop-driver
+  "Fake provider-driven loop for Grover. Consumes the drive's tool-fn and
+   hooks identically to Isaac's default loop — the test double Claude Code
+   will replace (isaac-1sdl). After each tool, poll cancelled? briefly so
+   feature cancel-after-N-tool-call steps can land before the next cycle."
+  [chat-fn followup-fn request tool-fn opts]
+  (let [cancelled? (or (:cancelled? opts) (constantly false))
+        after-tools (or (:after-tools opts) identity)
+        after-tools* (fn [req]
+                       (let [deadline (+ (System/currentTimeMillis) 250)]
+                         (loop []
+                           (when (and (not (cancelled?)) (< (System/currentTimeMillis) deadline))
+                             (Thread/sleep 1)
+                             (recur))))
+                       (after-tools req))]
+    (tool-loop/-run-default chat-fn followup-fn request tool-fn
+                            (assoc opts :after-tools after-tools*))))
+
+(defn drive-own-tool-loop!
+  "Fixture toggle: Grover declares :drives-tool-loop? and installs the fake
+   provider-driven driver."
+  []
+  (reset! drive-own-loop?* true)
+  (tool-loop/install-provider-driver! grover-loop-driver))
+
+(defn clear-own-tool-loop!
+  "Clear the fixture toggle. Does not live in reset-queue! because
+   responses-queued calls reset-queue! mid-scenario."
+  []
+  (reset! drive-own-loop?* false)
+  (tool-loop/clear-provider-driver!))
+
 (deftype GroverAPI [provider-name cfg]
   api/Api
   (chat [_ req] (chat req provider-name cfg))
   (chat-stream [_ req on-chunk] (chat-stream req on-chunk provider-name cfg))
   (followup-messages [_ req resp tcs trs] (followup-messages req resp tcs trs))
-  (config [_] cfg)
+  (config [_] (cond-> cfg @drive-own-loop?* (assoc :drives-tool-loop? true)))
   (display-name [_] provider-name)
   (format-tools [_ tools] (when (seq tools) (mapv api/wrapped-function-tool tools)))
   (build-prompt [_ opts] (prompt/build opts)))

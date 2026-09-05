@@ -179,11 +179,19 @@
 
 ;; region ----- Routing -----
 
+(defn provider-drives-own-tool-loop [name]
+  (when (= "grover" name)
+    (grover/drive-own-tool-loop!)))
+
 (defgiven "the provider {name:string} is configured with:" isaac.llm.providers-steps/provider-configured
   "Writes a provider config into the :provider-configs test atom (not
    disk). Keys are converted kebab→camel via provider-config-key; values
    have ${VAR} substitution applied. Passed as extra-opts to the next
    'isaac is run with'.")
+
+(defgiven "the provider {name:string} drives its own tool loop" isaac.llm.providers-steps/provider-drives-own-tool-loop
+  "Fixture toggle: installs a fake provider-driven driver for grover that
+   consumes the drive's tool-fn and hooks (the test double for Claude Code).")
 
 (defgiven "provider transport returns connection refused" isaac.llm.providers-steps/provider-transport-returns-connection-refused
   "Stubs the LLM HTTP layer so provider calls fail immediately with the
