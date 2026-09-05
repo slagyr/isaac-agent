@@ -155,6 +155,39 @@
 (defn mkdirs*! [fs path] (fs/mkdirs fs path))
 (defn delete*! [fs path] (fs/delete fs path))
 
+(defonce ^:private persist-locks* (atom {}))
+
+(defn- persist-lock [session-key]
+  (get (swap! persist-locks* update session-key #(or % (Object.))) session-key))
+
+(defn with-persist-lock
+  "Serialize every persist and read of a session-key's backing files."
+  [session-key f]
+  (if session-key
+    (locking (persist-lock session-key)
+      (f))
+    (f)))
+
+(defn- session-key-from-path [path]
+  (when-let [[_ id] (re-find #"/sessions/([^/]+)/" (str path))]
+    id))
+
+(defn atomic-spit!
+  "Crash-safe whole-file rewrite: write to path.tmp then rename into place."
+  [fs path content]
+  (let [write (fn []
+                (let [tmp (str path ".tmp")]
+                  (mkdirs*! fs (fs/parent path))
+                  (spit*! fs tmp content)
+                  (fs/move fs tmp path)))]
+    (if-let [k (session-key-from-path path)]
+      (with-persist-lock k write)
+      (write))))
+
+(defn unreadable-session [session-id]
+  (ex-info (str "session '" session-id "' is unreadable")
+           {:reason :session/unreadable :id session-id}))
+
 (defn delete-tree! [fs path]
   (when (exists?* fs path)
     (doseq [child (or (children* fs path) [])]
@@ -220,21 +253,28 @@
 
 (defn record-turn-marker!* [root session-id marker fs]
   (let [path (turn-marker-path root session-id)]
-    (mkdirs*! fs (fs/parent path))
-    (spit*! fs path (write-edn (assoc marker :session-id (str session-id))))))
+    (with-persist-lock session-id
+      (fn []
+        (atomic-spit! fs path (write-edn (assoc marker :session-id (str session-id))))))))
 
 (defn clear-turn-marker!* [root session-id fs]
-  (delete*! fs (turn-marker-path root session-id)))
+  (with-persist-lock session-id
+    (fn []
+      (delete*! fs (turn-marker-path root session-id)))))
 
 (defn get-turn-marker* [root session-id fs]
-  (let [path (turn-marker-path root session-id)]
-    (when (exists?* fs path)
-      (edn/read-string (slurp* fs path)))))
+  (with-persist-lock session-id
+    (fn []
+      (let [path (turn-marker-path root session-id)]
+        (when (exists?* fs path)
+          (edn/read-string (slurp* fs path)))))))
 
 (defn- read-marker [fs path session-id]
-  (when (exists?* fs path)
-    (some-> (edn/read-string (slurp* fs path))
-            (assoc :session-id (str session-id)))))
+  (with-persist-lock session-id
+    (fn []
+      (when (exists?* fs path)
+        (some-> (edn/read-string (slurp* fs path))
+                (assoc :session-id (str session-id)))))))
 
 (defn turn-markers* [root fs]
   (let [dir          (sessions-dir root)
@@ -261,7 +301,7 @@
 
 ;; region ----- Transcript -----
 
-(defn read-ednl [fs path]
+(defn- read-ednl-unlocked [fs path]
   (if-not (exists?* fs path)
     []
     (let [s (or (slurp* fs path) "")]
@@ -273,9 +313,13 @@
              (remove str/blank?)
              (mapv read-edn-line))))))
 
+(defn read-ednl [fs path]
+  (if-let [k (session-key-from-path path)]
+    (with-persist-lock k #(read-ednl-unlocked fs path))
+    (read-ednl-unlocked fs path)))
+
 (defn write-ednl! [fs path entries]
-  (mkdirs*! fs (fs/parent path))
-  (spit*! fs path (apply str (map write-edn entries))))
+  (atomic-spit! fs path (apply str (map write-edn entries))))
 
 (defn read-transcript-raw [root session-id fs]
   (read-ednl fs (current-transcript-path root session-id)))
@@ -283,9 +327,7 @@
 (defn write-transcript! [root session-id entries fs]
   (write-ednl! fs (current-transcript-path root session-id) entries))
 
-(defn last-transcript-entry
-  "Last EDNL object, reading only a tail window."
-  [fs path]
+(defn- last-transcript-entry-unlocked [fs path]
   (let [size (or (fs/size fs path) 0)]
     (when (pos? size)
       (loop [window 4096]
@@ -300,17 +342,20 @@
             (zero? start)   nil
             :else           (recur (* 2 window))))))))
 
-(defonce ^:private append-locks* (atom {}))
-
-(defn- append-lock [path]
-  (get (swap! append-locks* update path #(or % (Object.))) path))
+(defn last-transcript-entry
+  "Last EDNL object, reading only a tail window."
+  [fs path]
+  (if-let [k (session-key-from-path path)]
+    (with-persist-lock k #(last-transcript-entry-unlocked fs path))
+    (last-transcript-entry-unlocked fs path)))
 
 (defn append-entry! [root session-id entry fs]
   (let [path (current-transcript-path root session-id)
         line (write-edn entry)]
     (mkdirs*! fs (fs/parent path))
-    (locking (append-lock path)
-      (spit*! fs path line :append true))))
+    (with-persist-lock session-id
+      (fn []
+        (spit*! fs path line :append true)))))
 
 (defn frozen-segment-ns [root session-id fs]
   (->> (or (children* fs (session-dir root session-id)) [])
@@ -367,10 +412,19 @@
     (throw (unmigrated-error session-id))))
 
 (defn read-session-entry [with-session-defaults-fn root session-id fs]
-  (let [path  (session-edn-path root session-id)
-        raw   (edn/read-string (slurp* fs path))
-        entry (if (map? raw) (keywordize-map raw) {})]
-    [session-id (with-session-defaults-fn (assoc entry :id session-id))]))
+  (with-persist-lock session-id
+    (fn []
+      (let [path (session-edn-path root session-id)
+            s    (or (slurp* fs path) "")]
+        (when (str/blank? s)
+          (throw (unreadable-session session-id)))
+        (let [raw (try
+                    (edn/read-string s)
+                    (catch Exception _
+                      (throw (unreadable-session session-id))))]
+          (when-not (map? raw)
+            (throw (unreadable-session session-id)))
+          [session-id (with-session-defaults-fn (assoc (keywordize-map raw) :id session-id))])))))
 
 (defn read-sidecar-store [with-session-defaults-fn root fs]
   (let [dir (sessions-dir root)]
@@ -783,9 +837,7 @@
         current-path (current-transcript-path root id)]
     (when (= :retain retention)
       (write-ednl! fs (frozen-transcript-path root id n) prefix))
-    (let [tmp (str current-path ".tmp")]
-      (write-ednl! fs tmp new-current)
-      (fs/move fs tmp current-path))
+    (write-ednl! fs current-path new-current)
     (update-entry-fn root identifier
                      (fn [e]
                        (-> e

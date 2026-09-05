@@ -42,9 +42,8 @@
 ;; region ----- Storage -----
 
 (defn- write-sidecar! [root {:keys [id] :as entry} fs]
-  (let [path (c/session-edn-path root id)]
-    (c/mkdirs*! fs (c/session-dir root id))
-    (c/spit*! fs path (c/write-edn (dissoc entry :session-file :effective-history-offset)))))
+  (c/atomic-spit! fs (c/session-edn-path root id)
+                  (c/write-edn (dissoc entry :session-file :effective-history-offset))))
 
 (defn- read-session-store [root fs]
   (read-sidecar-store root fs))

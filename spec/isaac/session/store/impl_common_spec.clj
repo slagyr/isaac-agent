@@ -1,5 +1,6 @@
 (ns isaac.session.store.impl-common-spec
   (:require
+    [clojure.edn :as edn]
     [clojure.string :as str]
     [isaac.fs :as fs]
     [isaac.session.store.impl-common :as sut]
@@ -141,3 +142,124 @@
         (should= ["session" "message" "message" "compaction" "message"] types)
         (should= 5 (count chronicle))
         (should= "m3" (:id (last chronicle)))))))
+
+(defn- valid-sidecar [id]
+  {:id         id
+   :key        id
+   :name       id
+   :origin     {:kind :cli}
+   :created-at "2026-09-05T04:00:00"
+   :updated-at "2026-09-05T04:00:00"
+   :tags       #{}})
+
+(describe "impl-common conversation persist lock"
+
+  #_{:clj-kondo/ignore [:unresolved-symbol]}
+  (around [example]
+    (nexus/-with-nexus {:fs (fs/mem-fs)}
+      (example)))
+
+  (it "serializes persist and read of the same session-key so a reader never sees a blank sidecar"
+    (let [fs*       (fs*)
+          path      (sut/session-edn-path test-dir session-id)
+          orig-spit sut/spit*!
+          errors    (atom [])
+          blanks    (atom [])
+          done      (java.util.concurrent.CountDownLatch. 2)
+          identity-defaults (fn [entry] entry)]
+      (sut/mkdirs*! fs* (sut/session-dir test-dir session-id))
+      (sut/atomic-spit! fs* path (sut/write-edn (valid-sidecar session-id)))
+      (with-redefs [sut/spit*! (fn [fs p content & options]
+                                 (when-not (:append (apply hash-map options))
+                                   (apply orig-spit fs p "" options))
+                                 (apply orig-spit fs p content options))]
+        (future
+          (try
+            (dotimes [_ 8]
+              (sut/with-persist-lock session-id
+                (fn []
+                  (sut/spit*! fs* path (sut/write-edn (valid-sidecar session-id))))))
+            (catch Throwable t (swap! errors conj t))
+            (finally (.countDown done))))
+        (future
+          (try
+            (dotimes [_ 20]
+              (let [[_ entry] (sut/read-session-entry identity-defaults test-dir session-id fs*)]
+                (when (or (nil? (:name entry)) (str/blank? (:name entry)))
+                  (swap! blanks conj :skeleton))))
+            (catch Throwable t (swap! errors conj t))
+            (finally (.countDown done))))
+        (.await done))
+      (should= [] (map str @errors))
+      (should= [] @blanks))))
+
+(describe "impl-common crash-safe whole-file writes"
+
+  #_{:clj-kondo/ignore [:unresolved-symbol]}
+  (around [example]
+    (nexus/-with-nexus {:fs (fs/mem-fs)}
+      (example)))
+
+  (it "leaves the previous ednl intact when a rewrite crashes after writing the temp file"
+    (let [fs*     (fs*)
+          path    (sut/current-transcript-path test-dir session-id)
+          orig    sut/spit*!
+          crashed (atom false)]
+      (sut/write-ednl! fs* path entries)
+      (with-redefs [sut/spit*! (fn [fs p content & options]
+                                 (apply orig fs p content options)
+                                 (when (str/includes? (str p) ".tmp")
+                                   (reset! crashed true)
+                                   (throw (ex-info "crash mid-write" {:path p}))))]
+        (try
+          (sut/write-ednl! fs* path [{:type "message" :id "z"}])
+          (catch clojure.lang.ExceptionInfo e
+            (should= "crash mid-write" (ex-message e)))))
+      (should @crashed)
+      (should= entries (sut/read-ednl fs* path))))
+
+  (it "leaves the previous session.edn intact when a sidecar rewrite crashes after writing the temp file"
+    (let [fs*  (fs*)
+          path (sut/session-edn-path test-dir session-id)
+          orig sut/spit*!
+          prior (valid-sidecar session-id)]
+      (sut/mkdirs*! fs* (sut/session-dir test-dir session-id))
+      (sut/atomic-spit! fs* path (sut/write-edn prior))
+      (with-redefs [sut/spit*! (fn [fs p content & options]
+                                 (apply orig fs p content options)
+                                 (when (str/includes? (str p) ".tmp")
+                                   (throw (ex-info "crash mid-write" {:path p}))))]
+        (try
+          (sut/atomic-spit! fs* path (sut/write-edn (assoc prior :name "mutated")))
+          (catch clojure.lang.ExceptionInfo _)))
+      (should= prior (edn/read-string (fs/slurp fs* path))))))
+
+(describe "impl-common unreadable existing session"
+
+  #_{:clj-kondo/ignore [:unresolved-symbol]}
+  (around [example]
+    (nexus/-with-nexus {:fs (fs/mem-fs)}
+      (example)))
+
+  (it "throws :session/unreadable when an existing session.edn is blank"
+    (let [fs*  (fs*)
+          path (sut/session-edn-path test-dir session-id)]
+      (sut/mkdirs*! fs* (sut/session-dir test-dir session-id))
+      (sut/spit*! fs* path "")
+      (try
+        (sut/read-session-entry identity test-dir session-id fs*)
+        (should-fail "expected unreadable")
+        (catch clojure.lang.ExceptionInfo e
+          (should= :session/unreadable (:reason (ex-data e)))))))
+
+  (it "throws :session/unreadable when an existing session.edn is unparseable"
+    (let [fs*  (fs*)
+          path (sut/session-edn-path test-dir session-id)]
+      (sut/mkdirs*! fs* (sut/session-dir test-dir session-id))
+      (sut/spit*! fs* path "{:id \"sess\" :name")
+      (try
+        (sut/read-session-entry identity test-dir session-id fs*)
+        (should-fail "expected unreadable")
+        (catch clojure.lang.ExceptionInfo e
+          (should= :session/unreadable (:reason (ex-data e)))))))
+  )

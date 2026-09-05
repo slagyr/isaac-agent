@@ -74,7 +74,7 @@
                     (assoc :id id :key (or (:key entry) id))
                     (dissoc :session-file :effective-history-offset)
                     (assoc :segment (count frozen)))]
-    (c/spit*! fs (c/session-edn-path root id) (c/write-edn cleaned)))
+    (c/atomic-spit! fs (c/session-edn-path root id) (c/write-edn cleaned)))
   (let [legacy-turn (c/legacy-turn-marker-path root id)
         turn        (c/turn-marker-path root id)]
     (when (and (c/exists?* fs legacy-turn) (not (c/exists?* fs turn)))
