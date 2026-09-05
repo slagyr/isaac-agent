@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.46
+
+- Transcript appends are atomic per line: `append-entry!` builds the full EDNL line and appends under a per-path lock, so tool results completing concurrently (isaac-j2v0 parallel batches) can no longer tear a line and poison the session (isaac-jz6h, append-lock leg).
+
 - Transcript appends are single-writer: concurrent toolResult lines stay one complete EDN object (isaac-jz6h).
 
 ## 0.1.44
