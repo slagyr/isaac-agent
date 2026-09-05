@@ -440,20 +440,9 @@
 (defn grover-loop-driver
   "Fake provider-driven loop for Grover. Consumes the drive's tool-fn and
    hooks identically to Isaac's default loop — the test double Claude Code
-   will replace (isaac-1sdl). After each tool, poll cancelled? briefly so
-   feature cancel-after-N-tool-call steps can land before the next cycle."
+   will replace (isaac-1sdl)."
   [chat-fn followup-fn request tool-fn opts]
-  (let [cancelled? (or (:cancelled? opts) (constantly false))
-        after-tools (or (:after-tools opts) identity)
-        after-tools* (fn [req]
-                       (let [deadline (+ (System/currentTimeMillis) 250)]
-                         (loop []
-                           (when (and (not (cancelled?)) (< (System/currentTimeMillis) deadline))
-                             (Thread/sleep 1)
-                             (recur))))
-                       (after-tools req))]
-    (tool-loop/-run-default chat-fn followup-fn request tool-fn
-                            (assoc opts :after-tools after-tools*))))
+  (tool-loop/-run-default chat-fn followup-fn request tool-fn opts))
 
 (defn drive-own-tool-loop!
   "Fixture toggle: Grover declares :drives-tool-loop? and installs the fake

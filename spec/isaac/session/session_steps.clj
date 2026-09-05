@@ -1223,32 +1223,25 @@
          :file (str "sessions/" (:id entry) "/current.ednl")))
 
 (defn- transcript-match-entry [entry include-compaction-message? denormalize-tool-call?]
-  (let [calls          (transcript/tool-calls (:message entry))
-        tool-result?   (= "toolResult" (get-in entry [:message :role]))
-        denorm-call?   (and denormalize-tool-call? (seq calls))
-        denorm-result? (and denormalize-tool-call? tool-result?)
-        type           (cond
-                         denorm-call?   "toolCall"
-                         denorm-result? "toolResult"
-                         :else          (:type entry))
-        entry          (cond-> entry
-                         type (assoc :type type)
-
-                         (and include-compaction-message? (= "compaction" (:type entry)))
-                         (assoc :message {:content (:summary entry)})
-
-                         tool-result?
-                         (update-in [:message :content]
-                                    #(-> (or % "")
-                                         (str/replace #"^Error:\s*" "")
-                                         (str/replace #"^path outside allowed directories:.*$" "path outside allowed directories"))))]
+  (let [calls (transcript/tool-calls (:message entry))
+        type  (if (and denormalize-tool-call?
+                       (seq calls))
+                "toolCall"
+                (:type entry))]
     (cond-> entry
-      denorm-call?
-      (-> (assoc :name (:name (first calls)))
-          (dissoc :message))
+      type (assoc :type type)
 
-      denorm-result?
-      (dissoc :message))))
+      (and denormalize-tool-call? (seq calls))
+      (assoc :name (:name (first calls)))
+
+      (and include-compaction-message? (= "compaction" (:type entry)))
+      (assoc :message {:content (:summary entry)})
+
+      (= "toolResult" (get-in entry [:message :role]))
+      (update-in [:message :content]
+                 #(-> (or % "")
+                      (str/replace #"^Error:\s*" "")
+                      (str/replace #"^path outside allowed directories:.*$" "path outside allowed directories"))))))
 
 (defn- normalize-transcript-table [table]
   (let [col-rename {"role" "message.role" "content-matcher" "message.content"}

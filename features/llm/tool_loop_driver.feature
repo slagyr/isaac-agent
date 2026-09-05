@@ -30,10 +30,10 @@ Feature: Loop driver — the drive chooses who runs the tool loop
       | text      |           |                        | done    | echo  |
     When the user sends "run it" on session "driven"
     Then session "driven" has transcript matching:
-      | type       | message.role | message.content | name      |
-      | toolCall   |              |                 | exec__run |
-      | toolResult |              |                 |           |
-      | message    | assistant    | done            |           |
+      | type     | message.role | message.content | name      |
+      | toolCall | assistant    | #*              | exec__run |
+      | message  | toolResult   | #*              |           |
+      | message  | assistant    | done            |           |
     And the log has entries matching:
       | event                | provider | driver   |
       | :turn/loop-driver    | grover   | provider |
@@ -48,10 +48,10 @@ Feature: Loop driver — the drive chooses who runs the tool loop
       | text      |           |                        | done    | echo  |
     When the user sends "run it" on session "default"
     Then session "default" has transcript matching:
-      | type       | message.role | message.content |
-      | toolCall   |              |                 |
-      | toolResult |              |                 |
-      | message    | assistant    | done            |
+      | type     | message.role | message.content |
+      | toolCall | assistant    | #*              |
+      | message  | toolResult   | #*              |
+      | message  | assistant    | done            |
     And the log has entries matching:
       | event             | provider | driver  |
       | :turn/loop-driver | grover   | default |
@@ -73,13 +73,14 @@ Feature: Loop driver — the drive chooses who runs the tool loop
 
   Scenario: cancel mid-loop reaches the driver and the turn ends cancelled
     Given the provider "grover" drives its own tool loop
+    And a blocking tool "test__anchor" is registered that returns cancelled once the turn is cancelled
     And the following sessions exist:
       | name        |
       | cancel-drvn |
     And the following model responses are queued:
-      | type      | tool_call | arguments              | content | model |
-      | tool_call | exec__run | {"command": "echo hi"} |         | echo  |
-      | text      |           |                        | never   | echo  |
+      | type      | tool_call     | arguments | content | model |
+      | tool_call | test__anchor  | {}        |         | echo  |
+      | text      |               |           | never   | echo  |
     When the user sends "do stuff" on session "cancel-drvn"
     And the turn is cancelled on session "cancel-drvn" after 1 tool call
     Then the turn result is "cancelled"
@@ -114,8 +115,8 @@ Feature: Loop driver — the drive chooses who runs the tool loop
     Then session "ledger" has transcript matching:
       | type       | message.role | message.content | summary      |
       | compaction |              |                 | folded older |
-      | toolCall   |              |                 |              |
-      | toolResult |              |                 |              |
+      | toolCall   | assistant    | #*              |              |
+      | message    | toolResult   | #*              |              |
       | message    | assistant    | here you go     |              |
     And the log has entries matching:
       | event                     | session | reason          |
