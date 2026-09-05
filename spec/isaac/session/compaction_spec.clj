@@ -7,9 +7,10 @@
     ;; Loading this registers the :responses factory so make-provider
     ;; can construct a real ResponsesAPI when callers pass `:api "responses"`.
      [isaac.llm.api.responses]
+     [isaac.config.api :as config]
+     [isaac.fs :as fs]
      [isaac.llm.prompt.builder :as prompt-builder]
      [isaac.logger :as log]
-     [isaac.fs :as fs]
      [isaac.session.compaction :as sut]
      [isaac.session.context :as session-ctx]
      [isaac.session.store.spi :as store]
@@ -211,7 +212,8 @@
         (should= "system" (-> @chat-called :messages first :role))
         (should= "compaction" (:type result))
         (should= "Summary of conversation" (:summary result))
-        (should= 2 (:effort @chat-called))))
+        (should= 2 (:effort @chat-called))
+        (should= 2 (:effort (sut/last-compaction-request)))))
 
     (it "omits effort from the summary request when the model disallows effort"
       (let [key-str     "isaac:main:cli:chat:no-effort"
@@ -254,6 +256,55 @@
                          :context-window 10000
                          :chat-fn        mock-chat})
           (should= 5 (:effort @chat-called)))))
+
+    (it "stamps last-compaction-request with crew compaction.effort 5 from resolved config"
+      (config/dangerously-install-config! {:defaults  {:crew "purser" :model "spark"}
+                                           :crew      {"purser" {:model "spark" :soul "You keep the accounts."
+                                                                 :compaction {:effort 5}}}
+                                           :models    {"spark" {:model "echo" :provider "grover" :context-window 200}}
+                                           :providers {"grover" {:api "grover"}}} "spec")
+      (let [key-str     "ledger"
+            _session    (storage/create-session! test-root key-str {:crew "purser"})
+            _msg1       (storage/append-message! test-root key-str {:role "user" :content "Hello"})
+            _msg2       (storage/append-message! test-root key-str {:role "assistant" :content "Hi"})
+            chat-called (atom nil)
+            mock-chat   (fn [request _tool-fn]
+                          (reset! chat-called request)
+                          {:message {:content "Summary"}})]
+        (sut/compact! key-str
+                      {:model          "test-model"
+                       :soul           "You keep the accounts."
+                       :context-window 200
+                       :chat-fn        mock-chat})
+        (should= 5 (:effort @chat-called))
+        (should= 5 (:effort (sut/last-compaction-request))))
+      (config/dangerously-install-config! nil "spec"))
+
+    (it "resolves crew compaction.effort 5 from the session-store passed to compact!"
+      (config/dangerously-install-config! {:defaults  {:crew "main" :model "spark"}
+                                           :crew      {"main"   {:model "spark" :soul "You are Atticus."}
+                                                       "purser" {:model "spark" :soul "You keep the accounts."
+                                                                 :compaction {:effort 5}}}
+                                           :models    {"spark" {:model "echo" :provider "grover" :context-window 200}}
+                                           :providers {"grover" {:api "grover"}}} "spec")
+      (let [isolated    (store/create test-root :memory)
+            key-str     "ledger"
+            chat-called (atom nil)
+            mock-chat   (fn [request _tool-fn]
+                          (reset! chat-called request)
+                          {:message {:content "Summary"}})]
+        (store/open-session! isolated key-str {:crew "purser"})
+        (store/append-message! isolated key-str {:role "user" :content "Hello"})
+        (store/append-message! isolated key-str {:role "assistant" :content "Hi"})
+        (sut/compact! key-str
+                      {:model          "test-model"
+                       :soul           "You keep the accounts."
+                       :context-window 10000
+                       :session-store  isolated
+                       :chat-fn        mock-chat})
+        (should= 5 (:effort @chat-called))
+        (should= 5 (:effort (sut/last-compaction-request))))
+      (config/dangerously-install-config! nil "spec"))
 
     (it "unwraps a tool-loop response envelope to the assistant summary"
       (let [key-str  "isaac:main:cli:chat:tool-loop-wrap"

@@ -190,6 +190,11 @@
           headers))
 
 (defn memory-channel-events-match [table]
+  ;; user-sends-on-session parks the turn after 50ms; this matcher is often the first Then.
+  (when-let [turn-future (g/get :turn-future)]
+    (let [result (deref turn-future 30000 ::timeout)]
+      (when (= ::timeout result)
+        (throw (ex-info "turn did not complete within 30 seconds" {})))))
   (let [events*  (g/get :memory-comm-events)
         events   (mapv normalize-event
                        (if (instance? clojure.lang.IDeref events*) @events* events*))

@@ -238,6 +238,18 @@
              (:compaction (sut/resolve-behavior "tracked")))
     (config/dangerously-install-config! nil "spec"))
 
+  (it "uses crew compaction.effort 5 over the code default 2"
+    (config/dangerously-install-config! {:defaults  {:crew crew-name :model "spark"}
+                           :crew      {crew-name {:model "spark" :soul crew-soul
+                                                  :compaction {:effort 5}}}
+                           :models    {"spark" {:model "echo" :provider "grover" :context-window 200}}
+                           :providers {"grover" {:api "grover"}}} "spec")
+    (helper/create-session! test-root "ledger" {:crew crew-name})
+    (should= {:async? false :strategy :rubberband :head 0.3 :threshold 0.8
+              :effort 5 :max-request-tokens 32000}
+             (:compaction (sut/resolve-behavior "ledger")))
+    (config/dangerously-install-config! nil "spec"))
+
   (it "backfills a missing nonce for an existing session"
     (config/dangerously-install-config! {:defaults  {:crew crew-name :model "spark" :history-retention :prune}
                            :crew      {crew-name {:model "spark" :soul crew-soul}}

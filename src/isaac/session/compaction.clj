@@ -453,7 +453,7 @@
   (let [root      (or root (loader/root))
         session-store  (or session-store (nexus/get-in [:sessions :store]))
         ctx            {:root root :session-store session-store}
-        behavior       (session-ctx/resolve-behavior key-str {:context-window context-window})
+        behavior       (session-ctx/resolve-behavior key-str (assoc ctx :context-window context-window))
         transcript      (store/get-transcript session-store key-str)
         history-entries (effective-history-entries transcript)
         compactables    (compactables history-entries context-window)
