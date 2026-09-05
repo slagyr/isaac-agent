@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Compaction summaries run at `:compaction {:effort 2}` (configurable), chunk whenever history exceeds `:max-request-tokens` (default 32k) regardless of the model window, and retry a transport-class drop (`:stream-stalled` / `"closed"`) once at half size before counting a consecutive failure. Logs `:session/compaction-chunk-retry` (isaac-jgng).
 - Loop-driver seam: `tool-loop/run` dispatches on provider `:drives-tool-loop?`; default loop unchanged; provider-driven loops compact between turns only and log `:turn/compaction-deferred` (isaac-1sdl).
 
 ## 0.1.46

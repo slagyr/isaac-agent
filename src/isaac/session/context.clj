@@ -56,7 +56,7 @@
 (defn default-head [_window] 0.3)
 
 (def ^:private compaction-policy-keys
-  #{:strategy :threshold :head :async?})
+  #{:strategy :threshold :head :async? :effort :max-request-tokens})
 
 (defn- compaction-policy [m]
   (select-keys m compaction-policy-keys))
@@ -64,10 +64,12 @@
 (defn default-compaction-policy
   "Static compaction defaults for config :defaults and code fallbacks."
   []
-  {:async?    false
-   :strategy  :rubberband
-   :head      0.3
-   :threshold 0.8})
+  {:async?             false
+   :strategy           :rubberband
+   :head               0.3
+   :threshold          0.8
+   :effort             2
+   :max-request-tokens 32000})
 
 (defn- session-store [explicit-store]
   (or explicit-store
@@ -163,10 +165,12 @@
         provider-cfg (if provider-id
                        (or (resolve/resolve-provider cfg provider-id) {})
                        {})
-        code-defaults {:async?    false
-                       :strategy  :rubberband
-                       :head      (default-head context-window)
-                       :threshold (default-threshold context-window)}
+        code-defaults {:async?             false
+                       :strategy           :rubberband
+                       :head               (default-head context-window)
+                       :threshold          (default-threshold context-window)
+                       :effort             2
+                       :max-request-tokens 32000}
         layered      (merge {}
                             (when-not (higher-compaction-layers? session-entry ctx provider-cfg)
                               (compaction-policy (get-in cfg [:defaults :compaction])))
