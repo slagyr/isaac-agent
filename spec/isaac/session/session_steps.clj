@@ -925,6 +925,42 @@
     (let [row-map (zipmap (:headers table) row)]
       (append-transcript-entry! key-str row-map))))
 
+(defn two-large-tool-results-appended-concurrently [key-str]
+  (g/assoc! :current-key key-str)
+  (with-feature-fs
+    (fn []
+      (let [payload (apply str (repeat 80 "See [the TDD skill] "))
+            store   (session-store)
+            done    (java.util.concurrent.CountDownLatch. 2)
+            errors  (atom [])
+            append! (fn [id]
+                      (try
+                        (store/append-message! store key-str
+                                               {:role       "toolResult"
+                                                :id         id
+                                                :toolCallId id
+                                                :content    payload})
+                        (catch Throwable t (swap! errors conj t))
+                        (finally (.countDown done))))]
+        (future (append! "call-port"))
+        (future (append! "call-starboard"))
+        (.await done)
+        (when (seq @errors)
+          (throw (ex-info "concurrent toolResult append failed" {:errors @errors})))))))
+
+(defn every-transcript-line-valid-edn [key-str]
+  (with-feature-fs
+    (fn []
+      (let [session (get-session key-str)
+            path    (session-impl-common/current-transcript-path (root-dir) (:id session))
+            text    (or (fs/slurp (mem-fs) path) "")
+            lines   (vec (remove str/blank? (str/split-lines text)))]
+        (g/should (seq lines))
+        (doseq [line lines]
+          (let [parsed (try (session-impl-common/read-edn-line line)
+                            (catch Exception e e))]
+            (g/should (map? parsed))))))))
+
 (defn effective-history-starts-after-transcript-entry-index [key-str idx]
   (with-feature-fs
     (fn []
@@ -1741,6 +1777,11 @@
 
 (defwhen "entries are appended to session {key:string}:" isaac.session.session-steps/entries-appended)
 
+(defwhen "two large toolResult entries are appended concurrently to session {key:string}"
+  isaac.session.session-steps/two-large-tool-results-appended-concurrently
+  "Two threads each append a large toolResult via SessionStore/append-message!.
+   Exercises the store-level append lock so EDNL lines stay one complete entry.")
+
 (defwhen "compaction is spliced into session {key:string} with:" isaac.session.session-steps/compaction-spliced-into-session
   "Calls the file-backed SessionStore splice directly using transcript indexes from the
    current session. Use in storage-level scenarios that need to exercise the
@@ -1810,6 +1851,10 @@
 (defthen "the most recent session is {string}" isaac.session.session-steps/most-recent-session-is)
 
 (defthen #"session \"([^\"]+)\" has (\d+) transcript entr(?:y|ies)" isaac.session.session-steps/session-transcript-count)
+
+(defthen "every transcript line of session {key:string} is valid EDN"
+  isaac.session.session-steps/every-transcript-line-valid-edn
+  "Slurps current.ednl and asserts every non-blank line reads as an EDN map.")
 
 (defthen #"session \"([^\"]+)\" has (\d+) active transcript entr(?:y|ies)" isaac.session.session-steps/session-active-transcript-count)
 

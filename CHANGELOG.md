@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Transcript appends are single-writer: concurrent toolResult lines stay one complete EDN object (isaac-jz6h).
+
 ## 0.1.44
 
 - Cycle map carries the turn's `:origin` (charge inbound origin) on on-cycle-start/on-cycle-end so comms route cycle-scoped output — asides, the reply — to the originating channel even when the session key is an episode id; memory comm records `origin-kind` (isaac-ay0s).

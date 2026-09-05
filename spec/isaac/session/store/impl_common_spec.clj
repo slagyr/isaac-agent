@@ -56,6 +56,38 @@
       (should= ["{:type \"session\", :id \"abc12345\"}"]
                (str/split-lines (fs/slurp (fs*) (sut/current-transcript-path test-dir session-id)))))))
 
+(describe "impl-common concurrent append-entry!"
+
+  (it "keeps one complete EDN object per line when two threads append at the same instant"
+    (nexus/-with-nexus {:fs (fs/mem-fs)}
+      (let [fs*     (fs*)
+            orig    sut/spit*!
+            done    (java.util.concurrent.CountDownLatch. 2)
+            errors  (atom [])
+            payload (apply str (repeat 80 "See [the TDD skill] "))
+            port    {:type "message" :id "port" :content payload}
+            star    {:type "message" :id "starboard" :content payload}]
+        (sut/write-transcript! test-dir session-id [{:type "session" :id "hdr"}] fs*)
+        (with-redefs [sut/spit*! (fn [fs path content & options]
+                                   (doseq [ch (str content)]
+                                     (apply orig fs path (str ch) options)))]
+          (future
+            (try (sut/append-entry! test-dir session-id port fs*)
+                 (catch Throwable t (swap! errors conj t))
+                 (finally (.countDown done))))
+          (future
+            (try (sut/append-entry! test-dir session-id star fs*)
+                 (catch Throwable t (swap! errors conj t))
+                 (finally (.countDown done))))
+          (.await done))
+        (should= [] (map str @errors))
+        (let [text  (fs/slurp fs* (sut/current-transcript-path test-dir session-id))
+              lines (vec (remove str/blank? (str/split-lines text)))]
+          (should= 3 (count lines))
+          (doseq [line lines]
+            (let [parsed (try (sut/read-edn-line line) (catch Exception e e))]
+              (should (map? parsed)))))))))
+
 (describe "impl-common turn markers"
 
   #_{:clj-kondo/ignore [:unresolved-symbol]}

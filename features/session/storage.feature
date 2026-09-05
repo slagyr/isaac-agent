@@ -233,7 +233,6 @@ Feature: Session Storage
       | type    | message.role | message.usage.input | message.usage.output | message.stopReason | message.api |
       | message | assistant    | 100                 | 25                   | stop               | ollama      |
 
-  @wip
   Scenario: concurrent toolResult appends stay one entry per line
     Two independent tool results finish at the same instant on one session.
     Each EDNL line remains one complete entry — no fused records.

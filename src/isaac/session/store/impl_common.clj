@@ -300,10 +300,17 @@
             (zero? start)   nil
             :else           (recur (* 2 window))))))))
 
+(defonce ^:private append-locks* (atom {}))
+
+(defn- append-lock [path]
+  (get (swap! append-locks* update path #(or % (Object.))) path))
+
 (defn append-entry! [root session-id entry fs]
-  (let [path (current-transcript-path root session-id)]
+  (let [path (current-transcript-path root session-id)
+        line (write-edn entry)]
     (mkdirs*! fs (fs/parent path))
-    (spit*! fs path (write-edn entry) :append true)))
+    (locking (append-lock path)
+      (spit*! fs path line :append true))))
 
 (defn frozen-segment-ns [root session-id fs]
   (->> (or (children* fs (session-dir root session-id)) [])
