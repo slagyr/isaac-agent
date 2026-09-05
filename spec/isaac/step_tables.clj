@@ -103,7 +103,7 @@
                      {:match false :message (str "Expected match for " (:pattern cell) ", got: nil")}
 
                      (string? actual)
-                     (if (re-matches (:pattern cell) actual)
+                     (if (re-find (:pattern cell) actual)
                        {:match true}
                        {:match false :message (str "Expected match for " (:pattern cell) ", got: " (pr-str actual))})
 

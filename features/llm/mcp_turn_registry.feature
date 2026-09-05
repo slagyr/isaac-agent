@@ -1,4 +1,3 @@
-@wip
 Feature: Per-turn tool registry — isaac's tools served to a provider-driven loop over MCP
   A provider that drives its own tool loop (Claude Code) can only receive
   tools as an MCP server. The driver registers the turn when it starts —

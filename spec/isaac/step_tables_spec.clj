@@ -271,6 +271,13 @@
                      {:headers ["key" "value"]
                       :rows    [["id" "#\"[a-f0-9-]+\""]]}
                      {:id "abc-123-def"})]
+        (should (:pass? result))))
+
+    (it "matches a regex substring inside a longer string"
+      (let [result (sut/match-object
+                     {:headers ["key" "value"]
+                      :rows    [["text" "#\"(?s)truncated\""]]}
+                     {:text "xxxx [ 100 bytes truncated; byte cap hit ] xxxx"})]
         (should (:pass? result)))))
 
   ;; endregion ^^^^^ Key-Value Vertical Table ^^^^^
