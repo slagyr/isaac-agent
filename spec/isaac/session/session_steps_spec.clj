@@ -10,7 +10,7 @@
     [isaac.nexus :as nexus]
     [isaac.session.session-steps :as sut]
     [isaac.session.store.sidecar :as sidecar-store]
-    [speclj.core :refer [around describe it should should=]]))
+    [speclj.core :refer [around describe it should should-not-be-nil should=]]))
 
 (describe "session feature steps"
 
@@ -76,4 +76,26 @@
 
   (it "enriches an Isaac root fixture with tools.max-parallel 4"
     (froot/in-memory-state "target/test-state")
-    (should= 4 (get-in (#'sut/loaded-config) [:tools :max-parallel]))))
+    (should= 4 (get-in (#'sut/loaded-config) [:tools :max-parallel])))
+
+  (it "parks a waiting send only after the turn has started"
+    (sut/default-grover-setup)
+    (sut/sessions-exist {:headers ["name"] :rows [["longwave"]]})
+    (sut/responses-queued {:headers ["type" "content" "model" "wait"]
+                           :rows    [["text" "ok" "echo" "true"]]})
+    (sut/user-sends-on-session "check the beacon" "longwave")
+    (should-not-be-nil (g/get :turn-future))
+    (should (some #(= "turn-start" (:event %)) @(g/get :channel-events)))
+    (sut/turn-ends-on-session "longwave"))
+
+  (it "records each immediate send so later turns can compare chat requests"
+    (sut/default-grover-setup)
+    (sut/sessions-exist {:headers ["name"] :rows [["greenhouse"]]})
+    (sut/responses-queued {:headers ["type" "content" "model"]
+                           :rows    [["text" "Nominal." "echo"]
+                                     ["text" "Still." "echo"]]})
+    (sut/user-sends-on-session "Status?" "greenhouse")
+    (sut/user-sends-on-session "And now?" "greenhouse")
+    (sut/await-turn!)
+    (should= 2 (count (get (g/get :chat-requests-by-session) "greenhouse"))))
+  )

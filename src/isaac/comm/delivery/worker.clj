@@ -102,4 +102,6 @@
 
 (defn stop! [{:keys [scheduler task-id]}]
   (when scheduler
-    (scheduler/cancel! scheduler task-id)))
+    (scheduler/cancel! scheduler task-id)
+    (turn-worker/stop! {:scheduler scheduler :task-id :turn.queue/tick})
+    (episodes-worker/stop! {:scheduler scheduler :task-id :episodes/tick})))

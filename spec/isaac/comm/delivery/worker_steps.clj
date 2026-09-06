@@ -10,7 +10,8 @@
     [isaac.fs :as fs]
     [isaac.nexus :as nexus]
     [isaac.scheduler.runtime :as scheduler]
-    [isaac.step-tables :as match])
+    [isaac.step-tables :as match]
+    [isaac.turnstile :as turnstile])
   (:import
     (java.time Instant)))
 
@@ -87,11 +88,22 @@
         #(nexus/-with-nexus {:root (root-dir) :fs (mem-fs)}
            (worker/tick! {:now (Instant/parse iso)}))))))
 
+(defonce ^:private live-scheduler* (atom nil))
+
+(defn- shutdown-live-scheduler! []
+  (when-let [scheduler @live-scheduler*]
+    (worker/stop! {:scheduler scheduler :task-id :delivery/tick})
+    (scheduler/shutdown! scheduler)
+    (reset! live-scheduler* nil))
+  (turnstile/set-wake-hook! nil))
+
 (defn isaac-system-started []
+  (shutdown-live-scheduler!)
   (let [clock     (fn [] (Instant/parse "2026-04-21T10:00:00Z"))
         scheduler (-> (scheduler/create {:clock clock}) scheduler/start!)]
-    (nexus/-with-nexus {:scheduler scheduler}
-      (worker/start! {:tick-ms worker/default-tick-ms}))
+    (nexus/register! [:scheduler] scheduler)
+    (worker/start! {:tick-ms worker/default-tick-ms})
+    (reset! live-scheduler* scheduler)
     (g/assoc! :scheduler scheduler)))
 
 (defn scheduled-tasks-include [table]
@@ -102,11 +114,14 @@
         result  (match/match-entries table tasks)]
     (g/should= [] (:failures result))))
 
+(g/before-scenario
+  (fn []
+    (shutdown-live-scheduler!)))
+
 (g/after-scenario
   (fn []
-    (when-let [scheduler (g/get :scheduler)]
-      (scheduler/stop! scheduler)
-      (g/dissoc! :scheduler))))
+    (shutdown-live-scheduler!)
+    (g/dissoc! :scheduler)))
 
 (defwhen "the delivery worker ticks" isaac.comm.delivery.worker-steps/delivery-worker-ticks)
 

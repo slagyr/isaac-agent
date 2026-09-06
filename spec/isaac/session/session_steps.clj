@@ -45,7 +45,8 @@
     [isaac.nexus :as nexus]
     [isaac.tool.memory :as memory]
     [isaac.spec-helper :as helper]
-    [isaac.tool.registry :as tool-registry]))
+    [isaac.tool.registry :as tool-registry]
+    [isaac.turnstile :as turnstile]))
 
 (helper! isaac.session.session-steps)
 
@@ -72,6 +73,7 @@
 (g/after-scenario
   (fn []
     (grover/clear-own-tool-loop!)
+    (turnstile/set-wake-hook! nil)
     (alter-var-root #'sidecar-store/create-store (constantly real-sidecar-create-store))))
 
 ;; The foundation root setup (isaac.foundation.root-steps/initialize-root!)
@@ -95,6 +97,7 @@
       (remove-method comm-factory/create :telly))
     (tool-registry/clear!)
     (single-turn/clear-async-compactions!)
+    (turnstile/set-wake-hook! nil)
     (let [mem-store (memory-store/create-store abs-dir)]
       (store/register-store! mem-store)
       (alter-var-root #'sidecar-store/create-store (constantly (fn [& _] mem-store))))))
@@ -1058,7 +1061,14 @@
                                      :result  @result}))]
        (let [result (deref turn-future 50 ::pending)]
          (if (= ::pending result)
-           (g/assoc! :turn-future turn-future)
+           (do
+             (g/assoc! :turn-future turn-future)
+             (helper/await-condition
+               (fn []
+                 (or (realized? turn-future)
+                     (some (fn [e] (= "turn-start" (:event e))) @events)
+                     (grover/waiting? key-str)))
+               1000))
            (do
              (when existing-turn-future
                (g/assoc! :turn-future existing-turn-future))
@@ -1324,8 +1334,10 @@
                    (into failures (map #(str "Row " row-num ": " %) (:failures result))))))))))
 
 (defn sessions-match [table]
-  ;; Await any in-flight turn first — user-sends only waits 50ms before parking
-  ;; the future, and this matcher is often the first Then after a send.
+  ;; Await any in-flight turn first — user-sends records immediately if dispatch
+  ;; finishes in 50ms, otherwise parks :turn-future and waits until turn-start
+  ;; so cancel/suspend see a live turn. This matcher is often the first Then
+  ;; after a send.
   (await-turn!)
   (await-acp-turn!)
   (let [listing (mapv session-match-entry (with-feature-fs #(list-sessions)))
@@ -1823,9 +1835,10 @@
 (defwhen #"the user sends \"(.+)\" on session \"([^\"]+)\"$" isaac.session.session-steps/user-sends-on-session
   "Drives a full turn via single-turn/run-turn! (in-memory,
    bypasses ACP/HTTP). Runs in a background future; waits 50ms and calls
-   complete-turn! if done. Captures :llm-request (grover/last-request),
-   :llm-result, :output. Use 'await-turn!' or a later step to force
-   completion for async compaction scenarios.")
+   record-turn-result! if done, else parks :turn-future and waits until
+   turn-start so cancel/suspend see a live turn. Captures :llm-request
+   (grover/last-request), :llm-result, :output. Use 'await-turn!' or a
+   later step to force completion for async compaction scenarios.")
 
 (defwhen #"the turn ends on session \"([^\"]+)\"" isaac.session.session-steps/turn-ends-on-session)
 

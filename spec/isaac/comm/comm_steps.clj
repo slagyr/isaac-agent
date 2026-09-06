@@ -190,7 +190,7 @@
           headers))
 
 (defn memory-channel-events-match [table]
-  ;; user-sends-on-session parks the turn after 50ms; this matcher is often the first Then.
+  ;; user-sends-on-session parks the turn after 50ms when still running; this matcher is often the first Then.
   (when-let [turn-future (g/get :turn-future)]
     (let [result (deref turn-future 30000 ::timeout)]
       (when (= ::timeout result)
