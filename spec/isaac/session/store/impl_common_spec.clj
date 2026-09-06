@@ -42,6 +42,22 @@
       (sut/write-transcript! test-dir session-id all (fs*))
       (should= big (sut/last-transcript-entry (fs*) (sut/current-transcript-path test-dir session-id)))))
 
+  (it "still finds the last object when read-bytes returns at most 8192 bytes"
+    (let [payload (apply str "690: :on-change (fn [_])\n"
+                             (repeat 400 ":value (or (:title footer) \"\")\n"))
+          big     {:type "message" :id "z" :content payload}
+          path    (sut/current-transcript-path test-dir session-id)
+          orig    fs/read-bytes]
+      (sut/write-transcript! test-dir session-id (conj entries big) (fs*))
+      (with-redefs [fs/read-bytes (fn [fs path off len]
+                                    (orig fs path off (min (long len) 8192)))]
+        (should= "z" (:id (sut/last-transcript-entry (fs*) path))))))
+
+  (it "skips a torn trailing line and returns the previous object"
+    (let [path (sut/current-transcript-path test-dir session-id)]
+      (fs/spit (fs*) path "{:type \"message\", :id \"torn\", :content \"unterminated\n" :append true)
+      (should= "c" (:id (sut/last-transcript-entry (fs*) path)))))
+
   (it "returns nil when the transcript file is missing"
     (should-be-nil (sut/last-transcript-entry (fs*) (sut/current-transcript-path test-dir "missing")))))
 

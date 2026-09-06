@@ -13,7 +13,6 @@
     [isaac.session.store.spi :as session-store]
     [isaac.session.transcript :as transcript])
   (:import
-    (java.nio.charset StandardCharsets)
     (java.util UUID)))
 
 ;; region ----- Helpers -----
@@ -327,20 +326,18 @@
 (defn write-transcript! [root session-id entries fs]
   (write-ednl! fs (current-transcript-path root session-id) entries))
 
+(defn- parse-edn-line [s]
+  (try
+    (read-edn-line s)
+    (catch Exception _ nil)))
+
 (defn- last-transcript-entry-unlocked [fs path]
-  (let [size (or (fs/size fs path) 0)]
-    (when (pos? size)
-      (loop [window 4096]
-        (let [start    (max 0 (- size window))
-              bytes    (or (fs/read-bytes fs path start (- size start)) (byte-array 0))
-              text     (String. ^bytes bytes StandardCharsets/UTF_8)
-              lines    (str/split-lines text)
-              complete (if (pos? start) (rest lines) lines)
-              kept     (vec (remove str/blank? complete))]
-          (cond
-            (seq kept)      (read-edn-line (peek kept))
-            (zero? start)   nil
-            :else           (recur (* 2 window))))))))
+  (when (exists?* fs path)
+    (->> (or (slurp* fs path) "")
+         str/split-lines
+         (remove str/blank?)
+         reverse
+         (some parse-edn-line))))
 
 (defn last-transcript-entry
   "Last EDNL object, reading only a tail window."
