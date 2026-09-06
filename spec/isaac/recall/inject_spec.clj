@@ -3,6 +3,7 @@
     [clojure.string :as str]
     [isaac.episodes.store :as store]
     [isaac.fs :as fs]
+    [isaac.logger :as log]
     [isaac.nexus :as nexus]
     [isaac.recall.index :as index]
     [isaac.recall.inject :as sut]
@@ -82,15 +83,16 @@
     (it "appends a search recall user message and records refs on a cold open"
       (store/write-episode! @mem root {:id "open-ep" :crew "cordelia" :status :open
                                        :thread "supper-chat" :scene-ids []} [])
-      (sut/inject-on-open!
-        {:fs            @mem
-         :root          root
-         :cfg           embed-cfg
-         :crew          "cordelia"
-         :episode       {:id "open-ep" :crew "cordelia"}
-         :query         "What wine pairs with pheasant?"
-         :action        :opened
-         :session-store @ss})
+      (log/capture-logs
+        (sut/inject-on-open!
+          {:fs            @mem
+           :root          root
+           :cfg           embed-cfg
+           :crew          "cordelia"
+           :episode       {:id "open-ep" :crew "cordelia"}
+           :query         "What wine pairs with pheasant?"
+           :action        :opened
+           :session-store @ss}))
       (let [ep     (store/read-episode @mem root "cordelia" "open-ep")
             trans  (session-store/get-transcript @ss "open-ep")
             msgs   (filter #(= "message" (:type %)) trans)
@@ -102,43 +104,109 @@
         (should-contain "Recalled from earlier conversations" text)
         (should-contain "pinot noir" text)))
 
+    (it "logs :episodes/recalled with search count, lineage, top, and floor on a cold open"
+      (store/write-episode! @mem root {:id "open-ep" :crew "cordelia" :status :open
+                                       :thread "supper-chat" :scene-ids []} [])
+      (log/capture-logs
+        (sut/inject-on-open!
+          {:fs            @mem
+           :root          root
+           :cfg           embed-cfg
+           :crew          "cordelia"
+           :episode       {:id "open-ep" :crew "cordelia" :thread "supper-chat"}
+           :query         "What wine pairs with pheasant?"
+           :action        :opened
+           :session-store @ss})
+        (let [entry (first (filter #(= :episodes/recalled (:event %)) @log/captured-logs))]
+          (should-not (nil? entry))
+          (should= :info (:level entry))
+          (should= "cordelia" (:crew entry))
+          (should= "open-ep" (:episode entry))
+          (should= "supper-chat" (:thread entry))
+          (should= 1 (:search entry))
+          (should= 0 (:lineage entry))
+          (should= ["2026-03-01-1000-s1x1"] (:scene-ids entry))
+          (should (number? (:top entry)))
+          (should (pos? (double (:top entry))))
+          (should= 0.47 (:floor entry))
+          (should (pos? (long (:query-chars entry)))))))
+
+    (it "logs :episodes/recall-empty with the best score when nothing clears the floor"
+      (store/write-episode! @mem root {:id "open-ep" :crew "cordelia" :status :open
+                                       :thread "logs-chat" :scene-ids []} [])
+      (log/capture-logs
+        (sut/inject-on-open!
+          {:fs            @mem
+           :root          root
+           :cfg           embed-cfg
+           :crew          "cordelia"
+           :episode       {:id "open-ep" :crew "cordelia" :thread "logs-chat"}
+           :query         "How do I rotate the ship logs?"
+           :action        :opened
+           :session-store @ss})
+        (let [entry (first (filter #(= :episodes/recall-empty (:event %)) @log/captured-logs))]
+          (should-not (nil? entry))
+          (should= :info (:level entry))
+          (should= "cordelia" (:crew entry))
+          (should= "open-ep" (:episode entry))
+          (should= "logs-chat" (:thread entry))
+          (should (number? (:best entry)))
+          (should= 0.47 (:floor entry)))))
+
+    (it "logs :episodes/recall-skipped at debug on a warm turn"
+      (store/write-episode! @mem root {:id "open-ep" :crew "cordelia" :status :open
+                                       :thread "supper-chat"} [])
+      (log/capture-logs
+        (sut/inject-on-open!
+          {:fs @mem :root root :cfg embed-cfg :crew "cordelia"
+           :episode {:id "open-ep"} :query "pheasant" :action :warm
+           :session-store @ss})
+        (let [entry (first (filter #(= :episodes/recall-skipped (:event %)) @log/captured-logs))]
+          (should-not (nil? entry))
+          (should= :debug (:level entry))
+          (should= :warm (:reason entry)))))
+
     (it "skips injection when action is warm"
       (store/write-episode! @mem root {:id "open-ep" :crew "cordelia" :status :open
                                        :thread "supper-chat"} [])
-      (sut/inject-on-open!
-        {:fs @mem :root root :cfg embed-cfg :crew "cordelia"
-         :episode {:id "open-ep"} :query "pheasant" :action :warm
-         :session-store @ss})
+      (log/capture-logs
+        (sut/inject-on-open!
+          {:fs @mem :root root :cfg embed-cfg :crew "cordelia"
+           :episode {:id "open-ep"} :query "pheasant" :action :warm
+           :session-store @ss}))
       (should-be-nil (:recalled-scenes (store/read-episode @mem root "cordelia" "open-ep"))))
 
     (it "skips quietly when embedding is unconfigured"
       (store/write-episode! @mem root {:id "open-ep" :crew "cordelia" :status :open
                                        :thread "supper-chat"} [])
-      (sut/inject-on-open!
-        {:fs @mem :root root :cfg {} :crew "cordelia"
-         :episode {:id "open-ep"} :query "pheasant" :action :opened
-         :session-store @ss})
+      (log/capture-logs
+        (sut/inject-on-open!
+          {:fs @mem :root root :cfg {} :crew "cordelia"
+           :episode {:id "open-ep"} :query "pheasant" :action :opened
+           :session-store @ss}))
       (should-be-nil (:recalled-scenes (store/read-episode @mem root "cordelia" "open-ep"))))
 
     (it "skips when the embedder throws and still leaves the episode usable"
       (store/write-episode! @mem root {:id "open-ep" :crew "cordelia" :status :open
                                        :thread "supper-chat"} [])
-      (with-redefs [isaac.recall.query/query (fn [& _] (throw (ex-info "nightbird down" {})))]
-        (sut/inject-on-open!
-          {:fs @mem :root root :cfg embed-cfg :crew "cordelia"
-           :episode {:id "open-ep"} :query "pheasant" :action :opened
-           :session-store @ss}))
+      (log/capture-logs
+        (with-redefs [isaac.recall.query/query (fn [& _] (throw (ex-info "nightbird down" {})))]
+          (sut/inject-on-open!
+            {:fs @mem :root root :cfg embed-cfg :crew "cordelia"
+             :episode {:id "open-ep"} :query "pheasant" :action :opened
+             :session-store @ss})))
       (should-be-nil (:recalled-scenes (store/read-episode @mem root "cordelia" "open-ep"))))
 
     (it "seeds parent gists on a chained open and does not duplicate search hits"
       (let [parent-id "2026-03-01-1000-ab12"]
         (store/write-episode! @mem root {:id "open-ep" :crew "cordelia" :status :open
                                          :thread "reef-chat" :parent-episode parent-id} [])
-        (sut/inject-on-open!
-          {:fs @mem :root root :cfg embed-cfg :crew "cordelia"
-           :episode {:id "open-ep" :crew "cordelia" :parent-episode parent-id}
-           :query "Back to the reef passage" :action :chained
-           :session-store @ss})
+        (log/capture-logs
+          (sut/inject-on-open!
+            {:fs @mem :root root :cfg embed-cfg :crew "cordelia"
+             :episode {:id "open-ep" :crew "cordelia" :parent-episode parent-id}
+             :query "Back to the reef passage" :action :chained
+             :session-store @ss}))
         (let [ep    (store/read-episode @mem root "cordelia" "open-ep")
               trans (session-store/get-transcript @ss "open-ep")
               text  (->> trans
@@ -147,5 +215,6 @@
                          (str/join "\n"))]
           (should= 1 (count (:recalled-scenes ep)))
           (should-contain "Previously in this conversation" text)
-          (should= 1 (count (re-seq #"Wine pairing for pheasant" text)))))))
-)
+          (should= 1 (count (re-seq #"Wine pairing for pheasant" text))))))
+    )
+  )

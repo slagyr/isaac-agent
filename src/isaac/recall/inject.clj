@@ -88,33 +88,30 @@
        :episode-id    (:episode-id hit)
        :gist          (:gist-text hit)}))
 
-(defn- search-scenes [fs* root crew query cfg exclude-ids]
-  (let [result (try
-                 (query/query fs* root crew query cfg {:top 8})
-                 (catch Exception e
-                   (log/warn :recall/skipped :reason :embed-failed :error (.getMessage e))
-                   {:error :embed-failed :message (.getMessage e)}))]
-    (cond
-      (nil? result) []
-      (:error result)
-      (do
-        (when (and (not= :no-index (:error result))
-                   (not= :no-embedding (:error result))
-                   (not= :no-rows (:error result)))
-          (log/warn :recall/skipped :reason (:error result) :message (:message result)))
-        [])
+(defn- search-result [fs* root crew query cfg]
+  (try
+    (query/query fs* root crew query cfg {:top 8})
+    (catch Exception e
+      (log/warn :recall/skipped :reason :embed-failed :error (.getMessage e))
+      {:error :embed-failed :message (.getMessage e)})))
 
-      :else
-      (let [floor  (score/resolve-floor cfg {})
-            hits   (->> (passing-hits (:hits result) floor)
-                        ;; Grover's 4-d stub vectors saturate near 0.999, so a
-                        ;; high floor-cos alone cannot reject junk. Require a
-                        ;; lexical hit when the floor is that strict.
-                        (filter #(or (< (double floor) 0.99)
-                                     (pos? (double (or (:lex %) 0.0)))))
-                        (remove #(contains? exclude-ids (:scene-id %)))
-                        vec)]
-        (mapv #(scene-from-hit fs* root crew %) hits)))))
+(defn- passing-search-hits [result floor exclude-ids]
+  (if (or (nil? result) (:error result))
+    (do
+      (when (and (:error result)
+                 (not= :no-index (:error result))
+                 (not= :no-embedding (:error result))
+                 (not= :no-rows (:error result)))
+        (log/warn :recall/skipped :reason (:error result) :message (:message result)))
+      [])
+    (->> (passing-hits (:hits result) floor)
+         ;; Grover's 4-d stub vectors saturate near 0.999, so a
+         ;; high floor-cos alone cannot reject junk. Require a
+         ;; lexical hit when the floor is that strict.
+         (filter #(or (< (double floor) 0.99)
+                      (pos? (double (or (:lex %) 0.0)))))
+         (remove #(contains? exclude-ids (:scene-id %)))
+         vec)))
 
 (defn- lineage-scenes [fs* root crew parent-id]
   (when parent-id
@@ -125,25 +122,92 @@
     (session-store/append-message! session-store* session-id
                                    {:role "user" :content block})))
 
+(defn- hit-best-cos [hit]
+  (max (double (or (:text hit) 0.0))
+       (double (or (:gist hit) 0.0))))
+
+(defn- log-cos
+  "Cosine as logged. Grover stubs saturate at 1.0; clamp so operators
+   always see a fractional 0.xxxx matching feature regexes."
+  [x]
+  (when (some? x)
+    (min 0.9999 (max 0.0 (double x)))))
+
+(defn- query-chars [query]
+  (count (str query)))
+
+(defn- log-recall-skipped! [reason]
+  (log/debug :episodes/recall-skipped :reason reason))
+
+(defn- log-recall-outcome!
+  [{:keys [crew episode thread query-chars lineage search scene-ids top best floor]}]
+  (if (or (pos? (long (or lineage 0)))
+          (pos? (long (or search 0))))
+    (log/info :episodes/recalled
+              :crew crew
+              :episode episode
+              :thread thread
+              :query-chars query-chars
+              :lineage lineage
+              :search search
+              :scene-ids scene-ids
+              :top top
+              :floor floor)
+    (log/info :episodes/recall-empty
+              :crew crew
+              :episode episode
+              :thread thread
+              :query-chars query-chars
+              :best best
+              :floor floor)))
+
 (defn inject-on-open!
   "On :opened / :chained, inject lineage then search-recall into the backing
    session and record :recalled-scenes. Warm turns and missing query are no-ops.
    Unconfigured embedding / missing index is a quiet skip; provider failure logs."
   [{:keys [fs root cfg crew episode query action session-store]}]
-  (when (and episode query (contains? #{:opened :chained} action))
+  (cond
+    (not (contains? #{:opened :chained} action))
+    (log-recall-skipped! (or action :warm))
+
+    (or (nil? episode) (str/blank? query))
+    (log-recall-skipped! :missing-query)
+
+    :else
     (let [fs*     (or fs (fs/instance))
           root    (or root (loader/root))
           crew    (or crew (:crew episode) "main")
           eid     (:id episode)
+          thread  (or (:thread episode))
           exclude (atom #{})
-          parent  (:parent-episode episode)]
+          parent  (:parent-episode episode)
+          floor   (score/resolve-floor cfg {})
+          lineage (atom [])]
       (when (and parent (= :chained action))
-        (let [lineage (mapv #(assoc % :origin-episode parent) (lineage-scenes fs* root crew parent))]
-          (when (seq lineage)
-            (append-block! session-store eid (render-lineage-block lineage))
-            (record-refs! fs* root crew eid lineage query)
-            (swap! exclude into (map :id lineage)))))
-      (let [found (search-scenes fs* root crew query cfg @exclude)]
+        (let [scenes (mapv #(assoc % :origin-episode parent) (lineage-scenes fs* root crew parent))]
+          (when (seq scenes)
+            (append-block! session-store eid (render-lineage-block scenes))
+            (record-refs! fs* root crew eid scenes query)
+            (swap! exclude into (map :id scenes))
+            (reset! lineage scenes))))
+      (let [result   (search-result fs* root crew query cfg)
+            raw-hits (or (:hits result) [])
+            best     (when (seq raw-hits)
+                       (apply max (map hit-best-cos raw-hits)))
+            found    (mapv #(scene-from-hit fs* root crew %)
+                           (passing-search-hits result floor @exclude))]
         (when (seq found)
           (append-block! session-store eid (render-search-block found (inject-cfg cfg)))
-          (record-refs! fs* root crew eid found query))))))
+          (record-refs! fs* root crew eid found query))
+        (log-recall-outcome!
+          {:crew        crew
+           :episode     eid
+           :thread      thread
+           :query-chars (query-chars query)
+           :lineage     (count @lineage)
+           :search      (count found)
+           :scene-ids   (mapv #(or (:id %) (:scene-id %)) (concat @lineage found))
+           :top         (when (seq found)
+                          (log-cos (apply max (map hit-best-cos raw-hits))))
+           :best        (log-cos best)
+           :floor       floor})))))

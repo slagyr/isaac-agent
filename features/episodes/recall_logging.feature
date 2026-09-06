@@ -1,4 +1,3 @@
-@wip
 Feature: Recall is visible in the logs
   Episode recall happens silently today: recall-at-open records the chosen
   scenes only inside the episode record, and the recall__scene tool logs

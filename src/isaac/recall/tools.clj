@@ -5,6 +5,7 @@
     [isaac.config.loader :as loader]
     [isaac.episodes.store :as store]
     [isaac.fs :as fs]
+    [isaac.logger :as log]
     [isaac.recall.inject :as inject]
     [isaac.recall.query :as query]
     [isaac.recall.score :as score]
@@ -21,7 +22,8 @@
 (defn- crew-of [args]
   (let [args        (string-key-map args)
         session-key (get args "session_key")]
-    (or (some->> session-key (session-store/get-session (bounds/session-store args)) :crew)
+    (or (get args "crew")
+        (some->> session-key (session-store/get-session (bounds/session-store args)) :crew)
         (get-in (loader/snapshot "recall tools: default crew") [:defaults :crew])
         "main")))
 
@@ -43,6 +45,14 @@
 (defn- format-hit [scene]
   (inject/format-line (assoc scene :id (or (:id scene) (:scene-id scene))
                              :gist (or (:gist scene) (:gist-text scene)))))
+
+(defn- hit-best-cos [hit]
+  (max (double (or (:text hit) 0.0))
+       (double (or (:gist hit) 0.0))))
+
+(defn- log-cos [x]
+  (when (some? x)
+    (min 0.9999 (max 0.0 (double x)))))
 
 (defn search-tool
   [args]
@@ -67,8 +77,16 @@
                                  (assoc s :origin-episode (:episode-id h)
                                         :id (or (:id s) (:scene-id h)))))
                              hits)
-                lines  (mapv format-hit scenes)]
+                lines  (mapv format-hit scenes)
+                top    (when (seq hits)
+                         (apply max (map hit-best-cos hits)))]
             (record! args scenes q)
+            (log/info :recall/search
+                      :crew crew
+                      :query-chars (count (str q))
+                      :hits (count hits)
+                      :top (log-cos top)
+                      :floor floor)
             {:result (if (seq lines)
                        (str/join "\n" lines)
                        "no matching scenes")}))))))
@@ -88,7 +106,14 @@
     (if (str/blank? scene-id)
       {:isError true :error "scene-id is required"}
       (if-let [scene (find-scene fs* root crew scene-id)]
-        (do
+        (let [text (or (:text scene) "")]
           (record! args [scene] nil)
-          {:result (or (:text scene) "")})
-        {:isError true :error (str "unknown scene: " scene-id)}))))
+          (log/info :recall/scene
+                    :crew crew
+                    :scene scene-id
+                    :episode (:origin-episode scene)
+                    :chars (count text))
+          {:result text})
+        (do
+          (log/warn :recall/scene-missing :crew crew :scene scene-id)
+          {:isError true :error (str "unknown scene: " scene-id)})))))
