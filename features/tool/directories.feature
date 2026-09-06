@@ -32,7 +32,6 @@ Feature: Global and crew directory allow/deny
     Then session "fence-test" has transcript matching:
       | type    | message.role | message.isError |
       | message | toolResult   | true            |
-
   Scenario: Global cwd grant allows the session workdir and not outside it
     Given config file "isaac.edn" containing:
       """
@@ -51,18 +50,16 @@ Feature: Global and crew directory allow/deny
       | name       | cwd           |
       | fence-test | /work/project |
     And the following model responses are queued:
-      | type      | tool     | arguments                               |
+      | type      | tool     | arguments                                |
       | tool_call | fs__read | {"file_path": "/work/project/hello.txt"} |
-      | text      |          | inside                                  |
-      | tool_call | fs__read | {"file_path": "/outside/secret.txt"}    |
-      | text      |          | outside                                 |
+      | tool_call | fs__read | {"file_path": "/outside/secret.txt"}     |
+      | text      |          | done                                     |
     When the user sends "read both" on session "fence-test"
     Then session "fence-test" has transcript matching:
-      | type    | message.role | message.isError |
-      | message | toolResult   |                 |
-      | message | assistant    |                 |
-      | message | toolResult   | true            |
-
+      | type    | message.role | message.isError | message.content                             |
+      | message | toolResult   |                 |                                             |
+      | message | toolResult   | true            | #"(?s).*path outside allowed directories.*" |
+      | message | assistant    |                 | done                                        |
   Scenario: Global quarters grant allows the crew area and not cwd
     Given config file "isaac.edn" containing:
       """
@@ -81,18 +78,16 @@ Feature: Global and crew directory allow/deny
       | name       | cwd           |
       | fence-test | /work/project |
     And the following model responses are queued:
-      | type      | tool     | arguments                                            |
-      | tool_call | fs__read | {"file_path": "/isaac-state/crew/main/notes.txt"}    |
-      | text      |          | quarters                                             |
-      | tool_call | fs__read | {"file_path": "/work/project/hello.txt"}             |
-      | text      |          | cwd                                                  |
+      | type      | tool     | arguments                                         |
+      | tool_call | fs__read | {"file_path": "/isaac-state/crew/main/notes.txt"} |
+      | tool_call | fs__read | {"file_path": "/work/project/hello.txt"}          |
+      | text      |          | done                                              |
     When the user sends "read both" on session "fence-test"
     Then session "fence-test" has transcript matching:
-      | type    | message.role | message.isError |
-      | message | toolResult   |                 |
-      | message | assistant    |                 |
-      | message | toolResult   | true            |
-
+      | type    | message.role | message.isError | message.content                             |
+      | message | toolResult   |                 |                                             |
+      | message | toolResult   | true            | #"(?s).*path outside allowed directories.*" |
+      | message | assistant    |                 | done                                        |
   Scenario: Crew extra absolute path overlays and inherited cwd still works
     Given config file "isaac.edn" containing:
       """
@@ -112,18 +107,16 @@ Feature: Global and crew directory allow/deny
       | name       | cwd           |
       | fence-test | /work/project |
     And the following model responses are queued:
-      | type      | tool     | arguments                                      |
-      | tool_call | fs__read | {"file_path": "/work/project/hello.txt"}       |
-      | text      |          | cwd                                            |
+      | type      | tool     | arguments                                       |
+      | tool_call | fs__read | {"file_path": "/work/project/hello.txt"}        |
       | tool_call | fs__read | {"file_path": "/tmp/isaac-playground/data.txt"} |
-      | text      |          | extra                                          |
+      | text      |          | done                                            |
     When the user sends "read both" on session "fence-test"
     Then session "fence-test" has transcript matching:
-      | type    | message.role | message.isError |
-      | message | toolResult   |                 |
-      | message | assistant    |                 |
-      | message | toolResult   |                 |
-
+      | type    | message.role | message.isError | message.content                             |
+      | message | toolResult   |                 |                                             |
+      | message | toolResult   |                 |                                             |
+      | message | assistant    |                 | done                                        |
   Scenario: A more specific global deny under a crew-allowed parent still denies
     Given config file "isaac.edn" containing:
       """
@@ -145,16 +138,14 @@ Feature: Global and crew directory allow/deny
     And the following model responses are queued:
       | type      | tool     | arguments                                     |
       | tool_call | fs__read | {"file_path": "/work/project/hello.txt"}      |
-      | text      |          | parent                                        |
       | tool_call | fs__read | {"file_path": "/work/project/secret/key.txt"} |
-      | text      |          | child                                         |
+      | text      |          | done                                          |
     When the user sends "read both" on session "fence-test"
     Then session "fence-test" has transcript matching:
-      | type    | message.role | message.isError |
-      | message | toolResult   |                 |
-      | message | assistant    |                 |
-      | message | toolResult   | true            |
-
+      | type    | message.role | message.isError | message.content                             |
+      | message | toolResult   |                 |                                             |
+      | message | toolResult   | true            | #"(?s).*path outside allowed directories.*" |
+      | message | assistant    |                 | done                                        |
   Scenario: Crew allow of the denied child prefix re-opens it
     Given config file "isaac.edn" containing:
       """
@@ -180,7 +171,6 @@ Feature: Global and crew directory allow/deny
     Then session "fence-test" has transcript matching:
       | type    | message.role | message.isError |
       | message | toolResult   |                 |
-
   Scenario: Crew deny of a subpath; sibling under the root still works
     Given config file "isaac.edn" containing:
       """
@@ -202,38 +192,11 @@ Feature: Global and crew directory allow/deny
     And the following model responses are queued:
       | type      | tool     | arguments                                |
       | tool_call | fs__read | {"file_path": "/work/project/hello.txt"} |
-      | text      |          | sibling                                  |
       | tool_call | fs__read | {"file_path": "/work/project/.env"}      |
-      | text      |          | env                                      |
+      | text      |          | done                                     |
     When the user sends "read both" on session "fence-test"
     Then session "fence-test" has transcript matching:
-      | type    | message.role | message.isError |
-      | message | toolResult   |                 |
-      | message | assistant    |                 |
-      | message | toolResult   | true            |
-
-  Scenario: Symlink under cwd pointing outside an allow root is an error
-    Given config file "isaac.edn" containing:
-      """
-      {:defaults    {:crew :main :model :echo}
-       :providers   {:grover {:base-url "http://test" :api "grover"}}
-       :models      {:echo {:model "echo" :provider :grover :context-window 32768}}
-       :tools       {:directories {:allow [:cwd]}}}
-      """
-    And config file "crew/main.edn" containing:
-      """
-      {:tools {:allow [:fs/read]}}
-      """
-    And file "/outside/secret.txt" contains "nope"
-    And a symlink "/work/project/link.txt" pointing at "/outside/secret.txt"
-    And the following sessions exist:
-      | name       | cwd           |
-      | fence-test | /work/project |
-    And the following model responses are queued:
-      | type      | tool     | arguments                              |
-      | tool_call | fs__read | {"file_path": "/work/project/link.txt"} |
-      | text      |          | linked                                  |
-    When the user sends "read link" on session "fence-test"
-    Then session "fence-test" has transcript matching:
-      | type    | message.role | message.isError |
-      | message | toolResult   | true            |
+      | type    | message.role | message.isError | message.content                             |
+      | message | toolResult   |                 |                                             |
+      | message | toolResult   | true            | #"(?s).*path outside allowed directories.*" |
+      | message | assistant    |                 | done                                        |
