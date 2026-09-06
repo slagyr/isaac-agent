@@ -23,12 +23,12 @@
                      :content content})
     (log/warn :attention/unconfigured :content content)))
 
-(defn maybe-notify-compaction-disabled!
-  "Post attention when compaction is disabled after too many failures."
+(defn maybe-notify-conversation-blocked!
+  "Post attention when a conversation is blocked and needs intervention."
   [cfg session-key {:keys [reason total-tokens context-window]}]
   (let [content (str/join " "
                           (remove str/blank?
-                                  [(str "Compaction disabled for session " session-key)
+                                  [(str "Conversation blocked for session " session-key)
                                    (when reason (str "reason " (name reason)))
                                    (when total-tokens (str "total-tokens " total-tokens))
                                    (when context-window (str "context-window " context-window))]))]

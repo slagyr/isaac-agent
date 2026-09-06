@@ -93,8 +93,6 @@
                 (stderr-line! "✨ compacted")
                 :compaction/failure
                 (stderr-line! (str "🥀 compaction failed: " (compaction-error-text payload)))
-                :compaction/disabled
-                (stderr-line! (str "🪦 compaction disabled: " (name (:reason payload))))
                 nil)))
 
           :send!

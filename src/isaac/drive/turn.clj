@@ -24,7 +24,8 @@
     [isaac.tool.names :as names]
     [isaac.tool.registry :as tool-registry]
     [isaac.turnstile :as turnstile])
-  (:import (clojure.lang ExceptionInfo)))
+  (:import (clojure.lang ExceptionInfo)
+           (java.time Instant)))
 
 ;; region ----- Error Formatting -----
 
@@ -639,7 +640,7 @@
   ([ctx session-key]
    (store/get-session (or (:session-store ctx) (nexus/get-in [:sessions :store])) session-key)))
 
-(def ^:private max-compaction-attempts 5)
+(def ^:private max-compaction-attempts 3)
 (def ^:private context-window-guard-line 0.98)
 
 (defn- consecutive-compaction-failures [entry]
@@ -706,20 +707,21 @@
                                                   :error                 (:error result)
                                                   :message               (:message result)}))
               (when (>= failures max-compaction-attempts)
-                (store/update-session! (or (:session-store opts) (nexus/get-in [:sessions :store])) session-key {:compaction-disabled true})
-                (when ch
-                  (comm/on-bulletin ch session-key {:kind :compaction/disabled :reason :too-many-failures}))
-                (attention/maybe-notify-compaction-disabled!
-                  (loader/snapshot "compaction-disabled attention")
+                (store/update-session! (or (:session-store opts) (nexus/get-in [:sessions :store]))
+                                       session-key
+                                       {:block {:reason :compaction-failed
+                                                :at     (str (Instant/now))}})
+                (attention/maybe-notify-conversation-blocked!
+                  (loader/snapshot "conversation-blocked attention")
                   session-key
-                  {:reason         :too-many-failures
+                  {:reason         :compaction-failed
                    :total-tokens   prompt-tokens
                    :context-window context-window})
                 (log/warn :session/compaction-stopped
                           :session session-key
                           :provider provider-name
                           :model model
-                          :reason :too-many-failures
+                          :reason :compaction-failed
                           :attempt attempt
                           :total-tokens prompt-tokens
                           :context-window context-window))
@@ -728,10 +730,10 @@
                          :provider provider-name
                          :model model
                          :error (:error result)
-                         :message (:message result)))
+                         :message (:message result))
+              result)
             (do
-              (store/update-session! (or (:session-store opts) (nexus/get-in [:sessions :store])) session-key {:compaction-disabled false
-                                                                                                               :compaction          {:consecutive-failures 0}})
+              (store/update-session! (or (:session-store opts) (nexus/get-in [:sessions :store])) session-key {:compaction {:consecutive-failures 0}})
               (let [updated-total (compaction/estimate-prompt-tokens session-key opts)]
                 (when ch
                   (comm/on-bulletin ch session-key {:kind         :compaction/success
@@ -789,7 +791,6 @@
 (defn- run-compaction-check! [session-key {:keys [context-window model provider] :as opts} attempt allow-async?]
   (let [estimate-opts (compaction-estimate-opts session-key opts)
         entry         (session-entry estimate-opts session-key)
-        _failures     (consecutive-compaction-failures entry)
         total-tokens  (compaction/estimate-prompt-tokens session-key estimate-opts)
         config        (or (:compaction estimate-opts)
                           (compaction/resolve-config entry context-window))
@@ -814,15 +815,6 @@
                 :context-window context-window
                 :reason :context-reset)
 
-      (:compaction-disabled entry)
-      (log/info :session/compaction-skipped
-                :session session-key
-                :provider prov-name
-                :model model
-                :total-tokens total-tokens
-                :context-window context-window
-                :reason :disabled)
-
       (compaction/should-compact? total-tokens (assoc entry :compaction config) context-window)
       (if (and allow-async? (:async? config))
         (start-async-compaction! session-key estimate-opts)
@@ -832,8 +824,18 @@
 (defn- context-window-guard-line-tokens [context-window]
   (long (* context-window-guard-line (or context-window 0))))
 
-(defn- compaction-cannot-save-turn? [session-key ctx]
-  (boolean (:compaction-disabled (session-entry ctx session-key))))
+(defn- conversation-blocked? [session-key ctx]
+  (boolean (:block (session-entry ctx session-key))))
+
+(defn- blocked-result [cfg session-key]
+  (let [retry-ms (provider-wall/provider-auth-retry-after-ms cfg)]
+    (log/warn :drive/conversation-blocked
+              :session session-key
+              :retry-after-ms retry-ms)
+    {:unavailable?   true
+     :reason         :blocked
+     :retry-after-ms retry-ms
+     :session        session-key}))
 
 (defn- context-exhausted-result [cfg session-key total-tokens context-window]
   (let [retry-ms (provider-wall/provider-auth-retry-after-ms cfg)]
@@ -848,34 +850,18 @@
      :retry-after-ms retry-ms
      :session        session-key}))
 
-(defn- maybe-context-exhausted! [session-key input ctx]
-  (let [{:keys [boot-files rules-text skill-menu-text allowed-tools provider]} ctx
-        {:keys [compaction context-mode model soul context-window
-                guidance nonce origin module-index config]} (:charge ctx)
-        estimate-opts {:boot-files      boot-files
-                       :rules-text      rules-text
-                       :skill-menu-text skill-menu-text
-                       :compaction      compaction
-                       :context-mode    context-mode
-                       :model           model
-                       :soul            soul
-                       :context-window  context-window
-                       :provider        provider
-                       :input           input
-                       :guidance        guidance
-                       :nonce           nonce
-                       :origin          origin
-                       :module-index    module-index
-                       :allowed-tools   allowed-tools
-                       :tools           (when provider (active-tools provider allowed-tools module-index))}
-        estimated     (compaction/estimate-prompt-tokens session-key estimate-opts)
-        entry         (session-entry ctx session-key)
-        total-tokens  (compaction/context-gauge estimated entry)
-        guard-line    (context-window-guard-line-tokens context-window)]
-    (when (and (pos? context-window)
-               (>= total-tokens guard-line)
-               (compaction-cannot-save-turn? session-key ctx))
-      (context-exhausted-result (or config (nexus/get :config)) session-key total-tokens context-window))))
+(defn- compact-failure-turn-result [session-key ctx]
+  (let [cfg            (or (get-in ctx [:charge :config]) (nexus/get :config))
+        context-window (get-in ctx [:charge :context-window])
+        entry          (session-entry ctx session-key)
+        total-tokens   (or (:last-input-tokens entry) 0)]
+    (if (:block entry)
+      (blocked-result cfg session-key)
+      (context-exhausted-result cfg session-key total-tokens context-window))))
+
+(defn- maybe-blocked-conversation! [session-key ctx]
+  (when (conversation-blocked? session-key ctx)
+    (blocked-result (or (get-in ctx [:charge :config]) (nexus/get :config)) session-key)))
 
 (defn check-compaction!
   ([session-key opts]
@@ -931,12 +917,8 @@
 (defn- overflow-compact-retry!
   [session-key ctx current-request result]
   (when (prompt-too-long? result)
-    (if (compaction-cannot-save-turn? session-key ctx)
-      (let [opts           (mid-turn-compaction-opts ctx)
-            context-window (:context-window (:charge ctx))
-            config         (:config (:charge ctx))
-            total-tokens   (compaction/estimate-prompt-tokens session-key opts)]
-        (context-exhausted-result (or config (nexus/get :config)) session-key total-tokens context-window))
+    (if (conversation-blocked? session-key ctx)
+      (blocked-result (or (:config (:charge ctx)) (nexus/get :config)) session-key)
       (let [opts (mid-turn-compaction-opts ctx)
             total (compaction/estimate-prompt-tokens session-key opts)]
         (perform-compaction! session-key 1 total opts)
@@ -968,8 +950,12 @@
       (cond
         (and (pos? (or context-window 0))
              (>= after guard-line)
-             (or (compaction-cannot-save-turn? session-key ctx)
-                 (>= after before)))
+             (conversation-blocked? session-key ctx))
+        (blocked-result (or config (nexus/get :config)) session-key)
+
+        (and (pos? (or context-window 0))
+             (>= after guard-line)
+             (>= after before))
         (context-exhausted-result (or config (nexus/get :config)) session-key after context-window)
 
         (< after before)
@@ -1372,31 +1358,37 @@
 
       :else
       (do
-        (log/info :drive/turn-accepted {:session session-key :crew crew})
-        (if-let [exhausted (maybe-context-exhausted! session-key input ctx)]
-          exhausted
+        (if-let [blocked (maybe-blocked-conversation! session-key ctx)]
+          blocked
           (do
-            (check-compaction! ctx session-key {:boot-files      boot-files
-                                                :rules-text      rules-text
-                                                :skill-menu-text skill-menu-text
-                                                :compaction      compaction
-                                                :context-mode    context-mode
-                                                :model           model
-                                                :soul            soul
-                                                :context-window  context-window
-                                                :provider        provider
-                                                :comm            (or comm null-comm/channel)
-                                                :input           input
-                                                :guidance        guidance
-                                                :nonce           nonce
-                                                :origin          origin
-                                                :module-index    module-index
-                                                :allowed-tools   allowed-tools
-                                                :config          (:config (:charge ctx))})
-            (if (bridge/cancelled? session-key)
-              (suspend/interrupt-result session-key)
-              (let [live-key (successor-session-key session-key ctx)]
-                (execute-llm-turn! live-key input ctx)))))))))
+            (log/info :drive/turn-accepted {:session session-key :crew crew})
+            (let [compact-result (check-compaction! ctx session-key {:boot-files      boot-files
+                                                                     :rules-text      rules-text
+                                                                     :skill-menu-text skill-menu-text
+                                                                     :compaction      compaction
+                                                                     :context-mode    context-mode
+                                                                     :model           model
+                                                                     :soul            soul
+                                                                     :context-window  context-window
+                                                                     :provider        provider
+                                                                     :comm            (or comm null-comm/channel)
+                                                                     :input           input
+                                                                     :guidance        guidance
+                                                                     :nonce           nonce
+                                                                     :origin          origin
+                                                                     :module-index    module-index
+                                                                     :allowed-tools   allowed-tools
+                                                                     :config          (:config (:charge ctx))})]
+              (cond
+                (bridge/cancelled? session-key)
+                (suspend/interrupt-result session-key)
+
+                (:error compact-result)
+                (compact-failure-turn-result session-key ctx)
+
+                :else
+                (let [live-key (successor-session-key session-key ctx)]
+                  (execute-llm-turn! live-key input ctx))))))))))
 
 (defn- record-exception! [session-key e ctx]
   (let [{:keys [provider]} ctx

@@ -2,6 +2,7 @@ Feature: Context-window guard when compaction cannot save the turn
 
   Background:
     Given an Isaac root at "target/test-state"
+    Given default Grover setup
     Given config:
       | key        | value  |
       | log.output | memory |
@@ -15,10 +16,10 @@ Feature: Context-window guard when compaction cannot save the turn
       | model | local            |
       | soul  | You are Atticus. |
 
-  Scenario: compaction disabled over the guard line defers without an LLM request
+  Scenario: a blocked conversation over the guard line refuses the turn without an LLM request
     Given the following sessions exist:
-      | name   | last-input-tokens | compaction-disabled | compaction.consecutive-failures |
-      | wedged | 99                | true                | 5                               |
+      | name   | last-input-tokens | block.reason        | compaction.consecutive-failures |
+      | wedged | 99                | :compaction-failed  | 3                               |
     And session "wedged" has transcript:
       | type    | message.role | message.content |
       | message | user         | earlier prompt  |
@@ -27,7 +28,7 @@ Feature: Context-window guard when compaction cannot save the turn
       | type | content           | model      |
       | text | should not be hit | test-model |
     When the user sends "one more" on session "wedged"
-    Then the turn result is unavailable with retry-after-ms 300000 and reason context-exhausted
+    Then the turn result is unavailable with retry-after-ms 300000 and reason blocked
     And grover records zero provider requests
 
   Scenario: compaction enabled over the guard line compacts then the turn proceeds
@@ -61,7 +62,7 @@ Feature: Context-window guard when compaction cannot save the turn
       | attention.notify.target | boiler-room |
     And the following sessions exist:
       | name      | last-input-tokens | compaction.consecutive-failures |
-      | giving-up | 85                | 5                               |
+      | giving-up | 85                | 2                               |
     And session "giving-up" has transcript:
       | type    | message.role | message.content |
       | message | user         | earlier prompt  |
@@ -71,20 +72,23 @@ Feature: Context-window guard when compaction cannot save the turn
       | error | context length exceeded | test-model |
       | text  | here is my answer       | test-model |
     When the user sends "next thing" on session "giving-up"
-    Then the memory comm has events matching:
-      | event    | kind                | reason             |
-      | bulletin | compaction/disabled | :too-many-failures |
+    Then the turn result is unavailable with retry-after-ms 300000 and reason blocked
+    And the memory comm has events matching:
+      | event    | kind               | error      | consecutive-failures |
+      | bulletin | compaction/start   |            |                      |
+      | bulletin | compaction/failure | :llm-error | 3                    |
     And session "giving-up" matches:
-      | key                 | value |
-      | compaction-disabled | true  |
+      | key                             | value              |
+      | compaction.consecutive-failures | 3                  |
+      | block.reason                    | :compaction-failed |
+    And session "giving-up" has 3 transcript entries
     And the directory "comm/delivery/pending" has exactly 1 file
     And the only file in "comm/delivery/pending" EDN contains:
-      | path    | value                                          |
-      | comm    | :discord                                       |
-      | target  | boiler-room                                    |
-      | content | contains "Compaction disabled" and "giving-up" |
+      | path    | value                                            |
+      | comm    | :discord                                         |
+      | target  | boiler-room                                      |
+      | content | contains "Conversation blocked" and "giving-up" |
 
-  @wip
   Scenario: First required compact failure refuses the user turn
     Given the following sessions exist:
       | name         | last-input-tokens | #comment                  |
@@ -107,9 +111,8 @@ Feature: Context-window guard when compaction cannot save the turn
       | key                             | value |
       | compaction.consecutive-failures | 1     |
       | block.reason                    |       |
-    And session "logbook" has 2 transcript entries
+    And session "logbook" has 3 transcript entries
 
-  @wip
   Scenario: Third consecutive compact failure sets block and posts attention once
     Given the isaac EDN file "config/isaac.edn" exists with:
       | path                    | value       |
@@ -136,7 +139,7 @@ Feature: Context-window guard when compaction cannot save the turn
       | key                             | value               |
       | compaction.consecutive-failures | 3                   |
       | block.reason                    | :compaction-failed  |
-    And session "longwave" has 2 transcript entries
+    And session "longwave" has 3 transcript entries
     And the directory "comm/delivery/pending" has exactly 1 file
     And the only file in "comm/delivery/pending" EDN contains:
       | path    | value                                          |
@@ -144,7 +147,6 @@ Feature: Context-window guard when compaction cannot save the turn
       | target  | boiler-room                                    |
       | content | contains "Conversation blocked" and "longwave" |
 
-  @wip
   Scenario: A blocked conversation refuses the next turn
     Given the following sessions exist:
       | name    | last-input-tokens | block.reason         |
@@ -159,12 +161,11 @@ Feature: Context-window guard when compaction cannot save the turn
     When the user sends "one more" on session "skybeam"
     Then the turn result is unavailable with retry-after-ms 300000 and reason blocked
     And grover records zero provider requests
-    And session "skybeam" has 2 transcript entries
+    And session "skybeam" has 3 transcript entries
     And session "skybeam" matches:
       | key          | value              |
       | block.reason | :compaction-failed |
 
-  @wip
   Scenario: Unset block accepts the next needing turn
     Given the isaac EDN file "config/models/local.edn" exists with:
       | path           | value      |

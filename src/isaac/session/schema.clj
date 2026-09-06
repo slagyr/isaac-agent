@@ -40,12 +40,18 @@
 
 (def CompactionState
   {:name   :session-compaction-state
-  :type   :map
+   :type   :map
    :schema {:async?               (mutable {:type :boolean})
             :consecutive-failures (system-managed {:type :int})
             :strategy             (mutable {:type :keyword})
             :head                 (mutable {:type :double})
             :threshold            (mutable {:type :double})}})
+
+(def Block
+  {:name   :session-block
+   :type   :map
+   :schema {:reason (mutable {:type :keyword})
+            :at     (mutable {:type :string})}})
 
 (def Session
   {:name   :session
@@ -75,7 +81,7 @@
             :last-channel        (system-managed {:type :string})
             :last-to             (system-managed {:type :string})
             :compaction-count    (system-managed {:type :int})
-            :compaction-disabled (mutable {:type :boolean})
+            :block               (mutable {:type :map :schema (:schema Block)})
             :compaction          (mutable {:type :map :schema (:schema CompactionState)})
             :history-retention   (mutable {:type :keyword})
             :segment             (system-managed {:type :int})

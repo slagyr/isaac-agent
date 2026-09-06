@@ -22,6 +22,17 @@
   (it "drops unknown keys on read"
     (should-not (contains? (sut/conform-read {:id "alpha" :name "Alpha" :mystery true}) :mystery)))
 
+  (it "keeps a block map with reason and at"
+    (let [conformed (sut/conform! {:id    "alpha"
+                                   :name  "Alpha"
+                                   :block {:reason :compaction-failed :at "2026-09-04T10:00:00"}})]
+      (should= :compaction-failed (get-in conformed [:block :reason]))
+      (should= "2026-09-04T10:00:00" (get-in conformed [:block :at]))))
+
+  (it "drops compaction-disabled on read"
+    (should-not (contains? (sut/conform-read {:id "alpha" :name "Alpha" :compaction-disabled true})
+                           :compaction-disabled)))
+
   (it "requires id and name on write"
     (should-throw clojure.lang.ExceptionInfo
                   (sut/conform! {:id "alpha"})))
@@ -43,7 +54,7 @@
                      :created-at          "2026-05-08T10:00:00"
                      :updated-at          "2026-05-08T10:00:01"
                       :compaction-count    0
-                      :compaction-disabled false
+                      :block               {:reason :compaction-failed :at "2026-09-04T10:00:00"}
                       :compaction          {:consecutive-failures 0}
                       :history-retention   :retain
                       :segment             2

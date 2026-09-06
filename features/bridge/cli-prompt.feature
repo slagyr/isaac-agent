@@ -460,9 +460,9 @@ Feature: Prompt single-turn command
       | 🥬 compacting           |
       | 🥀 compaction failed    |
       | context length exceeded |
-    And the stdout contains "here is the answer"
+    And the stdout does not contain "here is the answer"
 
-  Scenario: prompt shows a banner when compaction surrenders after repeated failures
+  Scenario: prompt shows compaction failure when the conversation is blocked after repeated failures
     Given the isaac EDN file "config/models/grover.edn" exists with:
       | path           | value |
       | model          | echo  |
@@ -470,7 +470,7 @@ Feature: Prompt single-turn command
       | context-window | 100   |
     Given the following sessions exist:
       | name           | last-input-tokens | compaction.consecutive-failures |
-      | prompt-default | 85                | 4                               |
+      | prompt-default | 85                | 2                               |
     And session "prompt-default" has transcript:
       | type    | message.role | message.content |
       | message | user         | older prompt    |
@@ -481,6 +481,6 @@ Feature: Prompt single-turn command
       | text  | here is the answer      | echo  |
     When isaac is run with "prompt -m 'next'"
     Then the stderr matches:
-      | 🪦 compaction disabled |
-      | too-many-failures      |
-    And the stdout contains "here is the answer"
+      | 🥬 compacting        |
+      | 🥀 compaction failed |
+    And the stdout does not contain "here is the answer"

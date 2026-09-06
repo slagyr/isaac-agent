@@ -88,7 +88,7 @@ Feature: Context Compaction Logging
       | type    | message.role | message.content |
       | message | assistant    | README summary  |
 
-  Scenario: Compaction failure is logged and chat proceeds without looping
+  Scenario: Compaction failure is logged and the user turn is refused
     Given the following sessions exist:
       | name         | last-input-tokens | #comment                  |
       | failure-chat | 85                | exceeds 80% of 100 window |
@@ -101,15 +101,14 @@ Feature: Context Compaction Logging
       | error | context length exceeded | test-model |
       | text  | Here is my answer       | test-model |
     When the user sends "What was decided?" on session "failure-chat"
-    Then the memory comm has events matching:
+    Then the turn result is unavailable with retry-after-ms 300000 and reason context-exhausted
+    And the memory comm has events matching:
       | event    | kind               | error      | consecutive-failures |
       | bulletin | compaction/start   |            |                      |
       | bulletin | compaction/failure | :llm-error | 1                    |
-    And session "failure-chat" has transcript matching:
-      | type    | message.role | message.content   |
-      | message | assistant    | Here is my answer |
+    And session "failure-chat" has 3 transcript entries
 
-  # Note: :session/compaction-stopped (warn) is emitted when max-compaction-attempts (5) is
+  # Note: :session/compaction-stopped (warn) is emitted when max-compaction-attempts (3) is
   # exceeded or when a compaction loop makes no progress. Both cases require complex multi-turn
   # setup and are not exercised here; the :session/compaction-failed error path above is the
   # primary guard. A dedicated test could be added by making grover always return larger context.
@@ -258,7 +257,7 @@ Feature: Context Compaction Logging
       | compaction |              |                   | summary of A         |
       | message    | assistant    | here is my answer |                      |
 
-  Scenario: compaction stops retrying after max-compaction-attempts consecutive cross-turn failures
+  Scenario: compaction blocks the conversation after max-compaction-attempts consecutive cross-turn failures
     Given the isaac EDN file "config/models/local.edn" exists with:
       | path           | value      |
       | model          | test-model |
@@ -266,7 +265,7 @@ Feature: Context Compaction Logging
       | context-window | 60         |
     And the following sessions exist:
       | name      | last-input-tokens | compaction.consecutive-failures |
-      | giving-up | 50                | 5                               |
+      | giving-up | 50                | 2                               |
     And session "giving-up" has transcript:
       | type    | message.role | message.content |
       | message | user         | earlier prompt  |
@@ -276,33 +275,15 @@ Feature: Context Compaction Logging
       | error | context length exceeded | test-model |
       | text  | here is my answer       | test-model |
     When the user sends "next thing" on session "giving-up"
-    Then the memory comm has events matching:
-      | event    | kind                  | error      | consecutive-failures | reason             |
-      | bulletin | compaction/failure    | :llm-error | 6                    |                    |
-      | bulletin | compaction/disabled   |            |                      | :too-many-failures |
+    Then the turn result is unavailable with retry-after-ms 300000 and reason blocked
+    And the memory comm has events matching:
+      | event    | kind               | error      | consecutive-failures |
+      | bulletin | compaction/failure | :llm-error | 3                    |
     And session "giving-up" matches:
-      | key                 | value |
-      | compaction-disabled | true  |
-    And session "giving-up" has transcript matching:
-      | type    | message.role | message.content   |
-      | message | assistant    | here is my answer |
-
-  Scenario: switching model clears compaction-disabled and lets the next turn retry
-    Given the isaac EDN file "config/models/bigger-model.edn" exists with:
-      | path | value |
-      | model | bigger-model-upstream |
-      | provider | grover |
-      | context-window | 200 |
-    Given the following sessions exist:
-      | name      | model      | compaction-disabled | compaction.consecutive-failures |
-      | recovered | test-model | true                | 5                               |
-    And the current session is "recovered"
-    When the tool "session__model" is called with:
-      | model | bigger-model |
-    Then session "recovered" matches:
-      | key                             | value |
-      | compaction-disabled             | false |
-      | compaction.consecutive-failures | 0     |
+      | key                             | value              |
+      | compaction.consecutive-failures | 3                  |
+      | block.reason                    | :compaction-failed |
+    And session "giving-up" has 3 transcript entries
 
   Scenario: compaction passes the session's provider through so tool format matches
     And the isaac EDN file "config/models/codex.edn" exists with:

@@ -667,22 +667,22 @@
       (let [provider (->TestProvider marigold/starcore {:api marigold/sky-api})]
         (with-redefs [compaction/compact! (fn [& _] (throw (ex-info "should not compact" {})))]
           (log/capture-logs
-            (#'sut/perform-compaction! "attempt-limit" 6 1200 {:context-window 1000
+            (#'sut/perform-compaction! "attempt-limit" 4 1200 {:context-window 1000
                                                                  :model "test-model"
                                                                  :provider provider
                                                                  :soul "You are Isaac."})
             (let [entry (first (filter #(= :session/compaction-stopped (:event %)) @log/captured-logs))]
               (should-not-be-nil entry)
               (should= :max-attempts (:reason entry))
-              (should= 6 (:attempt entry)))))))
+              (should= 4 (:attempt entry)))))))
 
-    (it "records failures and disables compaction after too many consecutive errors"
+    (it "records failures and blocks the conversation after too many consecutive errors"
       (let [provider      (->TestProvider marigold/starcore {:api marigold/sky-api})
             session-key   "compact-fail"
             session-store (store/registered-store)
             events        (atom [])]
         (helper/create-session! test-dir session-key)
-        (helper/update-session! test-dir session-key {:compaction {:consecutive-failures 4}})
+        (helper/update-session! test-dir session-key {:compaction {:consecutive-failures 2}})
         (with-redefs [compaction/compact! (fn [& _] {:error :rate-limited :message "Please retry later"})]
           (#'sut/perform-compaction! session-key 1 800 {:comm          (memory-comm/channel events)
                                                         :context-window 1000
@@ -692,20 +692,18 @@
                                                         :root     test-dir
                                                         :session-store session-store})
           (let [session (helper/get-session test-dir session-key)]
-            (should= true (:compaction-disabled session))
-            (should= {:consecutive-failures 5} (:compaction session))
+            (should= :compaction-failed (get-in session [:block :reason]))
+            (should-not-be-nil (get-in session [:block :at]))
+            (should-not (contains? session :compaction-disabled))
+            (should= {:consecutive-failures 3} (:compaction session))
             (should= {:event "bulletin"
                       :kind "compaction/failure"
                       :session session-key
-                      :consecutive-failures 5
+                      :consecutive-failures 3
                       :error :rate-limited
                       :message "Please retry later"}
                      (event events "bulletin" "compaction/failure"))
-            (should= {:event "bulletin"
-                      :kind "compaction/disabled"
-                      :session session-key
-                      :reason :too-many-failures}
-                     (event events "bulletin" "compaction/disabled"))))))
+            (should-be-nil (event events "bulletin" "compaction/disabled"))))))
 
     (it "resets failure state after a successful non-chunked compact without rechecking"
       (let [provider      (->TestProvider marigold/starcore {:api marigold/sky-api})
@@ -713,9 +711,8 @@
             session-store (store/registered-store)
             events        (atom [])]
         (helper/create-session! test-dir session-key)
-        (helper/update-session! test-dir session-key {:last-input-tokens   800
-                                                      :compaction-disabled true
-                                                      :compaction          {:consecutive-failures 2}})
+        (helper/update-session! test-dir session-key {:last-input-tokens 800
+                                                      :compaction        {:consecutive-failures 2}})
         (with-redefs [compaction/compact!               (fn [& _] {:summary "Shorter now"})
                       compaction/estimate-prompt-tokens (fn [_ _] 850)
                       sut/run-compaction-check!         (fn [& _] (throw (ex-info "should not re-run" {})))]
@@ -728,7 +725,7 @@
                                                         :session-store  session-store})
           (let [session (helper/get-session test-dir session-key)
                 success (event events "bulletin" "compaction/success")]
-            (should= false (:compaction-disabled session))
+            (should-be-nil (:block session))
             (should= {:consecutive-failures 0} (:compaction session))
             (should-not-be-nil success)
             (should= "Shorter now" (:summary success))
@@ -1107,9 +1104,9 @@
             (should-be-nil (:error result))
             (should-not (:unavailable? result))))))
 
-    (it "returns context-exhausted weather when overflow happens with compaction disabled"
-      (helper/create-session! test-dir "overflow-disabled")
-      (helper/update-session! test-dir "overflow-disabled" {:compaction-disabled true})
+    (it "returns blocked weather when overflow happens on a blocked conversation"
+      (helper/create-session! test-dir "overflow-blocked")
+      (helper/update-session! test-dir "overflow-blocked" {:block {:reason :compaction-failed :at "2026-09-04T10:00:00"}})
       (let [compact-n (atom 0)
             ctx       (base-execution-ctx
                         (->TestProvider marigold/starcore {:api marigold/sky-api})
@@ -1126,22 +1123,22 @@
                       compaction/compact! (fn [& _]
                                             (swap! compact-n inc)
                                             {:summary "should-not-run"})]
-          (let [result (#'sut/execute-llm-turn! "overflow-disabled" "one more" ctx)]
+          (let [result (#'sut/execute-llm-turn! "overflow-blocked" "one more" ctx)]
             (should= 0 @compact-n)
             (should= true (:unavailable? result))
-            (should= :context-exhausted (:reason result)))))))
+            (should= :blocked (:reason result)))))))
 
-  (describe "maybe-context-exhausted!"
+  (describe "maybe-blocked-conversation!"
     #_{:clj-kondo/ignore [:unresolved-symbol]}
     (around [example]
       (nexus/-with-nexus {:root test-dir :fs (fs/mem-fs)}
         (helper/with-memory-store
           (example))))
 
-    (it "defers when compaction is disabled and last-input-tokens is over the guard even if the live estimate is under"
-      (helper/create-session! test-dir "wedged")
-      (helper/update-session! test-dir "wedged" {:compaction-disabled true
-                                                :last-input-tokens   99})
+    (it "refuses a blocked conversation before any LLM work"
+      (helper/create-session! test-dir "skybeam")
+      (helper/update-session! test-dir "skybeam" {:block {:reason :compaction-failed :at "2026-09-04T10:00:00"}
+                                                 :last-input-tokens 99})
       (let [ctx (base-execution-ctx
                   (->TestProvider marigold/starcore {:api marigold/sky-api})
                   {:model          "test-model"
@@ -1150,10 +1147,9 @@
                    :comm           null-comm/channel
                    :context-window 100
                    :config         {}})]
-        (with-redefs [compaction/estimate-prompt-tokens (fn [_ _] 20)]
-          (let [result (#'sut/maybe-context-exhausted! "wedged" "one more" ctx)]
-            (should= true (:unavailable? result))
-            (should= :context-exhausted (:reason result)))))))
+        (let [result (#'sut/maybe-blocked-conversation! "skybeam" ctx)]
+          (should= true (:unavailable? result))
+          (should= :blocked (:reason result))))))
 
   (describe "1-arg run-turn! (charge arity)"
     #_{:clj-kondo/ignore [:unresolved-symbol]}
@@ -1785,9 +1781,9 @@
         (should= 0 @compact-n)
         (should= 2 (count @captured))))
 
-    (it "exhausts the turn when compaction cannot save and the live estimate crosses the guard"
+    (it "blocks the turn when the conversation is blocked and the live estimate crosses the guard"
       (helper/create-session! test-dir "mid-exhaust")
-      (helper/update-session! test-dir "mid-exhaust" {:compaction-disabled true})
+      (helper/update-session! test-dir "mid-exhaust" {:block {:reason :compaction-failed :at "2026-09-04T10:00:00"}})
       (let [captured  (atom [])
             queue     (atom [{:tool-calls [{:id "tc1" :name "dump" :arguments {}}]
                               :message    {:role "assistant" :content ""}
@@ -1820,7 +1816,7 @@
                       compaction/compact!               (fn [& _] (throw (ex-info "should not compact" {})))]
           (let [result (#'sut/execute-llm-turn! "mid-exhaust" "go" ctx)]
             (should= true (:unavailable? result))
-            (should= :context-exhausted (:reason result))
+            (should= :blocked (:reason result))
             (should= 1 (count @captured)))))))
 
   (describe "cancel after a tool cycle"

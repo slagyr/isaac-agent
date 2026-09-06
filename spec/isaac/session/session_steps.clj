@@ -724,7 +724,7 @@
                             (get row-map "input-tokens")  (assoc :input-tokens (parse-long (get row-map "input-tokens")))
                             (get row-map "output-tokens") (assoc :output-tokens (parse-long (get row-map "output-tokens")))
                             (get row-map "compaction-count") (assoc :compaction-count (parse-long (get row-map "compaction-count")))
-                            (get row-map "compaction-disabled") (assoc :compaction-disabled (= "true" (get row-map "compaction-disabled")))
+                            (get row-map "block.reason") (assoc :block {:reason (keyword (str/replace (get row-map "block.reason") #"^:" ""))})
                             (get row-map "nonce") (assoc :nonce (get row-map "nonce"))
                             tags (assoc :tags tags)
                             history-retention (assoc :history-retention history-retention)

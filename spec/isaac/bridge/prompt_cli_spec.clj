@@ -65,7 +65,6 @@
           (comm/on-tool-result channel "prompt-default" {:id "tc" :name "fs__grep" :arguments {:pattern "lettuce" :path "src"}} "ok")
           (comm/on-bulletin channel "prompt-default" {:kind :compaction/success :tokens-saved 40})
           (comm/on-bulletin channel "prompt-default" {:kind :compaction/failure :error :llm-error :consecutive-failures 2})
-          (comm/on-bulletin channel "prompt-default" {:kind :compaction/disabled :reason :too-many-failures})
           (comm/on-chatter channel "prompt-default" {:n 1} "here is the answer"))
         (should= "here is the answer" @(:text collector))
         (let [stderr (str err-writer)]
@@ -77,8 +76,7 @@
           (should (str/includes? stderr "✨ compacted"))
           (should (str/includes? stderr "🥀 compaction failed"))
           (should (str/includes? stderr "llm-error"))
-          (should (str/includes? stderr "🪦 compaction disabled"))
-          (should (str/includes? stderr "too-many-failures"))))))
+          (should-not (str/includes? stderr "🪦 compaction disabled"))))))
 
   (describe "tool-icon"
 

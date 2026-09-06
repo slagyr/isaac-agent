@@ -28,10 +28,8 @@
           ch     (sut/channel events)]
       (comm/on-bulletin ch "agent:main:cli:direct:user1" {:kind :compaction/start :provider "grover" :model "echo" :total-tokens 95 :context-window 100})
       (comm/on-bulletin ch "agent:main:cli:direct:user1" {:kind :compaction/failure :error :llm-error :consecutive-failures 2})
-      (comm/on-bulletin ch "agent:main:cli:direct:user1" {:kind :compaction/disabled :reason :too-many-failures})
       (should= [{:context-window 100 :event "bulletin" :kind "compaction/start" :model "echo" :provider "grover" :session "agent:main:cli:direct:user1" :total-tokens 95}
-                {:consecutive-failures 2 :error :llm-error :event "bulletin" :kind "compaction/failure" :session "agent:main:cli:direct:user1"}
-                {:event "bulletin" :kind "compaction/disabled" :reason :too-many-failures :session "agent:main:cli:direct:user1"}]
+                {:consecutive-failures 2 :error :llm-error :event "bulletin" :kind "compaction/failure" :session "agent:main:cli:direct:user1"}]
                @events)))
 
   (it "records tool lifecycle events"

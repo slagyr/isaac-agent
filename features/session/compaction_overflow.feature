@@ -68,7 +68,7 @@ Feature: Compact from the last provider count; overflow compact-and-retry
       | compaction |              |                   | summary of A |
       | message    | assistant    | here is my answer |              |
 
-  Scenario: prompt-too-long with compaction disabled is context-exhausted weather
+  Scenario: prompt-too-long on a blocked conversation is blocked weather
     Given the isaac EDN file "config/models/local.edn" exists with:
       | path           | value      |
       | model          | test-model |
@@ -79,8 +79,8 @@ Feature: Compact from the last provider count; overflow compact-and-retry
       | model | local            |
       | soul  | You are Atticus. |
     And the following sessions exist:
-      | name   | last-input-tokens | compaction-disabled |
-      | wedged | 180               | true                |
+      | name   | last-input-tokens | block.reason       |
+      | wedged | 180               | :compaction-failed |
     And session "wedged" has transcript:
       | type    | message.role | message.content |
       | message | user         | earlier prompt  |
@@ -89,4 +89,5 @@ Feature: Compact from the last provider count; overflow compact-and-retry
       | type       | status | message                                                   | model      |
       | http-error | 400    | maximum prompt length is 200 but the request contains 250 | test-model |
     When the user sends "one more" on session "wedged"
-    Then the turn result is unavailable with retry-after-ms 300000 and reason context-exhausted
+    Then the turn result is unavailable with retry-after-ms 300000 and reason blocked
+    And grover records zero provider requests

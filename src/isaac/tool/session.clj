@@ -89,16 +89,12 @@
 
               model
               (do
-                (store/update-session! session-store session-key {:model model
-                                                                  :compaction-disabled false
-                                                                  :compaction {:consecutive-failures 0}})
+                (store/update-session! session-store session-key {:model model})
                 (build-session-state (assoc session :model model) model cfg))
 
               reset?
               (do
-                (store/update-session! session-store session-key {:model crew-alias
-                                                                  :compaction-disabled false
-                                                                  :compaction {:consecutive-failures 0}})
+                (store/update-session! session-store session-key {:model crew-alias})
                 (build-session-state (assoc session :model crew-alias) crew-alias cfg))
 
               :else

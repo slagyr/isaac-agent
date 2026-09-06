@@ -66,16 +66,14 @@
 
       (it "switches model when model arg is provided"
         (store-helper/create-session! support/test-dir "sm-switch" {:crew crew-name :cwd support/test-dir})
-        (store-helper/update-session! support/test-dir "sm-switch" {:compaction-disabled true
-                                                                :compaction {:consecutive-failures 5}})
+        (store-helper/update-session! support/test-dir "sm-switch" {:compaction {:consecutive-failures 5}})
         (let [result (helper/with-config base-cfg
                        (sut/session-model-tool {"session_key" "sm-switch" "model" "parrot"}))
               data   (json/parse-string (:result result) true)]
           (should= "parrot" (get-in data [:model :alias]))
           (should= "squawk" (get-in data [:model :upstream]))
           (should= "parrot" (:model (store-helper/get-session support/test-dir "sm-switch")))
-          (should= false (:compaction-disabled (store-helper/get-session support/test-dir "sm-switch")))
-          (should= 0 (get-in (store-helper/get-session support/test-dir "sm-switch") [:compaction :consecutive-failures]))))
+          (should= 5 (get-in (store-helper/get-session support/test-dir "sm-switch") [:compaction :consecutive-failures]))))
 
       (it "resets model to crew default when reset is true"
         (store-helper/create-session! support/test-dir "sm-reset" {:crew crew-name :cwd support/test-dir})

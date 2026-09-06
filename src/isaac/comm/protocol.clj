@@ -67,7 +67,7 @@
   (on-bulletin [comm session-key bulletin]
     "Something the ship did. `bulletin` is {:kind keyword :payload? ...}
      with :kind in #{:compaction/start :compaction/success :compaction/failure
-     :compaction/disabled :recall/injected :episodes/opened :turnstile/held ...}.")
+     :recall/injected :episodes/opened :turnstile/held ...}.")
 
   (send! [comm record]
     "Attempt to deliver a queued outbound record. Return {:ok true} on

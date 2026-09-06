@@ -12,17 +12,19 @@
     (nexus/-with-nexus {:root "/test/isaac" :fs (fs/mem-fs)}
       (example)))
 
-  (it "enqueues compaction-disabled attention when notify is configured"
+  (it "enqueues conversation-blocked attention when notify is configured"
     (sut/clear-throttle!)
-    (sut/maybe-notify-compaction-disabled!
+    (sut/maybe-notify-conversation-blocked!
      {:attention {:notify {:comm :discord :target "boiler-room"}}}
-     "sess-1"
-     {:reason :too-many-failures :total-tokens 99 :context-window 100})
+     "longwave"
+     {:reason :compaction-failed :total-tokens 99 :context-window 100})
     (let [pending (queue/list-pending)]
       (should= 1 (count pending))
       (should= :discord (:comm (first pending)))
       (should= "boiler-room" (:target (first pending)))
-      (should (str/includes? (:content (first pending)) "Compaction disabled"))))
+      (should (str/includes? (:content (first pending)) "Conversation blocked"))
+      (should (str/includes? (:content (first pending)) "longwave"))
+      (should-not (str/includes? (:content (first pending)) "Compaction disabled"))))
 
   (it "enqueues turn-failed attention when notify is configured"
     (sut/clear-throttle!)

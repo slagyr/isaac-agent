@@ -384,7 +384,6 @@
           (update :created-at #(some-> % normalize-ts-fn))
           (update :updated-at #(or (some-> % normalize-ts-fn) (now-fn)))
           (update :tags #(or % #{}))
-          (update :compaction-disabled #(if (nil? %) false %))
           (update :compaction-count #(or % 0))
           (update :segment #(or % 0))
           (update :input-tokens #(or % 0))
