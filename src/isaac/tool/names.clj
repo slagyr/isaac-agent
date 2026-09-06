@@ -122,3 +122,81 @@
              (covers? (:allow crew-tools) wire))
       true
       allowed?)))
+
+(defn- collapse-dot-segments [path]
+  (let [absolute? (str/starts-with? path "/")
+        parts     (str/split path #"/")
+        collapsed (reduce (fn [acc part]
+                            (cond
+                              (or (str/blank? part) (= "." part)) acc
+                              (= ".." part) (if (seq acc) (pop acc) acc)
+                              :else (conj acc part)))
+                          []
+                          parts)
+        joined    (str/join "/" collapsed)]
+    (if absolute?
+      (if (str/blank? joined) "/" (str "/" joined))
+      joined)))
+
+(defn- normalize-path [path]
+  (when path
+    (-> path
+        str
+        (str/replace #"\\+" "/")
+        (str/replace #"/+" "/")
+        collapse-dot-segments)))
+
+(defn- expand-directory-token [token {:keys [cwd quarters]}]
+  (cond
+    (#{:cwd "cwd"} token) cwd
+    (#{:quarters "quarters"} token) quarters
+    (#{:role "role"} token) cwd
+    (string? token) token
+    :else nil))
+
+(defn- path-under? [prefix path]
+  (let [prefix (normalize-path prefix)
+        path   (normalize-path path)]
+    (boolean
+      (and prefix path
+           (or (= prefix path)
+               (str/starts-with? path (str prefix "/")))))))
+
+(defn- prefix-length [prefix]
+  (count (or (normalize-path prefix) "")))
+
+(defn- matching-grants
+  "Collect {:op :allow|:deny :len n :layer :global|:crew} for grants covering path."
+  [layer op tokens path ctx]
+  (keep (fn [token]
+          (when-let [prefix (expand-directory-token token ctx)]
+            (when (path-under? prefix path)
+              {:op op :len (prefix-length prefix) :layer layer})))
+        (or tokens [])))
+
+(defn path-allowed?
+  "Longest matching directory prefix wins. Same-length uses da0r cascade
+   order (global allow, global deny, crew deny, crew allow). Empty config
+   is deny-all. Crew overlays; omitting :directories inherits global."
+  [global-dirs crew-dirs path ctx]
+  (let [global-dirs (or global-dirs {})
+        grants      (concat
+                      (matching-grants :global :allow (:allow global-dirs) path ctx)
+                      (matching-grants :global :deny  (:deny  global-dirs) path ctx)
+                      (when (map? crew-dirs)
+                        (concat
+                          (matching-grants :crew :deny  (:deny  crew-dirs) path ctx)
+                          (matching-grants :crew :allow (:allow crew-dirs) path ctx))))]
+    (if (empty? grants)
+      false
+      (let [max-len (apply max (map :len grants))
+            winners (filter #(= max-len (:len %)) grants)
+            rank    (fn [{:keys [layer op]}]
+                      (case [layer op]
+                        [:global :allow] 1
+                        [:global :deny]  2
+                        [:crew :deny]    3
+                        [:crew :allow]   4
+                        0))
+            winner  (apply max-key rank winners)]
+        (= :allow (:op winner))))))

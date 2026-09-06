@@ -118,8 +118,8 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
       | on-deck |
     And the following model responses are queued:
       | model | type       | tool_calls                                                                                                                       | content |
-      |       | tool_calls | [{"function":{"name":"fs__read","arguments":{"file_path":"charts/missing.txt"}}},{"function":{"name":"test__quick","arguments":{}}}] |         |
-      | echo  | text       |                                                                                                                                  | Noted.  |
+      |       | tool_calls | [{"function":{"name":"fs__read","arguments":{"file_path":"/etc/passwd"}}},{"function":{"name":"test__quick","arguments":{}}}] |         |
+      | echo  | text       |                                                                                                                          | Noted.  |
     When the user sends "go" on session "on-deck" via memory comm
     Then the memory comm has events matching:
       | event       | tool-name   |
@@ -133,5 +133,5 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
       | message | assistant    | Noted.                      |
     And the last LLM request matches:
       | path                | value                                                      |
-      | messages[3].content | #"Error: path outside allowed directories: charts/missing\.txt" |
+      | messages[3].content | #"Error: path outside allowed directories: /etc/passwd"    |
       | messages[4].content | quick done                                                 |

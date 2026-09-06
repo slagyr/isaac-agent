@@ -568,7 +568,8 @@
     (fs/mkdirs fs* root)
     (fs/spit   fs* (str root "/isaac.edn")
                     (pr-str {:defaults {:crew "main" :model "grover"}
-                             :tools    {:max-parallel 4}}))
+                             :tools    {:max-parallel 4
+                                        :directories  {:allow [:cwd :quarters]}}}))
     (fs/mkdirs fs* (str root "/models"))
     (fs/mkdirs fs* (str root "/providers"))
     (fs/mkdirs fs* (str root "/crew"))

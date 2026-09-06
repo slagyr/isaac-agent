@@ -50,7 +50,7 @@
 (defn- resolve-exec-args [args]
   (let [resolved (bounds/resolve-path
                     (get args "workdir")
-                    (bounds/session-workdir args))]
+                    (bounds/session-workdir args true))]
     (cond-> args
       resolved (assoc "workdir" resolved))))
 
@@ -87,7 +87,12 @@
         timeout-ms  (or (bounds/arg-int args "timeout" nil) default-timeout)
         args        (resolve-exec-args args)]
     (or (when-let [workdir (get args "workdir")]
-          (bounds/ensure-path-allowed args workdir))
+          ;; Directory ACL covers fs/* only (isaac-ukg4). Exec still uses the
+          ;; historical role-workspace fence so an explicit workdir cannot
+          ;; leave the session cwd.
+          (when-let [cwd (bounds/session-workdir args true)]
+            (when-not (bounds/path-inside? cwd workdir)
+              (bounds/path-outside-error workdir))))
         (try
           (wait-for-process! (start-process args) session-key timeout-ms)
           (catch Exception e
