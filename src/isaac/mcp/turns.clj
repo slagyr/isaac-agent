@@ -1,38 +1,35 @@
 (ns isaac.mcp.turns
   "Per-turn MCP tool registry. Pure functions over an in-memory registry;
-   no HTTP. The server route calls `handle`."
+   no HTTP. The server route calls `handle`.
+   The registry is process-global (not nexus-scoped) so a turn registered
+   from a nested nexus is visible to handle called from the root."
   (:require
     [clojure.string :as str]
     [isaac.logger :as log]
-    [isaac.nexus :as nexus]
     [isaac.util.jsonrpc :as jrpc]))
 
 (def TURN_NOT_ACTIVE -32001)
 
-(defn- registry-atom []
-  (or (nexus/get :mcp-turns)
-      (let [registry* (atom {})]
-        (nexus/register! [:mcp-turns] registry*)
-        registry*)))
+(defonce ^:private registry* (atom {}))
 
 (defn register!
   "Register a single-use turn. `entry` is
    {:session-key _ :tool-fn _ :tools [{:name _ :description _ :parameters _} ...]}."
   [turn-id entry]
-  (swap! (registry-atom) assoc turn-id entry)
+  (swap! registry* assoc turn-id entry)
   entry)
 
 (defn lookup [turn-id]
-  (get @(registry-atom) turn-id))
+  (get @registry* turn-id))
 
 (defn clear!
   "Drop a turn so later MCP requests refuse with -32001."
   [turn-id]
-  (swap! (registry-atom) dissoc turn-id)
+  (swap! registry* dissoc turn-id)
   nil)
 
 (defn clear-all! []
-  (reset! (registry-atom) {}))
+  (reset! registry* {}))
 
 (defn- stringify-keys [m]
   (if (map? m)
@@ -105,4 +102,5 @@
       (if-let [entry (lookup turn-id)]
         (jrpc/dispatch (handlers turn-id entry) parsed)
         (when-not (jrpc/notification? parsed)
+          (log/warn :mcp/turn-not-active :turn turn-id)
           (turn-not-active (:id parsed)))))))

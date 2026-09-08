@@ -15,10 +15,6 @@
 
 (describe "MCP per-turn registry"
 
-  (around [it]
-    (nexus/-with-nexus {:mcp-turns (atom {})}
-      (it)))
-
   (before (sut/clear-all!))
 
   (it "looks up a registered turn by id"
@@ -40,11 +36,14 @@
       (let [called? (atom false)
             response (sut/handle "t-ghost"
                                  (jrpc/request 5 "tools/call" {:name "exec__run"
-                                                               :arguments {:command "echo never"}}))]
+                                                               :arguments {:command "echo never"}}))
+            entry    (first (filter #(= :mcp/turn-not-active (:event %)) @log/captured-logs))]
         (should-not @called?)
         (should= -32001 (get-in response [:error :code]))
         (should (re-find #"(?i)turn not active" (get-in response [:error :message])))
-        (should= 5 (:id response))))
+        (should= 5 (:id response))
+        (should= :warn (:level entry))
+        (should= "t-ghost" (:turn entry))))
 
     (it "refuses a cleared turn with JSON-RPC -32001"
       (sut/register! "t-done" {:session-key "mcp-sess" :tool-fn echo-tool-fn :tools []})
@@ -96,5 +95,18 @@
       (sut/register! "t-init" {:session-key "mcp-sess" :tool-fn echo-tool-fn :tools []})
       (let [response (sut/handle "t-init" (jrpc/request 1 "initialize" {:protocolVersion "2025-06-18"}))]
         (should= "isaac" (get-in response [:result :serverInfo :name]))))
+    )
+
+  (context "process-global registry"
+
+    (helper/with-captured-logs)
+
+    (it "serves a turn registered from a nested nexus when handle is called from the root nexus"
+      (nexus/-with-nested-nexus {:mcp-turns (atom {})}
+        (sut/register! "t-nested" {:session-key "mcp-sess"
+                                   :tool-fn     echo-tool-fn
+                                   :tools       [{:name "exec__run" :description "Run" :parameters {:type "object"}}]}))
+      (let [response (sut/handle "t-nested" (jrpc/request 1 "tools/list"))]
+        (should= "exec__run" (get-in response [:result :tools 0 :name]))))
     )
   )

@@ -88,3 +88,6 @@ Feature: Per-turn tool registry — isaac's tools served to a provider-driven lo
     And session "mcp-sess" has transcript not matching:
       | type     | name      |
       | toolCall | exec__run |
+    And the log has entries matching:
+      | level  | event                 | turn   |
+      | :warn  | :mcp/turn-not-active  | t-done |
