@@ -2,7 +2,8 @@
   (:require
     [clojure.edn :as edn]
      [clojure.string :as str]
-    [gherclj.core :as g :refer [defthen defwhen helper!]]
+    [gherclj.core :as g :refer [defgiven defthen defwhen helper!]]
+    [isaac.bridge.cancellation :as bridge-cancel]
     [isaac.bridge.core :as bridge]
     [isaac.comm.memory :as memory-comm]
     [isaac.config.api :as config]
@@ -17,6 +18,7 @@
     [isaac.session.store.spi :as store]
     [isaac.session.store.sidecar :as sidecar-store]
     [isaac.nexus :as nexus]
+    [isaac.spec-helper :as helper]
     [isaac.tool.memory :as memory]))
 
 (helper! isaac.comm.comm-steps)
@@ -127,38 +129,13 @@
      :context-window (:context-window model-cfg)
      :comm           channel}))
 
-(defn user-sends-via-memory-channel [content key-str]
-  (grover/clear-provider-requests!)
-  (llm-http/clear-outbound-requests!)
-  (drive-dispatch/clear-last-request!)
-  (let [events            (atom [])
-        captured*         (atom [])
-        channel           (memory-comm/channel events)
-        cfg               (with-feature-fs #(:config (loader/load-config-result {:root (root) :fs (or (g/get :mem-fs) (nexus/get :fs) (fs/real-fs))})))
-        _                 (with-feature-fs #(store/open-session! (session-store) key-str {}))
-        opts              (channel-send-opts key-str channel)
-        result            (atom nil)
-        output            (with-out-str
-                             (with-feature-fs
-                               (fn []
-                                 (with-current-time
-                                   (fn []
-                                     (with-llm-http-stub
-                                       captured*
-                                       (fn []
-                                         (try
-                                           (config/dangerously-install-config! cfg "spec")
-                                           (reset! result (bridge/dispatch! (root)
-                                                                            (assoc opts :input content :session-key key-str)))
-                                           (catch Exception e
-                                             (reset! result {:error :exception :message (.getMessage e)}))))))))))
-        outbound-requests (or (seq @captured*)
+(defn- record-memory-turn! [events captured* result output]
+  (let [outbound-requests (or (seq @captured*)
                               (seq (llm-http/outbound-requests))
                               (seq (grover/provider-requests)))
         outbound-requests (some-> outbound-requests vec)
         grover-request    (some-> (grover/last-request) (hash-map :body))]
-    (g/assoc! :current-key key-str)
-    (g/assoc! :llm-result @result)
+    (g/assoc! :llm-result result)
     (g/assoc! :llm-request (or (drive-dispatch/last-request)
                                (grover/last-request)))
     (g/assoc! :provider-request (or (last outbound-requests)
@@ -169,7 +146,61 @@
                                          (grover/last-provider-request)
                                          grover-request))
     (g/assoc! :memory-comm-events @events)
+    (g/assoc! :channel-events events)
     (g/assoc! :output output)))
+
+(defn- run-memory-dispatch! [root* cfg opts captured* content key-str]
+  (let [result (atom nil)
+        output (with-out-str
+                 (with-feature-fs
+                   (fn []
+                     (with-current-time
+                       (fn []
+                         (with-llm-http-stub
+                           captured*
+                           (fn []
+                             (try
+                               (config/dangerously-install-config! cfg "spec")
+                               (reset! result (bridge/dispatch! root*
+                                                                (assoc opts :input content :session-key key-str)))
+                               (catch Exception e
+                                 (reset! result {:error :exception :message (.getMessage e)}))))))))))]
+    [@result output]))
+
+(defn user-sends-via-memory-channel [content key-str]
+  (grover/clear-provider-requests!)
+  (llm-http/clear-outbound-requests!)
+  (drive-dispatch/clear-last-request!)
+  (let [events    (atom [])
+        captured* (atom [])
+        channel   (memory-comm/channel events (g/get :memory-comm-exhaustion-policy))
+        cfg       (with-feature-fs #(:config (loader/load-config-result {:root (root) :fs (or (g/get :mem-fs) (nexus/get :fs) (fs/real-fs))})))
+        _         (with-feature-fs #(store/open-session! (session-store) key-str {}))
+        opts      (channel-send-opts key-str channel)
+        armed     (g/get :cancel-after-n-tool-calls)]
+    (g/assoc! :current-key key-str)
+    (g/assoc! :channel-events events)
+    (g/assoc! :memory-comm-events events)
+    (if armed
+      (let [turn-future (future (run-memory-dispatch! (root) cfg opts captured* content key-str))]
+        (g/assoc! :turn-future turn-future)
+        (helper/await-condition
+          (fn []
+            (or (realized? turn-future)
+                (<= (:n armed) (->> @events
+                                    (filter (fn [e] (= "tool-call" (:event e))))
+                                    count))))
+          5000)
+        (when-not (realized? turn-future)
+          (bridge-cancel/cancel! key-str)
+          (g/dissoc! :cancel-after-n-tool-calls))
+        (let [outcome (deref turn-future 30000 ::timeout)]
+          (when (= ::timeout outcome)
+            (throw (ex-info "turn did not complete within 30 seconds" {})))
+          (g/dissoc! :turn-future)
+          (record-memory-turn! events captured* (first outcome) (second outcome))))
+      (let [[result output] (run-memory-dispatch! (root) cfg opts captured* content key-str)]
+        (record-memory-turn! events captured* result output)))))
 
 (defn- normalize-event [event]
   (cond-> event
@@ -184,7 +215,8 @@
             (let [expected (get row-map header)]
               (if (or (nil? expected) (str/blank? (str expected)))
                 true
-                (let [actual (or (get event (keyword header))
+                (let [actual (or (match/get-path event header)
+                                 (get event (keyword header))
                                  (get event header))]
                   (boolean (:match (match/match-value expected actual)))))))
           headers))
@@ -213,6 +245,14 @@
 
 (defn grover-records-zero-provider-requests []
   (g/should= [] (grover/provider-requests)))
+
+(defn memory-comm-answers-on-exhaustion [policy]
+  (let [normalized (keyword (str/replace (str policy) #"^:" ""))]
+    (g/assoc! :memory-comm-exhaustion-policy normalized)))
+
+(defgiven "the memory comm answers {policy:keyword} on exhaustion"
+  isaac.comm.comm-steps/memory-comm-answers-on-exhaustion
+  "Sets the memory comm's on-exhausted reply (:stop or :wrap-up) for the next turn.")
 
 (defwhen "the user sends \"{content:string}\" on session \"{key:string}\" via memory comm" isaac.comm.comm-steps/user-sends-via-memory-channel)
 

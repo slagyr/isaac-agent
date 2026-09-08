@@ -37,6 +37,7 @@
             :origin            {:type :ignore :description "Inbound origin metadata"}
             :observers         {:type :ignore :description "Submitted per-turn observer refs (name or [name params])"}
             :turnstiles        {:type :ignore :description "Submitted per-turn turnstile refs (name or [name params])"}
+            :cycle-limit       {:type :int :description "Optional per-charge override of the tool-cycle budget"}
             :charge/type       {:type :keyword :description "Charge type marker (:charge)"}
             :charge/unresolved {:type :boolean :description "True when crew/model could not be resolved"}
             :charge/reason     {:type :keyword :description "Reason for unresolved charge"}}})
@@ -128,7 +129,7 @@
    model) returns a charge marked :charge/unresolved with a :charge/reason
    keyword."
   [{:keys [session-key input comm crew config model model-ref model-override model-cfg
-           provider provider-cfg context-window soul soul-prepend guidance origin observers turnstiles dispatch-error]}]
+           provider provider-cfg context-window soul soul-prepend guidance origin observers turnstiles cycle-limit dispatch-error]}]
   (let [config*         (or (when (map? config) config) (loader/snapshot "charge build fallback — no :config passed (entry seed)") {})
         ss*             (store/registered-store)
         session-entry   (when (and ss* session-key (satisfies? store/SessionStore ss*))
@@ -157,7 +158,8 @@
                                  :guidance      guidance
                                  :origin        origin}
                                 (seq observers) (assoc :observers observers)
-                                (seq turnstiles) (assoc :turnstiles turnstiles))]
+                                (seq turnstiles) (assoc :turnstiles turnstiles)
+                                (some? cycle-limit) (assoc :cycle-limit cycle-limit))]
     (cond (:error dispatch-error) (unresolved-charge base (:error dispatch-error))
           unknown? (unresolved-charge base :unknown-crew)
           (nil? @model*) (unresolved-charge base :no-model)

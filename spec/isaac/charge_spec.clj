@@ -218,4 +218,12 @@
         (let [charge (sut/build {:session-key "s1"
                                  :input       "hi"
                                  :turnstiles  [:worksite [:worksite "chart-room"]]})]
-          (should= [:worksite [:worksite "chart-room"]] (:turnstiles charge)))))))
+          (should= [:worksite [:worksite "chart-room"]] (:turnstiles charge)))))
+
+    (it "preserves charge-level cycle-limit override"
+      (with-redefs [loader/snapshot              (fn [_] base-cfg)
+                    session-ctx/resolve-behavior (fn [_ _] (stub-behavior "main" "You are Atticus." test-model-id 4096))]
+        (let [charge (sut/build {:session-key  "s1"
+                                 :input        "hi"
+                                 :cycle-limit  12})]
+          (should= 12 (:cycle-limit charge)))))))

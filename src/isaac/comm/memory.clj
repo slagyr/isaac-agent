@@ -12,7 +12,7 @@
 (defn- chunk-text [chunk]
   (render/chunk-text chunk))
 
-(deftype MemoryComm [events])
+(deftype MemoryComm [events exhaustion-policy])
 
 (extend MemoryComm
   comm/Comm
@@ -103,13 +103,23 @@
                                                :session session-key
                                                :kind    kind-str}))))
 
+          :on-exhausted
+          (fn [this _session-key _info]
+            (let [policy (.-exhaustion-policy this)]
+              (or (when (instance? clojure.lang.IDeref policy) @policy)
+                  policy
+                  :stop)))
+
           :send!
           (fn [this record]
             (append! (.-events this) {:event "send" :record record})
             {:ok true})}))
 
 (defn make [host]
-  (->MemoryComm (or (:events host) (atom []))))
+  (->MemoryComm (or (:events host) (atom [])) (atom :stop)))
 
-(defn channel [events]
-  (->MemoryComm events))
+(defn channel
+  ([events]
+   (channel events nil))
+  ([events policy]
+   (->MemoryComm events (atom (or policy :stop)))))

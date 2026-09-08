@@ -292,6 +292,18 @@
         (should= :empty-terminal-response (:error result))
         (should (re-find #"empty-terminal-response" (:message result))))))
 
+  (describe "stop exhaustion canned fallback"
+
+    (it "replaces a cycle-limit instruction echo with the canned loop-limit message"
+      (let [instruction "You have hit the cycle limit. Do not call any more tools."
+            result (#'sut/canned-loop-exhausted-message
+                     {:loop-request? true
+                      :content instruction
+                      :response {:message {:role "assistant" :content instruction}}}
+                     "count the cans"
+                     {:messages [{:role "user" :content instruction}]})]
+        (should (re-find #"tool loop limit" (:content result))))))
+
   (describe "streaming helpers"
 
     (it "reads content from supported chunk shapes"
@@ -1576,6 +1588,35 @@
                       sut/process-response! (fn [& _] nil)]
           (sut/run-turn! charge))
         (should= [[:release token]] @events)))
+
+    (it "prefers charge cycle-limit over crew and defaults"
+      (should= 12 (#'sut/resolve-cycle-limit {:cycle-limit 12
+                                              :crew-cfg    {:cycle-limit 3}
+                                              :crew        "oscar"
+                                              :config      {:defaults {:cycle-limit 5}
+                                                            :crew     {"oscar" {:cycle-limit 3}}}}))
+      (should= 3 (#'sut/resolve-cycle-limit {:crew-cfg {:cycle-limit 3}
+                                            :crew     "oscar"
+                                            :config   {:defaults {:cycle-limit 5}
+                                                       :crew     {"oscar" {:cycle-limit 8}}}}))
+      (should= 5 (#'sut/resolve-cycle-limit {:crew   "oscar"
+                                            :config {:defaults {:cycle-limit 5}}}))
+      (should= tool-loop/default-max-loops
+               (#'sut/resolve-cycle-limit {:crew "oscar" :config {}})))
+
+    (it "coerces a string wrap-up answer from the comm"
+      (let [ch (memory-comm/channel (atom []) ":wrap-up")]
+        (should= :wrap-up (#'sut/exhaustion-policy ch "s" {:cycle-limit 1}))))
+
+    (it "extracts grover-shaped pending tool calls from the exhausting response"
+      (let [result {:response {:message {:role "assistant"
+                                         :content ""
+                                         :tool_calls [{:function {:name      "exec__run"
+                                                                  :arguments {:command "echo checkpoint"}}}]}}
+                    :loop-request? true}]
+        (should= [{:name "exec__run" :arguments {:command "echo checkpoint"}}]
+                 (mapv #(select-keys % [:name :arguments])
+                       (#'sut/pending-tool-calls result)))))
 
     (it "releases acquired turnstile tokens when the turn throws"
       (helper/create-session! test-dir "gate-boom" {:crew "main"})

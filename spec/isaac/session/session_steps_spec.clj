@@ -88,6 +88,10 @@
     (should (some #(= "turn-start" (:event %)) @(g/get :channel-events)))
     (sut/turn-ends-on-session "longwave"))
 
+  (it "arms mid-loop cancellation when no turn is in flight yet"
+    (sut/turn-cancelled-after-n-tool-calls "cancel" 1)
+    (should= {:session "cancel" :n 1} (g/get :cancel-after-n-tool-calls)))
+ 
   (it "records each immediate send so later turns can compare chat requests"
     (sut/default-grover-setup)
     (sut/sessions-exist {:headers ["name"] :rows [["greenhouse"]]})

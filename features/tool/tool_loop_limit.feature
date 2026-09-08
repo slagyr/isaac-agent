@@ -1,7 +1,7 @@
 Feature: Cycle-limit configuration
   The tool loop's cycle budget (built-in default 100) is crew-configurable
   as :cycle-limit — same layering as compaction config — and a dispatcher
-  may override it on the charge (isaac-ntt6; formerly tool-loop-max).
+  may override it on the charge (isaac-ntt6; formerly the tool loop max).
   Needed so hail crews can carry bigger budgets than chat crews, and so the
   loop-limit behavior is testable without queuing 500 cycles. When the budget
   exhausts with tools still pending, the drive emits the loop-exhausted
@@ -11,7 +11,6 @@ Feature: Cycle-limit configuration
   Background:
     Given default Grover setup
 
-  @wip
   Scenario: a crew-level cycle-limit caps the turn's tool cycles
     Given the isaac EDN file "config/models/local.edn" exists with:
       | path           | value      |

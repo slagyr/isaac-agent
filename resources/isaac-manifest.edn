@@ -484,10 +484,10 @@
        :description
        "Maximum concurrent in-flight turns for this crew member",
        :validations [:positive?]},
-      :tool-loop-max
+      :cycle-limit
       {:type :int,
        :description
-       "Tool-call cycle budget for turns on this crew (default 500)",
+       "Tool-call cycle budget for turns on this crew (default 100)",
        :validations [:positive?]},
       :model
       {:type :id,
@@ -573,7 +573,12 @@
      {:type :int,
       :default 90000,
       :description
-      "Idle-stall timeout (ms) for provider SSE/NDJSON streams; close and treat as weather when no bytes arrive"}}}},
+      "Idle-stall timeout (ms) for provider SSE/NDJSON streams; close and treat as weather when no bytes arrive"},
+     :cycle-limit
+     {:type :int,
+      :description
+      "Default tool-call cycle budget for turns (default 100)",
+      :validations [:positive?]}}}},
   :attention
   {:schema
    {:name :attention,

@@ -42,4 +42,12 @@
       (should= "exec" (get-in (first @events) [:tool :name]))
       (should= "tool-result" (:event (second @events)))
       (should= "exec" (get-in (second @events) [:tool :name]))))
+
+  (it "answers :stop on exhaustion by default"
+    (let [ch (sut/channel (atom []))]
+      (should= :stop (comm/on-exhausted ch "agent:main:cli:direct:user1" {:cycle-limit 1}))))
+
+  (it "answers the configured exhaustion policy"
+    (let [ch (sut/channel (atom []) :wrap-up)]
+      (should= :wrap-up (comm/on-exhausted ch "agent:main:cli:direct:user1" {:cycle-limit 1}))))
   )

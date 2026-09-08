@@ -31,8 +31,8 @@
 
 (describe "tool-loop/run"
 
-  (it "defaults the cycle budget to 500"
-    (should= 500 sut/default-max-loops))
+  (it "defaults the cycle budget to 100"
+    (should= 100 sut/default-max-loops))
 
   (it "returns immediately when the first response has no tool-calls"
     (let [request      {:messages []}

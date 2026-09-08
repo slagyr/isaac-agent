@@ -35,6 +35,7 @@
                 (on-tool-result [_ _ _ _] nil)
                 (on-tool-progress [_ _ _ _] nil)
                 (on-bulletin [_ _ _] nil)
+                (on-exhausted [_ _ _] :stop)
                 (send! [_ _] {:ok false}))]
         (should (satisfies? sut/Comm r)))))
 

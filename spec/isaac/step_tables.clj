@@ -67,6 +67,9 @@
     (= "true" s)  {:type :literal :value true}
     (= "false" s) {:type :literal :value false}
 
+    (re-matches #"\[\s*\]" s)
+    {:type :empty-coll}
+
     :else
     {:type :literal :value s}))
 
@@ -76,6 +79,7 @@
 
 (defn- match-cell [cell actual captures]
   (let [actual (if (and (vector? actual)
+                         (seq actual)
                          (every? map? actual)
                          (every? #(= "text" (:type %)) actual))
                   (->> actual (map :text) (apply str))
@@ -84,6 +88,9 @@
     :wildcard      (if (some? actual)
                      {:match true}
                      {:match false :message "Expected any non-nil value, got: nil"})
+    :empty-coll    (if (and (or (sequential? actual) (nil? actual)) (empty? (or actual [])))
+                     {:match true}
+                     {:match false :message (str "Expected [], got: " (pr-str actual))})
     :nil           (if (nil? actual)
                      {:match true}
                      {:match false :message (str "Expected nil, got: " (pr-str actual))})

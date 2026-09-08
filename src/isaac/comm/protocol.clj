@@ -69,6 +69,12 @@
      with :kind in #{:compaction/start :compaction/success :compaction/failure
      :recall/injected :episodes/opened :turnstile/held ...}.")
 
+  (on-exhausted [comm session-key info]
+    "Fired when the cycle budget runs out with tools still pending.
+     Return :stop (summary cycle without tools, canned fallback) or
+     :wrap-up (one final cycle with tools and a checkpoint nudge, then
+     a tool-less note). `info` is {:cycle-limit n, ...}.")
+
   (send! [comm record]
     "Attempt to deliver a queued outbound record. Return {:ok true} on
      success or {:ok false :transient? bool} on failure. No default —
@@ -78,9 +84,14 @@
   "Variadic no-op used as the default for every turn-event method."
   [& _])
 
+(defn- stop-on-exhausted
+  "Default exhaustion policy: stop (summary + canned fallback)."
+  [& _]
+  :stop)
+
 (def defaults
   "No-op fn per turn-event method. :send! is deliberately absent — every
-   comm must supply delivery."
+   comm must supply delivery. :on-exhausted defaults to :stop."
   {:on-turn-start    noop
    :on-turn-end      noop
    :on-cycle-start   noop
@@ -93,4 +104,5 @@
    :on-tool-cancel   noop
    :on-tool-result   noop
    :on-tool-progress noop
-   :on-bulletin      noop})
+   :on-bulletin      noop
+   :on-exhausted     stop-on-exhausted})

@@ -8,7 +8,7 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
   then a tool-less note; for unattended origins such as hail). An exhausted
   turn that ends with empty content is never a success.
   Decisions (2026-09-08, Micah): the loop invokes the abstraction and never
-  knows the origin; :tool-loop-max is renamed :cycle-limit (clean cutover,
+  knows the origin; the cycle budget key is :cycle-limit (clean cutover,
   built-in default 100); the dispatcher may override the limit on the charge.
 
   Background:
@@ -16,7 +16,6 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
     And the built-in tools are registered
     And the crew "main" allows tools: "exec/run"
 
-  @wip
   Scenario: a plain reply ends with :reply and says so in the log and to the comm
     Given the following sessions exist:
       | name    |
@@ -32,7 +31,6 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
       | level | event       | session | ended-by |
       | :info | :turn/ended | on-deck | :reply   |
 
-  @wip
   Scenario: a cancelled turn ends with :cancelled
     Given a blocking tool "test__anchor" is registered that returns cancelled once the turn is cancelled
     And the following sessions exist:
@@ -51,7 +49,6 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
       | level | event       | session | ended-by   |
       | :info | :turn/ended | cancel  | :cancelled |
 
-  @wip
   Scenario: the default policy at the cycle limit is the summary reply, marked :cycle-limit
     Given the isaac EDN file "config/crew/oscar.edn" exists with:
       | path        | value  |
@@ -82,7 +79,6 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
       | level | event       | session   | ended-by     | exhaustion |
       | :info | :turn/ended | trash-can | :cycle-limit | :stopped   |
 
-  @wip
   Scenario: a comm that answers :wrap-up gets one final cycle with tools, then a tool-less note
     Given the memory comm answers :wrap-up on exhaustion
     And the isaac EDN file "config/crew/oscar.edn" exists with:
@@ -113,7 +109,6 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
       | level | event       | session   | ended-by     | exhaustion  |
       | :info | :turn/ended | trash-can | :cycle-limit | :wrapped-up |
 
-  @wip
   Scenario: an empty note after wrap-up fails the turn instead of completing it
     Given the memory comm answers :wrap-up on exhaustion
     And the isaac EDN file "config/crew/oscar.edn" exists with:

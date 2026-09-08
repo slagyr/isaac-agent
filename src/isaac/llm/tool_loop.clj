@@ -8,7 +8,7 @@
     [isaac.logger :as log])
   (:import (clojure.lang ExceptionInfo)))
 
-(def default-max-loops 500)
+(def default-max-loops 100)
 (def default-max-parallel-tools 4)
 
 (defn- response-tool-calls [response]
@@ -195,7 +195,7 @@
     tool-fn          (fn [tool-name arguments] -> result-string) — runs one tool.
 
     Options:
-      :max-loops          budget for tool cycles (default 500)
+      :max-loops          budget for tool cycles (default 100)
       :max-parallel-tools max concurrent tool calls within one response batch (default 4)
       :after-tools        optional (fn [request] -> request-or-unavailable)
                           after tools + followup, before the next chat-fn.

@@ -278,6 +278,13 @@
                      {:headers ["key" "value"]
                       :rows    [["text" "#\"(?s)truncated\""]]}
                      {:text "xxxx [ 100 bytes truncated; byte cap hit ] xxxx"})]
+        (should (:pass? result))))
+ 
+    (it "matches [] as an empty collection, not blank text"
+      (let [result (sut/match-object
+                     {:headers ["key" "value"]
+                      :rows    [["tools" "[]"]]}
+                     {:tools []})]
         (should (:pass? result)))))
 
   ;; endregion ^^^^^ Key-Value Vertical Table ^^^^^

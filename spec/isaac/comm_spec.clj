@@ -21,6 +21,7 @@
    [:on-tool-result   (fn [ch] (sut/on-tool-result ch "s" {:id "tc" :name "grep" :arguments {}} "ok"))]
    [:on-tool-progress (fn [ch] (sut/on-tool-progress ch "s" {:id "tc" :name "grep"} "partial"))]
    [:on-bulletin      (fn [ch] (sut/on-bulletin ch "s" {:kind :compaction/start :total-tokens 95}))]
+   [:on-exhausted     (fn [ch] (sut/on-exhausted ch "s" {:cycle-limit 1}))]
    [:send!            (fn [ch] (sut/send! ch {:content "hi"}))]])
 
 (defn- invoke-all! [ch]
@@ -40,9 +41,12 @@
     (should= #{:on-turn-start :on-turn-end :on-cycle-start :on-cycle-end
                :on-chatter :on-reckoning :on-aside :on-reply
                :on-tool-call :on-tool-cancel :on-tool-result :on-tool-progress
-               :on-bulletin}
+               :on-bulletin :on-exhausted}
              (set (keys sut/defaults)))
     (should-not (contains? sut/defaults :send!)))
+
+  (it "on-exhausted defaults to :stop"
+    (should= :stop ((:on-exhausted sut/defaults) nil "s" {:cycle-limit 1})))
 
   (it "can dispatch all channel callbacks"
     (let [events (atom [])
@@ -73,10 +77,13 @@
                      (swap! events conj [:tool-progress session-key tool-call chunk]))
                    (on-bulletin [_ session-key bulletin]
                      (swap! events conj [:bulletin session-key bulletin]))
+                   (on-exhausted [_ session-key info]
+                     (swap! events conj [:exhausted session-key info])
+                     :stop)
                    (send! [_ record]
                      (swap! events conj [:send record])))]
       (invoke-all! ch)
-      (should= 14 (count @events))))
+      (should= 15 (count @events))))
 
   (it "built-in comm implementations dispatch every protocol method without AbstractMethodError"
     (let [channels [(memory-comm/channel (atom []))

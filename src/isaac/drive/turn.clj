@@ -493,11 +493,12 @@
     (string? raw) (parse-long raw)
     :else raw))
 
-(defn- resolve-tool-loop-max [{:keys [config crew crew-cfg]}]
-  (let [raw (or (:tool-loop-max crew-cfg)
-                (get-in config [:crew (keyword crew) :tool-loop-max])
-                (get-in config [:crew crew :tool-loop-max])
-                (get-in config [:defaults :tool-loop-max])
+(defn- resolve-cycle-limit [{:keys [cycle-limit config crew crew-cfg]}]
+  (let [raw (or cycle-limit
+                (:cycle-limit crew-cfg)
+                (get-in config [:crew (keyword crew) :cycle-limit])
+                (get-in config [:crew crew :cycle-limit])
+                (get-in config [:defaults :cycle-limit])
                 tool-loop/default-max-loops)]
     (parse-long-or-raw raw)))
 
@@ -509,12 +510,49 @@
                 tool-loop/default-max-parallel-tools)]
     (parse-long-or-raw raw)))
 
+(def ended-by-values #{:reply :cycle-limit :cancelled :error :context-exhausted})
+
+(defn- classify-ended-by [result]
+  (cond
+    (contains? ended-by-values (:ended-by result)) (:ended-by result)
+    (or (= :cancelled (:error result))
+        (:cancelled? result)
+        (bridge/cancelled-response? result)
+        (= "cancelled" (:stopReason result))) :cancelled
+    (= :empty-terminal-response (:error result)) :error
+    (:error result) :error
+    (or (:unavailable? result)
+        (= :context-exhausted (:reason result))) :context-exhausted
+    (:loop-request? result) :cycle-limit
+    :else :reply))
+
+(defn- classify-exhaustion [result]
+  (or (:exhaustion result)
+      (when (:loop-request? result) :stopped)))
+
 (defn- finalize-turn-result [result]
-  (cond-> result
-          (:loop-request? result) (assoc :ended-by :tool-loop-limit)))
+  (let [ended-by    (classify-ended-by result)
+        exhaustion  (when (= :cycle-limit ended-by) (classify-exhaustion result))
+        error       (when (= :error ended-by) (:error result))
+        cycle-limit (:cycle-limit result)]
+    (cond-> (assoc result :ended-by ended-by)
+            (some? exhaustion) (assoc :exhaustion exhaustion)
+            (some? error) (assoc :error error)
+            (some? cycle-limit) (assoc :cycle-limit cycle-limit))))
+
+(defn- log-turn-ended! [session-key result]
+  (let [ended-by (or (:ended-by result) (classify-ended-by result))]
+    (log/info :turn/ended
+              (cond-> {:session session-key :ended-by ended-by}
+                      (some? (:exhaustion result)) (assoc :exhaustion (:exhaustion result))
+                      (some? (:error result)) (assoc :error (:error result))
+                      (some? (:cycle-limit result)) (assoc :cycle-limit (:cycle-limit result))))))
 
 (def ^:private loop-exhausted-summary-instruction
-  "You have hit the tool loop limit. Do not call any more tools. Write a concise assistant reply for the user using what you learned so far. If you still cannot fully answer, summarize the useful findings and what remains unresolved.")
+  "You have hit the cycle limit. Do not call any more tools. Write a concise assistant reply for the user using what you learned so far. If you still cannot fully answer, summarize the useful findings and what remains unresolved.")
+
+(def ^:private wrap-up-nudge
+  "Budget exhausted. Start nothing new. Commit and push to the bean branch; write the done/next note; hand off if acceptance is met.")
 
 (defn- loop-summary-request [request response]
   (let [assistant-msg (or (:message response)
@@ -545,6 +583,12 @@
                          (str/trim user-input)))
       (user-message-echo? content (:messages request))))
 
+(defn- loop-limit-instruction-echo? [content]
+  (let [trimmed (str/trim (or content ""))]
+    (and (seq trimmed)
+         (or (= trimmed (str/trim loop-exhausted-summary-instruction))
+             (str/includes? trimmed "You have hit the cycle limit")))))
+
 (defn- final-loop-summary [result chat-fn current-request]
   (let [content (or (:content result)
                     (get-in result [:response :message :content])
@@ -556,7 +600,8 @@
             summary-content  (get-in summary-response [:message :content])]
         (if (or (:error summary-response)
                 (str/blank? summary-content)
-                (loop-limit-user-echo? summary-content nil current-request))
+                (loop-limit-user-echo? summary-content nil current-request)
+                (loop-limit-instruction-echo? summary-content))
           result
           (-> result
               (assoc :content summary-content)
@@ -579,12 +624,122 @@
    (let [content (terminal-response-content result)]
      (if (and (:loop-request? result)
               (or (str/blank? content)
-                  (loop-limit-user-echo? content user-input request)))
+                  (loop-limit-user-echo? content user-input request)
+                   (loop-limit-instruction-echo? content)))
        (let [message "I ran several tools but did not reach a conclusion before hitting the tool loop limit. Ask me to continue if you want me to keep digging."]
          (-> result
              (assoc :content message)
              (assoc-in [:response :message :content] message)))
        result))))
+
+(defn- wrap-up-request [request]
+  (assoc request :messages (conj (vec (:messages request))
+                                 {:role "user" :content wrap-up-nudge})))
+
+(defn- normalize-tool-calls [raw]
+  (mapv (fn [tc]
+          {:id        (or (:id tc) (str (java.util.UUID/randomUUID)))
+           :name      (or (:name tc) (get-in tc [:function :name]))
+           :arguments (or (:arguments tc) (get-in tc [:function :arguments]))
+           :raw       tc})
+        (or raw [])))
+
+(defn- pending-tool-calls
+  "Tool calls on the last LLM response that have not been executed.
+   Do not use the loop's accumulated :tool-calls — those already ran."
+  [result]
+  (normalize-tool-calls
+    (or (get-in result [:response :message :tool_calls])
+        (get-in result [:response :tool-calls])
+        (get-in result [:message :tool_calls])
+        (get-in result [:response :response :message :tool_calls]))))
+
+(defn- response-tool-calls* [response]
+  (or (seq (normalize-tool-calls (:tool-calls response)))
+      (seq (normalize-tool-calls (get-in response [:message :tool_calls])))
+      []))
+
+(defn- with-assistant-message [request response]
+  (let [assistant (or (:message response)
+                      {:role "assistant" :content (or (get-in response [:message :content])
+                                                      (:content response)
+                                                      "")})]
+    (assoc request :messages (conj (vec (:messages request)) assistant))))
+
+(defn- empty-wrap-up-failure []
+  {:error    :empty-terminal-response
+   :message  "empty-terminal-response: wrap-up note was empty"
+   :ended-by :error})
+
+(defn- normalize-exhaustion-answer [answer]
+  (let [kw (cond
+             (keyword? answer) answer
+             (string? answer) (keyword (str/replace answer #"^:" ""))
+             :else nil)]
+    (if (#{:stop :wrap-up} kw) kw :stop)))
+
+(defn- exhaustion-policy [ch session-key info]
+  (let [answer (try (comm/on-exhausted ch session-key info)
+                    (catch Exception _ :stop))]
+    (normalize-exhaustion-answer answer)))
+
+(declare prepare-tool-call! guard-empty-terminal-response)
+
+(defn- execute-pending-tools! [tool-ctx tool-calls]
+  (mapv (fn [tc]
+          (let [{:keys [run]} (prepare-tool-call! tool-ctx tc)]
+            (run)))
+        tool-calls))
+
+(defn- apply-stop-exhaustion [result chat-fn current-request input]
+  (-> result
+      (final-loop-summary chat-fn @current-request)
+      (#(canned-loop-exhausted-message % input @current-request))
+      (guard-empty-terminal-response chat-fn @current-request)
+      (assoc :exhaustion :stopped)))
+
+(defn- apply-wrap-up-exhaustion [result chat-fn followup-fn current-request tool-ctx]
+  (let [pending (or (seq (pending-tool-calls result))
+                    (seq (response-tool-calls* (:response result))))]
+    (when (seq pending)
+      (let [results  (execute-pending-tools! tool-ctx pending)
+            messages (followup-fn @current-request (or (:response result) result) pending results)]
+        (reset! current-request (assoc @current-request :messages messages))))
+    (let [wrap-req     (wrap-up-request @current-request)
+          wrap-resp    (chat-fn wrap-req)
+          wrap-calls   (or (seq (pending-tool-calls wrap-resp))
+                           (seq (response-tool-calls* wrap-resp)))
+          wrap-content (or (get-in wrap-resp [:message :content])
+                           (get-in wrap-resp [:response :message :content])
+                           (:content wrap-resp))]
+      (reset! current-request wrap-req)
+      (if (seq wrap-calls)
+        (let [results  (execute-pending-tools! tool-ctx wrap-calls)
+              messages (followup-fn wrap-req wrap-resp wrap-calls results)
+              note-req (assoc (assoc wrap-req :messages messages) :tools [])
+              note-resp (chat-fn note-req)
+              content   (or (get-in note-resp [:message :content])
+                            (get-in note-resp [:response :message :content])
+                            (:content note-resp))]
+          (reset! current-request note-req)
+          (if (str/blank? content)
+            (empty-wrap-up-failure)
+            (-> result
+                (assoc :content content
+                       :response note-resp
+                       :exhaustion :wrapped-up
+                       :loop-request? true)
+                (assoc :token-counts (merge-response-tokens (or (:token-counts result) {}) note-resp)))))
+        (if (str/blank? wrap-content)
+          (empty-wrap-up-failure)
+          (do
+            (reset! current-request (assoc wrap-req :tools []))
+            (-> result
+                (assoc :content wrap-content
+                       :response wrap-resp
+                       :exhaustion :wrapped-up
+                       :loop-request? true)
+                (assoc :token-counts (merge-response-tokens (or (:token-counts result) {}) wrap-resp)))))))))
 
 (defn- empty-terminal-response? [result]
   (and (not (:error result))
@@ -1115,12 +1270,15 @@
     (observer/notify! observers method ctx extra)))
 
 (defn- finish-turn! [ch session-key result observers origin]
-  (let [result (cond-> result origin (assoc :origin origin))]
+  (let [result (-> result
+                   (cond-> origin (assoc :origin origin))
+                   finalize-turn-result)]
+    (log-turn-ended! session-key result)
     (comm/on-turn-end ch session-key result)
-  (let [ctx (observer-ctx session-key)]
-    (if (= :exception (:error result))
-      (notify-observers! observers :on-turn-died ctx (or (:message result) "unknown"))
-      (notify-observers! observers :on-turn-ended ctx (observer/outcome result))))
+    (let [ctx (observer-ctx session-key)]
+      (if (= :exception (:error result))
+        (notify-observers! observers :on-turn-died ctx (or (:message result) "unknown"))
+        (notify-observers! observers :on-turn-ended ctx (observer/outcome result))))
     result))
 
 (defn- announce-tool-call!
@@ -1183,8 +1341,8 @@
   [session-key input ctx]
   (let [{:keys [provider allowed-tools effort boot-files rules-text skill-menu-text]} ctx
         charge        (:charge ctx)
-        {:keys [crew guidance model module-index nonce origin soul context-mode comm config crew-cfg]} charge
-        tool-loop-max (resolve-tool-loop-max {:config config :crew crew :crew-cfg crew-cfg})
+        {:keys [crew guidance model module-index nonce origin soul context-mode comm config crew-cfg cycle-limit]} charge
+        cycle-budget  (resolve-cycle-limit {:cycle-limit cycle-limit :config config :crew crew :crew-cfg crew-cfg})
         max-parallel  (resolve-max-parallel-tools {:config config :crew crew :crew-cfg crew-cfg})
         caps          {:max-lines (get-in config [:tools :defaults :max-lines])
                        :max-bytes (get-in config [:tools :defaults :max-bytes])}
@@ -1276,7 +1434,7 @@
                                   request*      (assoc req :provider provider-name)
                                   chat-fn*      (chat-fn-for ch session-key p request* cycle*)]
                               (tool-loop/run chat-fn* followup-fn request* tool-fn
-                                             {:max-loops          tool-loop-max
+                                             {:max-loops          cycle-budget
                                               :max-parallel-tools max-parallel
                                               :prepare-tool-call  #(prepare-tool-call! tool-ctx %)
                                               :cancelled?         #(bridge/cancelled? session-key)
@@ -1291,12 +1449,23 @@
                            :else (run-loop retry))
             result       (if (:unavailable? loop-result)
                            loop-result
-                           (-> loop-result
-                               (provider-wall/normalize config (api/display-name p))
-                               (final-loop-summary chat-fn @current-request)
-                               (#(canned-loop-exhausted-message % input @current-request))
-                               (guard-empty-terminal-response chat-fn @current-request)
-                               finalize-turn-result))]
+                           (let [normalized (provider-wall/normalize loop-result config (api/display-name p))
+                                 exhausted? (:loop-request? normalized)
+                                 policy     (when exhausted?
+                                              (exhaustion-policy ch session-key {:cycle-limit cycle-budget}))
+                                 handled    (cond
+                                              (not exhausted?)
+                                              (-> normalized
+                                                  (guard-empty-terminal-response chat-fn @current-request))
+
+                                              (= :wrap-up policy)
+                                              (apply-wrap-up-exhaustion normalized chat-fn followup-fn current-request tool-ctx)
+
+                                              :else
+                                              (apply-stop-exhaustion normalized chat-fn current-request input))]
+                             (-> handled
+                                 (assoc :cycle-limit cycle-budget)
+                                 finalize-turn-result)))]
         (log/debug :turn/model-response-summary
                    :session session-key
                    :provider (api/display-name p)

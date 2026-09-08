@@ -357,12 +357,14 @@
    path stores it in :llm-request, but the `isaac is run with` (CLI) path
    drives prompt-cli/run without a postflight to capture it. Fall back to
    the process-global last request recorded by drive.dispatch so CLI-run
-   scenarios still see the request the agent actually sent."
+   scenarios still see the request the agent actually sent. Grover also
+   records the last request it served (including the :stop summary cycle)."
   []
   (when (g/get :turn-future)
     (await-turn!))
   (or (g/get :llm-request)
-      (drive-dispatch/last-request)))
+      (drive-dispatch/last-request)
+      (grover/last-request)))
 
 (defn- prompt-tools []
   (vec (or (:tools (last-llm-request)) [])))
@@ -658,8 +660,8 @@
   (let [responses (queued-responses table)]
     (grover/enqueue! responses)))
 
-(defn tool-loop-max-is [n]
-  (g/assoc! :tool-loop-max-loops n))
+(defn cycle-limit-is [n]
+  (g/assoc! :cycle-limit-loops n))
 
 (defn llm-response-delayed [_seconds]
   (grover/enable-delay!))
@@ -1026,7 +1028,7 @@
          agent-cfg     (current-agent-config)
          model-cfg     (current-model-config)
          provider-name (:provider model-cfg)
-         max-loops     (g/get :tool-loop-max-loops)
+         max-loops     (g/get :cycle-limit-loops)
          events        (atom [])
          channel       (memory-comm/channel events)
          p-cfg         (provider-config)
@@ -1141,15 +1143,23 @@
         (fs/spit fs* path (str (apply str edn-lines) fragment))
         nil))))
 
+(defn- channel-events-atom []
+  (or (g/get :channel-events)
+      (let [events (g/get :memory-comm-events)]
+        (when (instance? clojure.lang.IDeref events) events))))
+
 (defn turn-cancelled-after-n-tool-calls [key-str n]
-  (helper/await-condition
-    (fn []
-      (<= n (->> @(g/get :channel-events)
-                 (filter (fn [e] (= "tool-call" (:event e))))
-                 count)))
-    5000)
-  (bridge-cancel/cancel! key-str)
-  (await-turn!))
+  (if-let [events (channel-events-atom)]
+    (do
+      (helper/await-condition
+        (fn []
+          (<= n (->> @events
+                     (filter (fn [e] (= "tool-call" (:event e))))
+                     count)))
+        5000)
+      (bridge-cancel/cancel! key-str)
+      (await-turn!))
+    (g/assoc! :cancel-after-n-tool-calls {:session key-str :n n})))
 
 (defn async-compaction-completes [key-str]
   (await-turn!)
@@ -1749,7 +1759,7 @@
    For streaming, enqueue multiple rows; they come out as distinct
    chunks.")
 
-(defgiven "the tool loop max is {n:int}" isaac.session.session-steps/tool-loop-max-is)
+(defgiven "the tool loop max is {n:int}" isaac.session.session-steps/cycle-limit-is)
 
 (defgiven "crew {crew:string} has quarters" isaac.session.session-steps/crew-has-quarters)
 
