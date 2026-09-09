@@ -46,3 +46,16 @@ Feature: Turn Cancellation
     Then session "cancel-test" has transcript matching:
       | type    | message.role | message.content |
       | message | assistant    | Still here!     |
+
+  @wip
+  Scenario: a :cancelled stamp on the turn marker stops the running turn
+    Given the following sessions exist:
+      | name        |
+      | cancel-test |
+    And the following model responses are queued:
+      | type | content | model | wait |
+      | text | working | echo  | true |
+    When the user sends "think hard" on session "cancel-test"
+    And isaac is run with "sessions cancel cancel-test"
+    Then the turn result is "cancelled"
+    And no turn marker exists for session "cancel-test"

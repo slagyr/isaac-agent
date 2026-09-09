@@ -324,3 +324,61 @@ Feature: Sessions Command
     When isaac is run with "sessions list --in-flight --not-in-flight"
     Then the exit code is 1
     And the stderr contains "mutually exclusive"
+
+  @wip
+  Scenario: sessions cancel --help shows the cancel usage
+    When isaac is run with "sessions cancel --help"
+    Then the stdout contains "Usage: isaac sessions cancel <id>"
+    And the exit code is 0
+
+  @wip
+  Scenario: sessions cancel without an id is refused
+    When isaac is run with "sessions cancel"
+    Then the stdout contains "Usage: isaac sessions cancel <id>"
+    And the exit code is 1
+
+  @wip
+  Scenario: sessions cancel on an unknown session is refused
+    When isaac is run with "sessions cancel ghost-ship"
+    Then the stdout contains "session not found: ghost-ship"
+    And the exit code is 1
+    And no turn marker exists for session "ghost-ship"
+
+  @wip
+  Scenario: sessions cancel on an idle session is refused
+    Given the following sessions exist:
+      | name | crew |
+      | joe  | main |
+    When isaac is run with "sessions cancel joe"
+    Then the stderr contains "cannot cancel idle session 'joe': no turn is in progress."
+    And the exit code is 1
+    And no turn marker exists for session "joe"
+
+  @wip
+  Scenario: sessions cancel stamps :cancelled on a live turn and returns without waiting
+    Given the following sessions exist:
+      | name        |
+      | design-chat |
+    And the following model responses are queued:
+      | type | content | model | wait |
+      | text | working | echo  | true |
+    When the user sends "more" on session "design-chat"
+    And isaac is run with "sessions cancel design-chat"
+    Then the exit code is 0
+    And a turn marker exists for session "design-chat" with:
+      | key       | value |
+      | cancelled | true  |
+    And session "design-chat" in-flight status is true
+    When the turn ends on session "design-chat"
+
+  @wip
+  Scenario: sessions cancel stamps :cancelled on an orphan marker
+    Given the following sessions exist:
+      | name    |
+      | logbook |
+    And a turn marker exists for session "logbook" referencing delivery "hail-9"
+    When isaac is run with "sessions cancel logbook"
+    Then the exit code is 0
+    And a turn marker exists for session "logbook" with:
+      | key       | value |
+      | cancelled | true  |

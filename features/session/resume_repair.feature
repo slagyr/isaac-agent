@@ -66,3 +66,22 @@ Feature: Resume repair and comm staleness
     And the log has entries matching:
       | level | event              | session   |
       | :info | :resume/comm-stale | firewatch |
+
+  @wip
+  Scenario: a cancelled comm marker is dropped, not resumed
+    Given the following sessions exist:
+      | name      |
+      | firewatch |
+    And session "firewatch" has transcript:
+      | type    | message.role | message.content |
+      | message | user         | Anyone there?   |
+    And the isaac EDN file "sessions/turns/firewatch.edn" exists with:
+      | path       | value                |
+      | source     | :comm                |
+      | started-at | 2026-04-21T09:59:30Z |
+      | cancelled  | true                 |
+    When interrupted turns are resumed at "2026-04-21T10:00:00Z"
+    Then no turn marker exists for session "firewatch"
+    And session "firewatch" has transcript matching:
+      | type    | message.content | #comment                          |
+      | message | Anyone there?   | only entry — no interruption note |
