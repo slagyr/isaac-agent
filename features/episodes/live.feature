@@ -607,7 +607,7 @@ Feature: Episodes — live (router + lifecycle)
     And no index exists for crew "cordelia"
 
   @wip
-  Scenario: compaction on an episodes session hands the turn to the successor and measures progress there (isaac-episodes-compact-loop)
+  Scenario: compaction on an episodes session hands the turn to the successor and measures progress there (isaac-jom5)
     Field 2026-09-09 21:10–21:21Z (marvin ACP episode gv5a, 442 entries, 377K
     provider tokens): compact-close! closed the episode and opened a successor
     with the summary, but the running turn kept measuring the closed episode,
