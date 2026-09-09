@@ -208,6 +208,36 @@
               (should= "Summary so far" (:summary (first entries)))
               (should= :closed (:status (store/read-episode @mem @root "cordelia" (:id opened))))))))))
 
+  (it "compact-close reuses an already-open successor on the thread instead of opening another"
+    (with-redefs [isaac.episodes.ids/chaos-suffix (constantly "mn34")]
+      (binding [memory/*now* (java.time.Instant/parse "2026-03-01T10:00:00Z")]
+        (let [opened (sut/open-episode! {:fs @mem :root @root :crew "cordelia"
+                                         :thread "reef-chat" :session-store @ss})
+              _ (session-store/append-message! @ss (:id opened) {:role "user" :content "Please summarize the logging work."})
+              _ (session-store/append-message! @ss (:id opened) {:role "assistant" :content "We discussed sinks and the tool loop."})
+              provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+              _ (grover/enqueue! [{:type "text" :content "1-2: Logging retrospective"}])]
+          (binding [memory/*now* (java.time.Instant/parse "2026-03-01T10:30:00Z")]
+            (let [first-close (sut/compact-close! {:fs @mem :root @root :crew "cordelia"
+                                                   :thread "reef-chat" :session-store @ss
+                                                   :summary "Summary so far"
+                                                   :provider provider :model "gist"})
+                  successor-id (get-in first-close [:episode :id])
+                  _ (grover/enqueue! [{:type "text" :content "1-2: Logging retrospective"}])
+                  second (sut/compact-close! {:fs @mem :root @root :crew "cordelia"
+                                              :thread "reef-chat" :session-store @ss
+                                              :episode-id (:id opened)
+                                              :summary "Summary so far"
+                                              :provider provider :model "gist"})
+                  open-eps (->> (store/list-episodes @mem @root "cordelia")
+                                (filter #(= :open (:status %))))]
+              (should= :reused (:action second))
+              (should= successor-id (:session-key second))
+              (should= successor-id (get-in second [:episode :id]))
+              (should= 1 (count open-eps))
+              (should= successor-id (:id (first open-eps)))
+              (should= 2 (count (store/list-episodes @mem @root "cordelia")))))))))
+
   (it "close-open-episodes! counts a migrate result that only carries :episode :status"
     (let [session (session-store/open-session! @ss "live-ep-count" {:crew "cordelia" :cwd @root})
           _ (session-store/append-message! @ss (:id session) {:role "user" :content "Chart the reef passage."})

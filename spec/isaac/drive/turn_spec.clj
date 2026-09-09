@@ -807,6 +807,35 @@
               (should= :no-progress (:reason entry))
               (should-not-be-nil (event events "bulletin" "compaction/success")))))))
 
+    (it "measures progress on the successor session and logs compaction-completed"
+      (let [provider      (->TestProvider marigold/starcore {:api marigold/sky-api})
+            session-key   "compact-original"
+            successor-key "compact-successor"
+            session-store (store/registered-store)
+            events        (atom [])]
+        (helper/create-session! test-dir session-key)
+        (helper/create-session! test-dir successor-key)
+        (helper/update-session! test-dir session-key {:last-input-tokens 800})
+        (with-redefs [compaction/compact!               (fn [_ _] {:summary "Shorter now"
+                                                                   :successor-session-key successor-key})
+                      compaction/estimate-prompt-tokens (fn [_ _] 800)
+                      sut/run-compaction-check!         (fn [& _] (throw (ex-info "should not re-run" {})))]
+          (log/capture-logs
+            (#'sut/perform-compaction! session-key 1 800 {:comm           (memory-comm/channel events)
+                                                          :context-window 1000
+                                                          :model          "test-model"
+                                                          :provider       provider
+                                                          :soul           "You are Isaac."
+                                                          :root           test-dir
+                                                          :session-store  session-store})
+            (let [completed (first (filter #(= :session/compaction-completed (:event %)) @log/captured-logs))
+                  stopped   (first (filter #(= :session/compaction-stopped (:event %)) @log/captured-logs))]
+              (should-not-be-nil completed)
+              (should= session-key (:session completed))
+              (should= successor-key (:successor completed))
+              (should-be-nil stopped)
+              (should-not-be-nil (event events "bulletin" "compaction/success")))))))
+
     (it "rechecks after a successful chunked compaction"
       (let [provider      (->TestProvider marigold/starcore {:api marigold/sky-api})
             session-key   "compact-chunked"

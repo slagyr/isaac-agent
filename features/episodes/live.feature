@@ -606,7 +606,6 @@ Feature: Episodes — live (router + lifecycle)
       | Wine pairing for pheasant | #"(?s)pinot noir" |
     And no index exists for crew "cordelia"
 
-  @wip
   Scenario: compaction on an episodes session hands the turn to the successor and measures progress there (isaac-jom5)
     Field 2026-09-09 21:10–21:21Z (marvin ACP episode gv5a, 442 entries, 377K
     provider tokens): compact-close! closed the episode and opened a successor
@@ -614,20 +613,31 @@ Feature: Episodes — live (router + lifecycle)
     logged :session/compaction-stopped :reason :no-progress, and the next turn
     started compaction again — three rounds, three open successors, zero
     completed compactions.
-    Given the isaac EDN file "config/models/local.edn" exists with:
+    Given config:
+      | key        | value  |
+      | log.output | memory |
+    And the isaac EDN file "config/models/local.edn" exists with:
       | path           | value      |
       | model          | test-model |
       | provider       | grover     |
-      | context-window | 100        |
+      | context-window | 200        |
     And the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value            |
       | model        | local            |
       | soul         | You are Cordelia |
       | conversation | episodes         |
-    And the following sessions exist:
-      | name         | crew     | last-input-tokens |
-      | lantern-room | cordelia | 85                |
-    And session "lantern-room" has transcript:
+    And the isaac EDN file "config/models/gist.edn" exists with:
+      | path     | value  |
+      | model    | gist   |
+      | provider | grover |
+    And config file "isaac.edn" containing:
+      """
+      {:episodes {:gist-model :gist}}
+      """
+    And crew "cordelia" has an open episode on thread "lantern-room" with:
+      | compaction.head   | 0.1 |
+      | last-input-tokens | 165 |
+    And that episode's backing session has transcript:
       | type    | message.role | message.content  |
       | message | user         | old message one  |
       | message | assistant    | old response one |
@@ -636,12 +646,13 @@ Feature: Episodes — live (router + lifecycle)
     And the following model responses are queued:
       | type | content               | model      |
       | text | Full summary of prior | test-model |
+      | text | 1-4: Prior lantern    | gist       |
       | text | New response          | test-model |
       | text | Later reply           | test-model |
     When the user sends "new input" on session "lantern-room"
     Then the log has entries matching:
-      | level | event                         | session      |
-      | :info | :session/compaction-completed | lantern-room |
+      | level | event                         |
+      | :info | :session/compaction-completed |
     And the log does not have entries matching:
       | event                       |
       | :session/compaction-stopped |

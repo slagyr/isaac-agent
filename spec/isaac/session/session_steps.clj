@@ -1074,7 +1074,9 @@
                                                   (llm-provider/make-provider provider-name p-cfg))
                                 :context-window (:context-window model-cfg)
                                 :origin         {:kind :cli}
-                                :comm           channel}
+                                :comm           channel
+                                :crew           (active-crew-id)
+                                :config         cfg}
                          (seq turnstiles) (assoc :turnstiles turnstiles))]
      (g/assoc! :channel-events events)
      (g/assoc! :memory-comm-events events)

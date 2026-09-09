@@ -17,7 +17,9 @@
     [isaac.session.session-steps :as session-steps]
     [isaac.session.store.spi :as session-store]
     [isaac.step-tables :as match]
-    [isaac.tool.memory :as memory]))
+    [isaac.logger :as log]
+    [isaac.tool.memory :as memory]
+    [isaac.foundation.log-steps]))
 
 (helper! isaac.episodes.episode-steps)
 
@@ -496,6 +498,29 @@
 (defthen "the last LLM request does not mention recall"
   isaac.episodes.episode-steps/last-llm-request-does-not-mention-recall
   "Outbound request contains neither the recall header nor recall__scene.")
+
+(defn log-does-not-have-entries-matching
+  "Negative twin of 'the log has entries matching:'. Awaits a parked
+   :turn-future first so the second send in a multi-turn scenario has
+   finished, then matches only against entries logged after that send
+   (first-turn :session/compaction-started must not fail the
+   'second turn does not re-compact' assertion — isaac-jom5)."
+  [table]
+  (when-let [turn-future (g/get :turn-future)]
+    (when-not (realized? turn-future)
+      (session-steps/await-turn!)))
+  (let [all     (log/get-entries)
+        mark    (or (g/get :log-entries-mark) 0)
+        entries (vec (drop mark all))
+        headers (:headers table)]
+    (g/assoc! :log-entries-mark (count all))
+    (doseq [row (:rows table)]
+      (let [result (match/match-entries {:headers headers :rows [row]} entries)]
+        (g/should-not (:pass? result))))))
+
+(defthen "the log does not have entries matching:"
+  isaac.episodes.episode-steps/log-does-not-have-entries-matching
+  "Negative twin of 'the log has entries matching:' (isaac-jom5).")
 
 (defthen #"the last LLM request mentions \"([^\"]+)\" exactly (\d+) times?"
   isaac.episodes.episode-steps/last-llm-request-mentions-exactly

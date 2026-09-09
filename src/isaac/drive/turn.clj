@@ -870,7 +870,8 @@
               result)
             (do
               (store/update-session! (or (:session-store opts) (nexus/get-in [:sessions :store])) session-key {:compaction {:consecutive-failures 0}})
-              (let [updated-total (compaction/estimate-prompt-tokens session-key opts)]
+              (let [live-key      (or (:successor-session-key result) session-key)
+                    updated-total (compaction/estimate-prompt-tokens live-key opts)]
                 (when ch
                   (comm/on-bulletin ch session-key {:kind         :compaction/success
                                                     :summary      (:summary result)
@@ -882,8 +883,13 @@
                 ;; complete non-chunked splice — including template-floor
                 ;; :oversized-single — must not consume the next grover/chat
                 ;; turn even when soul + tools keep the estimate over the line.
+                ;; Episodes compact-close! seeds a successor; handing the
+                ;; turn to that session is progress even when the live
+                ;; estimate (summary + pending input) is still at the
+                ;; original number (isaac-jom5).
                 (cond
-                  (>= updated-total prompt-tokens)
+                  (and (>= updated-total prompt-tokens)
+                       (= live-key session-key))
                   (log/warn :session/compaction-stopped
                             :session session-key
                             :provider provider-name
@@ -893,15 +899,25 @@
                             :total-tokens updated-total
                             :context-window context-window)
 
-                  (and (compaction/partial-splice? result)
-                       (compaction/should-compact? updated-total
-                                                   (assoc (session-entry opts session-key)
-                                                          :compaction (:compaction opts))
-                                                   context-window))
-                  (run-compaction-check! session-key
-                                         (assoc opts :comm ch :transcript-lock transcript-lock)
-                                         (inc attempt)
-                                         false))))))))))
+                  :else
+                  (do
+                    (log/info :session/compaction-completed
+                              :session session-key
+                              :successor live-key
+                              :provider provider-name
+                              :model model
+                              :attempt attempt
+                              :total-tokens updated-total
+                              :context-window context-window)
+                    (when (and (compaction/partial-splice? result)
+                               (compaction/should-compact? updated-total
+                                                           (assoc (session-entry opts live-key)
+                                                                  :compaction (:compaction opts))
+                                                           context-window))
+                      (run-compaction-check! live-key
+                                             (assoc opts :comm ch :transcript-lock transcript-lock)
+                                             (inc attempt)
+                                             false))))))))))))
 
 (defn- start-async-compaction! [session-key opts]
   (when-let [lock (reserve-async-compaction! session-key)]

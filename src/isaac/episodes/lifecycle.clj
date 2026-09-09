@@ -477,21 +477,30 @@
 
 (defn compact-close!
   "Compaction on an episode crew: close the current episode and open a
-   successor whose transcript begins with the compaction summary."
+   successor whose transcript begins with the compaction summary.
+   Reuses an already-open successor on the thread (at most one open episode)."
   [{:keys [fs root crew thread session-store summary cfg cwd origin compaction] :as opts}]
   (let [fs*  (runtime-fs fs)
         root (runtime-root root)
         ss   (runtime-store session-store)
         crew (or crew "main")
-        open (or (store/find-open-on-thread fs* root crew thread)
-                 (when-let [id (:episode-id opts)]
-                   (store/read-episode fs* root crew id)))]
-    (if-not open
-      {:error :no-open-episode}
+        target (when-let [id (:episode-id opts)]
+                 (store/read-episode fs* root crew id))
+        open   (store/find-open-on-thread fs* root crew thread)]
+    (cond
+      (and open target (not= (:id open) (:id target)))
+      {:session-key (:id open)
+       :episode     open
+       :action      :reused}
+
+      (or open (and target (= :open (:status target))))
       (chain-successor! (assoc opts :fs fs* :root root :crew crew
-                               :thread (or thread (:thread open))
+                               :thread (or thread (:thread (or open target)))
                                :session-store ss
                                :seed-compaction {:summary summary}
                                :cwd cwd :origin origin :compaction compaction
                                :cfg cfg)
-                        open))))
+                        (or open target))
+
+      :else
+      {:error :no-open-episode})))
