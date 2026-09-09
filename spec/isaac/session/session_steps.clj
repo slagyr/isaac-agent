@@ -50,11 +50,11 @@
 
 (helper! isaac.session.session-steps)
 
+(declare -drain-parked-turn!)
+
 (g/before-scenario
   (fn []
-    (when-let [turn-future (g/get :turn-future)]
-      (when-not (realized? turn-future)
-        (deref turn-future 30000 nil)))))
+    (-drain-parked-turn!)))
 (g/before-scenario g/reset!)
 (g/before-scenario #(config/dangerously-install-config! nil "spec"))
 (g/before-scenario module-loader/clear-activations!)
@@ -72,6 +72,9 @@
 
 (g/after-scenario
   (fn []
+    (-drain-parked-turn!)
+    (bridge-cancel/clear!)
+    (grover/reset-queue!)
     (grover/clear-own-tool-loop!)
     (turnstile/set-wake-hook! nil)
     (alter-var-root #'sidecar-store/create-store (constantly real-sidecar-create-store))))
@@ -547,6 +550,19 @@
       (when (= ::timeout result)
         (throw (ex-info "turn did not complete within 30 seconds" {})))
       (complete-turn! result))))
+
+(defn -drain-parked-turn!
+  "Release Grover wait-gates and cancel so a parked send cannot leak into
+   the next scenario's scripted queue (CI flake after isaac-9xtv parking)."
+  []
+  (when-let [turn-future (g/get :turn-future)]
+    (when-not (realized? turn-future)
+      (doseq [session-key (keys @@#'grover/wait-gates*)]
+        (grover/release-wait! session-key))
+      (when-let [session-key (g/get :current-key)]
+        (bridge-cancel/cancel! session-key))
+      (deref turn-future 2000 nil))
+    (g/dissoc! :turn-future)))
 
 (defn- await-acp-turn! []
   (when-let [turn-future (g/get :acp-turn-future)]

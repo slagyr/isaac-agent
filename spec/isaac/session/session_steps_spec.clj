@@ -145,6 +145,21 @@
       (should= first-future (g/get :turn-future)))
     (sut/turn-ends-on-session "s1"))
 
+  (it "drains a parked wait-gated send so the next scenario starts with an empty queue"
+    (sut/default-grover-setup)
+    (sut/sessions-exist {:headers ["name"] :rows [["parked"]]})
+    (sut/responses-queued {:headers ["type" "content" "model" "wait"]
+                           :rows    [["text" "still thinking" "echo" "true"]]})
+    (sut/user-sends-on-session "think" "parked")
+    (let [leaked (g/get :turn-future)]
+      (should-not-be-nil leaked)
+      (should-not (realized? leaked))
+      (should (grover/waiting? "parked"))
+      (sut/-drain-parked-turn!)
+      (should (realized? leaked))
+      (should-be-nil (g/get :turn-future))
+      (should-not (grover/waiting? "parked"))))
+
   (it "parks a slow tool-loop send so a later cancel can still fire"
     (sut/default-grover-setup)
     (registry/clear!)
@@ -160,3 +175,4 @@
     (sut/turn-cancelled-after-n-tool-calls "cancel-test" 1)
     (should= "cancelled" (:stopReason (g/get :llm-result))))
   )
+
