@@ -199,6 +199,18 @@
         (should= 400 (:status resp))
         (should= "maximum prompt length is 200 but the request contains 250" (:message resp))))
 
+    (it "returns a scripted http-error from simulated JSON posts instead of wrapping it as success"
+      (sut/enqueue! [{:type "http-error" :status 400 :message "model: tinfoil-sonnet is not a valid model id"}])
+      (let [resp (sut/post-json! "anthropic"
+                                 "https://api.anthropic.com/v1/messages"
+                                 {"content-type" "application/json"}
+                                 {:model "tinfoil-sonnet" :messages []})]
+        (should= :api-error (:error resp))
+        (should= 400 (:status resp))
+        (should= "model: tinfoil-sonnet is not a valid model id" (:message resp))
+        (should-be-nil (:content resp))
+        (should-be-nil (:choices resp))))
+
   ;; endregion ^^^^^ Streaming ^^^^^
 
   ;; region ----- Tool Call Loop -----

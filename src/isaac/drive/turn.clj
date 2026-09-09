@@ -354,27 +354,8 @@
       (get-in chunk [:delta :text])
       (seq (:tool-calls chunk))))
 
-(defn- overflow-message? [message]
-  (let [lower (some-> message str/lower-case)]
-    (and (seq lower)
-         (or (str/includes? lower "maximum prompt length")
-             (str/includes? lower "prompt is too long")
-             (str/includes? lower "prompt too long")
-             (str/includes? lower "context_length_exceeded")
-             (str/includes? lower "context length exceeded")
-             (str/includes? lower "request contains")))))
-
 (defn- prompt-too-long? [result]
-  (boolean
-    (some (fn [err]
-            (and err
-                 (or (= 400 (:status err))
-                     (= :api-error (:error err))
-                     (= :llm-error (:error err)))
-                 (overflow-message? (or (:message err)
-                                        (when (or (:error err) (:status err))
-                                          (error-message err))))))
-          [result (:response result)])))
+  (provider-wall/prompt-too-long? result))
 
 (defn- chunk-reasoning [chunk]
   (or (when (string? (:reasoning chunk)) (:reasoning chunk))
@@ -1185,7 +1166,8 @@
             (:max_tokens prompt-out) (assoc :max_tokens (:max_tokens prompt-out))
             (:tools prompt-out) (assoc :tools (:tools prompt-out))
             (some? effort) (assoc :effort effort)
-            (some? stateful) (assoc :stateful stateful))))
+            (some? stateful) (assoc :stateful stateful)
+            session-name (assoc :session-key session-name))))
 
 ;; endregion ^^^^^ Request Building ^^^^^
 

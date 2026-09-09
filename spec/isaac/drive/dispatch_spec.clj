@@ -1,5 +1,9 @@
 (ns isaac.drive.dispatch-spec
   (:require
+    [clojure.string :as str]
+    [isaac.attention :as attention]
+    [isaac.comm.delivery.queue :as queue]
+    [isaac.config.api :as config]
     [isaac.drive.dispatch :as sut]
     [isaac.fs :as fs]
     [isaac.llm.provider :as llm-provider]
@@ -9,6 +13,16 @@
     [isaac.llm.providers :as providers]
     [isaac.nexus :as nexus]
     [speclj.core :refer :all]))
+
+(defn- broken-api [result]
+  (reify api/Api
+    (chat [_ _] result)
+    (chat-stream [_ _ _] result)
+    (followup-messages [_ request _ _ _] (:messages request))
+    (config [_] {})
+    (display-name [_] "chatgpt")
+    (format-tools [_ _] nil)
+    (build-prompt [_ _] nil)))
 
 (describe "dispatch"
 
@@ -94,4 +108,57 @@
                                        {:message {:role "assistant" :content "ok"} :model "m" :usage {} :_headers {}})]
           (sut/dispatch-chat (llm-provider/make-provider "chatgpt" provider-cfg)
                              {:model "gpt-5.4" :messages [{:role "user" :content "hi"}]}))
-        (should= "custom-name" (:name @captured))))))
+        (should= "custom-name" (:name @captured)))))
+
+  (context "broken-provider attention"
+
+    (defn- broken-api [result]
+      (reify api/Api
+        (chat [_ _] result)
+        (chat-stream [_ _ _] result)
+        (followup-messages [_ request _ _ _] (:messages request))
+        (config [_] {})
+        (display-name [_] "chatgpt")
+        (format-tools [_ _] nil)
+        (build-prompt [_ _] nil)))
+
+    (around [it]
+      (nexus/-with-nexus {:root "/test/isaac" :fs (fs/mem-fs)}
+        (attention/clear-throttle!)
+        (config/dangerously-install-config!
+          {:attention {:notify {:comm :discord :target "boiler-room"}}}
+          "spec")
+        (it)))
+
+    (it "posts attention for a leftover 400 api-error"
+      (let [result {:error   :api-error
+                    :status  400
+                    :message "The 'snuffy-codex' model is not supported on this account"}]
+        (should= result (sut/dispatch-chat (broken-api result)
+                                           {:model "snuffy-codex" :session-key "trash-can"}))
+        (let [pending (queue/list-pending)]
+          (should= 1 (count pending))
+          (should (str/includes? (:content (first pending)) "chatgpt"))
+          (should (str/includes? (:content (first pending)) "snuffy-codex"))
+          (should (str/includes? (:content (first pending)) "trash-can"))
+          (should (str/includes? (:content (first pending)) "not supported")))))
+
+    (it "does not post attention for a prompt-too-long 400"
+      (let [result {:error   :api-error
+                    :status  400
+                    :message "maximum prompt length is 200 but the request contains 250"}]
+        (sut/dispatch-chat (broken-api result) {:model "snuffy-codex" :session-key "trash-can"})
+        (should= 0 (count (queue/list-pending)))))
+
+    (it "does not post attention for a 429 wall"
+      (let [result {:error :api-error :status 429 :retry-after 60}]
+        (sut/dispatch-chat (broken-api result) {:model "snuffy-codex"})
+        (should= 0 (count (queue/list-pending)))))
+
+    (it "does not post attention for a 401 auth error"
+      (let [result {:error :api-error :status 401 :message "Unauthorized"}]
+        (sut/dispatch-chat (broken-api result) {:model "snuffy-codex"})
+        (should= 0 (count (queue/list-pending)))))
+
+    )
+  )

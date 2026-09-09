@@ -304,10 +304,12 @@
     (str/ends-with? url "/api/embed") (embed-json body)
     :else
     (let [response (provider-response body nil)]
-      (cond
-        (str/ends-with? url "/responses") (responses-json response)
-        (str/ends-with? url "/messages")  (messages-json response)
-        :else                             (chat-completions-json response)))))
+      (if (or (:error response) (:unavailable? response))
+        response
+        (cond
+          (str/ends-with? url "/responses") (responses-json response)
+          (str/ends-with? url "/messages")  (messages-json response)
+          :else                             (chat-completions-json response))))))
 
 (defn- content-chunks [content]
   (cond

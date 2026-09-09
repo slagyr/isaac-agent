@@ -46,6 +46,32 @@
 (defn- stall-response? [result]
   (= :stream-stalled (:error result)))
 
+(defn- overflow-message? [message]
+  (let [lower (some-> message str/lower-case)]
+    (and (seq lower)
+         (or (str/includes? lower "maximum prompt length")
+             (str/includes? lower "prompt is too long")
+             (str/includes? lower "prompt too long")
+             (str/includes? lower "context_length_exceeded")
+             (str/includes? lower "context length exceeded")
+             (str/includes? lower "request contains")))))
+
+(defn prompt-too-long?
+  "True when a 400 / :api-error / :llm-error is a context-window overflow,
+   not a broken provider. Shared by dispatch (skip attention) and turn
+   (compact-and-retry)."
+  [result]
+  (boolean
+    (some (fn [err]
+            (and err
+                 (or (= 400 (:status err))
+                     (= :api-error (:error err))
+                     (= :llm-error (:error err)))
+                 (overflow-message? (or (:message err)
+                                        (when (or (:error err) (:status err))
+                                          (response-message err))))))
+          [result (:response result)])))
+
 (defn- retry-after-secs [value]
   (cond
     (nil? value) nil
@@ -100,13 +126,20 @@
        :reason         :stream-stalled
        :provider       provider})))
 
+(defn- classify-overflow
+  [result]
+  (when (prompt-too-long? result)
+    {:reason :overflow}))
+
 (defn classify
   "Classify provider weather into {:unavailable? true :retry-after-ms N :reason ...}.
+   Overflow 400s return {:reason :overflow} (not weather, not broken).
    Returns nil when the response is a genuine failure."
   [result cfg provider]
   (or (classify-auth result cfg provider)
       (classify-wall result cfg provider)
-      (classify-stall result cfg provider)))
+      (classify-stall result cfg provider)
+      (classify-overflow result)))
 
 (defn normalize
   "Pass through pre-classified unavailable results; classify auth, wall, and stall errors."
@@ -118,6 +151,9 @@
       (nil? (:provider result)) (assoc :provider provider))
 
     (:error result)
-    (or (classify result cfg provider) result)
+    (or (when-let [classified (classify result cfg provider)]
+          (when (:unavailable? classified)
+            classified))
+        result)
 
     :else result))

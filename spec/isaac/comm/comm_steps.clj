@@ -271,3 +271,75 @@
 (defthen "the LLM request does not contain {needle:string}"
   isaac.comm.comm-steps/last-llm-request-does-not-contain
   "Absence assert on the last outbound LLM request (pr-str of the map).")
+
+(defn- skip-row? [value]
+  (str/blank? (str value)))
+
+(defn- parse-contains-value [value]
+  (when (str/starts-with? (str/trim value) "contains ")
+    (->> (re-seq #"\"([^\"]+)\"" (subs (str/trim value) 9))
+         (map second)
+         vec)))
+
+(defn- parse-edn-value [value]
+  (cond
+    (re-matches #"-?\d+" value) (parse-long value)
+    (= "true" (str/lower-case value)) true
+    (= "false" (str/lower-case value)) false
+    (or (str/starts-with? value "[")
+        (str/starts-with? value "{")
+        (str/starts-with? value ":")
+        (str/starts-with? value "\"")
+        (str/starts-with? value "#"))
+    (edn/read-string value)
+    :else value))
+
+(defn- get-path [data path]
+  (reduce (fn [current segment]
+            (cond
+              (nil? current) nil
+              (map? current) (or (get current (keyword segment))
+                                 (get current segment))
+              :else nil))
+          data
+          (str/split path #"\.")))
+
+(defn- root-relative-path [path]
+  (if (str/starts-with? path "/")
+    path
+    (str (root) "/" path)))
+
+(defn- assert-edn-contains [data table]
+  (doseq [row (:rows table)]
+    (let [row-map (zipmap (:headers table) row)
+          path    (get row-map "path")
+          value   (get row-map "value")]
+      (when-not (skip-row? value)
+        (let [actual (get-path data path)]
+          (if-let [parts (parse-contains-value value)]
+            (doseq [part parts]
+              (g/should (str/includes? (str actual) part)))
+            (g/should= (parse-edn-value value) actual)))))))
+
+(defn newest-file-in-edn-contains [dir-path table]
+  (when-let [turn-future (g/get :turn-future)]
+    (let [result (deref turn-future 30000 ::timeout)]
+      (when (= ::timeout result)
+        (throw (ex-info "turn did not complete within 30 seconds" {})))))
+  (let [expanded (root-relative-path dir-path)
+        fs*      (mem-fs)
+        children (when (fs/exists? fs* expanded) (fs/children fs* expanded))]
+    (g/should (seq children))
+    (let [newest    (->> children
+                         (map (fn [name]
+                                (let [path (str expanded "/" name)]
+                                  {:name name :path path :mtime (or (fs/modified fs* path) 0)})))
+                         (sort-by :mtime)
+                         last)
+          data      (edn/read-string (fs/slurp fs* (:path newest)))]
+      (assert-edn-contains data table))))
+
+(defthen #"the newest file in \"([^\"]+)\" EDN contains:"
+  isaac.comm.comm-steps/newest-file-in-edn-contains
+  "Asserts the most recently written file in a directory (by fs/modified stamp)
+   is EDN matching path|value rows. Same table dialect as 'the only file in'.")

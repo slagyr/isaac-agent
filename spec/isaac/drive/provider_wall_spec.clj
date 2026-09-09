@@ -65,4 +65,22 @@
       (should= 5000 (:retry-after-ms normalized))
       (should= "chatgpt" (:provider normalized))))
 
+  (it "classifies a prompt-too-long 400 as overflow, not weather"
+    (let [result {:error   :api-error
+                  :status  400
+                  :message "maximum prompt length is 200 but the request contains 250"}
+          classified (sut/classify result {} "chatgpt")]
+      (should= {:reason :overflow} classified)
+      (should (sut/prompt-too-long? result))))
+
+  (it "returns nil for a generic 400 api-error so dispatch can treat it as broken"
+    (should-be-nil (sut/classify {:error   :api-error
+                                  :status  400
+                                  :message "The model is not supported on this account"}
+                                 {} "chatgpt")))
+
+  (it "does not rewrite overflow 400s during normalize"
+    (let [result {:error :api-error :status 400 :message "prompt is too long"}]
+      (should= result (sut/normalize result {} "chatgpt"))))
+
   )

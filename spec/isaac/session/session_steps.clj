@@ -82,9 +82,11 @@
 ;; in-memory session store.
 (froot/register-root-setup-hook!
   (fn [abs-dir]
+    (grover/install-test-fixture!)
     (grover/reset-queue!)
     (grover/clear-own-tool-loop!)
     (drive-dispatch/clear-last-request!)
+    ((requiring-resolve 'isaac.attention/clear-throttle!))
     (bridge-cancel/clear!)
     (bridge-suspend/clear!)
     (reset! comm-registry/*registry* (comm-registry/fresh-registry))
@@ -564,6 +566,19 @@
 ;; isaac.foundation.root-steps. The server-side teardown that initialize-root!
 ;; runs is registered via froot/register-root-setup-hook! above.
 
+(defn- write-grover-provider-files! [root]
+  (let [config-root   (str root "/config")
+        fs*           (mem-fs)
+        model-path    (str config-root "/models/grover.edn")
+        provider-path (str config-root "/providers/grover.edn")]
+    (fs/mkdirs fs* (str config-root "/models"))
+    (fs/mkdirs fs* (str config-root "/providers"))
+    (when-not (fs/exists? fs* model-path)
+      (fs/spit fs* model-path (pr-str {:model "echo" :provider :grover :context-window 32768})))
+    (when-not (fs/exists? fs* provider-path)
+      (fs/spit fs* provider-path (pr-str {})))
+    (invalidate-feature-config!)))
+
 (defn- write-grover-defaults! []
   (let [root (str (root-dir) "/config")
         fs*  (mem-fs)]
@@ -572,16 +587,19 @@
                     (pr-str {:defaults {:crew "main" :model "grover"}
                              :tools    {:max-parallel 4
                                         :directories  {:allow [:cwd :quarters]}}}))
-    (fs/mkdirs fs* (str root "/models"))
-    (fs/mkdirs fs* (str root "/providers"))
     (fs/mkdirs fs* (str root "/crew"))
-    (fs/spit   fs* (str root "/models/grover.edn")
-                    (pr-str {:model "echo" :provider :grover :context-window 32768}))
-    (fs/spit   fs* (str root "/providers/grover.edn")
-                    (pr-str {}))
+    (write-grover-provider-files! (root-dir))
     (fs/spit   fs* (str root "/crew/main.edn")
                     (pr-str {:model :grover :soul "You are Atticus."}))
     (invalidate-feature-config!)))
+
+(defn ensure-grover-provider-files!
+  "Materialize grover as a configured provider/model so CLI validation
+   accepts :provider grover and the echo model alias after a partial
+   'an Isaac root at' seed."
+  []
+  (when-let [root (root-dir)]
+    (with-feature-fs #(write-grover-provider-files! root))))
 
 (defn default-grover-setup []
   (grover/install-test-fixture!)
@@ -1018,6 +1036,10 @@
   ([content key-str]
    (user-sends-on-session content key-str nil))
   ([content key-str turnstiles]
+   (when-let [prior (g/get :turn-future)]
+     (when-not (realized? prior)
+       (deref prior 30000 nil))
+     (g/dissoc! :turn-future))
    (g/assoc! :current-key key-str)
    (grover/clear-provider-requests!)
    (isaac.llm.http/clear-outbound-requests!)
@@ -1071,7 +1093,12 @@
                  (or (realized? turn-future)
                      (some (fn [e] (= "turn-start" (:event e))) @events)
                      (grover/waiting? key-str)))
-               1000))
+               1000)
+             ;; Wait-gated scripted replies stay parked so later steps can
+             ;; assert in-flight state. Fast error/success turns finish here
+             ;; so subsequent When/Then steps see the delivery queue.
+             (when-not (grover/waiting? key-str)
+               (await-turn!)))
            (do
              (when existing-turn-future
                (g/assoc! :turn-future existing-turn-future))

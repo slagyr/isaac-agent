@@ -10,7 +10,7 @@
     [isaac.nexus :as nexus]
     [isaac.session.session-steps :as sut]
     [isaac.session.store.sidecar :as sidecar-store]
-    [speclj.core :refer [around describe it should should-not-be-nil should=]]))
+    [speclj.core :refer [around describe it should should-be-nil should-not-be-nil should=]]))
 
 (describe "session feature steps"
 
@@ -102,4 +102,20 @@
     (sut/user-sends-on-session "And now?" "greenhouse")
     (sut/await-turn!)
     (should= 2 (count (get (g/get :chat-requests-by-session) "greenhouse"))))
+
+  (it "materializes grover as a configured provider on a seeded Isaac root"
+    (froot/in-memory-state "target/test-state")
+    (sut/ensure-grover-provider-files!)
+    (let [cfg (#'sut/loaded-config)]
+      (should= "echo" (get-in cfg [:models "grover" :model]))
+      (should (contains? (or (:providers cfg) {}) "grover"))))
+
+  (it "finishes a fast send so later steps can read the turn result without an extra await"
+    (sut/default-grover-setup)
+    (sut/sessions-exist {:headers ["name"] :rows [["trash-can"]]})
+    (sut/responses-queued {:headers ["type" "status" "message"]
+                           :rows    [["http-error" "400" "not supported"]]})
+    (sut/user-sends-on-session "knock knock" "trash-can")
+    (should-be-nil (g/get :turn-future))
+    (should= :api-error (:error (g/get :llm-result))))
   )

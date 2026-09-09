@@ -16,7 +16,6 @@ Feature: Broken-provider attention
   Background:
     Given an Isaac root at "target/test-state"
 
-  @wip
   Scenario: a generic provider 400 posts attention to the comm outbox
     Given the isaac EDN file "config/isaac.edn" exists with:
       | path                    | value       |
@@ -45,7 +44,6 @@ Feature: Broken-provider attention
       | target  | boiler-room                                                               |
       | content | contains "chatgpt" and "snuffy-codex" and "trash-can" and "not supported" |
 
-  @wip
   Scenario: repeated failures on one provider post attention once
     Given the isaac EDN file "config/isaac.edn" exists with:
       | path                    | value       |
@@ -77,7 +75,6 @@ Feature: Broken-provider attention
       | level | event                         | provider | suppressed |
       | :info | :attention/provider-throttled | chatgpt  | 2          |
 
-  @wip
   Scenario: a provider still failing after an hour posts again with the suppressed count
     Given the isaac EDN file "config/isaac.edn" exists with:
       | path                    | value       |
@@ -112,7 +109,6 @@ Feature: Broken-provider attention
       | target  | boiler-room                                                  |
       | content | contains "chatgpt" and "1 more failure" and "not supported" |
 
-  @wip
   Scenario: failures on two providers post attention for each
     Given the isaac EDN file "config/isaac.edn" exists with:
       | path                    | value       |
@@ -146,7 +142,6 @@ Feature: Broken-provider attention
     And the user sends "is this thing on" on session "paperclip"
     Then the directory "comm/delivery/pending" has exactly 2 files
 
-  @wip
   Scenario: an episode seal failing on the gist provider posts attention through the same seam
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value            |
