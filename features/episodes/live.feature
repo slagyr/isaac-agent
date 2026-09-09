@@ -605,3 +605,57 @@ Feature: Episodes — live (router + lifecycle)
       | gist                      | text              |
       | Wine pairing for pheasant | #"(?s)pinot noir" |
     And no index exists for crew "cordelia"
+
+  @wip
+  Scenario: compaction on an episodes session hands the turn to the successor and measures progress there (isaac-episodes-compact-loop)
+    Field 2026-09-09 21:10–21:21Z (marvin ACP episode gv5a, 442 entries, 377K
+    provider tokens): compact-close! closed the episode and opened a successor
+    with the summary, but the running turn kept measuring the closed episode,
+    logged :session/compaction-stopped :reason :no-progress, and the next turn
+    started compaction again — three rounds, three open successors, zero
+    completed compactions.
+    Given the isaac EDN file "config/models/local.edn" exists with:
+      | path           | value      |
+      | model          | test-model |
+      | provider       | grover     |
+      | context-window | 100        |
+    And the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path         | value            |
+      | model        | local            |
+      | soul         | You are Cordelia |
+      | conversation | episodes         |
+    And the following sessions exist:
+      | name         | crew     | last-input-tokens |
+      | lantern-room | cordelia | 85                |
+    And session "lantern-room" has transcript:
+      | type    | message.role | message.content  |
+      | message | user         | old message one  |
+      | message | assistant    | old response one |
+      | message | user         | old message two  |
+      | message | assistant    | old response two |
+    And the following model responses are queued:
+      | type | content               | model      |
+      | text | Full summary of prior | test-model |
+      | text | New response          | test-model |
+      | text | Later reply           | test-model |
+    When the user sends "new input" on session "lantern-room"
+    Then the log has entries matching:
+      | level | event                         | session      |
+      | :info | :session/compaction-completed | lantern-room |
+    And the log does not have entries matching:
+      | event                       |
+      | :session/compaction-stopped |
+    And crew "cordelia" has 2 episodes
+    And an episode exists for crew "cordelia" matching:
+      | key    | value |
+      | status | open  |
+    And that episode's backing session has transcript matching:
+      | type       | message.role | message.content       |
+      | compaction |              | Full summary of prior |
+      | message    | user         | new input             |
+      | message    | assistant    | New response          |
+    When the user sends "again" on session "lantern-room"
+    Then crew "cordelia" has 2 episodes
+    And the log does not have entries matching:
+      | event                       |
+      | :session/compaction-started |
