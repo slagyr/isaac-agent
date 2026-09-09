@@ -36,14 +36,32 @@ jobs:
           bb: latest
           cli: latest
 
+      # Avoid apt-get: ubuntu-latest's google-chrome repo currently 100s
+      # apt-get update on Hash Sum mismatch, aborting the job before rg.
+      - name: Cache ripgrep binary
+        id: cache-rg
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/bin/rg
+          key: ripgrep-14.1.0-musl-${{ runner.os }}
+
       - name: Install ripgrep
+        if: steps.cache-rg.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          if ! command -v rg >/dev/null; then
-            sudo apt-get update
-            sudo apt-get install -y ripgrep
+          if command -v rg >/dev/null; then
+            exit 0
           fi
-          rg --version
+          mkdir -p ~/.local/bin
+          curl -fsSL https://github.com/BurntSushi/ripgrep/releases/download/14.1.0/ripgrep-14.1.0-x86_64-unknown-linux-musl.tar.gz \
+            | tar xz --strip-components=1 -C ~/.local/bin ripgrep-14.1.0-x86_64-unknown-linux-musl/rg
+          chmod +x ~/.local/bin/rg
+
+      - name: Add ripgrep to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Verify ripgrep
+        run: rg --version
 
       - name: Cache Clojure dependencies
         uses: actions/cache@v4
