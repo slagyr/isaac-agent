@@ -10,7 +10,9 @@
     [isaac.nexus :as nexus]
     [isaac.session.session-steps :as sut]
     [isaac.session.store.sidecar :as sidecar-store]
-    [speclj.core :refer [around describe it should should-be-nil should-not-be-nil should=]]))
+    [isaac.tool.builtin :as builtin]
+    [isaac.tool.registry :as registry]
+    [speclj.core :refer [around describe it should should-be-nil should-not should-not-be-nil should=]]))
 
 (describe "session feature steps"
 
@@ -118,4 +120,43 @@
     (sut/user-sends-on-session "knock knock" "trash-can")
     (should-be-nil (g/get :turn-future))
     (should= :api-error (:error (g/get :llm-result))))
+
+  (it "leaves an in-flight delayed send parked so a later cancel can still fire"
+    (sut/default-grover-setup)
+    (sut/sessions-exist {:headers ["name"] :rows [["cancel-test"]]})
+    (sut/llm-response-delayed 30)
+    (sut/user-sends-on-session "think hard" "cancel-test")
+    (should-not-be-nil (g/get :turn-future))
+    (should-not (realized? (g/get :turn-future)))
+    (sut/turn-cancelled "cancel-test")
+    (should= "cancelled" (:stopReason (g/get :llm-result))))
+
+  (it "does not drain an in-flight wait-gated send before a second dispatch"
+    (sut/default-grover-setup)
+    (sut/sessions-exist {:headers ["name"] :rows [["s1"]]})
+    (sut/responses-queued {:headers ["type" "content" "model" "wait"]
+                           :rows    [["text" "first" "echo" "true"]]})
+    (sut/user-sends-on-session "hi" "s1")
+    (let [first-future (g/get :turn-future)
+          started-at   (System/nanoTime)]
+      (should-not-be-nil first-future)
+      (sut/user-sends-on-session "go again" "s1")
+      (should (< (/ (- (System/nanoTime) started-at) 1000000.0) 2000.0))
+      (should= first-future (g/get :turn-future)))
+    (sut/turn-ends-on-session "s1"))
+
+  (it "parks a slow tool-loop send so a later cancel can still fire"
+    (sut/default-grover-setup)
+    (registry/clear!)
+    (builtin/register-all!)
+    (sut/crew-tool-allow "main" "exec/run")
+    (sut/sessions-exist {:headers ["name"] :rows [["cancel-test"]]})
+    (sut/responses-queued {:headers ["type" "tool_call" "arguments" "content"]
+                           :rows    [["tool_call" "exec__run" "{\"command\": \"sleep 0.05\"}" ""]
+                                     ["text" "" "" "Should never appear"]]})
+    (sut/user-sends-on-session "do stuff" "cancel-test")
+    (should-not-be-nil (g/get :turn-future))
+    (should-not (realized? (g/get :turn-future)))
+    (sut/turn-cancelled-after-n-tool-calls "cancel-test" 1)
+    (should= "cancelled" (:stopReason (g/get :llm-result))))
   )

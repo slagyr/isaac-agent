@@ -1037,9 +1037,8 @@
    (user-sends-on-session content key-str nil))
   ([content key-str turnstiles]
    (when-let [prior (g/get :turn-future)]
-     (when-not (realized? prior)
-       (deref prior 30000 nil))
-     (g/dissoc! :turn-future))
+     (when (realized? prior)
+       (g/dissoc! :turn-future)))
    (g/assoc! :current-key key-str)
    (grover/clear-provider-requests!)
    (isaac.llm.http/clear-outbound-requests!)
@@ -1094,10 +1093,12 @@
                      (some (fn [e] (= "turn-start" (:event e))) @events)
                      (grover/waiting? key-str)))
                1000)
-             ;; Wait-gated scripted replies stay parked so later steps can
-             ;; assert in-flight state. Fast error/success turns finish here
-             ;; so subsequent When/Then steps see the delivery queue.
-             (when-not (grover/waiting? key-str)
+             ;; Wait-gated scripted replies and still-running turns stay
+             ;; parked so later steps can cancel, suspend, or assert
+             ;; in-flight state. Fast error/success turns finish here so
+             ;; subsequent When/Then steps see the delivery queue.
+             (when (and (realized? turn-future)
+                        (not (grover/waiting? key-str)))
                (await-turn!)))
            (do
              (when existing-turn-future
