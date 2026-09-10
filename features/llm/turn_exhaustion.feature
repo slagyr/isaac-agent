@@ -159,3 +159,30 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
     And the memory comm has events matching:
       | event    | result.ended-by | result.exhaustion |
       | turn-end | :cycle-limit    | :wrapped-up       |
+
+  @wip
+  Scenario: a crew's wrap-up-prompt replaces the default wrap-up nudge (isaac-tic5)
+    Given the memory comm answers :wrap-up on exhaustion
+    And the isaac EDN file "config/crew/oscar.edn" exists with:
+      | path                 | value                                               |
+      | model                | grover                                              |
+      | cycle.limit          | 1                                                   |
+      | cycle.wrap-up-prompt | Oscar, lids on. Say what is counted and what isn't. |
+    And the crew "oscar" allows tools: "exec/run"
+    And the following sessions exist:
+      | name      | crew  |
+      | trash-can | oscar |
+    And the following model responses are queued:
+      | type      | tool_call | arguments           | content                      | model |
+      | tool_call | exec__run | {"command": "true"} |                              | echo  |
+      | tool_call | exec__run | {"command": "true"} |                              | echo  |
+      | text      |           |                     | Three counted; lids pending. | echo  |
+    When the user sends "count the cans" on session "trash-can" via memory comm
+    Then the last LLM request matches:
+      | key                  | value                                               |
+      | messages[-1].role    | user                                                |
+      | messages[-1].content | Oscar, lids on. Say what is counted and what isn't. |
+    And the last LLM request does not contain "cycle budget for this turn is exhausted"
+    And the memory comm has events matching:
+      | event    | result.ended-by | result.exhaustion |
+      | turn-end | :cycle-limit    | :wrapped-up       |
