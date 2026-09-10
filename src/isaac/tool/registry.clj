@@ -135,6 +135,9 @@
             (do (log/error :tool/execute-failed :tool name :arguments log-args :cwd cwd :error "tool returned nil")
                 {:isError true :error "tool returned nil"})
 
+            (and (map? result) (= :cancelled (:error result)))
+            result
+
             (and (map? result) (contains? result :result))
             (let [capped (cap-output caps (:result result))]
               (log/debug :tool/result (assoc (result-metadata capped) :tool name :cwd cwd))

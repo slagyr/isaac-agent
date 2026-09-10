@@ -130,6 +130,13 @@
           (should (:isError result))
           (should= "bad input" (:error result)))))
 
+    (it "keeps {:error :cancelled} from the handler instead of stringifying it"
+      (sut/register! {:name "sleeper" :handler (fn [_] {:error :cancelled})})
+      (let [result (sut/execute "sleeper" {})]
+        (should= {:error :cancelled} result)
+        (should-be-nil (:isError result))
+        (should-be-nil (:result result))))
+
     (it "treats disallowed tools as unknown tools"
       (sut/register! {:name "read" :handler identity})
       (let [result (sut/execute "read" {} #{"write"})]
