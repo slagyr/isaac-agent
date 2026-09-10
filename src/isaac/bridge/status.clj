@@ -3,6 +3,7 @@
     [clojure.string :as str]
     [isaac.llm.api.protocol :as api]
     [isaac.nexus :as nexus]
+    [isaac.session.policy :as policy]
     [isaac.session.store.spi :as store]
     [isaac.tool.names :as names]
     [isaac.tool.registry :as tool-registry]))
@@ -92,7 +93,11 @@
 
 (defn- status-data* [session-store session-key ctx]
   (let [entry          (store/get-session session-store session-key)
-        transcript     (or (store/get-transcript session-store session-key) [])
+        cfg            (or (when (map? (:config ctx)) (:config ctx))
+                           (some-> (nexus/get :config) deref)
+                           {})
+        sess           (policy/for-crew (or (:crew ctx) (:crew entry)) cfg session-store)
+        transcript     (or (policy/get-transcript sess session-key) [])
         turns          (turn-count transcript)
         tokens         (or (:last-input-tokens entry) 0)
         context-window (or (:context-window ctx) 32768)

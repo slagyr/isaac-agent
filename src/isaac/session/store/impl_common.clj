@@ -845,3 +845,28 @@
     compaction-entry))
 
 ;; endregion ^^^^^ Shared public API ^^^^^
+
+(defn repair-torn-transcript!*
+  "Truncate a torn trailing EDNL line (a crash mid-append) to the last complete
+   line and rewrite the file. Returns the surviving entries when something was
+   dropped, nil when the transcript was already whole or absent."
+  [root session-id fs]
+  (let [path (current-transcript-path root session-id)]
+    (when (exists?* fs path)
+      (let [lines (str/split-lines (fs/slurp fs path))
+            valid (loop [n (count lines)]
+                    (if (zero? n)
+                      []
+                      (let [candidate (take n lines)]
+                        (if (every? #(try (read-edn-line %) (catch Exception _ false))
+                                    candidate)
+                          candidate
+                          (recur (dec n))))))]
+        (when (< (count valid) (count lines))
+          (log/warn :resume/transcript-repair
+                    :session session-id
+                    :repair :torn-line
+                    :dropped-lines (- (count lines) (count valid)))
+          (let [entries (mapv read-edn-line valid)]
+            (write-ednl! fs path entries)
+            entries))))))

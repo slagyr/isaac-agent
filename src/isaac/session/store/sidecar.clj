@@ -167,7 +167,8 @@
                         (c/most-recent-session read-session-store root crew-id fs))
                       (c/most-recent-session read-session-store root nil fs))]
       (:id recent)))
-  (repair-transcript! [_ _session-id] nil))
+  (repair-transcript! [_ session-id]
+    (boolean (c/repair-torn-transcript!* root (c/session-id session-id) fs))))
 
 (defn create-store
   ([root]

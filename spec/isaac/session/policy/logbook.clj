@@ -15,7 +15,7 @@
 
 (def ^:private recorded-methods
   #{"open-session!" "record-turn-marker!" "append-message!" "clear-turn-marker!"
-    "splice-compaction!" "default-session"})
+    "splice-compaction!" "default-session" "repair-transcript!" "get-transcript"})
 
 (defn- record! [method session-id crew]
   (when (contains? recorded-methods (name method))

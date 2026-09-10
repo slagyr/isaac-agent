@@ -6,6 +6,7 @@
     [isaac.reconfigurable :as reconfigurable]
     [isaac.llm.api.protocol :as api-impl]
     [isaac.nexus :as nexus]
+    [isaac.session.policy :as policy]
     [isaac.session.store.spi :as session-store]))
 
 (def Comm
@@ -42,19 +43,23 @@
   [api-key factory]
   (api-impl/register! api-key factory))
 
+(defn- crew-policy [crew store]
+  (policy/for-crew crew (or (some-> (nexus/get :config) deref) {}) store))
+
 (defn create-session!
-  "Create (or reopen) a session record.
+  "Create (or reopen) a session record through the crew's session policy
+   (chronicle when opts name no crew or the crew sets none).
    identifier may be a session name string or an existing session map.
    opts may include :crew, :origin, :chatType, :channel, :cwd.
    Returns the session map."
   ([identifier]
-   (session-store/open-session! (session-store/registered-store) identifier {}))
+   (create-session! identifier {}))
   ([identifier opts]
    (let [store        (or (:session-store opts) (session-store/registered-store))
          session-opts (dissoc opts :root :session-store)]
-     (session-store/open-session! store identifier session-opts)))
+     (policy/open-session! (crew-policy (:crew opts) store) identifier session-opts)))
   ([root identifier opts]
-   (session-store/open-session! (session-store/create root) identifier opts)))
+   (policy/open-session! (crew-policy (:crew opts) (session-store/create root)) identifier opts)))
 
 (defn get-session
   "Return the session map for identifier, or nil if not found.

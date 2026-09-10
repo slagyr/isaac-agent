@@ -85,3 +85,44 @@ Feature: Resume repair and comm staleness
     And session "firewatch" has transcript matching:
       | type    | message.content | #comment                          |
       | message | Anyone there?   | only entry — no interruption note |
+
+  Scenario: transcript repair goes through the session's crew policy
+    Resume never touches a transcript file itself. It asks the crew's session
+    policy to repair, then reads and appends through the same policy, so a
+    policy that keeps its transcript elsewhere (episodes after isaac-b6w0)
+    is repaired in the right place.
+    Given a recording session policy "logbook" is registered
+    And the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path           | value            |
+      | model          | echo             |
+      | soul           | You are Cordelia |
+      | session-policy | logbook          |
+    And the following sessions exist:
+      | name   | crew     |
+      | ledger | cordelia |
+    And session "ledger" has transcript:
+      | type    | message.role | message.content |
+      | message | user         | Begin the entry |
+      | message | assistant    | Entry started   |
+    And session "ledger" has a torn trailing transcript line "{\"type\":\"mess"
+    And the isaac EDN file "sessions/turns/ledger.edn" exists with:
+      | path       | value                |
+      | source     | :comm                |
+      | started-at | 2026-04-21T09:59:30Z |
+    And the following model responses are queued:
+      | type | content    | model |
+      | text | Continuing | echo  |
+    When interrupted turns are resumed at "2026-04-21T10:00:00Z"
+    Then the logbook policy recorded calls matching:
+      | method             | session-id |
+      | repair-transcript! | ledger     |
+      | get-transcript     | ledger     |
+    And session "ledger" has transcript matching:
+      | type    | message.content    | #comment                  |
+      | message | Begin the entry    |                           |
+      | message | Entry started      | torn tail gone            |
+      | message | #".*interrupted.*" | resume note               |
+      | message | Continuing         | resumed turn completed    |
+    And the log has entries matching:
+      | level | event                     | session | repair     |
+      | :warn | :resume/transcript-repair | ledger  | :torn-line |

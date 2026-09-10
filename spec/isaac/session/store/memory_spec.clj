@@ -12,6 +12,27 @@
 
   (around [example] (nexus/-with-nested-nexus {:fs (fs/mem-fs)} (example)))
 
+  (describe "repair-transcript!"
+
+    (it "truncates a torn trailing line on disk and in memory"
+      (let [root "/test/memory-torn"
+            s    (sut/create-store root)
+            path (c/current-transcript-path root "torn")
+            mem  (fs/instance)]
+        (store/open-session! s "torn" {:crew "main"})
+        (store/append-message! s "torn" {:role "user" :content "Begin"})
+        (fs/spit mem path (str (fs/slurp mem path) "{:type \"mess"))
+        (should (store/repair-transcript! s "torn"))
+        (should= ["Begin"] (->> (store/get-transcript s "torn")
+                                (filter #(= "message" (:type %)))
+                                (map #(get-in % [:message :content 0 :text]))))
+        (should-not (store/repair-transcript! s "torn"))))
+
+    (it "is a no-op without a root"
+      (let [s (sut/create-store)]
+        (store/open-session! s "torn" {:crew "main"})
+        (should-not (store/repair-transcript! s "torn")))))
+
   (describe "open-session!"
 
     (it "creates a session with transcript metadata"

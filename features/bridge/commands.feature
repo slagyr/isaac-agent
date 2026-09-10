@@ -121,3 +121,25 @@ Feature: Bridge Commands
       | type    | message.role | message.content |
       | message | user         | hello           |
       | message | assistant    | hi              |
+
+  Scenario: /status counts turns through the session's crew policy
+    Given a recording session policy "logbook" is registered
+    And the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path           | value            |
+      | model          | echo             |
+      | soul           | You are Cordelia |
+      | session-policy | logbook          |
+    And the following sessions exist:
+      | name          | crew     |
+      | policy-status | cordelia |
+    And session "policy-status" has transcript:
+      | type    | message.role | message.content |
+      | message | user         | One             |
+      | message | assistant    | Two             |
+    When the user sends "/status" on session "policy-status"
+    Then the reply matches:
+      | pattern    |
+      | Turns .* 2 |
+    And the logbook policy recorded calls matching:
+      | method         | session-id    |
+      | get-transcript | policy-status |

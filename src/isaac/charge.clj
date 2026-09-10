@@ -8,6 +8,7 @@
     [isaac.llm.provider :as llm-provider]
     [isaac.nexus :as nexus]
     [isaac.session.context :as session-ctx]
+    [isaac.session.policy :as policy]
     [isaac.session.store.spi :as store]))
 
 (def charge-schema
@@ -78,10 +79,10 @@
   (:crew charge))
 
 (defn transcript
-  "Returns the active session transcript from the session store."
+  "Returns the active session transcript through the charge's session policy."
   [charge]
-  (when-let [ss (nexus/get-in [:sessions :store])]
-    (store/active-transcript ss (:session-key charge))))
+  (when-let [sess (policy/for-request charge)]
+    (policy/active-transcript sess (:session-key charge))))
 
 ;; endregion ^^^^^ Accessors ^^^^^
 

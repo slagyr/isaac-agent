@@ -34,7 +34,7 @@
                         (last (sort-by :updated-at (store/list-sessions-by-agent store crew-id))))
                       (store/most-recent-session store))]
       (or (:id recent) nil)))
-  (repair-transcript! [_ _session-id] nil))
+  (repair-transcript! [_ session-id] (store/repair-transcript! store session-id)))
 
 (defn create [store]
   (->ChroniclePolicy store))

@@ -208,7 +208,7 @@
   (turn-markers [_] (store/turn-markers store))
   (default-session [_ _crew _opts]
     (ids/timestamped-id (str (or (memory/now) (java.time.Instant/now)))))
-  (repair-transcript! [_ _session-id] nil))
+  (repair-transcript! [_ session-id] (store/repair-transcript! store session-id)))
 
 (defn create [store]
   (->EpisodesPolicy store))

@@ -379,7 +379,11 @@
                                                (vals (:sessions @state))))))
                       (->> (vals (:sessions @state)) (sort-by :updated-at) last))]
       (:id recent)))
-  (repair-transcript! [_ _session-id] nil))
+  (repair-transcript! [_ session-id]
+    (let [id (c/session-id session-id)]
+      (when-let [entries (when root (c/repair-torn-transcript!* root id (fs/instance)))]
+        (swap! state assoc-in [:transcripts id] (vec entries))
+        true))))
 
 ;; endregion
 

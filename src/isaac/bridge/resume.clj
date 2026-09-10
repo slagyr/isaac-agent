@@ -2,7 +2,6 @@
   (:require
     [clojure.pprint :as pprint]
     [clojure.set :as set]
-    [clojure.string :as str]
     [isaac.charge :as charge]
     [isaac.comm.null :as null-comm]
     [isaac.drive.turn :as turn]
@@ -10,8 +9,8 @@
     [isaac.fs :as fs]
     [isaac.logger :as log]
     [isaac.nexus :as nexus]
+    [isaac.session.policy :as policy]
     [isaac.session.store.impl-common :as store-common]
-    [isaac.session.store.memory :as memory-store]
     [isaac.session.store.spi :as store])
   (:import
     (java.time Instant)))
@@ -98,10 +97,8 @@
                              set)]
     (seq (set/difference tool-call-ids tool-result-ids))))
 
-(declare sync-truncated-transcript!)
-
-(defn- repair-dangling-tool-calls! [session-store session-id]
-  (let [transcript (store/get-transcript session-store session-id)
+(defn- repair-dangling-tool-calls! [sess session-id]
+  (let [transcript (policy/get-transcript sess session-id)
         dangling   (dangling-tool-call-ids transcript)]
     (when (seq dangling)
       (log/warn :resume/transcript-repair
@@ -109,45 +106,22 @@
                 :repair :dangling-tool-call
                 :tool-call-ids (vec dangling))
       (doseq [call-id dangling]
-        (store/append-message! session-store session-id
-                               {:role       "toolResult"
-                                :toolCallId call-id
-                                :content    synthesized-tool-result}))
+        (policy/append-message! sess session-id
+                                {:role       "toolResult"
+                                 :toolCallId call-id
+                                 :content    synthesized-tool-result}))
       true)))
 
-(defn- truncate-torn-transcript! [session-store session-id root _session-file fs]
-  (let [path (store-common/current-transcript-path root session-id)]
-    (when (fs/exists? fs path)
-      (let [raw   (fs/slurp fs path)
-            lines (str/split-lines raw)
-            valid (loop [n (count lines)]
-                    (if (zero? n)
-                      []
-                      (let [candidate (take n lines)]
-                        (if (every? #(try (store-common/read-edn-line %) (catch Exception _ false))
-                                    candidate)
-                          candidate
-                          (recur (dec n))))))]
-        (when (< (count valid) (count lines))
-          (log/warn :resume/transcript-repair
-                    :session session-id
-                    :repair :torn-line
-                    :dropped-lines (- (count lines) (count valid)))
-          (let [entries (mapv store-common/read-edn-line valid)]
-            (store-common/write-transcript! root session-id entries fs)
-            (sync-truncated-transcript! session-store session-id entries)
-            true))))))
+(defn- session-policy
+  "The crew policy for a session id. The session record read is a primitive
+   (policy-neutral); everything transcript-shaped goes through the policy."
+  [session-store cfg session-id]
+  (policy/for-crew (:crew (store/get-session session-store session-id)) (or cfg {}) session-store))
 
-(defn- sync-truncated-transcript! [session-store session-id entries]
-  (when (instance? isaac.session.store.memory.MemorySessionStore session-store)
-    (memory-store/replace-transcript! session-store session-id entries)))
-
-(defn- repair-transcript! [session-store root session-id]
-  (let [session (store/get-session session-store session-id)
-        fs      (filesystem)]
-    (or (when session
-          (truncate-torn-transcript! session-store session-id root nil fs))
-        (repair-dangling-tool-calls! session-store session-id))))
+(defn- repair-transcript! [session-store cfg session-id]
+  (let [sess (session-policy session-store cfg session-id)]
+    (or (policy/repair-transcript! sess session-id)
+        (repair-dangling-tool-calls! sess session-id))))
 
 (defn- requeue-hail! [root marker]
   (when-let [delivery (some-> (marker->delivery marker)
@@ -175,8 +149,7 @@
       (do
         (when (crash-orphan? marker)
           (log/warn :resume/crash-orphan :session session-id))
-        (when (repair-transcript! session-store root session-id)
-          nil)
+        (repair-transcript! session-store cfg session-id)
         (try
           (cond
             (= :hail source)
