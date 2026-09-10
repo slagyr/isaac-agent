@@ -5,6 +5,10 @@
 - Compaction summaries run at `:compaction {:effort 2}` (configurable), chunk whenever history exceeds `:max-request-tokens` (default 32k) regardless of the model window, and retry a transport-class drop (`:stream-stalled` / `"closed"`) once at half size before counting a consecutive failure. Logs `:session/compaction-chunk-retry` (isaac-jgng).
 - Loop-driver seam: `tool-loop/run` dispatches on provider `:drives-tool-loop?`; default loop unchanged; provider-driven loops compact between turns only and log `:turn/compaction-deferred` (isaac-1sdl).
 
+## 0.1.61
+
+- Exhausted turns: the wrap-up note is persisted to the transcript as the final assistant message, so the next turn resumes from it (isaac-x0cw).
+
 ## 0.1.60
 
 - Session policy is the only transcript seam: bridge resume (dangling-tool-call and torn-line repair), `/status` turn count, `charge/transcript` and `isaac.api/create-session!` resolve the crew's SessionPolicy instead of holding the primitive store. `repair-transcript!` is implemented by the sidecar and memory stores (torn trailing EDNL line truncated to the last complete line) and delegated by both policies, so isaac-b6w0 can relocate the episode transcript in one place (isaac-jqma).
