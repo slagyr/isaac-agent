@@ -115,3 +115,42 @@ Feature: Idle sealing — a quiet thread becomes recallable within minutes
     When isaac is run with "prompt -m 'Set the watch rotation' --session reef-chat --crew cordelia"
     Then crew "cordelia" has 2 episodes
     And the episodes for crew "cordelia" on thread "reef-chat" chain by lineage
+
+  @wip
+  Scenario: an open episode with nothing to seal closes on the TTL sweep with zero scenes, once (isaac-empty-episode-sweep)
+    Field 2026-09-09/10: six successor episodes whose backing transcripts held
+    only the compaction summary could never be sealed (nothing to segment →
+    no episode written), yet the sweep logged :episodes/closed :reason
+    :ttl-sweep for each of them every 30 s — 456 false lines and six
+    episodes stuck :open.
+    Given the isaac EDN file "episodes/cordelia/20260301100000000/episode.edn" exists with:
+      | path       | value             |
+      | id         | 20260301100000000 |
+      | crew       | cordelia          |
+      | status     | open              |
+      | thread     | reef-chat         |
+      | started-at | 2026-03-01T10:00:00 |
+    And the isaac EDN file "sessions/20260301100000000/session.edn" exists with:
+      | path | value             |
+      | id   | 20260301100000000 |
+      | name | Reef Chat         |
+      | crew | cordelia          |
+    And the isaac file "sessions/20260301100000000/current.ednl" exists with:
+      """
+      {:type "session" :id "s0" :timestamp "2026-03-01T10:00:00" :crew "cordelia"}
+      {:type "compaction" :id "c1" :timestamp "2026-03-01T10:00:01" :summary "Charted the reef passage."}
+      """
+    When the episodes worker ticks at "2026-03-01T11:30:00"
+    Then an episode exists for crew "cordelia" matching:
+      | key      | value             |
+      | id       | 20260301100000000 |
+      | status   | closed            |
+      | ended-at | #".+"             |
+    And that episode has 0 scenes
+    And the log has entries matching:
+      | level | event            | episode           | reason     |
+      | :info | :episodes/closed | 20260301100000000 | :ttl-sweep |
+    When the episodes worker ticks at "2026-03-01T11:31:00"
+    Then the log does not have entries matching:
+      | event            | episode           | reason     |
+      | :episodes/closed | 20260301100000000 | :ttl-sweep |
