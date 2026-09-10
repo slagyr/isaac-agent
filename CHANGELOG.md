@@ -5,6 +5,11 @@
 - Compaction summaries run at `:compaction {:effort 2}` (configurable), chunk whenever history exceeds `:max-request-tokens` (default 32k) regardless of the model window, and retry a transport-class drop (`:stream-stalled` / `"closed"`) once at half size before counting a consecutive failure. Logs `:session/compaction-chunk-retry` (isaac-jgng).
 - Loop-driver seam: `tool-loop/run` dispatches on provider `:drives-tool-loop?`; default loop unchanged; provider-driven loops compact between turns only and log `:turn/compaction-deferred` (isaac-1sdl).
 
+## 0.1.60
+
+- Session policy is the only transcript seam: bridge resume (dangling-tool-call and torn-line repair), `/status` turn count, `charge/transcript` and `isaac.api/create-session!` resolve the crew's SessionPolicy instead of holding the primitive store. `repair-transcript!` is implemented by the sidecar and memory stores (torn trailing EDNL line truncated to the last complete line) and delegated by both policies, so isaac-b6w0 can relocate the episode transcript in one place (isaac-jqma).
+- Parallel tool batches: the cancel-mid-batch scenario expects the in-flight call to report `tool-cancel`, matching the 0.1.59 preserved `{:error :cancelled}` (isaac-qpdb fallout).
+
 ## 0.1.59
 
 - Tool registry: `run-handler` preserves a handler's `{:error :cancelled}` instead of stringifying it through output capping, so a cancel mid-tool reaches the drive and comms get `on-tool-cancel` (ACP `tool_call_update` status `cancelled`). Belt: `announce-tool-call!` also emits the cancel while the tool is `:running` (isaac-qpdb).
