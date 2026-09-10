@@ -131,3 +131,32 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
     And the log has entries matching:
       | level  | event       | session   | ended-by | error                    |
       | :info  | :turn/ended | trash-can | :error   | :empty-terminal-response |
+
+  @wip
+  Scenario: the wrap-up note is persisted as the turn's final assistant message so the continuation can read it (isaac-wrapup-note)
+    Field 2026-09-10 (isaac-mmod, isaac-work-2): three wrap-ups produced a
+    note (:exhaustion :wrapped-up) and none of them appear in the transcript —
+    the continuation turn's prompt is rebuilt from the transcript and never
+    sees the done/next note it was supposed to start from.
+    Given the memory comm answers :wrap-up on exhaustion
+    And the isaac EDN file "config/crew/oscar.edn" exists with:
+      | path        | value  |
+      | model       | grover |
+      | cycle-limit | 1      |
+    And the crew "oscar" allows tools: "exec/run"
+    And the following sessions exist:
+      | name      | crew  |
+      | trash-can | oscar |
+    And the following model responses are queued:
+      | type      | tool_call | arguments           | content                                | model |
+      | tool_call | exec__run | {"command": "true"} |                                        | echo  |
+      | text      |           |                     | Done: counted one can. Next: count lids | echo  |
+    When the user sends "count the cans" on session "trash-can" via memory comm
+    Then session "trash-can" has transcript matching:
+      | type     | message.role | message.content                         |
+      | toolCall | assistant    | #*                                      |
+      | message  | toolResult   | #*                                      |
+      | message  | assistant    | Done: counted one can. Next: count lids |
+    And the memory comm has events matching:
+      | event    | result.ended-by | result.exhaustion |
+      | turn-end | :cycle-limit    | :wrapped-up       |
