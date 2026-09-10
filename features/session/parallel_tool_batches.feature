@@ -101,7 +101,7 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
     And the memory comm has events matching:
       | event       | tool-name    |
       | tool-call   | test__anchor |
-      | tool-result | test__anchor |
+      | tool-cancel | test__anchor |
     And the memory comm has events matching:
       | event       | tool-name   |
       | tool-call   | test__quick |
