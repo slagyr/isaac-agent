@@ -256,6 +256,16 @@
       (fn []
         (atomic-spit! fs path (write-edn (assoc marker :session-id (str session-id))))))))
 
+(defn request-cancel!* [root session-id fs]
+  (with-persist-lock session-id
+    (fn []
+      (let [path (turn-marker-path root session-id)]
+        (when (exists?* fs path)
+          (let [marker (edn/read-string (slurp* fs path))]
+            (atomic-spit! fs path (write-edn (assoc marker :cancelled true
+                                                    :session-id (str session-id))))
+            true))))))
+
 (defn clear-turn-marker!* [root session-id fs]
   (with-persist-lock session-id
     (fn []

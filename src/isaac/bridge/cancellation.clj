@@ -1,6 +1,7 @@
 (ns isaac.bridge.cancellation
   (:require
-    [isaac.logger :as log]))
+    [isaac.logger :as log]
+    [isaac.session.store.spi :as store]))
 
 ;; region ----- State -----
 
@@ -37,7 +38,9 @@
   nil)
 
 (defn cancelled? [session-key]
-  (some-> (get @turns* session-key) :cancelled? deref boolean))
+  (or (some-> (get @turns* session-key) :cancelled? deref boolean)
+      (true? (:cancelled (some-> (store/registered-store)
+                                 (store/get-turn-marker session-key))))))
 
 (defn on-cancel! [session-key f]
   (when (and session-key f)

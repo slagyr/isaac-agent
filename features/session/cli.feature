@@ -27,6 +27,7 @@ Feature: Sessions Command
     And the stdout contains "show"
     And the stdout contains "rename"
     And the stdout contains "migrate"
+    And the stdout contains "cancel"
     And the exit code is 0
 
   Scenario: sessions set --help shows the set usage
@@ -325,26 +326,22 @@ Feature: Sessions Command
     Then the exit code is 1
     And the stderr contains "mutually exclusive"
 
-  @wip
   Scenario: sessions cancel --help shows the cancel usage
     When isaac is run with "sessions cancel --help"
     Then the stdout contains "Usage: isaac sessions cancel <id>"
     And the exit code is 0
 
-  @wip
   Scenario: sessions cancel without an id is refused
     When isaac is run with "sessions cancel"
     Then the stdout contains "Usage: isaac sessions cancel <id>"
     And the exit code is 1
 
-  @wip
   Scenario: sessions cancel on an unknown session is refused
     When isaac is run with "sessions cancel ghost-ship"
     Then the stdout contains "session not found: ghost-ship"
     And the exit code is 1
     And no turn marker exists for session "ghost-ship"
 
-  @wip
   Scenario: sessions cancel on an idle session is refused
     Given the following sessions exist:
       | name | crew |
@@ -354,7 +351,6 @@ Feature: Sessions Command
     And the exit code is 1
     And no turn marker exists for session "joe"
 
-  @wip
   Scenario: sessions cancel stamps :cancelled on a live turn and returns without waiting
     Given the following sessions exist:
       | name        |
@@ -371,7 +367,6 @@ Feature: Sessions Command
     And session "design-chat" in-flight status is true
     When the turn ends on session "design-chat"
 
-  @wip
   Scenario: sessions cancel stamps :cancelled on an orphan marker
     Given the following sessions exist:
       | name    |

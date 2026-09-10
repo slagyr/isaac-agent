@@ -278,6 +278,33 @@
         (do (println (str "deleted: " session-id)) 0)
         (do (println (str "session not found: " session-id)) 1)))))
 
+(defn- run-cancel [opts session-id]
+  (cond
+    (str/blank? session-id)
+    (do
+      (println (str/join "\n" ["Usage: isaac sessions cancel <id>"
+                               ""
+                               "Stamp :cancelled on the session's in-progress turn marker. Fire-and-forget."]))
+      1)
+
+    :else
+    (let [{session-store :store} (install-cli! opts)
+          session (store/get-session session-store session-id)]
+      (cond
+        (nil? session)
+        (do (println (str "session not found: " session-id)) 1)
+
+        (nil? (store/get-turn-marker session-store session-id))
+        (do
+          (binding [*out* *err*]
+            (println (str "cannot cancel idle session '" session-id "': no turn is in progress.")))
+          1)
+
+        :else
+        (do
+          (store/request-cancel! session-store session-id)
+          0)))))
+
 (defn- print-mutation-error! [message]
   (binding [*out* *err*]
     (println message))
@@ -471,6 +498,8 @@
 (def ^:private rename-help  ["Usage: isaac sessions rename <old-id> <new-id>" "Rename a session key, preserving transcript and metadata."])
 (def ^:private migrate-help ["Usage: isaac sessions migrate [session-id]"
                              "Convert leftover jsonl sessions into sessions/<id>/current.ednl. No id migrates every leftover session."])
+(def ^:private cancel-help ["Usage: isaac sessions cancel <id>"
+                            "Stamp :cancelled on the session's in-progress turn marker. Fire-and-forget."])
 
 (defn- run-list [opts list-args]
   (let [{:keys [options errors]} (parse-option-map list-args)]
@@ -528,6 +557,11 @@
       (= "list" subcmd)
       (run-list opts (rest raw-args))
 
+      (= "cancel" subcmd)
+      (if (help-requested? (rest raw-args))
+        (apply print-subcommand-help! cancel-help)
+        (run-cancel opts (second raw-args)))
+
       (and subcmd (not (str/starts-with? subcmd "-")))
       (do
         (binding [*out* *err*]
@@ -562,4 +596,5 @@
    {:name "unset"  :summary "Clear a mutable field: sessions unset <id>.<path>"}
    {:name "rename"  :summary "Rename a session key: sessions rename <old-id> <new-id>"}
    {:name "delete"  :summary "Delete a session"}
-   {:name "migrate" :summary "Convert leftover jsonl sessions to current.ednl directories"}])
+   {:name "migrate" :summary "Convert leftover jsonl sessions to current.ednl directories"}
+   {:name "cancel"  :summary "Cancel an in-progress turn: sessions cancel <id>"}])

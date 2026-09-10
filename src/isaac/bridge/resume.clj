@@ -137,15 +137,40 @@
                    :comm        null-comm/channel}))
   true)
 
+(defn- cancelled-dir [root]
+  (str root "/hail/cancelled"))
+
+(defn- archive-cancelled-hail! [root marker]
+  (when-let [delivery (marker->delivery marker)]
+    (let [fs*  (filesystem)
+          path (str (cancelled-dir root) "/" (:id delivery) ".edn")
+          temp (str path ".tmp")]
+      (fs/mkdirs fs* (fs/parent path))
+      (fs/spit fs* temp (write-edn delivery))
+      (fs/move fs* temp path)
+      true)))
+
 (defn- resume-marker!
   [{:keys [session-store root cfg window-ms now-ms]} marker]
   (let [session-id (or (:session-id marker) (get marker "session-id"))
         source     (:source marker)]
-    (if (comm-stale? marker window-ms now-ms)
+    (cond
+      (true? (:cancelled marker))
+      (do
+        (when (= :hail source)
+          (archive-cancelled-hail! root marker))
+        (store/clear-turn-marker! session-store session-id)
+        (when root
+          (store-common/clear-turn-marker!* root session-id (filesystem)))
+        {:dropped 1})
+
+      (comm-stale? marker window-ms now-ms)
       (do
         (log/info :resume/comm-stale :session session-id)
         (store/clear-turn-marker! session-store session-id)
         {:dropped 1})
+
+      :else
       (do
         (when (crash-orphan? marker)
           (log/warn :resume/crash-orphan :session session-id))

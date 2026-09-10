@@ -83,4 +83,44 @@
       (should= 0 (:requeued entry))
       (should= 1 (:dropped entry)))
     (should= nil (store/get-turn-marker (store/registered-store) "firewatch")))
+
+  (it "archives a cancelled hail marker to hail/cancelled and drops it without re-queue"
+    (helper/create-session! test-root "engine-room")
+    (store/record-turn-marker! (store/registered-store) "engine-room"
+                               {:source         :hail
+                                :session-id     "engine-room"
+                                :delivery-id    "hail-1"
+                                :prompt         "Seal the leak."
+                                :crew           "bartholomew"
+                                :bound-session  :engine-room
+                                :attempts       2
+                                :cancelled      true})
+    (sut/resume-interrupted-turns! {:session-store (store/registered-store)
+                                    :root          test-root
+                                    :cfg           {}
+                                    :now           (Instant/parse "2026-04-21T10:00:00Z")})
+    (let [entry (first (filter #(= :resume/scan-complete (:event %)) @log/captured-logs))]
+      (should-not-be-nil entry)
+      (should= 1 (:markers entry))
+      (should= 0 (:requeued entry))
+      (should= 1 (:dropped entry)))
+    (should (fs/exists? (nexus/get :fs) (str test-root "/hail/cancelled/hail-1.edn")))
+    (should-not (fs/exists? (nexus/get :fs) (str test-root "/hail/deliveries/hail-1.edn")))
+    (should= nil (store/get-turn-marker (store/registered-store) "engine-room")))
+
+  (it "drops a cancelled comm marker without dispatching an interruption note"
+    (helper/create-session! test-root "firewatch")
+    (store/record-turn-marker! (store/registered-store) "firewatch"
+                               {:source     :comm
+                                :session-id "firewatch"
+                                :started-at "2026-04-21T09:59:30Z"
+                                :cancelled  true})
+    (sut/resume-interrupted-turns! {:session-store (store/registered-store)
+                                    :root          test-root
+                                    :cfg           {}
+                                    :now           (Instant/parse "2026-04-21T10:00:00Z")})
+    (let [entry (first (filter #(= :resume/scan-complete (:event %)) @log/captured-logs))]
+      (should= 1 (:dropped entry))
+      (should= 0 (:requeued entry)))
+    (should= nil (store/get-turn-marker (store/registered-store) "firewatch")))
   )

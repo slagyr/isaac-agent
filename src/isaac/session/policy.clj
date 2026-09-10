@@ -30,7 +30,8 @@
   (get-turn-marker [this session-id])
   (turn-markers [this])
   (default-session [this crew opts])
-  (repair-transcript! [this session-id]))
+  (repair-transcript! [this session-id])
+  (request-cancel! [this session-id]))
 
 (defonce ^:private factories* (atom {}))
 

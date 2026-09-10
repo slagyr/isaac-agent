@@ -192,3 +192,21 @@
     (it "returns nil when the source session is missing"
       (let [s (memory/create-store)]
         (should-be-nil (store/rename-session! s "missing" "skipper"))))))
+
+  (describe "request-cancel!"
+
+    (it "returns false and creates nothing when no marker exists"
+      (let [s (memory/create-store)]
+        (store/open-session! s "idle" {})
+        (should-not (store/request-cancel! s "idle"))
+        (should-be-nil (store/get-turn-marker s "idle"))))
+
+    (it "stamps :cancelled true on an existing marker and returns true"
+      (let [s (memory/create-store)]
+        (store/open-session! s "live" {})
+        (store/record-turn-marker! s "live" {:source :cli :started-at "2026-04-21T09:59:30Z"})
+        (should (store/request-cancel! s "live"))
+        (let [marker (store/get-turn-marker s "live")]
+          (should= true (:cancelled marker))
+          (should= :cli (:source marker)))))
+    )

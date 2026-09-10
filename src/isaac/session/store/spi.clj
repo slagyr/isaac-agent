@@ -38,7 +38,10 @@
   (get-turn-marker [this session-id])
   (turn-markers [this])
   (default-session [this crew opts])
-  (repair-transcript! [this session-id]))
+  (repair-transcript! [this session-id])
+  ;; Operator cancel (isaac-jejt): stamp :cancelled on an existing marker.
+  ;; No marker → false, create nothing.
+  (request-cancel! [this session-id]))
 
 (defonce ^:private in-flight* (atom {}))
 

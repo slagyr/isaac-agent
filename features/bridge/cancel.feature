@@ -47,7 +47,6 @@ Feature: Turn Cancellation
       | type    | message.role | message.content |
       | message | assistant    | Still here!     |
 
-  @wip
   Scenario: a :cancelled stamp on the turn marker stops the running turn
     Given the following sessions exist:
       | name        |

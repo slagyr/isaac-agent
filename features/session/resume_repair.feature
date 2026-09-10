@@ -67,7 +67,6 @@ Feature: Resume repair and comm staleness
       | level | event              | session   |
       | :info | :resume/comm-stale | firewatch |
 
-  @wip
   Scenario: a cancelled comm marker is dropped, not resumed
     Given the following sessions exist:
       | name      |

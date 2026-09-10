@@ -383,7 +383,16 @@
     (let [id (c/session-id session-id)]
       (when-let [entries (when root (c/repair-torn-transcript!* root id (fs/instance)))]
         (swap! state assoc-in [:transcripts id] (vec entries))
-        true))))
+        true)))
+  (request-cancel! [_ session-id]
+    (let [id (str session-id)]
+      (if-let [marker (get-in @state [:turn-markers id])]
+        (do
+          (swap! state assoc-in [:turn-markers id] (assoc marker :cancelled true :session-id id))
+          (when root
+            (c/request-cancel!* root id (fs/instance)))
+          true)
+        false))))
 
 ;; endregion
 
