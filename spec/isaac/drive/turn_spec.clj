@@ -1,5 +1,6 @@
 (ns isaac.drive.turn-spec
   (:require
+    [isaac.llm.turn-instructions :as turn-instructions]
     [isaac.api]
     [isaac.bridge.cancellation :as bridge]
     [isaac.comm.memory :as memory-comm]
@@ -1070,7 +1071,7 @@
                                        :tool-calls []})
                       sut/process-response! (fn [& _] nil)]
           (#'sut/execute-llm-turn! "full-history" "Are the blueprints ready?" ctx))
-         (should= [{:role "system" :content "You are Brain.\n\nWhen tool calls are independent (reads, greps, separate files), batch them in a single response.\n\nSession: full-history\nCrew: main"}
+         (should= [{:role "system" :content (str "You are Brain.\n\n" turn-instructions/parallel-tool-calls-hint "\n\nSession: full-history\nCrew: main")}
                   {:role "user" :content "What are we doing tonight?"}
                   {:role "assistant" :content "The same thing we do every night."}
                   {:role "user" :content "Are the blueprints ready?"}]
@@ -1095,7 +1096,7 @@
                                        :tool-calls []})
                       sut/process-response! (fn [& _] nil)]
           (#'sut/execute-llm-turn! "reset-history" "Brain escaped the cage." ctx))
-         (should= [{:role "system" :content "You are Pinky.\n\nWhen tool calls are independent (reads, greps, separate files), batch them in a single response.\n\nSession: reset-history\nCrew: pinky"}
+         (should= [{:role "system" :content (str "You are Pinky.\n\n" turn-instructions/parallel-tool-calls-hint "\n\nSession: reset-history\nCrew: pinky")}
                   {:role "user" :content "Brain escaped the cage."}]
                  (:messages @captured))))
 
