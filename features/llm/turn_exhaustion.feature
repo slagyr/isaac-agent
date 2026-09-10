@@ -132,7 +132,6 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
       | level  | event       | session   | ended-by | error                    |
       | :info  | :turn/ended | trash-can | :error   | :empty-terminal-response |
 
-  @wip
   Scenario: the wrap-up note is persisted as the turn's final assistant message so the continuation can read it (isaac-x0cw)
     Field 2026-09-10 (isaac-mmod, isaac-work-2): three wrap-ups produced a
     note (:exhaustion :wrapped-up) and none of them appear in the transcript —
@@ -142,7 +141,7 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
     And the isaac EDN file "config/crew/oscar.edn" exists with:
       | path        | value  |
       | model       | grover |
-      | cycle-limit | 1      |
+      | cycle-limit | 0      |
     And the crew "oscar" allows tools: "exec/run"
     And the following sessions exist:
       | name      | crew  |

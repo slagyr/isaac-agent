@@ -1943,3 +1943,46 @@
                                        :cancelled?  true})]
           (let [result (#'sut/execute-llm-turn! "loop-cancel" "go" ctx)]
             (should= "cancelled" (:stopReason result))))))))
+
+  (describe "wrap-up note persistence"
+    #_{:clj-kondo/ignore [:unresolved-symbol]}
+    (around [example]
+      (nexus/-with-nexus {:root test-dir :fs (fs/mem-fs)}
+        (helper/with-memory-store
+          (example))))
+
+    (it "persists a no-tool wrap-up note as the final assistant message and ends :cycle-limit :wrapped-up"
+      (helper/create-session! test-dir "wrap-note")
+      (let [captured (atom [])
+            queue    (atom [{:message {:role    "assistant"
+                                       :content ""
+                                       :tool_calls [{:id       "tc1"
+                                                     :function {:name "logbook-entry" :arguments {}}}]}
+                             :model   "test-model"
+                             :usage   {}}
+                            {:message {:role "assistant" :content "Done: counted one can. Next: count lids"}
+                             :model   "test-model"
+                             :usage   {}}])
+            provider (->ScriptedPromptProvider marigold/starcore
+                                               {:api marigold/sky-api :stream-supports-tool-calls false}
+                                               queue captured)
+            ctx      (assoc (base-execution-ctx provider
+                                                {:model          "test-model"
+                                                 :soul           "You are Isaac."
+                                                 :crew           "main"
+                                                 :comm           (memory-comm/channel (atom []) :wrap-up)
+                                                 :context-window 4096
+                                                 :cycle-limit    0})
+                       :allowed-tools #{"logbook-entry"})]
+        (tool-registry/clear!)
+        (tool-registry/register! {:name        "logbook-entry"
+                                  :description "Append to the ship's log"
+                                  :parameters  {:type "object"}
+                                  :handler     (fn [_] {:result "ok"})})
+        (let [result   (#'sut/execute-llm-turn! "wrap-note" "count the cans" ctx)
+              last-msg (:message (last (helper/get-transcript test-dir "wrap-note")))]
+          (should= :cycle-limit (:ended-by result))
+          (should= :wrapped-up (:exhaustion result))
+          (should= "assistant" (:role last-msg))
+          (should= "Done: counted one can. Next: count lids" (:content last-msg)))))
+    )
