@@ -209,6 +209,11 @@
 (defn episodes-worker-ticks-at [iso]
   (let [now (parse-iso iso)]
     (g/assoc! :current-time now)
+    ;; Slice subsequent negative log assertions to this tick only. The
+    ;; positive matcher looks at the full capture; without a mark, "the log
+    ;; does not have entries matching" after a second tick still sees the
+    ;; first tick's :episodes/closing (isaac-9tjo idle_seal).
+    (g/assoc! :log-entries-mark (count (log/get-entries)))
     (with-feature-fs
       (fn []
         (binding [memory/*now* now]

@@ -19,6 +19,7 @@
     [isaac.recall.inject :as recall-inject]
     [isaac.recall.score :as score]
     [isaac.session.context :as session-ctx]
+    [isaac.session.store.impl-common :as impl-common]
     [isaac.session.store.spi :as session-store]
     [isaac.tool.memory :as memory])
   (:import
@@ -51,6 +52,10 @@
        last
        :timestamp))
 
+(defn- last-entry-timestamp [transcript]
+  (or (last-message-timestamp transcript)
+      (->> transcript last :timestamp)))
+
 (defn ttl-minutes [cfg]
   (or (get-in cfg [:episodes :ttl-minutes]) DEFAULT_TTL_MINUTES))
 
@@ -64,9 +69,11 @@
     (= :episodes (get-in (or cfg {}) [:crew crew-id :conversation]))))
 
 (defn warm?
-  "True when the last transcript message is within ttl-minutes of memory/now."
+  "True when the last transcript entry is within ttl-minutes of memory/now.
+   Empty (no messages) successors still count as warm while their compaction
+   marker is inside the TTL — the sweep only deletes them once they go cold."
   [transcript ttl]
-  (let [ts (parse-timestamp (last-message-timestamp transcript))]
+  (let [ts (parse-timestamp (last-entry-timestamp transcript))]
     (boolean
       (when ts
         (let [age (.toMinutes (Duration/between ts (now-instant)))]
@@ -80,6 +87,15 @@
 
 (defn- runtime-store [session-store*]
   (or session-store* (session-store/registered-store)))
+
+(defn- transcript-for
+  "Prefer the live store; fall back to planted/on-disk current.ednl so a
+   memory store that never opened the session still sees the fixture."
+  [ss fs* root episode-id]
+  (or (when ss (session-store/chronicle-transcript ss episode-id))
+      (when (and fs* root episode-id)
+        (let [entries (impl-common/read-transcript-raw root episode-id fs*)]
+          (when (seq entries) entries)))))
 
 (defn- gist-provider+model [cfg root provider model]
   (if (and provider model)
@@ -149,6 +165,29 @@
                 :error (.getMessage e))
       nil)))
 
+(defn- empty-transcript?
+  "True when there are no type=message entries — only markers/compaction."
+  [transcript]
+  (empty? (filter #(= "message" (:type %)) (or transcript []))))
+
+(defn- close-result-status [result]
+  (or (:status result) (get-in result [:episode :status])))
+
+(defn- succeeded-close? [result]
+  (contains? #{:closed :partial :resumed} (close-result-status result)))
+
+(defn- delete-empty-episode!
+  "Drop the episode record and its backing session. No LLM pass."
+  [fs* root crew episode-id ss]
+  (store/delete-episode! fs* root crew episode-id)
+  (when ss
+    (session-store/delete-session! ss episode-id))
+  ;; Memory store only deletes disk when the session is in its atom; planted
+  ;; file fixtures (and sidecar leftovers) still need the directory gone.
+  (impl-common/delete-tree! fs* (impl-common/session-dir root episode-id))
+  (log/info :episodes/deleted :episode episode-id :crew crew :reason :empty)
+  {:status :deleted :reason :empty :episode-id episode-id})
+
 (defn close-episode!
   "Seal an open episode via the migrate/segment pipeline. Preserves :thread
    and :parent-episode on the closed record. Indexes sealed scenes when
@@ -160,7 +199,7 @@
         crew    (or crew "main")
         existing (store/read-episode fs* root crew episode-id)
         session  (when ss (session-store/get-session ss episode-id))
-        transcript (when ss (session-store/chronicle-transcript ss episode-id))
+        transcript (transcript-for ss fs* root episode-id)
         {:keys [provider model]} (gist-provider+model (or cfg {}) root provider model)]
     (cond
       (nil? existing)
@@ -171,6 +210,9 @@
 
       (nil? session)
       {:exit 1 :status :error :message (str "unknown backing session: " episode-id)}
+
+      (empty-transcript? transcript)
+      (delete-empty-episode! fs* root crew episode-id ss)
 
       (nil? provider)
       {:exit 1 :status :error :message "no gist model/provider resolved — set :episodes {:gist-model ...} or :defaults :model"}
@@ -216,6 +258,8 @@
     {:closed  (count (filter #(contains? #{:closed :partial :resumed}
                                         (or (:status %) (get-in % [:episode :status])))
                             results))
+     :deleted (count (filter #(= :deleted (:status %)) results))
+     :failed  (count (filter #(= :error (:status %)) results))
      :results results}))
 
 (defn- chain-successor!
@@ -448,7 +492,9 @@
 
 (defn maybe-close-if-cold!
   "TTL close after the idle-seal pass. Skips in-flight / already-closed /
-   still-warm episodes. Returns {:status :closed :reason :ttl} on close."
+   still-warm episodes. Empty transcripts (no messages) are deleted, not closed.
+   Logs :episodes/closing before the attempt; :closed / :deleted only after
+   success; :close-failed with the error on failure."
   [{:keys [fs root crew episode-id session-store provider model cfg]}]
   (let [fs*      (runtime-fs fs)
         root     (runtime-root root)
@@ -464,16 +510,30 @@
       {:status :skipped :reason :in-flight}
 
       :else
-      (let [transcript (when ss (session-store/chronicle-transcript ss episode-id))
+      (let [transcript (transcript-for ss fs* root episode-id)
             ttl        (ttl-minutes cfg)]
         (if (warm? transcript ttl)
           {:status :skipped :reason :warm}
-          (let [closed (close-episode! {:fs fs* :root root :crew crew
-                                        :episode-id episode-id
-                                        :session-store ss
-                                        :provider provider :model model :cfg cfg})]
-            (log/info :episodes/closed :episode episode-id :crew crew :reason :ttl-sweep)
-            {:status :closed :reason :ttl :episode (:episode closed)}))))))
+          (do
+            (log/info :episodes/closing :episode episode-id :crew crew)
+            (try
+              (if (empty-transcript? transcript)
+                (delete-empty-episode! fs* root crew episode-id ss)
+                (let [closed (close-episode! {:fs fs* :root root :crew crew
+                                              :episode-id episode-id
+                                              :session-store ss
+                                              :provider provider :model model :cfg cfg})]
+                  (if (succeeded-close? closed)
+                    (do
+                      (log/info :episodes/closed :episode episode-id :crew crew :reason :ttl-sweep)
+                      {:status :closed :reason :ttl :episode (:episode closed)})
+                    (let [message (or (:message closed) "close did not write a closed episode")]
+                      (log/warn :episodes/close-failed :episode episode-id :crew crew :error message)
+                      {:status :error :reason :close-failed :error message :result closed}))))
+              (catch Exception e
+                (let [message (or (.getMessage e) (str e))]
+                  (log/warn :episodes/close-failed :episode episode-id :crew crew :error message)
+                  {:status :error :reason :close-failed :error message})))))))))
 
 (defn compact-close!
   "Compaction on an episode crew: close the current episode and open a

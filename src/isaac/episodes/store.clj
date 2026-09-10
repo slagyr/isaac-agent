@@ -37,9 +37,17 @@
   (fs/mkdirs fs* (fs/parent path))
   (fs/spit fs* path (impl/write-edn value)))
 
+(defn- keywordize-status [v]
+  (cond
+    (keyword? v) v
+    (string? v)  (keyword v)
+    :else        v))
+
 (defn- read-edn [fs* path]
   (when (fs/exists? fs* path)
-    (edn/read-string (fs/slurp fs* path))))
+    (let [data (edn/read-string (fs/slurp fs* path))]
+      (cond-> data
+        (:status data) (update :status keywordize-status)))))
 
 (defn- yaml-scalar [value]
   (cond
@@ -130,6 +138,11 @@
      (doseq [scene scenes]
        (write-scene-md! fs* (scene-md-path root crew id (:id scene)) scene))
      episode)))
+
+(defn delete-episode!
+  "Remove the episode directory (record + scenes) so list/read no longer see it."
+  [fs* root crew episode-id]
+  (impl/delete-tree! fs* (episode-path root crew episode-id)))
 
 (defn read-episode
   "Read episode.edn for crew/id, or nil."

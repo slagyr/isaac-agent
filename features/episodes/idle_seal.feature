@@ -116,7 +116,6 @@ Feature: Idle sealing — a quiet thread becomes recallable within minutes
     Then crew "cordelia" has 2 episodes
     And the episodes for crew "cordelia" on thread "reef-chat" chain by lineage
 
-  @wip
   Scenario: an open episode with nothing to seal is deleted by the TTL sweep, once, and the log says so (isaac-9tjo)
     Field 2026-09-09/10: six successor episodes whose backing transcripts held
     only the compaction summary could never be sealed (nothing to segment →

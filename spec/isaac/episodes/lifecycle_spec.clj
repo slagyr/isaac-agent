@@ -138,7 +138,9 @@
     (binding [memory/*now* (java.time.Instant/parse "2026-03-01T10:10:00Z")]
       (should (sut/warm? [{:type "message" :timestamp "2026-03-01T10:00:00"}] 60))
       (should-not (sut/warm? [{:type "message" :timestamp "2026-03-01T09:00:00"}] 60))
-      (should-not (sut/warm? [] 60))))
+      (should-not (sut/warm? [] 60))
+      (should (sut/warm? [{:type "compaction" :timestamp "2026-03-01T10:00:00"}] 60))
+      (should-not (sut/warm? [{:type "compaction" :timestamp "2026-03-01T09:00:00"}] 60))))
 
   (it "resolves an absent thread to a newly opened episode"
     (with-redefs [isaac.episodes.ids/chaos-suffix (constantly "gh78")]
@@ -273,6 +275,107 @@
               (should= (:id opened) (get-in resolved [:episode :parent-episode]))
               (should= :open (get-in resolved [:episode :status]))
               (should= "reef-chat" (get-in resolved [:episode :thread]))))))))
+
+  (it "does not delete an empty successor that is still inside the TTL window"
+    (let [id "fresh-empty"]
+      (binding [memory/*now* (java.time.Instant/parse "2026-03-01T10:00:00Z")]
+        (session-store/open-session! @ss id {:crew "cordelia" :cwd @root})
+        (session-store/append-compaction! @ss id {:summary "Summary so far"})
+        (store/write-episode! @mem @root {:id id :crew "cordelia" :status :open
+                                          :thread "reef-chat" :started-at "2026-03-01T10:00:00"} []))
+      (log/capture-logs
+        (binding [memory/*now* (java.time.Instant/parse "2026-03-01T10:10:00Z")]
+          (let [result (sut/maybe-close-if-cold! {:fs @mem :root @root :crew "cordelia"
+                                                  :episode-id id :session-store @ss
+                                                  :cfg {:episodes {:ttl-minutes 60}}})]
+            (should= :skipped (:status result))
+            (should= :warm (:reason result))
+            (should= :open (:status (store/read-episode @mem @root "cordelia" id)))
+            (should-not (some #(= :episodes/closing (:event %)) @log/captured-logs)))))))
+
+  (it "deletes an empty cold episode (record + backing session) without an LLM pass"
+    (let [id "20260301100000000"]
+      (binding [memory/*now* (java.time.Instant/parse "2026-03-01T10:00:00Z")]
+        (session-store/open-session! @ss id {:crew "cordelia" :cwd @root :name "Reef Chat"})
+        (session-store/append-compaction! @ss id {:summary "Charted the reef passage."})
+        (store/write-episode! @mem @root {:id id :crew "cordelia" :status :open
+                                          :thread "reef-chat" :started-at "2026-03-01T10:00:00"} []))
+      (log/capture-logs
+        (binding [memory/*now* (java.time.Instant/parse "2026-03-01T11:30:00Z")]
+          (let [result (sut/maybe-close-if-cold! {:fs @mem :root @root :crew "cordelia"
+                                                  :episode-id id :session-store @ss
+                                                  :cfg {:episodes {:ttl-minutes 60}}})]
+            (should= :deleted (:status result))
+            (should= :empty (:reason result))
+            (should-be-nil (store/read-episode @mem @root "cordelia" id))
+            (should-be-nil (session-store/get-session @ss id))
+            (let [events (mapv :event @log/captured-logs)]
+              (should= [:episodes/closing :episodes/deleted] events)
+              (should= :empty (:reason (first (filter #(= :episodes/deleted (:event %)) @log/captured-logs))))))))))
+
+  (it "deletes an empty cold episode planted only as files (no in-memory session)"
+    (let [id      "20260301100000000"
+          ep-path (str @root "/episodes/cordelia/" id "/episode.edn")
+          sess-dir (str @root "/sessions/" id)
+          sess-edn (str sess-dir "/session.edn")
+          current  (str sess-dir "/current.ednl")]
+      (store/write-episode! @mem @root {:id id :crew "cordelia" :status :open
+                                        :thread "reef-chat" :started-at "2026-03-01T10:00:00"} [])
+      (fs/mkdirs @mem sess-dir)
+      (fs/spit @mem sess-edn (pr-str {:id id :name "Reef Chat" :crew "cordelia"}))
+      (fs/spit @mem current
+              (str "{:type \"session\" :id \"s0\" :timestamp \"2026-03-01T10:00:00\" :crew \"cordelia\"}\n"
+                   "{:type \"compaction\" :id \"c1\" :timestamp \"2026-03-01T10:00:01\" :summary \"Charted the reef passage.\"}\n"))
+      (log/capture-logs
+        (binding [memory/*now* (java.time.Instant/parse "2026-03-01T11:30:00Z")]
+          (let [result (sut/maybe-close-if-cold! {:fs @mem :root @root :crew "cordelia"
+                                                  :episode-id id :session-store @ss
+                                                  :cfg {:episodes {:ttl-minutes 60}}})]
+            (should= :deleted (:status result))
+            (should-be-nil (store/read-episode @mem @root "cordelia" id))
+            (should-not (fs/exists? @mem ep-path))
+            (should-not (fs/exists? @mem sess-edn))
+            (should= [:episodes/closing :episodes/deleted]
+                     (mapv :event (filter #(#{:episodes/closing :episodes/deleted} (:event %))
+                                          @log/captured-logs))))))))
+
+  (it "logs :episodes/close-failed when a cold close cannot write a closed episode"
+    (let [id "20260301100000000"]
+      (binding [memory/*now* (java.time.Instant/parse "2026-03-01T10:00:00Z")]
+        (session-store/open-session! @ss id {:crew "cordelia" :cwd @root})
+        (session-store/append-message! @ss id {:role "user" :content "Chart the reef."})
+        (session-store/append-message! @ss id {:role "assistant" :content "Charted."})
+        (store/write-episode! @mem @root {:id id :crew "cordelia" :status :open
+                                          :thread "reef-chat"} []))
+      (log/capture-logs
+        (binding [memory/*now* (java.time.Instant/parse "2026-03-01T11:30:00Z")]
+          (with-redefs [isaac.episodes.lifecycle/close-episode!
+                        (fn [_] {:exit 1 :status :error :message "nothing to segment"})]
+            (let [result (sut/maybe-close-if-cold! {:fs @mem :root @root :crew "cordelia"
+                                                    :episode-id id :session-store @ss
+                                                    :cfg {:episodes {:ttl-minutes 60}}})]
+              (should= :error (:status result))
+              (should= "nothing to segment" (:error result))
+              (should= :open (:status (store/read-episode @mem @root "cordelia" id)))
+              (let [failed (first (filter #(= :episodes/close-failed (:event %)) @log/captured-logs))]
+                (should= :warn (:level failed))
+                (should= "nothing to segment" (:error failed))
+                (should (some #(= :episodes/closing (:event %)) @log/captured-logs))
+                (should-not (some #(= :episodes/closed (:event %)) @log/captured-logs)))))))))
+
+  (it "close-episode! deletes an empty transcript instead of migrating"
+    (let [id "empty-close"]
+      (session-store/open-session! @ss id {:crew "cordelia" :cwd @root})
+      (session-store/append-compaction! @ss id {:summary "Summary so far"})
+      (store/write-episode! @mem @root {:id id :crew "cordelia" :status :open
+                                        :thread "reef-chat"} [])
+      (log/capture-logs
+        (let [result (sut/close-episode! {:fs @mem :root @root :crew "cordelia"
+                                          :episode-id id :session-store @ss})]
+          (should= :deleted (:status result))
+          (should= :empty (:reason result))
+          (should-be-nil (store/read-episode @mem @root "cordelia" id))
+          (should-be-nil (session-store/get-session @ss id))))))
 
   (context "maybe-seal!"
 
@@ -492,6 +595,32 @@
         (should= 1 (count scenes))
         (should= :idle (:seal-reason (first scenes)))
         (should= "Wine pairing for pheasant" (:gist (first scenes))))))
+
+  (it "deletes an empty cold episode on the tick and does not retry it"
+    (let [id "20260301100000000"
+          cfg {:crew     {"cordelia" {:conversation :episodes :model "echo" :soul "You are Cordelia"}}
+               :episodes {:gist-model :gist :seal {:idle-minutes 3} :ttl-minutes 60}}]
+      (store/write-episode! @mem @root {:id id :crew "cordelia" :status :open
+                                        :thread "reef-chat" :started-at "2026-03-01T10:00:00"} [])
+      (fs/mkdirs @mem (str @root "/sessions/" id))
+      (fs/spit @mem (str @root "/sessions/" id "/session.edn")
+              (pr-str {:id id :name "Reef Chat" :crew "cordelia"}))
+      (fs/spit @mem (str @root "/sessions/" id "/current.ednl")
+              (str "{:type \"session\" :id \"s0\" :timestamp \"2026-03-01T10:00:00\" :crew \"cordelia\"}\n"
+                   "{:type \"compaction\" :id \"c1\" :timestamp \"2026-03-01T10:00:01\" :summary \"Charted.\"}\n"))
+      (log/capture-logs
+        (binding [memory/*now* (java.time.Instant/parse "2026-03-01T11:30:00Z")]
+          (worker/tick! {:now (java.time.Instant/parse "2026-03-01T11:30:00Z")
+                         :cfg cfg :fs @mem :root @root :session-store @ss}))
+        (should-be-nil (store/read-episode @mem @root "cordelia" id))
+        (should-not (fs/exists? @mem (str @root "/sessions/" id "/session.edn")))
+        (should (some #(= :episodes/deleted (:event %)) @log/captured-logs))
+        (let [after-delete (count (filter #(= :episodes/closing (:event %)) @log/captured-logs))]
+          (binding [memory/*now* (java.time.Instant/parse "2026-03-01T11:31:00Z")]
+            (worker/tick! {:now (java.time.Instant/parse "2026-03-01T11:31:00Z")
+                           :cfg cfg :fs @mem :root @root :session-store @ss}))
+          (should= after-delete
+                   (count (filter #(= :episodes/closing (:event %)) @log/captured-logs)))))))
 
   (it "skips an in-flight episode on the tick"
     (let [session  (seed-open-episode! @ss @mem @root 1)

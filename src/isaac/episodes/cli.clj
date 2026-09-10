@@ -139,6 +139,23 @@
       (print-err! (or (ex-message e) (.getMessage e)))
       1)))
 
+(defn- result-episode-id [r]
+  (or (:episode-id r) (get-in r [:episode :id])))
+
+(defn- result-error [r]
+  (or (:error r) (:message r) "close failed"))
+
+(defn- format-close-outcome [r]
+  (let [id (or (result-episode-id r) "?")
+        st (or (:status r) (get-in r [:episode :status]))]
+    (case st
+      :deleted (str "deleted " id)
+      :error   (str "failed " id ": " (result-error r))
+      :closed  (str "closed " id)
+      :partial (str "partial " id)
+      :resumed (str "resumed " id)
+      (str (name (or st :unknown)) " " id))))
+
 (defn- run-close [opts crew]
   (try
     (let [{:keys [root fs cfg store]} (install! opts)
@@ -147,9 +164,18 @@
                      "main")
           result (lifecycle/close-open-episodes!
                    {:fs fs :root root :crew crew* :session-store store :cfg cfg})
-          n      (or (:closed result) 0)
-          indexed (reduce + 0 (keep :indexed (:results result)))]
-      (println (str "closed " n " episode" (when (not= 1 n) "s")))
+          results (or (:results result) [])
+          n       (or (:closed result) 0)
+          deleted (count (filter #(= :deleted (:status %)) results))
+          failed  (count (filter #(= :error (:status %)) results))
+          indexed (reduce + 0 (keep :indexed results))]
+      (cond
+        (and (zero? n) (or (pos? deleted) (pos? failed) (seq results)))
+        (doseq [r results]
+          (println (format-close-outcome r)))
+
+        :else
+        (println (str "closed " n " episode" (when (not= 1 n) "s"))))
       (when (pos? indexed)
         (println (str "indexed " indexed " rows")))
       0)

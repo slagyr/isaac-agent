@@ -167,4 +167,16 @@
                                      :thread "galley" :scene-ids []} [])
       (should= "open-ep" (:id (sut/find-open-on-thread mem @root "cordelia" "reef-chat")))
       (should-be-nil (sut/find-open-on-thread mem @root "cordelia" "missing"))))
+
+  (it "deletes the episode directory so the record is gone"
+    (let [mem (fs/mem-fs)
+          ep  {:id "20260301100000000" :crew "cordelia" :status :open
+               :thread "reef-chat" :scene-ids []}]
+      (fs/mkdirs mem @root)
+      (sut/write-episode! mem @root ep [])
+      (should (fs/exists? mem (str (sut/episode-path @root "cordelia" "20260301100000000") "/episode.edn")))
+      (sut/delete-episode! mem @root "cordelia" "20260301100000000")
+      (should-not (fs/exists? mem (str (sut/episode-path @root "cordelia" "20260301100000000") "/episode.edn")))
+      (should-be-nil (sut/read-episode mem @root "cordelia" "20260301100000000"))
+      (should= [] (sut/list-episodes mem @root "cordelia"))))
   )
