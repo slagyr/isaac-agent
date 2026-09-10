@@ -5,6 +5,10 @@
 - Compaction summaries run at `:compaction {:effort 2}` (configurable), chunk whenever history exceeds `:max-request-tokens` (default 32k) regardless of the model window, and retry a transport-class drop (`:stream-stalled` / `"closed"`) once at half size before counting a consecutive failure. Logs `:session/compaction-chunk-retry` (isaac-jgng).
 - Loop-driver seam: `tool-loop/run` dispatches on provider `:drives-tool-loop?`; default loop unchanged; provider-driven loops compact between turns only and log `:turn/compaction-deferred` (isaac-1sdl).
 
+## 0.1.59
+
+- Tool registry: `run-handler` preserves a handler's `{:error :cancelled}` instead of stringifying it through output capping, so a cancel mid-tool reaches the drive and comms get `on-tool-cancel` (ACP `tool_call_update` status `cancelled`). Belt: `announce-tool-call!` also emits the cancel while the tool is `:running` (isaac-qpdb).
+
 ## 0.1.58
 
 - Session policy berth (`:isaac.agent/session-policy`): chronicle and episodes are per-crew policies over a primitive session store. Crews select one with `:session-policy :chronicle | :episodes` (default chronicle; an unknown policy is a config error). The bridge, drive, comms, hail and prompt CLI stop resolving episodes themselves; the session id never changes; recall is injected inside the policy's first append; a conversation start without a session id asks the policy for `default-session`. Crew config key `:conversation` is gone (isaac-mmod).
