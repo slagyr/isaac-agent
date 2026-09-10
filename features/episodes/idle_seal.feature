@@ -117,7 +117,7 @@ Feature: Idle sealing — a quiet thread becomes recallable within minutes
     And the episodes for crew "cordelia" on thread "reef-chat" chain by lineage
 
   @wip
-  Scenario: an open episode with nothing to seal closes on the TTL sweep with zero scenes, once (isaac-empty-episode-sweep)
+  Scenario: an open episode with nothing to seal closes on the TTL sweep with zero scenes, once (isaac-9tjo)
     Field 2026-09-09/10: six successor episodes whose backing transcripts held
     only the compaction summary could never be sealed (nothing to segment →
     no episode written), yet the sweep logged :episodes/closed :reason
