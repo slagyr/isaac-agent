@@ -9,4 +9,5 @@
    :manifest-refs           {:fn 'isaac.config.checks/check-manifest-refs}
    :resolved-providers      {:fn 'isaac.config.checks/check-resolved-providers}
    :embedding-provider      {:fn 'isaac.config.checks/check-embedding-provider}
+   :session-policy          {:fn 'isaac.config.checks/check-session-policy}
    :tool-allow-tokens       {:fn 'isaac.config.checks/check-tool-allow-tokens}})

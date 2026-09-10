@@ -120,11 +120,12 @@
      :force? :size-cap
    Returns {:exit 0|1 :status :closed|:partial|:already-migrated|:resumed|:error
             :episode ... :message ...}"
-  [{:keys [fs root session transcript provider model force? size-cap]
+  [{:keys [fs root session transcript provider model force? size-cap episode-id]
     :or {force? false}}]
   (let [crew (or (:crew session) "main")
         session-id (or (:id session) (:key session))
-        existing (store/find-by-migrated-from fs root crew session-id)
+        existing (or (when episode-id (store/read-episode fs root crew episode-id))
+                     (store/find-by-migrated-from fs root crew session-id))
         sealed (if (and existing (not force?))
                  (store/list-scenes fs root crew (:id existing))
                  [])

@@ -388,18 +388,20 @@
 (defn that-episode-backing-session-has-transcript-matching [table]
   (let [ep (or (recalled-target-episode) (current-episode) (ensure-current-episode!))]
     (g/should-not-be-nil ep)
-    (session-steps/session-transcript-matching (:id ep) (substring-regex-table table))))
+    (session-steps/session-transcript-matching (or (:session-id ep) (:thread ep) (:id ep))
+                                               (substring-regex-table table))))
 
 (defn that-episode-backing-session-has-transcript [table]
   (let [ep (or (current-episode) (ensure-current-episode!))]
     (g/should-not-be-nil ep)
-    (session-steps/session-has-transcript (:id ep) table)))
+    (session-steps/session-has-transcript (or (:session-id ep) (:thread ep) (:id ep)) table)))
 
 (defn episodes-for-crew-on-thread-chain-by-lineage [crew thread]
   (with-feature-fs
     (fn []
       (let [eps (->> (store/list-episodes (mem-fs) (root-dir) crew)
-                     (filter #(= thread (:thread %)))
+                     (filter #(or (= thread (:thread %))
+                                  (= thread (:session-id %))))
                      (sort-by :id)
                      vec)]
         (g/should (>= (count eps) 2))
@@ -424,10 +426,11 @@
     (fn []
       (let [kv      (parse-kv-table table)
             id      (or (:id kv) "2020-01-01-0000-aaaa")
-            episode {:id     id
-                     :crew   crew
-                     :status :open
-                     :thread thread}
+            episode {:id         id
+                     :crew       crew
+                     :status     :open
+                     :thread     thread
+                     :session-id thread}
             ss      (or (session-store/registered-store)
                         (nexus/get-in [:sessions :store]))
             head    (get kv :compaction.head)
@@ -437,9 +440,9 @@
                           head (assoc :compaction {:head head}))]
         (store/write-episode! (mem-fs) (root-dir) episode [])
         (when ss
-          (session-ctx/create-with-resolved-behavior! id create-opts)
+          (session-ctx/create-with-resolved-behavior! thread create-opts)
           (when last-in
-            (session-store/update-session! ss id {:last-input-tokens last-in})))
+            (session-store/update-session! ss thread {:last-input-tokens last-in})))
         (g/assoc! :current-episode (assoc episode :crew crew))))))
 
 (defthen "that episode's backing session has transcript matching:"

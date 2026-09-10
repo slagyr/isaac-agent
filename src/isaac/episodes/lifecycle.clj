@@ -63,10 +63,11 @@
   (or (get-in cfg [:episodes :seal :idle-minutes]) DEFAULT_IDLE_MINUTES))
 
 (defn episodes-crew?
-  "True when the crew is opted into :conversation :episodes."
+  "True when the crew is opted into :session-policy :episodes."
   [cfg crew]
-  (let [crew-id (if (keyword? crew) (name crew) (str crew))]
-    (= :episodes (get-in (or cfg {}) [:crew crew-id :conversation]))))
+  (let [crew-id (if (keyword? crew) (name crew) (str crew))
+        raw     (get-in (or cfg {}) [:crew crew-id :session-policy])]
+    (= :episodes (if (keyword? raw) raw (when raw (keyword (str raw)))))))
 
 (defn warm?
   "True when the last transcript entry is within ttl-minutes of memory/now.
@@ -88,14 +89,31 @@
 (defn- runtime-store [session-store*]
   (or session-store* (session-store/registered-store)))
 
+(defn- backing-session-id
+  "Store key for an episode's transcript. Lifecycle still names the backing
+   session by episode id; the episodes policy names it by :session-id (the
+   stable chain id). Prefer whichever actually exists on the store."
+  [ss episode]
+  (let [id  (some-> episode :id)
+        sid (some-> episode :session-id)]
+    (or (when (and ss id (session-store/get-session ss id)) id)
+        (when (and ss sid (session-store/get-session ss sid)) sid)
+        id
+        sid)))
+
 (defn- transcript-for
-  "Prefer the live store; fall back to planted/on-disk current.ednl so a
-   memory store that never opened the session still sees the fixture."
-  [ss fs* root episode-id]
-  (or (when ss (session-store/chronicle-transcript ss episode-id))
-      (when (and fs* root episode-id)
-        (let [entries (impl-common/read-transcript-raw root episode-id fs*)]
-          (when (seq entries) entries)))))
+  "Prefer the live store under the resolved backing id; fall back to planted
+   current.ednl so a memory store that never opened the session still sees
+   the fixture (isaac-9tjo)."
+  [ss fs* root episode]
+  (let [backing (backing-session-id ss episode)]
+    (or (when (and ss backing) (session-store/chronicle-transcript ss backing))
+        (when (and fs* root backing)
+          (let [entries (impl-common/read-transcript-raw root backing fs*)]
+            (when (seq entries) entries)))
+        (when (and fs* root (:id episode) (not= backing (:id episode)))
+          (let [entries (impl-common/read-transcript-raw root (:id episode) fs*)]
+            (when (seq entries) entries))))))
 
 (defn- gist-provider+model [cfg root provider model]
   (if (and provider model)
@@ -126,10 +144,11 @@
         ss      (runtime-store session-store)
         crew    (or crew "main")
         id      (ids/timestamped-id (str (now-instant)))
-        episode (cond-> {:id     id
-                         :crew   crew
-                         :status :open
-                         :thread thread}
+        episode (cond-> {:id         id
+                         :crew       crew
+                         :status     :open
+                         :thread     thread
+                         :session-id thread}
                   parent-episode (assoc :parent-episode parent-episode))
         create-opts (cond-> {:crew          crew
                              :cwd           cwd
@@ -198,8 +217,9 @@
         ss      (runtime-store session-store)
         crew    (or crew "main")
         existing (store/read-episode fs* root crew episode-id)
-        session  (when ss (session-store/get-session ss episode-id))
-        transcript (transcript-for ss fs* root episode-id)
+        backing  (backing-session-id ss existing)
+        session  (when ss (session-store/get-session ss backing))
+        transcript (transcript-for ss fs* root existing)
         {:keys [provider model]} (gist-provider+model (or cfg {}) root provider model)]
     (cond
       (nil? existing)
@@ -222,12 +242,14 @@
                 (store/write-episode! fs* root (assoc existing :migrated-from episode-id) []))
             result (migrate/migrate-session!
                      {:fs fs* :root root :session session :transcript transcript
-                      :provider provider :model model :force? false})
+                      :provider provider :model model :force? false
+                      :episode-id episode-id})
             closed (when-let [ep (:episode result)]
                      (let [merged (cond-> (assoc ep
-                                            :id     episode-id
-                                            :thread (:thread existing)
-                                            :status (or (:status ep) :closed))
+                                            :id         episode-id
+                                            :thread     (:thread existing)
+                                            :session-id (or (:session-id existing) (:thread existing))
+                                            :status     (or (:status ep) :closed))
                                     (:parent-episode existing)
                                     (assoc :parent-episode (:parent-episode existing)))]
                        (store/write-episode! fs* root merged (or (:scenes result) [])
@@ -309,9 +331,10 @@
          :action      (if prior :chained :opened)})
 
       :else
-      (let [transcript (when ss (session-store/chronicle-transcript ss (:id open)))]
+      (let [backing    (backing-session-id ss open)
+            transcript (when ss (session-store/chronicle-transcript ss backing))]
         (if (warm? transcript ttl)
-          {:session-key (:id open) :episode open :action :warm}
+          {:session-key backing :episode open :action :warm}
           (chain-successor! (assoc opts :fs fs* :root root :crew crew
                                    :session-store ss)
                             open))))))
@@ -424,7 +447,7 @@
       :else
       (try
         (let [{:keys [size-cap drift-threshold min-tail idle-minutes]} (seal-knobs cfg)
-              transcript (session-store/chronicle-transcript ss episode-id)
+              transcript (session-store/chronicle-transcript ss (backing-session-id ss existing))
               sealed     (vec (remove nil? (store/list-scenes fs* root crew episode-id)))
               tail       (tail-after-sealed (message-entries transcript) sealed)
               n          (count tail)
@@ -510,7 +533,7 @@
       {:status :skipped :reason :in-flight}
 
       :else
-      (let [transcript (transcript-for ss fs* root episode-id)
+      (let [transcript (transcript-for ss fs* root existing)
             ttl        (ttl-minutes cfg)]
         (if (warm? transcript ttl)
           {:status :skipped :reason :warm}

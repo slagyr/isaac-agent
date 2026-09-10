@@ -178,7 +178,15 @@
           root    (or root (loader/root))
           crew    (or crew (:crew episode) "main")
           eid     (:id episode)
-          thread  (or (:thread episode))
+          thread  (or (:thread episode) (:session-id episode))
+          backing (or (when (and session-store (:session-id episode)
+                                 (session-store/get-session session-store (:session-id episode)))
+                        (:session-id episode))
+                      (when (and session-store eid
+                                 (session-store/get-session session-store eid))
+                        eid)
+                      (:session-id episode)
+                      eid)
           exclude (atom #{})
           parent  (:parent-episode episode)
           floor   (score/resolve-floor cfg {})
@@ -186,7 +194,7 @@
       (when (and parent (= :chained action))
         (let [scenes (mapv #(assoc % :origin-episode parent) (lineage-scenes fs* root crew parent))]
           (when (seq scenes)
-            (append-block! session-store eid (render-lineage-block scenes))
+            (append-block! session-store backing (render-lineage-block scenes))
             (record-refs! fs* root crew eid scenes query)
             (swap! exclude into (map :id scenes))
             (reset! lineage scenes))))
@@ -197,7 +205,7 @@
             found    (mapv #(scene-from-hit fs* root crew %)
                            (passing-search-hits result floor @exclude))]
         (when (seq found)
-          (append-block! session-store eid (render-search-block found (inject-cfg cfg)))
+          (append-block! session-store backing (render-search-block found (inject-cfg cfg)))
           (record-refs! fs* root crew eid found query))
         (log-recall-outcome!
           {:crew        crew

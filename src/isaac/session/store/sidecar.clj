@@ -160,7 +160,14 @@
   (get-turn-marker [_ session-id]
     (c/get-turn-marker* root session-id fs))
   (turn-markers [_]
-    (c/turn-markers* root fs)))
+    (c/turn-markers* root fs))
+  (default-session [_ crew _opts]
+    (let [crew-id (when crew (if (keyword? crew) (name crew) (str crew)))
+          recent  (or (when crew-id
+                        (c/most-recent-session read-session-store root crew-id fs))
+                      (c/most-recent-session read-session-store root nil fs))]
+      (:id recent)))
+  (repair-transcript! [_ _session-id] nil))
 
 (defn create-store
   ([root]

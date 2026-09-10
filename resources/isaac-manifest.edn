@@ -64,6 +64,18 @@
                    :factory isaac.turnstile/register-entry!,
                    :schema
                    {:factory
+                    {:type :symbol, :validations [:present?]}}}}},
+                :session-policy
+                {:description
+                 "Named session-policy factories. A crew selects with :session-policy; absent is chronicle. Factories receive the root session store.",
+                 :schema
+                 {:type :map,
+                  :key-spec {:type :keyword},
+                  :value-spec
+                  {:type :map,
+                   :factory isaac.session.policy/register-entry!,
+                   :schema
+                   {:factory
                     {:type :symbol, :validations [:present?]}}}}}},
  :isaac/cli
  {:auth
@@ -493,11 +505,10 @@
       {:type :id,
        :description "ID of the model this crew member uses.",
        :validations [:model-exists?]},
-      :conversation
+      :session-policy
       {:type :keyword,
        :description
-       "Conversation container: :episodes for managed episode sessions (absent = plain sessions)",
-       :validations [[:one-of? :episodes]]}}}}},
+       "Session policy over the primitive store: :chronicle (default) or :episodes"}}}}},
   :prompt-paths
   {:schema
    {:type :seq,
@@ -825,6 +836,10 @@
        {:full  {:type :int :description "Top hits that include distilled text"}
         :gists {:type :int :description "Following hits that include gist only"}}}}}}}
 
+ :isaac.agent/session-policy
+ {:chronicle {:factory isaac.session.policy.chronicle/create}
+  :episodes  {:factory isaac.session.policy.episodes/create}}
+
  :isaac.config/check
  {:comm-reserved-schema
   {:fn isaac.config.checks/check-comm-reserved-schema},
@@ -838,4 +853,6 @@
   :embedding-provider
   {:fn isaac.config.checks/check-embedding-provider}
   :tool-allow-tokens
-  {:fn isaac.config.checks/check-tool-allow-tokens}}}
+  {:fn isaac.config.checks/check-tool-allow-tokens}
+  :session-policy
+  {:fn isaac.config.checks/check-session-policy}}}

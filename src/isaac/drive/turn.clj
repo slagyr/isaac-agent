@@ -11,7 +11,6 @@
     [isaac.drive.dispatch :as dispatch]
     [isaac.drive.observer :as observer]
     [isaac.drive.provider-wall :as provider-wall]
-    [isaac.episodes.store :as episode-store]
     [isaac.fs :as fs]
     [isaac.llm.api.protocol :as api]
     [isaac.llm.provider :as llm-provider]
@@ -20,6 +19,7 @@
     [isaac.nexus :as nexus]
     [isaac.session.compaction :as compaction]
     [isaac.session.context :as session-ctx]
+    [isaac.session.policy :as policy]
     [isaac.session.store.spi :as store]
     [isaac.tool.names :as names]
     [isaac.tool.registry :as tool-registry]
@@ -155,17 +155,23 @@
     (locking lock (f))
     (f)))
 
+(defn- session-policy [ctx]
+  (or (when-let [charge (:charge ctx)]
+        (or (:session-policy charge)
+            (policy/for-request charge)))
+      (when-let [ss (or (:session-store ctx) (nexus/get-in [:sessions :store]))]
+        (policy/wrap ss))))
+
 (defn- append-message! [ctx session-key message]
-  (with-transcript-lock session-key #(store/append-message! (or (:session-store ctx) (nexus/get-in [:sessions :store])) session-key message)))
+  (with-transcript-lock session-key #(policy/append-message! (session-policy ctx) session-key message)))
 
 (defn- append-error! [ctx session-key error-entry]
-  (with-transcript-lock session-key #(store/append-error! (or (:session-store ctx) (nexus/get-in [:sessions :store])) session-key error-entry)))
+  (with-transcript-lock session-key #(policy/append-error! (session-policy ctx) session-key error-entry)))
 
 (defn- append-reckoning! [ctx session-key text]
   (when (and ctx session-key (seq (str text)))
     (with-transcript-lock session-key
-      #(store/append-reckoning! (or (:session-store ctx) (nexus/get-in [:sessions :store]))
-                                session-key {:text text}))))
+      #(policy/append-reckoning! (session-policy ctx) session-key {:text text}))))
 
 (defn- persist-tool-call!
   "Write the assistant toolCall entry as soon as the call is known."
@@ -249,14 +255,14 @@
       raw-prompt)))
 
 (defn- stamp-provider-prompt! [ctx session-key result]
-  (let [ss            (or (:session-store ctx) (nexus/get-in [:sessions :store]))
+  (let [sess          (session-policy ctx)
         prompt-tokens (normalized-provider-prompt-tokens ctx session-key result)]
     (when (pos? prompt-tokens)
-      (store/update-session! ss session-key {:last-input-tokens prompt-tokens}))
+      (policy/update-session! sess session-key {:last-input-tokens prompt-tokens}))
     prompt-tokens))
 
 (defn- store-response! [ctx session-key result {:keys [model provider]}]
-  (let [ss                (or (:session-store ctx) (nexus/get-in [:sessions :store]))
+  (let [sess              (session-policy ctx)
         turn-tokens       (extract-tokens result)
         final-tokens      (response-tokens result)
         usage             (normalize-usage result)
@@ -265,7 +271,7 @@
                               (get-in result [:response :response :reasoning]))
         stop-reason       (or (get-in result [:response :stop_reason])
                               (get-in result [:response :done_reason]))
-        session-entry     (or (store/get-session ss session-key) {})
+        session-entry     (or (policy/get-session sess session-key) {})
         turn-input-tokens (:input-tokens turn-tokens 0)
         prompt-tokens     (normalized-provider-prompt-tokens ctx session-key {:response {:usage final-tokens}})
         output-tokens     (:output-tokens turn-tokens 0)
@@ -284,7 +290,7 @@
                              usage (assoc :usage usage)
                              stop-reason (assoc :stopReason stop-reason)
                              reasoning (assoc :reasoning reasoning)))
-    (store/update-session! ss session-key
+    (policy/update-session! sess session-key
                            (cond-> {:input-tokens      (+ (or (:input-tokens session-entry) 0) turn-input-tokens)
                                     :turn-input-tokens turn-input-tokens
                                     :last-input-tokens prompt-tokens
@@ -295,18 +301,18 @@
                                    cache-write (assoc :cache-write (+ (or (:cache-write session-entry) 0) cache-write))))
     nil))
 
-(defn- transcript-stamped-prompt-tokens [session-store session-key]
-  (->> (or (store/active-transcript session-store session-key) [])
+(defn- transcript-stamped-prompt-tokens [sess session-key]
+  (->> (or (policy/active-transcript sess session-key) [])
        (keep :tokens)
        (reduce + 0)))
 
 (defn- log-token-drift! [ctx session-key result]
-  (let [session-store   (or (:session-store ctx) (nexus/get-in [:sessions :store]))
+  (let [sess            (session-policy ctx)
         provider-tokens (provider-prompt-tokens (response-tokens result))]
     (when (pos? provider-tokens)
-      (let [stamped (transcript-stamped-prompt-tokens session-store session-key)
+      (let [stamped (transcript-stamped-prompt-tokens sess session-key)
             ratio   (/ (double provider-tokens) (double (max 1 stamped)))]
-        (store/update-session! session-store session-key {:token-drift-ratio ratio})
+        (policy/update-session! sess session-key {:token-drift-ratio ratio})
         (log/debug :session/token-drift
                    :session  session-key
                    :stamped  stamped
@@ -774,7 +780,8 @@
 
 (defn- session-entry
   ([ctx session-key]
-   (store/get-session (or (:session-store ctx) (nexus/get-in [:sessions :store])) session-key)))
+   (when-let [sess (session-policy ctx)]
+     (policy/get-session sess session-key))))
 
 (def ^:private max-compaction-attempts 3)
 (def ^:private context-window-guard-line 0.98)
@@ -829,6 +836,8 @@
                                            :soul                soul
                                            :root                (:root opts)
                                            :session-store       (:session-store opts)
+                                           :session-policy      (session-policy opts)
+                                           :charge              (:charge opts)
                                            :context-window      context-window
                                            :transcript-lock     transcript-lock
                                            :compaction-llm-done compaction-llm-done
@@ -836,14 +845,14 @@
                                            :chat-fn             (partial dispatch/dispatch-chat-with-tools provider)})]
           (if (:error result)
             (let [failures (inc (consecutive-compaction-failures (session-entry opts session-key)))]
-              (store/update-session! (or (:session-store opts) (nexus/get-in [:sessions :store])) session-key {:compaction {:consecutive-failures failures}})
+              (policy/update-session! (session-policy opts) session-key {:compaction {:consecutive-failures failures}})
               (when ch
                 (comm/on-bulletin ch session-key {:kind                  :compaction/failure
                                                   :consecutive-failures  failures
                                                   :error                 (:error result)
                                                   :message               (:message result)}))
               (when (>= failures max-compaction-attempts)
-                (store/update-session! (or (:session-store opts) (nexus/get-in [:sessions :store]))
+                (policy/update-session! (session-policy opts)
                                        session-key
                                        {:block {:reason :compaction-failed
                                                 :at     (str (Instant/now))}})
@@ -869,9 +878,8 @@
                          :message (:message result))
               result)
             (do
-              (store/update-session! (or (:session-store opts) (nexus/get-in [:sessions :store])) session-key {:compaction {:consecutive-failures 0}})
-              (let [live-key      (or (:successor-session-key result) session-key)
-                    updated-total (compaction/estimate-prompt-tokens live-key opts)]
+              (policy/update-session! (session-policy opts) session-key {:compaction {:consecutive-failures 0}})
+              (let [updated-total (compaction/estimate-prompt-tokens session-key opts)]
                 (when ch
                   (comm/on-bulletin ch session-key {:kind         :compaction/success
                                                     :summary      (:summary result)
@@ -883,13 +891,13 @@
                 ;; complete non-chunked splice — including template-floor
                 ;; :oversized-single — must not consume the next grover/chat
                 ;; turn even when soul + tools keep the estimate over the line.
-                ;; Episodes compact-close! seeds a successor; handing the
-                ;; turn to that session is progress even when the live
-                ;; estimate (summary + pending input) is still at the
-                ;; original number (isaac-jom5).
+                ;; SessionPolicy keeps the session id stable across compaction
+                ;; (isaac-mmod); episodes chain a successor container in place.
+                ;; That chain is progress even when the live estimate (summary
+                ;; + pending input) stays at the original number (isaac-jom5).
                 (cond
                   (and (>= updated-total prompt-tokens)
-                       (= live-key session-key))
+                       (nil? (:successor-container result)))
                   (log/warn :session/compaction-stopped
                             :session session-key
                             :provider provider-name
@@ -903,7 +911,7 @@
                   (do
                     (log/info :session/compaction-completed
                               :session session-key
-                              :successor live-key
+                              :successor (:successor-container result)
                               :provider provider-name
                               :model model
                               :attempt attempt
@@ -911,10 +919,10 @@
                               :context-window context-window)
                     (when (and (compaction/partial-splice? result)
                                (compaction/should-compact? updated-total
-                                                           (assoc (session-entry opts live-key)
+                                                           (assoc (session-entry opts session-key)
                                                                   :compaction (:compaction opts))
                                                            context-window))
-                      (run-compaction-check! live-key
+                      (run-compaction-check! session-key
                                              (assoc opts :comm ch :transcript-lock transcript-lock)
                                              (inc attempt)
                                              false))))))))))))
@@ -1046,8 +1054,8 @@
 (defn- rebuild-chat-request [session-key ctx]
   (let [{:keys [provider allowed-tools effort boot-files rules-text skill-menu-text]} ctx
         {:keys [crew guidance model module-index nonce origin soul context-mode]} (:charge ctx)
-        ss         (or (:session-store ctx) (nexus/get-in [:sessions :store]))
-        transcript (with-transcript-lock session-key #(store/active-transcript ss session-key))
+        sess       (session-policy ctx)
+        transcript (with-transcript-lock session-key #(policy/active-transcript sess session-key))
         transcript (if (= :reset context-mode)
                       (if-let [current-user (last transcript)] [current-user] [])
                       transcript)
@@ -1224,8 +1232,11 @@
   (let [{:keys [session-key crew crew-members context-window
                 model model-cfg provider]} charge
         root             (or (nexus/get :root) (get-in charge [:config :root]))
-        session-store*   (nexus/get-in [:sessions :store])
-        session          (store/get-session session-store* session-key)
+        session-store*   (or (:session-store charge) (nexus/get-in [:sessions :store]))
+        sess             (or (:session-policy charge)
+                             (policy/for-request charge)
+                             (when session-store* (policy/wrap session-store*)))
+        session          (when sess (policy/get-session sess session-key))
         skill-disclosure (or (session-ctx/read-skill-disclosure (:config charge) root (:cwd session))
                              {:menu-text nil :tool-names #{}})
         allowed-tools    (merge-allowed-tools (allowed-tool-names crew-members crew (:config charge))
@@ -1348,7 +1359,7 @@
         p             provider]
     (when-not (:from-queue? charge)
       (append-message! ctx session-key {:role "user" :content input}))
-    (let [transcript      (with-transcript-lock session-key #(store/active-transcript (or (:session-store ctx) (nexus/get-in [:sessions :store])) session-key))
+    (let [transcript      (with-transcript-lock session-key #(policy/active-transcript (session-policy ctx) session-key))
           transcript      (if (= :reset context-mode)
                             (if-let [current-user (last transcript)] [current-user] [])
                             transcript)
@@ -1490,25 +1501,6 @@
               (or (process-response! ctx session-key result {:model model :provider provider-name})
                   result))))))))
 
-(defn- successor-session-key [session-key ctx]
-  (let [cfg      (or (get-in ctx [:charge :config]) {})
-        crew     (get-in ctx [:charge :crew])
-        root     (or (:root ctx) (get-in cfg [:root]) (nexus/get :root))
-        fs*      (or (nexus/get :fs) (fs/instance))
-        current  (when (and root crew)
-                   (episode-store/read-episode fs* root crew session-key))
-        thread   (:thread current)
-        open-eps (when (and root crew)
-                   (->> (episode-store/list-episodes fs* root crew)
-                        (filter #(= :open (:status %)))))
-        successor (or (when thread
-                        (some #(when (and (= thread (:thread %))
-                                          (= session-key (:parent-episode %)))
-                                 %)
-                              open-eps))
-                      (some #(when (= session-key (:parent-episode %)) %) open-eps))]
-    (or (:id successor) session-key)))
-
 (defn- run-turn-body!
   "The successful-path pipeline. Returns the result that finish-turn! should
    wrap. Each branch is a single call into a focused helper.
@@ -1554,8 +1546,7 @@
                 (compact-failure-turn-result session-key ctx)
 
                 :else
-                (let [live-key (successor-session-key session-key ctx)]
-                  (execute-llm-turn! live-key input ctx))))))))))
+                (execute-llm-turn! session-key input ctx)))))))))
 
 (defn- record-exception! [session-key e ctx]
   (let [{:keys [provider]} ctx

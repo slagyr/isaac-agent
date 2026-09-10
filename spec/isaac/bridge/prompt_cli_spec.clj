@@ -194,6 +194,38 @@
             (sut/run (assoc base-opts :message "hello" :crew "ketch"))))
         (should= "ketch-session" @used-key)))
 
+    (it "--create never with --crew and no match errors without opening a session"
+      (let [err (java.io.StringWriter.)]
+        (binding [*err* err]
+          (with-out-str
+            (should= 1 (sut/run (assoc base-opts :message "Hi" :crew "ketch" :create :never)))))
+        (should (str/includes? (str err) "no session"))
+        (should= [] (helper/list-sessions "/test/prompt"))))
+
+    (it "--create always with --crew starts a fresh session and leaves the matching one untouched"
+      (helper/create-session! "/test/prompt" "ketch-session" {:crew "ketch"})
+      (let [used-key (atom nil)]
+        (with-redefs [bridge/dispatch! (fn [charge]
+                                         (reset! used-key (:session-key charge))
+                                         (comm/on-chatter (:comm charge) (:session-key charge) nil "Ok")
+                                         {})]
+          (with-out-str
+            (should= 0 (sut/run (assoc base-opts :message "Hi" :crew "ketch" :create :always)))))
+        (should-not= "ketch-session" @used-key)
+        (should= 2 (count (helper/list-sessions "/test/prompt")))))
+
+    (it "--prefer oldest with --crew picks the oldest of multiple matching sessions"
+      (helper/create-session! "/test/prompt" "older" {:crew "ketch" :updated-at "2026-04-10T10:00:00"})
+      (helper/create-session! "/test/prompt" "recent" {:crew "ketch" :updated-at "2026-04-12T15:00:00"})
+      (let [used-key (atom nil)]
+        (with-redefs [bridge/dispatch! (fn [charge]
+                                         (reset! used-key (:session-key charge))
+                                         (comm/on-chatter (:comm charge) (:session-key charge) nil "Ok")
+                                         {})]
+          (with-out-str
+            (sut/run (assoc base-opts :message "Status?" :crew "ketch" :prefer "oldest"))))
+        (should= "older" @used-key)))
+
     (it "stores cwd on a newly created prompt session"
       (with-redefs [bridge/dispatch! (fake-dispatch! "Hello")]
         (with-out-str
@@ -334,8 +366,8 @@
             (sut/run (assoc base-opts :message "Hi" :resume true))))
         (should= "prompt-default" @used-key)))
 
-    (it "routes --session as a THREAD for :conversation :episodes crews"
-      (reset! loader-stub {:config (assoc-in synthetic-config [:crew crew-name :conversation] :episodes)})
+    (it "keeps --session as the session id for :session-policy :episodes crews"
+      (reset! loader-stub {:config (assoc-in synthetic-config [:crew crew-name :session-policy] :episodes)})
       (let [used-key (atom nil)
             ss       (store/registered-store)]
         (with-redefs [bridge/dispatch! (fn [charge]
@@ -344,13 +376,11 @@
                                          {})]
           (with-out-str
             (should= 0 (sut/run (assoc base-opts :message "Chart the reef" :session "reef-chat" :crew crew-name)))))
-        (should-not= "reef-chat" @used-key)
-        (should (re-matches #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" @used-key))
-        (should-be-nil (store/get-session ss "reef-chat"))
-        (should-not-be-nil (store/get-session ss @used-key))))
+        (should= "reef-chat" @used-key)
+        (should-not-be-nil (store/get-session ss "reef-chat"))))
 
-    (it "warm-routes a second prompt on an episode crew to the same backing session"
-      (reset! loader-stub {:config (assoc-in synthetic-config [:crew crew-name :conversation] :episodes)})
+    (it "warm-routes a second prompt on an episode crew to the same session id"
+      (reset! loader-stub {:config (assoc-in synthetic-config [:crew crew-name :session-policy] :episodes)})
       (let [keys (atom [])]
         (with-redefs [bridge/dispatch! (fn [charge]
                                          (swap! keys conj (:session-key charge))
@@ -366,22 +396,7 @@
             (sut/run (assoc base-opts :message "first" :session "reef-chat" :crew crew-name))
             (sut/run (assoc base-opts :message "second" :session "reef-chat" :crew crew-name))))
         (should= 2 (count @keys))
-        (should= (first @keys) (second @keys))
-        (should (re-matches #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" (first @keys)))))
-
-    (it "seals live after a successful episode-crew reply is printed"
-      (reset! loader-stub {:config (assoc-in synthetic-config [:crew crew-name :conversation] :episodes)})
-      (let [sealed (atom nil)]
-        (with-redefs [bridge/dispatch! (fn [charge]
-                                         (comm/on-chatter (:comm charge) (:session-key charge) nil "Charted")
-                                         {})
-                      isaac.episodes.lifecycle/maybe-seal! (fn [opts]
-                                                             (reset! sealed opts)
-                                                             {:status :skipped})]
-          (with-out-str
-            (should= 0 (sut/run (assoc base-opts :message "Chart the reef" :session "reef-chat" :crew crew-name))))
-          (should= crew-name (:crew @sealed))
-          (should (re-matches #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" (:episode-id @sealed))))))
+        (should= ["reef-chat" "reef-chat"] @keys)))
 
     )
   )

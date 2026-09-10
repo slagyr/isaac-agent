@@ -36,7 +36,9 @@
   (record-turn-marker! [this session-id marker])
   (clear-turn-marker! [this session-id])
   (get-turn-marker [this session-id])
-  (turn-markers [this]))
+  (turn-markers [this])
+  (default-session [this crew opts])
+  (repair-transcript! [this session-id]))
 
 (defonce ^:private in-flight* (atom {}))
 

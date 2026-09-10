@@ -142,4 +142,34 @@
       (should= 1 (:exit result))
       (should= [{:span 1 :raw "still nope"}] (:flagged-spans ep))
       (should (re-find #"flagged spans: \[1\]" (:message result)))))
+
+  (it "skips a span already sealed onto a live episode id that is not :migrated-from"
+    (let [mem (fs/instance)
+          root "/isaac-root"
+          session {:id "reef-chat" :crew "cordelia"}
+          transcript [{:type "message" :id "m1" :timestamp "2026-03-01T10:00:00"
+                       :message {:role "user" :content "Chart the reef passage."}}
+                      {:type "message" :id "m2" :timestamp "2026-03-01T10:00:01"
+                       :message {:role "assistant" :content "Charted, keep west."}}]
+          provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+          live-id "2026-03-01-1000-h7us"
+          sealed {:id "s1" :start-id "m1" :end-id "m2"
+                  :gist "Reef passage charted" :text "Charted, keep west."
+                  :seal-reason :idle}]
+      (store/write-episode! mem root {:id live-id :crew "cordelia" :status :open
+                                      :thread "reef-chat" :session-id "reef-chat"
+                                      :migrated-from live-id
+                                      :scene-ids ["s1"]}
+                            [sealed])
+      (let [result (sut/migrate-session!
+                     {:fs mem :root root :session session :transcript transcript
+                      :provider provider :model "gist" :force? false
+                      :episode-id live-id})
+            ep (:episode result)
+            scenes (store/list-scenes mem root "cordelia" live-id)]
+        (should= :closed (:status result))
+        (should= 0 (:exit result))
+        (should= live-id (:id ep))
+        (should= 1 (count scenes))
+        (should= "Reef passage charted" (:gist (first scenes))))))
   )

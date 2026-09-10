@@ -36,6 +36,9 @@
     [isaac.comm.registry :as comm-registry]
     [isaac.comm.factory :as comm-factory]
     [isaac.slash.registry :as slash-registry]
+    [isaac.charge :as charge]
+    [isaac.session.policy :as policy]
+    [isaac.session.policy.logbook :as logbook]
     [isaac.session.store.spi :as store]
     [isaac.session.store.sidecar :as sidecar-store]
     [isaac.session.store.memory :as memory-store]
@@ -60,6 +63,7 @@
 (g/before-scenario module-loader/clear-activations!)
 (g/before-scenario grover/install-test-fixture!)
 (g/before-scenario session-compaction/clear-last-compaction-request!)
+(g/before-scenario logbook/reset-calls!)
 (g/before-scenario slash-registry/clear!)
 
 ;; Capture the real `sidecar-store/create-store` once at load time so we can
@@ -1124,6 +1128,69 @@
              (record-turn-result! result)))))
      (g/assoc! :memory-comm-events events))))
 
+(defn charge-dispatched-with
+  "Builds a charge via charge/build then dispatch! — the pre-built skip path."
+  [table]
+  (let [kv (into {}
+                 (map (fn [[k v]] [(keyword k) (str v)])
+                      (or (:rows table) [])))
+        session-key (:session-key kv)
+        crew        (:crew kv)
+        input       (:input kv)]
+    (g/assoc! :current-key session-key)
+    (grover/clear-provider-requests!)
+    (isaac.llm.http/clear-outbound-requests!)
+    (drive-dispatch/clear-last-request!)
+    (let [cfg     (loader/normalize-config (loaded-config))
+          _       (config/dangerously-install-config! cfg "spec")
+          _       (commit-feature-config!)
+          events  (atom [])
+          channel (memory-comm/channel events)
+          result  (atom nil)
+          output  (with-out-str
+                    (with-feature-fs
+                      (fn []
+                        (with-current-time
+                          (fn []
+                            (try
+                              (reset! result
+                                      (bridge/dispatch!
+                                        (charge/build {:session-key session-key
+                                                       :input       input
+                                                       :crew        crew
+                                                       :config      cfg
+                                                       :origin      {:kind :cli}
+                                                       :comm        channel})))
+                              (catch Exception e
+                                (reset! result {:error :exception :message (.getMessage e)}))))))))]
+      (record-turn-result! {:output  output
+                            :request (or (drive-dispatch/last-request)
+                                         (grover/last-request))
+                            :result  @result})
+      (g/assoc! :memory-comm-events events)
+      (g/assoc! :channel-events events))))
+
+(defn recording-session-policy-registered [name]
+  (logbook/reset-calls!)
+  (policy/register-factory! name logbook/create))
+
+(defn- logbook-call-row [call]
+  (cond-> {:method (:method call)}
+    (contains? call :session-id) (assoc :session-id (:session-id call))
+    (contains? call :crew) (assoc :crew (:crew call))))
+
+(defn logbook-policy-recorded-calls-matching [table]
+  (await-turn!)
+  (await-acp-turn!)
+  (let [actual (mapv logbook-call-row (logbook/recorded-calls))
+        result (match/match-entries table actual)]
+    (g/should= [] (:failures result))))
+
+(defn logbook-policy-recorded-no-calls []
+  (await-turn!)
+  (await-acp-turn!)
+  (g/should= [] (logbook/recorded-calls)))
+
 (defn turn-ends-on-session [key-str]
   (when-let [turn-future (g/get :turn-future)]
     (helper/await-condition #(or (realized? turn-future)
@@ -1861,6 +1928,22 @@
    fields (message.model, message.usage.input, etc.).")
 
 (defgiven #"session \"([^\"]+)\" has an error entry \"([^\"]+)\"" isaac.session.session-steps/session-has-error-entry)
+
+(defgiven #"a recording session policy \"([^\"]+)\" is registered"
+  isaac.session.session-steps/recording-session-policy-registered
+  "Registers the logbook recording policy factory under the given name.")
+
+(defthen "the logbook policy recorded calls matching:"
+  isaac.session.session-steps/logbook-policy-recorded-calls-matching
+  "Matches recorded SessionPolicy method calls. Columns: method, session-id, crew.")
+
+(defthen "the logbook policy recorded no calls"
+  isaac.session.session-steps/logbook-policy-recorded-no-calls
+  "Asserts the logbook recording policy saw zero protocol calls.")
+
+(defwhen "a charge is dispatched with:" isaac.session.session-steps/charge-dispatched-with
+  "Builds a charge via charge/build then dispatch! (the skip path Discord/ACP
+   use). Table rows are key/value: session-key, crew, input.")
 
 (defwhen "a session is created with a random name" isaac.session.session-steps/session-created-randomly)
 

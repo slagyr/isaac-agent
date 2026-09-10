@@ -19,7 +19,6 @@ Feature: Session policy berth — chronicle and episodes are per-crew policies o
   Background:
     Given default Grover setup
 
-  @wip
   Scenario: a crew selects a session policy by name
     Given a recording session policy "logbook" is registered
     And the isaac EDN file "config/crew/cordelia.edn" exists with:
@@ -47,7 +46,6 @@ Feature: Session policy berth — chronicle and episodes are per-crew policies o
       | message | user         | Light the lamp     |
       | message | assistant    | Charted, keep west |
 
-  @wip
   Scenario: a crew with no session-policy setting is a chronicle
     Given a recording session policy "logbook" is registered
     And the following model responses are queued:
@@ -67,7 +65,6 @@ Feature: Session policy berth — chronicle and episodes are per-crew policies o
       | message | assistant    | Aye             |
     And the logbook policy recorded no calls
 
-  @wip
   Scenario: an unknown session policy fails config validation
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path          | value            |
@@ -79,7 +76,6 @@ Feature: Session policy berth — chronicle and episodes are per-crew policies o
       | key                         | value                                                                 |
       | crew.cordelia.session-policy | references undefined session policy \(got "ledger"\); known: chronicle |
 
-  @wip
   Scenario: the session id is stable across compaction
     Given a recording session policy "logbook" is registered
     And the isaac EDN file "config/models/local.edn" exists with:
@@ -116,7 +112,6 @@ Feature: Session policy berth — chronicle and episodes are per-crew policies o
       | message | user         | new input       |
       | message | assistant    | New response    |
 
-  @wip
   Scenario: turn markers are the store's turn signals, for the CLI too
     The bridge records a turn marker at dispatch and clears it at turn end
     for every origin. A policy that needs a turn-end signal (episodes seals
@@ -140,7 +135,6 @@ Feature: Session policy berth — chronicle and episodes are per-crew policies o
       | append-message!     | lantern-room |
       | clear-turn-marker!  | lantern-room |
 
-  @wip
   Scenario: an episodes crew keeps its session id through a cold open
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path          | value            |
@@ -168,7 +162,6 @@ Feature: Session policy berth — chronicle and episodes are per-crew policies o
       | message | user         | Light the lamp     |
       | message | assistant    | Charted, keep west |
 
-  @wip
   Scenario: a warm second turn on an episodes crew appends to the open episode
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path          | value            |
@@ -203,7 +196,6 @@ Feature: Session policy berth — chronicle and episodes are per-crew policies o
       | message | user         | Trim the wick      |
       | message | assistant    | Wick trimmed       |
 
-  @wip
   Scenario: a conversation start without a session id asks the policy for one
     Chronicle answers the crew's existing session; episodes answers a fresh
     id (isaac-6yg0's acp scenario stays the proof of that side). Frequencies

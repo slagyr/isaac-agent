@@ -8,6 +8,7 @@
     [isaac.config.schema-compose :as schema-compose]
     [isaac.config.root :as root]
     [isaac.config.validation :as validation]
+    [isaac.session.policy :as session-policy]
     [isaac.tool.fs-bounds :as fs-bounds]
     [isaac.tool.names :as names]))
 
@@ -230,3 +231,24 @@
                    [{:key   "embedding.provider"
                      :value "references undefined provider"
                      :bad-value provider}])}))))
+
+(defn- policy-id [value]
+  (when (some? value)
+    (if (keyword? value) (name value) (str value))))
+
+(defn check-session-policy
+  "A crew naming a session policy no factory provides is a config error.
+   Absent :session-policy is chronicle (no error)."
+  [{:keys [config]}]
+  (let [known      (session-policy/known-policy-names)
+        known-set  (set known)
+        known-text (str/join ", " known)]
+    {:errors (vec
+               (keep (fn [[crew-id crew]]
+                       (when-let [raw (:session-policy crew)]
+                         (let [name (policy-id raw)]
+                           (when-not (contains? known-set name)
+                             {:key   (str "crew." (->id crew-id) ".session-policy")
+                              :value (str "references undefined session policy (got \"" name "\"); known: " known-text)}))))
+                     (or (:crew config) {})))
+     :warnings []}))

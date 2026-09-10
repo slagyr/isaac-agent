@@ -98,6 +98,54 @@
       (should= 1 (count scenes))
       (should= "Reef charting" (:gist (first scenes)))))
 
+  (it "closes an episode whose backing transcript lives under :session-id, not the episode id"
+    (let [session (session-store/open-session! @ss "reef-chat" {:crew "cordelia" :cwd @root})
+          _ (session-store/append-message! @ss (:id session) {:role "user" :content "Chart the reef passage."})
+          _ (session-store/append-message! @ss (:id session) {:role "assistant" :content "Charted, keep west."})
+          ep-id "2026-03-01-1000-h7us"
+          _ (store/write-episode! @mem @root {:id ep-id :crew "cordelia" :status :open
+                                              :thread "reef-chat" :session-id "reef-chat" :scene-ids []} [])
+          provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+          _ (grover/enqueue! [{:type "text" :content "1-2: Reef charting"}])
+          result (sut/close-episode! {:fs @mem :root @root :crew "cordelia"
+                                      :episode-id ep-id
+                                      :session-store @ss
+                                      :provider provider :model "gist"})
+          ep (store/read-episode @mem @root "cordelia" ep-id)
+          scenes (store/list-scenes @mem @root "cordelia" ep-id)]
+      (should-not= :error (:status result))
+      (should-not= :partial (:status result))
+      (should= :closed (:status ep))
+      (should= "reef-chat" (:session-id ep))
+      (should= 1 (count scenes))
+      (should= "Reef charting" (:gist (first scenes)))))
+
+  (it "closes after an idle seal without re-segmenting already-sealed scenes"
+    (let [session (session-store/open-session! @ss "reef-chat" {:crew "cordelia" :cwd @root})
+          _ (session-store/append-message! @ss (:id session) {:role "user" :content "Chart the reef passage."})
+          _ (session-store/append-message! @ss (:id session) {:role "assistant" :content "Charted, keep west."})
+          ep-id "2026-03-01-1000-h7us"
+          _ (store/write-episode! @mem @root {:id ep-id :crew "cordelia" :status :open
+                                              :thread "reef-chat" :session-id "reef-chat" :scene-ids []} [])
+          provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
+          _ (grover/enqueue! [{:type "text" :content "1-2: Reef passage charted"}])
+          sealed (sut/maybe-seal! {:fs @mem :root @root :crew "cordelia"
+                                   :episode-id ep-id
+                                   :session-store @ss
+                                   :provider provider :model "gist"
+                                   :trigger :idle
+                                   :cfg {:episodes {:gist-model :gist :seal {:idle-minutes 0}}}})
+          _ (grover/enqueue! [{:type "text" :content "not a boundary line"}])
+          result (sut/close-episode! {:fs @mem :root @root :crew "cordelia"
+                                      :episode-id ep-id
+                                      :session-store @ss
+                                      :provider provider :model "gist"})
+          ep (store/read-episode @mem @root "cordelia" ep-id)]
+      (should= :sealed (:status sealed))
+      (should-not= :partial (:status result))
+      (should= :closed (:status ep))
+      (should= 1 (count (store/list-scenes @mem @root "cordelia" ep-id)))))
+
   (it "indexes sealed scenes on close when embedding is configured"
     (let [session (session-store/open-session! @ss "idx-ep" {:crew "cordelia" :cwd @root})
           _ (session-store/append-message! @ss (:id session) {:role "user" :content "What wine pairs with pheasant?"})
@@ -581,7 +629,7 @@
     (let [session  (binding [memory/*now* (java.time.Instant/parse "2026-03-01T10:00:00Z")]
                      (seed-open-episode! @ss @mem @root 1))
           provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
-          cfg      {:crew     {"cordelia" {:conversation :episodes :model "echo" :soul "You are Cordelia"}}
+          cfg      {:crew     {"cordelia" {:session-policy :episodes :model "echo" :soul "You are Cordelia"}}
                     :episodes {:gist-model :gist :seal {:idle-minutes 3} :ttl-minutes 60}
                     :embedding {:source :provider :provider "grover" :model "mini-embed"}}]
       (grover/enqueue! [{:type "text" :content "1-2: Wine pairing for pheasant"}])
@@ -598,7 +646,7 @@
 
   (it "deletes an empty cold episode on the tick and does not retry it"
     (let [id "20260301100000000"
-          cfg {:crew     {"cordelia" {:conversation :episodes :model "echo" :soul "You are Cordelia"}}
+          cfg {:crew     {"cordelia" {:session-policy :episodes :model "echo" :soul "You are Cordelia"}}
                :episodes {:gist-model :gist :seal {:idle-minutes 3} :ttl-minutes 60}}]
       (store/write-episode! @mem @root {:id id :crew "cordelia" :status :open
                                         :thread "reef-chat" :started-at "2026-03-01T10:00:00"} [])
@@ -625,7 +673,7 @@
   (it "skips an in-flight episode on the tick"
     (let [session  (seed-open-episode! @ss @mem @root 1)
           provider (llm-provider/make-provider "grover" {:api "grover" :auth "none"})
-          cfg      {:crew     {"cordelia" {:conversation :episodes :model "echo" :soul "You are Cordelia"}}
+          cfg      {:crew     {"cordelia" {:session-policy :episodes :model "echo" :soul "You are Cordelia"}}
                     :episodes {:gist-model :gist :seal {:idle-minutes 3} :ttl-minutes 60}
                     :embedding {:source :provider :provider "grover" :model "mini-embed"}}]
       (grover/enqueue! [{:type "text" :content "1-2: Wine pairing for pheasant"}])

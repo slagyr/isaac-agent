@@ -16,7 +16,7 @@ Feature: Idle sealing — a quiet thread becomes recallable within minutes
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
       | model    | gist   |

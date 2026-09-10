@@ -370,7 +370,16 @@
   (get-turn-marker [_ session-id]
     (get-in @state [:turn-markers (str session-id)]))
   (turn-markers [_]
-    (vec (vals (:turn-markers @state)))))
+    (vec (vals (:turn-markers @state))))
+  (default-session [_ crew _opts]
+    (let [crew-id (when crew (if (keyword? crew) (name crew) (str crew)))
+          recent  (or (when crew-id
+                        (last (sort-by :updated-at
+                                       (filter #(= crew-id (:crew %))
+                                               (vals (:sessions @state))))))
+                      (->> (vals (:sessions @state)) (sort-by :updated-at) last))]
+      (:id recent)))
+  (repair-transcript! [_ _session-id] nil))
 
 ;; endregion
 

@@ -1,13 +1,13 @@
-Feature: Episodes — live (router + lifecycle)
-  Crews with :conversation :episodes get episode-managed conversations:
-  the inbound --session name is the THREAD handle; the router maps it to
-  the current open episode, whose backing session is named by the episode
-  id (episodes as managed sessions — isaac-51xy decision 26). Warm
-  prompts append (no recall, no reseal); cold prompts (past :episodes
-  {:ttl-minutes 60}) close-and-chain with :parent-episode lineage;
-  compaction closes the episode and seeds the successor's transcript
-  with its summary. Sealing at close reuses the migration segmentation
-  pipeline. Sessions are untouched for crews without the switch.
+Feature: Episodes — live (policy + lifecycle)
+  Crews with :session-policy :episodes get episode-managed conversations:
+  the inbound --session name IS the session id (isaac-mmod; it never
+  changes). The episodes policy opens a container on a cold first append,
+  injects recall ahead of the message, seals on turn-marker clear, and
+  closes + chains a successor container on compaction / TTL. Warm prompts
+  append (no recall). Cold past :episodes {:ttl-minutes 60} is the
+  worker's TTL tick, then the next message chains with :parent-episode
+  lineage. Sealing at close reuses the migration segmentation pipeline.
+  Sessions are untouched for crews without the switch.
 
   Background:
     Given default Grover setup
@@ -19,7 +19,7 @@ Feature: Episodes — live (router + lifecycle)
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And the following model responses are queued:
       | type | content            | model |
       | text | Charted, keep west | echo  |
@@ -27,13 +27,13 @@ Feature: Episodes — live (router + lifecycle)
     Then the stdout contains "Charted, keep west"
     And the exit code is 0
     And an episode exists for crew "cordelia" matching:
-      | key    | value                          |
-      | id     | #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" |
-      | status | open                           |
-      | thread | reef-chat                      |
+      | key        | value                          |
+      | id         | #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" |
+      | status     | open                           |
+      | session-id | reef-chat                      |
     And the following sessions match:
-      | id                             |
-      | #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" |
+      | id        | crew     |
+      | reef-chat | cordelia |
     And that episode's backing session has transcript matching:
       | type    | message.role | message.content        |
       | message | user         | Chart the reef passage |
@@ -46,7 +46,7 @@ Feature: Episodes — live (router + lifecycle)
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And the current time is "2026-03-01T10:00:00"
     And the following model responses are queued:
       | type | content            | model |
@@ -58,9 +58,9 @@ Feature: Episodes — live (router + lifecycle)
     Then the exit code is 0
     And crew "cordelia" has 1 episode
     And an episode exists for crew "cordelia" matching:
-      | key    | value     |
-      | status | open      |
-      | thread | reef-chat |
+      | key        | value     |
+      | status     | open      |
+      | session-id | reef-chat |
     And that episode's backing session has transcript matching:
       | type    | message.role | message.content        |
       | message | user         | Chart the reef passage |
@@ -75,7 +75,7 @@ Feature: Episodes — live (router + lifecycle)
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
       | model    | gist   |
@@ -91,6 +91,7 @@ Feature: Episodes — live (router + lifecycle)
       | text | 1-2: Reef charting | gist  |
       | text | Watches dogged     | echo  |
     When isaac is run with "prompt -m 'Chart the reef passage' --session reef-chat --crew cordelia"
+    When the episodes worker ticks at "2026-03-01T11:05:00"
     Given the current time is "2026-03-01T11:45:00"
     When isaac is run with "prompt -m 'Set the watch rotation' --session reef-chat --crew cordelia"
     Then the exit code is 0
@@ -98,7 +99,7 @@ Feature: Episodes — live (router + lifecycle)
     And an episode exists for crew "cordelia" matching:
       | key            | value                          |
       | status         | open                           |
-      | thread         | reef-chat                      |
+      | session-id     | reef-chat                      |
       | parent-episode | #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" |
     And the episodes for crew "cordelia" on thread "reef-chat" chain by lineage
     And that episode's backing session has transcript matching:
@@ -113,7 +114,7 @@ Feature: Episodes — live (router + lifecycle)
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
       | model    | gist   |
@@ -132,8 +133,7 @@ Feature: Episodes — live (router + lifecycle)
     When isaac is run with "prompt -m 'Chart the reef passage' --session reef-chat --crew cordelia"
     Given the current time is "2026-03-01T10:10:00"
     When isaac is run with "prompt -m 'Mark the buoys' --session reef-chat --crew cordelia"
-    Given the current time is "2026-03-01T11:55:00"
-    When isaac is run with "prompt -m 'Set the watch rotation' --session reef-chat --crew cordelia"
+    When the episodes worker ticks at "2026-03-01T11:55:00"
     Then the exit code is 0
     And an episode exists for crew "cordelia" matching:
       | key    | value  |
@@ -150,7 +150,7 @@ Feature: Episodes — live (router + lifecycle)
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And the isaac EDN file "config/models/echo.edn" exists with:
       | path           | value  |
       | model          | echo   |
@@ -198,7 +198,7 @@ Feature: Episodes — live (router + lifecycle)
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
       | model    | gist   |
@@ -249,7 +249,7 @@ Feature: Episodes — live (router + lifecycle)
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
       | model    | gist   |
@@ -265,6 +265,7 @@ Feature: Episodes — live (router + lifecycle)
       | text | 1-2: Reef charting | gist  |
       | text | Watches dogged     | echo  |
     When isaac is run with "prompt -m 'Chart the reef passage' --session reef-chat --crew cordelia"
+    When the episodes worker ticks at "2026-03-01T11:05:00"
     Given the current time is "2026-03-01T11:45:00"
     When isaac is run with "prompt -m 'Set the watch rotation' --session reef-chat --crew cordelia"
     When isaac is run with "episodes list --crew cordelia"
@@ -281,7 +282,7 @@ Feature: Episodes — live (router + lifecycle)
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And config file "isaac.edn" containing:
       """
       {:embedding {:source :provider :provider "grover" :model "mini-embed"}}
@@ -310,7 +311,7 @@ Feature: Episodes — live (router + lifecycle)
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And config file "isaac.edn" containing:
       """
       {:embedding {:source :provider :provider "grover" :model "mini-embed"}
@@ -336,7 +337,7 @@ Feature: Episodes — live (router + lifecycle)
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
       | model    | gist   |
@@ -353,6 +354,7 @@ Feature: Episodes — live (router + lifecycle)
       | text | 1-2: Reef passage charted | gist  |
       | text | Still to leeward.         | echo  |
     When isaac is run with "prompt -m 'Chart the reef passage' --session reef-chat --crew cordelia"
+    When the episodes worker ticks at "2026-03-01T11:05:00"
     Given the current time is "2026-03-01T11:45:00"
     When isaac is run with "prompt -m 'Back to the reef passage' --session reef-chat --crew cordelia"
     Then the stdout contains "Still to leeward."
@@ -374,7 +376,7 @@ Feature: Episodes — live (router + lifecycle)
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
       | model    | gist   |
@@ -405,7 +407,7 @@ Feature: Episodes — live (router + lifecycle)
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
       | model    | gist   |
@@ -440,7 +442,7 @@ Feature: Episodes — live (router + lifecycle)
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
       | model    | gist   |
@@ -479,7 +481,7 @@ Feature: Episodes — live (router + lifecycle)
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
       | model    | gist   |
@@ -511,7 +513,7 @@ Feature: Episodes — live (router + lifecycle)
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
       | model    | gist   |
@@ -541,7 +543,7 @@ Feature: Episodes — live (router + lifecycle)
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
       | model    | gist   |
@@ -579,7 +581,7 @@ Feature: Episodes — live (router + lifecycle)
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
       | model    | gist   |
@@ -625,7 +627,7 @@ Feature: Episodes — live (router + lifecycle)
       | path         | value            |
       | model        | local            |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And the isaac EDN file "config/models/gist.edn" exists with:
       | path     | value  |
       | model    | gist   |

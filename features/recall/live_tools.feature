@@ -15,7 +15,7 @@ Feature: Recall — live tools
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And the crew "cordelia" allows tools: recall/search
     And config file "isaac.edn" containing:
       """
@@ -47,7 +47,7 @@ Feature: Recall — live tools
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And the crew "cordelia" allows tools: recall/scene
     And crew "cordelia" has a closed episode "2026-03-01-1000-ab12" with scenes:
       | id                   | started-at          | ended-at            | gist                      | text                                    |

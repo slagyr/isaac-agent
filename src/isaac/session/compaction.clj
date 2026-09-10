@@ -2,8 +2,6 @@
   (:require
     [clojure.string :as str]
     [isaac.config.loader :as loader]
-    [isaac.episodes.lifecycle :as lifecycle]
-    [isaac.episodes.store :as episode-store]
     [isaac.fs :as fs]
     [isaac.llm.api.protocol :as llm]
     [isaac.llm.prompt.builder :as prompt-builder]
@@ -11,6 +9,7 @@
     [isaac.session.context :as session-ctx]
     [isaac.session.compaction-schema :as compaction-schema]
     [isaac.nexus :as nexus]
+    [isaac.session.policy :as policy]
     [isaac.session.store.spi :as store]
     [isaac.session.transcript :as transcript]
     [isaac.tool.builtin :as builtin]
@@ -69,13 +68,16 @@
 (defn estimate-prompt-tokens
   "Estimate tokens for the outbound prompt from the live transcript (and
    optional pending user input), not lagging session counters."
-  [session-key {:keys [session-store soul boot-files rules-text skill-menu-text
+  [session-key {:keys [session-store session-policy charge soul boot-files rules-text skill-menu-text
                        context-window model tools nonce guidance origin input
                        transcript context-mode]
                 :or   {soul ""}}]
   (let [session-store (or session-store (nexus/get-in [:sessions :store]))
+        sess          (or session-policy
+                          (when charge (policy/for-request charge))
+                          (when session-store (policy/wrap session-store)))
         transcript    (or transcript
-                          (when session-store (store/get-transcript session-store session-key)))
+                          (when sess (policy/get-transcript sess session-key)))
         transcript    (transcript-for-estimate transcript context-mode input)
         prompt        (prompt-builder/build {:soul              soul
                                              :boot-files        boot-files
@@ -448,13 +450,16 @@
         :transcript-lock - optional lock used only for the final transcript splice
         :compaction-llm-done - optional promise delivered after LLM call completes
         :splice-ready - optional promise waited on before performing the splice"
-  [key-str {:keys [boot-files chat-fn compaction-llm-done context-window model api soul splice-ready transcript-lock root session-store]}]
+  [key-str {:keys [boot-files chat-fn compaction-llm-done context-window model api soul splice-ready transcript-lock root session-store session-policy charge]}]
   (binding [*compaction-system-prompt* (resolve-compaction-prompt (or root (loader/root)))]
   (let [root      (or root (loader/root))
         session-store  (or session-store (nexus/get-in [:sessions :store]))
+        sess           (or session-policy
+                           (when charge (policy/for-request charge))
+                           (when session-store (policy/wrap session-store)))
         ctx            {:root root :session-store session-store}
         behavior       (session-ctx/resolve-behavior key-str (assoc ctx :context-window context-window))
-        transcript      (store/get-transcript session-store key-str)
+        transcript      (policy/get-transcript sess key-str)
         history-entries (effective-history-entries transcript)
         compactables    (compactables history-entries context-window)
         messages        (mapv :message compactables)
@@ -521,41 +526,16 @@
     (if (response-error response)
       response
       (let [summary          (prompt-builder/non-blank-summary (response-content response))
-            session-entry    (store/get-session session-store key-str)
-            crew-id          (:crew session-entry)
-            cfg              (or (try (loader/snapshot "episode compaction-close")
-                                      (catch Exception _ nil))
-                                 {})
-            episode-crew?    (lifecycle/episodes-crew? cfg crew-id)
-            open-episode     (when episode-crew?
-                               (or (episode-store/read-episode (or (nexus/get :fs) (fs/instance))
-                                                               root crew-id key-str)
-                                   (episode-store/find-open-on-thread (or (nexus/get :fs) (fs/instance))
-                                                                      root crew-id (:thread session-entry))))
             spliced-transcript (atom nil)
             splice!          (fn []
-                               (if episode-crew?
-                                 (let [closed (lifecycle/compact-close!
-                                                {:root          root
-                                                 :crew          crew-id
-                                                 :thread        (or (:thread open-episode) (:thread session-entry))
-                                                 :episode-id    key-str
-                                                 :session-store session-store
-                                                 :summary       summary
-                                                 :cfg           cfg
-                                                 :cwd           (:cwd session-entry)
-                                                 :origin        (:origin session-entry)})]
-                                   (reset! spliced-transcript
-                                           (store/get-transcript session-store (or (:session-key closed) key-str)))
-                                   (assoc closed :summary summary :successor-session-key (:session-key closed)))
-                                 (let [compaction-entry (store/splice-compaction! session-store key-str
-                                                                                  {:summary           summary
-                                                                                   :turnRequest       turn-request
-                                                                                   :firstKeptEntryId  first-kept-entry-id
-                                                                                   :tokensBefore      tokens-before
-                                                                                   :compactedEntryIds compacted-ids})]
-                                   (reset! spliced-transcript (store/get-transcript session-store key-str))
-                                   compaction-entry)))
+                               (let [compaction-entry (policy/splice-compaction! sess key-str
+                                                                                 {:summary           summary
+                                                                                  :turnRequest       turn-request
+                                                                                  :firstKeptEntryId  first-kept-entry-id
+                                                                                  :tokensBefore      tokens-before
+                                                                                  :compactedEntryIds compacted-ids})]
+                                 (reset! spliced-transcript (policy/get-transcript sess key-str))
+                                 compaction-entry))
             _                (when splice-ready
                                (deref splice-ready 30000 nil))
             compaction-entry (cond-> (if transcript-lock
@@ -565,9 +545,8 @@
                                oversized? (assoc :partial true))
             system-text      (if boot-files (str soul "\n\n" boot-files) soul)
             new-total        (llm/estimate-tokens {:messages [{:role "system" :content system-text}
-                                                               {:role "user"   :content summary}]})
-            successor-key    (or (:successor-session-key compaction-entry) key-str)]
-        (store/update-session! session-store successor-key {:last-input-tokens new-total})
+                                                               {:role "user"   :content summary}]})]
+        (policy/update-session! sess key-str {:last-input-tokens new-total})
         compaction-entry)))))
 
 ;; endregion ^^^^^ Orchestration ^^^^^

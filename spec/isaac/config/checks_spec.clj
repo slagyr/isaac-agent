@@ -35,7 +35,7 @@
             (marigold/write-config! {:defaults {:crew "main" :model "grover"}})
             (marigold/write-model! "grover" {:model "echo" :provider "grover" :context-window 32768})
             (marigold/write-crew! "main" {:model "grover" :soul "You are Atticus."})
-            (marigold/write-crew! "cordelia" {:model "echo" :soul "You are Cordelia." :conversation :episodes})
+            (marigold/write-crew! "cordelia" {:model "echo" :soul "You are Cordelia." :session-policy :episodes})
             (marigold/write-provider! "grover" {})
             (let [result (loader/load-config-result {:root marigold/root :fs fs*})
                   model-errors (filter #(= "crew.cordelia.model" (:key %)) (:errors result))]
@@ -173,4 +173,26 @@
             (let [result (loader/load-config-result {:root root :fs fs*})
                   hits   (filter #(= "tools.allow" (:key %)) (:errors result))]
               (should (seq hits))
-              (should (re-find #":all" (:value (first hits))))))))))
+              (should (re-find #":all" (:value (first hits)))))))))
+
+  (context "check-session-policy"
+
+    (it "rejects an unknown session policy with the planted ledger/chronicle message"
+      (require 'isaac.session.policy.chronicle)
+      (let [{:keys [errors]} (sut/check-session-policy
+                               {:config {:crew {"cordelia" {:session-policy :ledger}}}})]
+        (should= 1 (count errors))
+        (should= "crew.cordelia.session-policy" (:key (first errors)))
+        (should (re-find #"references undefined session policy \(got \"ledger\"\); known: chronicle"
+                         (:value (first errors))))))
+
+    (it "accepts a crew with no session-policy (chronicle default)"
+      (let [{:keys [errors]} (sut/check-session-policy
+                               {:config {:crew {"main" {:model "echo"}}}})]
+        (should= [] errors)))
+
+    (it "accepts a registered session policy"
+      (require 'isaac.session.policy.chronicle)
+      (let [{:keys [errors]} (sut/check-session-policy
+                               {:config {:crew {"cordelia" {:session-policy :chronicle}}}})]
+        (should= [] errors)))))

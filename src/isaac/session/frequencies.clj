@@ -5,6 +5,7 @@
     [clojure.set :as set]
     [clojure.string :as str]
     [c3kit.apron.schema :as schema]
+    [isaac.session.policy :as policy]
     [isaac.session.store.spi :as store]))
 
 (def create-modes #{:never :if-missing :always})
@@ -160,11 +161,12 @@
   (let [frequencies  (merge {:reach :one :prefer :recent :create :if-missing :default-session-key "prompt-default"}
                             frequencies)
         create       (:create frequencies)
-        all-sessions (store/list-sessions session-store)]
+        sess         (policy/wrap session-store)
+        all-sessions (policy/list-sessions sess)]
     (cond
       (explicit-session? frequencies)
       (let [session-key (first (:session frequencies))
-            existing    (store/get-session session-store session-key)]
+            existing    (policy/get-session sess session-key)]
         (cond
           existing
           {:session-key session-key :session existing :create? false}
@@ -228,7 +230,7 @@
 
       :else
       (let [session-key (:default-session-key frequencies)
-            existing    (store/get-session session-store session-key)]
+            existing    (policy/get-session sess session-key)]
         (cond
           existing
           {:session-key session-key :session existing :create? false}

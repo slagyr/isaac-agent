@@ -860,7 +860,7 @@
                 (should-not-be-nil entry)
                 (should= key-str (:session entry))))))))
 
-    (it "closes an episode crew session and seeds the successor with the summary"
+    (it "keeps the session id when compacting an episode-crew session"
       (let [key-str  "2026-03-01-1000-ab12"
             _session (storage/create-session! test-root key-str {:crew "cordelia"})
             _msg1    (storage/append-message! test-root key-str
@@ -869,25 +869,13 @@
                        {:role "assistant" :content "We discussed sinks and the tool loop."})
             mock-chat (fn [_request _tool-fn]
                         {:message {:content "Summary so far"}})
-            closed    (atom nil)
-            result    (with-redefs [isaac.episodes.lifecycle/episodes-crew? (constantly true)
-                                    isaac.episodes.lifecycle/compact-close!
-                                    (fn [opts]
-                                      (reset! closed opts)
-                                      {:session-key "2026-03-01-1030-cd34"
-                                       :action      :chained
-                                       :summary     (:summary opts)})]
-                        (sut/compact! key-str
-                          {:model          "test-model"
-                           :soul           "You are helpful."
-                           :context-window 10000
-                           :chat-fn        mock-chat}))]
-        (should-not-be-nil @closed)
-        (should= "cordelia" (:crew @closed))
-        (should= key-str (:episode-id @closed))
-        (should= "Summary so far" (:summary @closed))
-        (should= "2026-03-01-1030-cd34" (:successor-session-key result))
-        (should= "Summary so far" (:summary result))))
+            result    (sut/compact! key-str
+                                    {:model          "test-model"
+                                     :soul           "You are helpful."
+                                     :context-window 10000
+                                     :chat-fn        mock-chat})]
+        (should= "Summary so far" (:summary result))
+        (should= key-str (:id (store/get-session (store/registered-store) key-str)))))
 
     (it "does not mark a complete floor-stuck rubberband splice as partial"
       (let [key-str   "isaac:main:cli:chat:floor-stuck"

@@ -2,6 +2,7 @@
   (:require
     [isaac.bridge.cancellation :as cancel]
     [isaac.logger :as log]
+    [isaac.session.policy :as policy]
     [isaac.session.store.spi :as store]))
 
 (def default-timeout-ms 15000)
@@ -28,13 +29,17 @@
     (suspended-result)
     (cancel/cancelled-result)))
 
+(defn- as-policy [store]
+  (policy/wrap store))
+
 (defn- stamp-suspended-marker! [store session-key boundary]
-  (when-let [marker (store/get-turn-marker store session-key)]
-    (store/record-turn-marker! store session-key
-                               (assoc marker
-                                      :suspended true
-                                      :boundary boundary
-                                      :interrupted-at (str (java.time.Instant/now))))))
+  (let [sess (as-policy store)]
+    (when-let [marker (policy/get-turn-marker sess session-key)]
+      (policy/record-turn-marker! sess session-key
+                                  (assoc marker
+                                         :suspended true
+                                         :boundary boundary
+                                         :interrupted-at (str (java.time.Instant/now)))))))
 
 (defn release-turn-marker! [store session-key]
   (if (session-suspended? session-key)
@@ -42,7 +47,7 @@
       (stamp-suspended-marker! store session-key boundary)
       (swap! suspended-sessions* disj session-key)
       (swap! suspend-boundaries* dissoc session-key))
-    (store/clear-turn-marker! store session-key)))
+    (policy/clear-turn-marker! (as-policy store) session-key)))
 
 (defn suspend!
   [{:keys [timeout-ms session-store]

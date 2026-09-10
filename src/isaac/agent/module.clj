@@ -8,6 +8,8 @@
     [isaac.module.protocol :as module]
     [isaac.recall.cli]
     [isaac.recall.embedding]
+    [isaac.session.policy.chronicle]
+    [isaac.session.policy.episodes]
     [isaac.turn.cli]))
 
 (defn create-module []

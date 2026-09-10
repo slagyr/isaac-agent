@@ -104,6 +104,28 @@
         (should-contain "Recalled from earlier conversations" text)
         (should-contain "pinot noir" text)))
 
+    (it "appends recall onto the episode's :session-id when that is the backing store key"
+      (session-store/open-session! @ss "harbor-log" {:crew "cordelia" :cwd root})
+      (store/write-episode! @mem root {:id "open-ep" :crew "cordelia" :status :open
+                                       :session-id "harbor-log" :thread "harbor-log" :scene-ids []} [])
+      (log/capture-logs
+        (sut/inject-on-open!
+          {:fs            @mem
+           :root          root
+           :cfg           embed-cfg
+           :crew          "cordelia"
+           :episode       {:id "open-ep" :crew "cordelia" :session-id "harbor-log" :thread "harbor-log"}
+           :query         "What wine pairs with pheasant?"
+           :action        :opened
+           :session-store @ss}))
+      (let [trans (session-store/get-transcript @ss "harbor-log")
+            msgs  (filter #(= "message" (:type %)) trans)
+            block (get-in (first msgs) [:message :content])
+            text  (if (string? block) block (->> block (map :text) (str/join "\n")))]
+        (should= 0 (count (filter #(= "message" (:type %)) (session-store/get-transcript @ss "open-ep"))))
+        (should-contain "Recalled from earlier conversations" text)
+        (should-contain "recall__scene" text)))
+
     (it "logs :episodes/recalled with search count, lineage, top, and floor on a cold open"
       (store/write-episode! @mem root {:id "open-ep" :crew "cordelia" :status :open
                                        :thread "supper-chat" :scene-ids []} [])

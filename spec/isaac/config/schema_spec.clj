@@ -76,10 +76,10 @@
                (lexicon/conform (runtime-spec sut/crew)
                                 {:tags #{:role/worker :project/chess}})))
 
-    (it "crew conforms with conversation :episodes"
-      (should= {:conversation :episodes}
+    (it "crew conforms with session-policy :episodes"
+      (should= {:session-policy :episodes}
                (lexicon/conform (runtime-spec sut/crew)
-                                {:conversation :episodes})))
+                                {:session-policy :episodes})))
 
     (it "root tools.defaults conforms max-lines and max-bytes"
       (should= {:defaults {:max-lines 500 :max-bytes 131072}}
@@ -197,11 +197,10 @@
         (should= "must be one of :full, :reset"
                  (get-in (schema/message-map result) [:context-mode]))))
 
-    (it "crew rejects unknown conversation values"
-      (let [result (lexicon/conform sut/crew {:conversation :sessions})]
-        (should (schema/error? result))
-        (should= "must be one of :episodes"
-                 (get-in (schema/message-map result) [:conversation]))))
+    (it "crew accepts any keyword session-policy (unknown names fail at check-session-policy)"
+      (let [result (lexicon/conform (runtime-spec sut/crew) {:session-policy :ledger})]
+        (should-not (schema/error? result))
+        (should= {:session-policy :ledger} result)))
 
     (it "crew rejects non-positive max-in-flight"
       (let [result (lexicon/conform sut/crew {:max-in-flight 0})]

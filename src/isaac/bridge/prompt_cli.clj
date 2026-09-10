@@ -12,13 +12,13 @@
     [isaac.config.loader :as loader]
     [isaac.config.root :as root]
     [isaac.agent.config.runtime :as runtime]
-    [isaac.episodes.lifecycle :as lifecycle]
     [isaac.fs :as fs]
     [isaac.drive.observer :as observer]
     [isaac.drive.turn :as single-turn]
     [isaac.session.context :as session-ctx]
     [isaac.session.frequencies :as session-frequencies]
     [isaac.session.frequencies-cli :as frequencies-cli]
+    [isaac.session.policy :as policy]
     [isaac.session.store.spi :as store]
     [isaac.tool.builtin :as builtin]
     [isaac.tool.memory :as memory]
@@ -119,50 +119,96 @@
       (print-error! (get-in result [:errors 0 :value]))
       false)))
 
-(defn- resolve-target [opts session-store]
-  (session-frequencies/resolve-session-targets (frequencies-cli/build-frequencies opts) session-store))
-
 (defn- episode-crew-id [opts override cfg]
   (or (:with-crew override)
       (:crew opts)
       (get-in cfg [:defaults :crew])
       "main"))
 
+(defn- prompt-policy [opts override cfg session-store]
+  (policy/for-request {:crew          (episode-crew-id opts override cfg)
+                       :config        cfg
+                       :session-store session-store}))
+
+(defn- no-session-id? [opts]
+  (and (not (:session opts))
+       (not (:resume opts))
+       (empty? (:session-tag opts))
+       (empty? (:tag opts))))
+
+(defn- frequencies-selected? [opts]
+  (or (contains? opts :create)
+      (:prefer opts)
+      (:session opts)
+      (:resume opts)
+      (seq (:session-tag opts))
+      (seq (:tag opts))))
+
+(defn- policy-default-target [opts override cfg session-store]
+  (let [crew-id (episode-crew-id opts override cfg)
+        sess    (prompt-policy opts override cfg session-store)
+        cwd     (System/getProperty "user.dir")
+        default (when sess (policy/default-session sess crew-id {:cwd cwd :origin {:kind :cli}}))]
+    (if default
+      {:session-key default
+       :session     (when sess (policy/get-session sess default))
+       :create?     (boolean (and sess (nil? (policy/get-session sess default))))
+       :create-identity {:crew crew-id}}
+      {:session-key nil
+       :session     nil
+       :create?     true
+       :create-identity {:crew crew-id}})))
+
+(defn- resolve-target [opts override cfg session-store]
+  ;; Policy default-session is the no-id path for --crew (session_policy
+  ;; scenario 8). Frequencies --create/--prefer/--session/--resume/tags must
+  ;; still win; a bare `prompt -m` without --crew stays on prompt-default.
+  (if (and (:crew opts)
+           (no-session-id? opts)
+           (not (frequencies-selected? opts)))
+    (policy-default-target opts override cfg session-store)
+    (session-frequencies/resolve-session-targets (frequencies-cli/build-frequencies opts) session-store)))
+
 (defn- ensure-session! [target override opts cfg session-store]
-  (let [crew-id (episode-crew-id opts override cfg)]
-    (if (lifecycle/episodes-crew? cfg crew-id)
-      (let [thread   (or (first (:session (frequencies-cli/build-frequencies opts)))
-                         (:session-key target)
-                         (:session opts)
-                         "prompt-default")
-            resolved (lifecycle/resolve-thread!
-                       {:root          (root-of opts)
-                        :crew          crew-id
-                        :thread        thread
-                        :session-store session-store
-                        :cfg           cfg
-                        :cwd           (System/getProperty "user.dir")
-                        :origin        {:kind :cli}})]
-        (lifecycle/maybe-recall-at-open!
-          resolved
-          {:query         (:message opts)
-           :cfg           cfg
-           :root          (root-of opts)
-           :crew          crew-id
-           :session-store session-store})
-        (:session-key resolved))
-      (if (:create? target)
-        (let [identity    (or (:create-identity target) {})
-              create-opts (merge {:cwd           (System/getProperty "user.dir")
-                                  :config        cfg
-                                  :origin        {:kind :cli}
-                                  :session-store session-store}
-                                 identity
-                                 (session-frequencies/behavioral-override override))
-              entry       (session-ctx/create-with-resolved-behavior!
-                            (:session-key target) create-opts)]
-          (:id entry))
-        (:session-key target)))))
+  (let [crew-id (episode-crew-id opts override cfg)
+        sess    (prompt-policy opts override cfg session-store)
+        cwd     (System/getProperty "user.dir")]
+    (cond
+      (:session-key target)
+      (do
+        (when (and sess (nil? (policy/get-session sess (:session-key target)))
+                   (or (:create? target) (:session opts)))
+          (policy/open-session! sess (:session-key target)
+                                (merge {:cwd           cwd
+                                        :config        cfg
+                                        :origin        {:kind :cli}
+                                        :crew          crew-id
+                                        :session-store session-store}
+                                       (or (:create-identity target) {})
+                                       (session-frequencies/behavioral-override override))))
+        (:session-key target))
+
+      (:create? target)
+      (let [identity    (or (:create-identity target) {})
+            create-opts (merge {:cwd           cwd
+                                :config        cfg
+                                :origin        {:kind :cli}
+                                :session-store session-store
+                                :crew          crew-id}
+                               identity
+                               (session-frequencies/behavioral-override override))
+            session-key (:session-key target)]
+        (if (and sess session-key)
+          (do
+            (policy/open-session! sess session-key create-opts)
+            session-key)
+          (let [entry (session-ctx/create-with-resolved-behavior!
+                        session-key create-opts)]
+            (:id entry))))
+
+      :else
+      (or (when sess (policy/default-session sess crew-id {:cwd cwd :origin {:kind :cli}}))
+          (:session-key target)))))
 
 (defn- dispatch-prompt! [opts cfg session-store session-key session comm text]
   (let [obs-refs  (mapv observer/parse-ref (or (:observer opts) []))
@@ -221,13 +267,6 @@
 
                 :else
                 (println @text))
-              (when (lifecycle/episodes-crew? cfg (episode-crew-id opts override cfg))
-                (lifecycle/maybe-seal!
-                  {:root          (root-of opts)
-                   :crew          (episode-crew-id opts override cfg)
-                   :episode-id    session-key
-                   :session-store session-store
-                   :cfg           cfg}))
               0)))))))
 
 (defn run [opts]
@@ -244,11 +283,13 @@
                 _             (runtime/install! {:config cfg})
                 session-store (store/registered-store)
                 override      (frequencies-cli/build-override opts)
-                target        (resolve-target opts session-store)]
+                target        (resolve-target opts override cfg session-store)]
             (if (:error target)
               (do (print-error! (:message target)) 1)
               (let [session-key (ensure-session! target override opts cfg session-store)
-                    session     (store/get-session session-store session-key)
+                    session     (or (when-let [sess (prompt-policy opts override cfg session-store)]
+                                      (policy/get-session sess session-key))
+                                    (store/get-session session-store session-key))
                     {:keys [comm text]} (make-prompt-comm (seq (:observer opts)))]
                 (dispatch-prompt! opts cfg session-store session-key session comm text)))))))))
 

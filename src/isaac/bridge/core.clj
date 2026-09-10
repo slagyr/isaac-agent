@@ -10,19 +10,18 @@
     [isaac.bridge.status :as status]
     [isaac.bridge.suspend :as suspend]
     [isaac.comm.render :as render]
-    [isaac.conversation.router :as conversation]
     [isaac.charge :as charge]
     [isaac.comm.protocol :as comm]
     [isaac.config.loader :as loader]
     [isaac.drive.observer :as observer]
     [isaac.drive.turn :as turn]
-    [isaac.episodes.lifecycle :as lifecycle]
     [isaac.fs :as fs]
     [isaac.logger :as log]
     [isaac.tool.memory :as memory]
     [isaac.nexus :as nexus]
     [isaac.prompt.catalog :as prompt-catalog]
     [isaac.session.context :as session-ctx]
+    [isaac.session.policy :as policy]
     [isaac.session.store.spi :as store]
     [isaac.slash.builtin :as slash-builtin]
     [isaac.slash.registry :as slash-registry]
@@ -92,42 +91,29 @@
                    (str "/" name)
                    name))})
 
+(defn- request-policy [request]
+  (or (policy/for-request request)
+      (when-let [ss (or (:session-store request) (nexus/get-in [:sessions :store]))]
+        (policy/wrap ss))))
+
 (defn- ensure-session! [request]
   (let [session-store* (or (:session-store request) (nexus/get-in [:sessions :store]))
         cfg            (or (when (map? (:config request)) (:config request)) (loader/snapshot "turn dispatch entry — falls back to ambient config when charge carries none") {})
         crew-id        (or (:crew request) (get-in cfg [:defaults :crew]) "main")
         crew-cfg       (get (:crew cfg) crew-id)
-        request        (conversation/route-conversation! (assoc request :crew-cfg crew-cfg))
         session-key    (:session-key request)
-        resolved-cwd   (resolve-session-cwd (:cwd request) crew-cfg nil)]
-    (if (and session-key (lifecycle/episodes-crew? cfg crew-id))
-      (let [resolved (lifecycle/resolve-thread!
-                       {:root          (or (get-in cfg [:root]) (:root request) (nexus/get :root))
-                        :crew          crew-id
-                        :thread        session-key
-                        :session-store session-store*
-                        :cfg           cfg
-                        :cwd           resolved-cwd
-                        :origin        (:origin request)})]
-        (lifecycle/maybe-recall-at-open!
-          resolved
-          {:query         (:input request)
-           :cfg           cfg
-           :root          (or (get-in cfg [:root]) (:root request) (nexus/get :root))
-           :crew          crew-id
-           :session-store session-store*})
-        (assoc request :session-key (:session-key resolved)))
-      (do
-        (when (and session-key
-                   (nil? (store/get-session session-store* session-key))
-                   (or (:origin request) resolved-cwd))
-          (session-ctx/create-with-resolved-behavior!
-            session-key {:crew          crew-id
-                         :cwd           resolved-cwd
-                         :origin        (:origin request)
-                         :config        cfg
-                         :session-store session-store*}))
-        request))))
+        resolved-cwd   (resolve-session-cwd (:cwd request) crew-cfg nil)
+        sess           (request-policy request)]
+    (when (and session-key sess
+               (nil? (policy/get-session sess session-key))
+               (or (:origin request) resolved-cwd))
+      (policy/open-session! sess session-key
+                            {:crew          crew-id
+                             :cwd           resolved-cwd
+                             :origin        (:origin request)
+                             :config        cfg
+                             :session-store session-store*}))
+    request))
 
 ;; endregion ^^^^^ Helpers ^^^^^
 
@@ -202,28 +188,10 @@
    (comm dispatch here, the hail delivery worker) hand a charge; the bridge builds
    the resume-routing marker from it and persists it via the SessionStore."
   [store session-key charge]
-  (store/record-turn-marker! store session-key (turn-marker charge)))
+  (policy/record-turn-marker! (policy/wrap store) session-key (turn-marker charge)))
 
 (defn clear-turn-marker! [store session-key]
   (suspend/release-turn-marker! store session-key))
-
-(defn- maybe-live-seal! [charge result]
-  (when (and charge
-             (not= :cli (:kind (:origin charge)))
-             (not (:error result))
-             (not (:unavailable? result))
-             (not (get-in result [:response :error])))
-    (let [cfg     (or (when (map? (:config charge)) (:config charge)) {})
-          crew-id (or (:crew charge) (get-in cfg [:defaults :crew]) "main")]
-      (when (lifecycle/episodes-crew? cfg crew-id)
-        (lifecycle/maybe-seal!
-          {:fs            (or (nexus/get :fs) (fs/instance))
-           :root          (or (get-in cfg [:root]) (:root charge) (nexus/get :root))
-           :crew          crew-id
-           :episode-id    (:session-key charge)
-           :session-store (or (:session-store charge) (nexus/get-in [:sessions :store]))
-           :cfg           cfg}))))
-  result)
 
 (defn- isolate-cleanup! [step-name f]
   (try
@@ -257,8 +225,8 @@
   (when-not (:from-queue? charge)
     (when-let [session-key (:session-key charge)]
       (when-let [input (:input charge)]
-        (when-let [ss (or (:session-store charge) (nexus/get-in [:sessions :store]))]
-          (store/append-message! ss session-key {:role "user" :content input}))))))
+        (when-let [sess (request-policy charge)]
+          (policy/append-message! sess session-key {:role "user" :content input}))))))
 
 (defn- format-turnstile-refs [refs]
   (->> refs
@@ -357,19 +325,20 @@
               :else
               (let [charge (or (:charge ts-check) charge)]
                 (if-let [session-key (:session-key charge)]
-                  (let [session-store* (or (:session-store charge) (nexus/get-in [:sessions :store]))]
+                  (let [session-store* (or (:session-store charge) (nexus/get-in [:sessions :store]))
+                        sess           (request-policy charge)]
                     (if (store/mark-in-flight! session-store* session-key)
                       (do
-                        (record-turn-marker! session-store* session-key charge)
+                        (record-turn-marker! (or sess session-store*) session-key charge)
                         (try
-                          (maybe-live-seal! charge (turn/run-turn! charge))
+                          (turn/run-turn! (assoc charge :session-policy sess))
                           (finally
                             (isolate-cleanup! :clear-turn-marker
-                                              #(clear-turn-marker! session-store* session-key))
+                                              #(clear-turn-marker! (or sess session-store*) session-key))
                             (isolate-cleanup! :clear-in-flight
                                               #(store/clear-in-flight! session-store* session-key)))))
                       (refuse-dispatch session-key)))
-                  (maybe-live-seal! charge (turn/run-turn! charge))))))))
+                  (turn/run-turn! (assoc charge :session-policy (request-policy charge)))))))))
       result)))
 
 (defn dispatch!
@@ -378,7 +347,7 @@
    handled here; normal turns delegate to run-turn!. Bridge -> drive only."
   ([input]
     (if (charge/charge? input)
-      (dispatch-charge! input)
+      (dispatch-charge! (ensure-session! input))
       (let [request (ensure-session! (merge (nexus/necho) input))]
         (dispatch-charge! (charge/build request)))))
   ([_root request]

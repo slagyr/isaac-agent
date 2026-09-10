@@ -11,7 +11,7 @@ Feature: Recall is visible in the logs
       | path         | value            |
       | model        | echo             |
       | soul         | You are Cordelia |
-      | conversation | episodes         |
+      | session-policy | episodes         |
     And config file "isaac.edn" containing:
       """
       {:embedding {:source :provider :provider "grover" :model "mini-embed"}}

@@ -190,11 +190,12 @@
        vec))
 
 (defn find-open-on-thread
-  "Return the open episode whose :thread equals thread, if any."
+  "Return the open episode whose :thread or :session-id equals thread, if any."
   [fs* root crew thread]
   (some (fn [ep]
           (when (and (= :open (:status ep))
-                     (= thread (:thread ep)))
+                     (or (= thread (:thread ep))
+                         (= thread (:session-id ep))))
             ep))
         (list-episodes fs* root crew)))
 
