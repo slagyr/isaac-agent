@@ -117,12 +117,14 @@ Feature: Idle sealing — a quiet thread becomes recallable within minutes
     And the episodes for crew "cordelia" on thread "reef-chat" chain by lineage
 
   @wip
-  Scenario: an open episode with nothing to seal closes on the TTL sweep with zero scenes, once (isaac-9tjo)
+  Scenario: an open episode with nothing to seal is deleted by the TTL sweep, once, and the log says so (isaac-9tjo)
     Field 2026-09-09/10: six successor episodes whose backing transcripts held
     only the compaction summary could never be sealed (nothing to segment →
     no episode written), yet the sweep logged :episodes/closed :reason
     :ttl-sweep for each of them every 30 s — 456 false lines and six
-    episodes stuck :open.
+    episodes stuck :open. Micah: an episode with no content has no value —
+    delete it (record + backing session); log :closing before the attempt,
+    :closed / :deleted after, and :close-failed with the error when it fails.
     Given the isaac EDN file "episodes/cordelia/20260301100000000/episode.edn" exists with:
       | path       | value             |
       | id         | 20260301100000000 |
@@ -141,16 +143,14 @@ Feature: Idle sealing — a quiet thread becomes recallable within minutes
       {:type "compaction" :id "c1" :timestamp "2026-03-01T10:00:01" :summary "Charted the reef passage."}
       """
     When the episodes worker ticks at "2026-03-01T11:30:00"
-    Then an episode exists for crew "cordelia" matching:
-      | key      | value             |
-      | id       | 20260301100000000 |
-      | status   | closed            |
-      | ended-at | #".+"             |
-    And that episode has 0 scenes
+    Then the isaac file "episodes/cordelia/20260301100000000/episode.edn" does not exist
+    And the isaac file "sessions/20260301100000000/session.edn" does not exist
+    And crew "cordelia" has 0 episodes
     And the log has entries matching:
-      | level | event            | episode           | reason     |
-      | :info | :episodes/closed | 20260301100000000 | :ttl-sweep |
+      | level | event             | episode           | reason |
+      | :info | :episodes/closing | 20260301100000000 |        |
+      | :info | :episodes/deleted | 20260301100000000 | :empty |
     When the episodes worker ticks at "2026-03-01T11:31:00"
     Then the log does not have entries matching:
-      | event            | episode           | reason     |
-      | :episodes/closed | 20260301100000000 | :ttl-sweep |
+      | event             | episode           |
+      | :episodes/closing | 20260301100000000 |
