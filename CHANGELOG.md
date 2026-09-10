@@ -5,6 +5,10 @@
 - Compaction summaries run at `:compaction {:effort 2}` (configurable), chunk whenever history exceeds `:max-request-tokens` (default 32k) regardless of the model window, and retry a transport-class drop (`:stream-stalled` / `"closed"`) once at half size before counting a consecutive failure. Logs `:session/compaction-chunk-retry` (isaac-jgng).
 - Loop-driver seam: `tool-loop/run` dispatches on provider `:drives-tool-loop?`; default loop unchanged; provider-driven loops compact between turns only and log `:turn/compaction-deferred` (isaac-1sdl).
 
+## 0.1.57
+
+- Episodes: the TTL sweep logs `:episodes/closing` before sealing, `:episodes/closed` only on success, and `:episodes/close-failed` with the error otherwise. An empty episode (no scenes, summary-only transcript) is deleted instead of sealed and logs `:episodes/deleted :reason :empty`, so a compacted-away successor can no longer be retried every 30 s forever (isaac-9tjo).
+
 ## 0.1.56
 
 - Turn instructions: the one-line batching hint becomes a four-line tool-discipline block — batch independent calls, locate with grep/glob then read only the region, read a file once in a large window and never re-read after your own edit, load a skill once per turn. Specs reference the var instead of pinning the text.
