@@ -533,7 +533,11 @@
   "You have hit the cycle limit. Do not call any more tools. Write a concise assistant reply for the user using what you learned so far. If you still cannot fully answer, summarize the useful findings and what remains unresolved.")
 
 (def ^:private wrap-up-nudge
-  "Budget exhausted. Start nothing new. Commit and push to the bean branch; write the done/next note; hand off if acceptance is met.")
+  "Your cycle budget for this turn is exhausted. Do these in order, now:
+1. Call exec__run to run `git add -A && git commit -m \"wip: checkpoint\" && git push -u origin HEAD` in your checkout. A red build is fine. Do not start new work.
+2. Reply with a short note: what is done, what is next, and the exact command or file to start from.
+3. If acceptance is already met, hand off to verify as the skill describes.
+Your next turn resumes from this note.")
 
 (defn- loop-summary-request [request response]
   (let [assistant-msg (or (:message response)
