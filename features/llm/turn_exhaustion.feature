@@ -133,7 +133,7 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
       | :info  | :turn/ended | trash-can | :error   | :empty-terminal-response |
 
   @wip
-  Scenario: the wrap-up note is persisted as the turn's final assistant message so the continuation can read it (isaac-wrapup-note)
+  Scenario: the wrap-up note is persisted as the turn's final assistant message so the continuation can read it (isaac-x0cw)
     Field 2026-09-10 (isaac-mmod, isaac-work-2): three wrap-ups produced a
     note (:exhaustion :wrapped-up) and none of them appear in the transcript —
     the continuation turn's prompt is rebuilt from the transcript and never
