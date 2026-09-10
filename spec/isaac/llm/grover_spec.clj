@@ -130,7 +130,19 @@
                                        {:session-key "wait-session"}))]
         (helper/await-condition #(sut/waiting? "wait-session"))
         (sut/release-wait! "wait-session")
-        (should= "Scripted answer" (get-in @response [:message :content])))))
+        (should= "Scripted answer" (get-in @response [:message :content]))))
+
+    (it "does not unblock a wait-gated response on cancel until released"
+      (sut/enqueue! [{:type "text" :content "Scripted answer" :wait true}])
+      (let [response (future (sut/chat {:model "echo" :messages [{:role "user" :content "Ignored"}]}
+                                       "grover"
+                                       {:session-key "wait-session"}))]
+        (helper/await-condition #(sut/waiting? "wait-session"))
+        (bridge/cancel! "wait-session")
+        (should (sut/waiting? "wait-session"))
+        (should-not (realized? response))
+        (sut/release-wait! "wait-session")
+        (should= :cancelled (:error @response)))))
 
   ;; endregion ^^^^^ Scripted Mode ^^^^^
 

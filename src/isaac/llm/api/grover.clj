@@ -104,23 +104,29 @@
       (when (bridge/cancelled? session-key)
         {:error :cancelled}))))
 
+(def ^:private wait-cancel-poll-ms
+  ;; Fire-and-forget sessions cancel stamps :cancelled; cancelled? is
+  ;; also polled here. A 1ms poll lets the wait-gated turn finish before
+  ;; cli.feature:367 can assert in-flight. Real SSE polls ~50ms; this
+  ;; interval keeps the turn parked across the next synchronous And
+  ;; while still completing cancel.feature:51 well under await-turn!.
+  500)
+
 (defn- maybe-wait! [session-key]
   (let [release (promise)]
     (swap! wait-gates* assoc session-key release)
     (try
       (loop []
-        (cond
-          (realized? release)
-          @release
+        (let [result (deref release wait-cancel-poll-ms ::timeout)]
+          (cond
+            (not= ::timeout result)
+            result
 
-          (bridge/cancelled? session-key)
-          :cancelled
+            (bridge/cancelled? session-key)
+            :cancelled
 
-          :else
-          (let [result (deref release 1 ::timeout)]
-            (if (= ::timeout result)
-              (recur)
-              result))))
+            :else
+            (recur))))
       (finally
         (swap! wait-gates* dissoc session-key)))
     (when (bridge/cancelled? session-key)
