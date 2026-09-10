@@ -5,6 +5,10 @@
 - Compaction summaries run at `:compaction {:effort 2}` (configurable), chunk whenever history exceeds `:max-request-tokens` (default 32k) regardless of the model window, and retry a transport-class drop (`:stream-stalled` / `"closed"`) once at half size before counting a consecutive failure. Logs `:session/compaction-chunk-retry` (isaac-jgng).
 - Loop-driver seam: `tool-loop/run` dispatches on provider `:drives-tool-loop?`; default loop unchanged; provider-driven loops compact between turns only and log `:turn/compaction-deferred` (isaac-1sdl).
 
+## 0.1.56
+
+- Turn instructions: the one-line batching hint becomes a four-line tool-discipline block — batch independent calls, locate with grep/glob then read only the region, read a file once in a large window and never re-read after your own edit, load a skill once per turn. Specs reference the var instead of pinning the text.
+
 ## 0.1.46
 
 - Transcript appends are atomic per line: `append-entry!` builds the full EDNL line and appends under a per-path lock, so tool results completing concurrently (isaac-j2v0 parallel batches) can no longer tear a line and poison the session (isaac-jz6h, append-lock leg).
