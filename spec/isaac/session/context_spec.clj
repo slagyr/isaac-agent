@@ -92,7 +92,7 @@
                   "Always quarantine new specimens for one cycle."))
     (should= {:menu-text  (str "Available skills:\n"
                                "- greenhouse-protocol: Use when tending specimens\n\n"
-                               "Use skill__load to load a skill body on demand.")
+                               "Use these skills as you work. Load a skill's body only when its description matches what you are about to do and it is not already in your context; once loaded it stays valid for the rest of the turn.")
               :tool-names #{"skill__load"}}
              (sut/read-skill-disclosure {:root test-root} test-root (str test-root "/project"))))
 

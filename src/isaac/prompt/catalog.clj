@@ -181,7 +181,7 @@
   (when (seq entries)
     (str "Available skills:\n"
          (str/join "\n" (map skill-menu-line entries))
-         "\n\nUse skill__load to load a skill body on demand.")))
+         "\n\nUse these skills as you work. Load a skill's body only when its description matches what you are about to do and it is not already in your context; once loaded it stays valid for the rest of the turn.")))
 
 (defn- dedupe-file-specs [file-specs]
   (vals (reduce (fn [acc spec] (assoc acc (:path spec) spec)) {} file-specs)))

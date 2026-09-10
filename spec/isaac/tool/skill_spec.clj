@@ -49,7 +49,7 @@
     (should= {:result (str "Available skills:\n"
                            "- aeroponics: Use for soil-free growing\n"
                            "- greenhouse-protocol: Use when tending specimens\n\n"
-                           "Use skill__load to load a skill body on demand.")}
+                           "Use these skills as you work. Load a skill's body only when its description matches what you are about to do and it is not already in your context; once loaded it stays valid for the rest of the turn.")}
              (sut/list-skills-tool {"session_key" "work-sess"})))
 
   (it "errors when the requested skill does not exist"
