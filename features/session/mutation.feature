@@ -135,3 +135,16 @@ Feature: Session mutation
     Then the stdout does not contain "1999-12-31T23:59:59Z"
     And the stdout contains "wip"
     And the exit code is 0
+
+  @wip
+  Scenario: isaac sessions set <id>.tags replaces the whole set from a set literal (isaac-tags-set)
+    Given default Grover setup
+    And the following sessions exist:
+      | name | crew | tags          |
+      | joe  | main | #{:project/x} |
+    When isaac is run with "sessions set joe.tags #{:isaac :ci}"
+    Then the exit code is 0
+    When isaac is run with "sessions show joe --json"
+    Then the stdout JSON contains:
+      | path | value           |
+      | tags | ["ci", "isaac"] |
