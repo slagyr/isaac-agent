@@ -10,7 +10,6 @@ Feature: Edit returns the updated content
   Background:
     Given a clean test directory "target/test-state-edit-content"
 
-  @wip
   Scenario: edit returns the updated region, not a receipt
     Given a file "code.txt" exists with content "alpha\nbeta\nfoo = 1\ngamma\ndelta\nepsilon"
     When the tool "fs__edit" is called with:

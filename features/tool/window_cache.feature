@@ -14,7 +14,6 @@ Feature: Per-window tool cache — repeated reads, greps and skill loads return 
     Given default Grover setup
     And the built-in tools are registered
 
-  @wip
   Scenario: a repeated read of an unchanged window returns a stub, not the content
     Given a file "nest/code.txt" exists with content "alpha\nbeta\ngamma"
     And the crew "main" allows tools: "fs/read"
@@ -37,7 +36,6 @@ Feature: Per-window tool cache — repeated reads, greps and skill loads return 
       | event           | tool     | cycle |
       | :tool/cache-hit | fs__read | 1     |
 
-  @wip
   Scenario: an edit between two reads of the same window invalidates the stub
     Given a file "nest/code.txt" exists with content "alpha\nbeta\ngamma"
     And the crew "main" allows tools: "fs/read,fs/edit"
@@ -63,7 +61,6 @@ Feature: Per-window tool cache — repeated reads, greps and skill loads return 
       | event           |
       | :tool/cache-hit |
 
-  @wip
   Scenario: a repeated grep over an unchanged tree returns a stub
     Given a file "nest/a.clj" exists with content "(defn seed [] :marigold)"
     And a file "nest/b.clj" exists with content "(defn water [] :marigold)"
@@ -87,7 +84,6 @@ Feature: Per-window tool cache — repeated reads, greps and skill loads return 
       | event           | tool     | cycle |
       | :tool/cache-hit | fs__grep | 1     |
 
-  @wip
   Scenario: a skill loaded twice in one window is served once
     Given the isaac file "prompts/skills/greenhouse-protocol/SKILL.md" exists with:
       """

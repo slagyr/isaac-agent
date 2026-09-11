@@ -1,12 +1,14 @@
 (ns isaac.tool.registry
   (:require
+    [clojure.string :as str]
     [isaac.config.loader :as loader]
     [isaac.logger :as log]
     [isaac.module.loader :as module-loader]
     [isaac.nexus :as nexus]
     [isaac.tool.fs-bounds :as fs-bounds]
     [isaac.tool.names :as names]
-    [isaac.tool.output-cap :as output-cap]))
+    [isaac.tool.output-cap :as output-cap])
+  (:import (java.security MessageDigest)))
 
 ;; region ----- State -----
 
@@ -119,6 +121,79 @@
   (log/error :tool/execute-failed :tool name :error (str "unknown tool: " name))
   {:isError true :error (str "unknown tool: " name)})
 
+(defn- sha-256 [s]
+  (let [digest (MessageDigest/getInstance "SHA-256")
+        bytes  (.digest digest (.getBytes (str s) "UTF-8"))]
+    (apply str (map #(format "%02x" %) bytes))))
+
+(defn- arg [arguments k]
+  (or (get arguments k)
+      (get arguments (keyword k))
+      (get arguments (name k))))
+
+(defn- cache-key [name arguments]
+  (case name
+    "fs__read"
+    [:read (arg arguments "file_path") (arg arguments "offset") (arg arguments "limit")]
+
+    "fs__grep"
+    [:grep (arg arguments "pattern") (arg arguments "path") (arg arguments "glob") (arg arguments "include")]
+
+    "skill__load"
+    [:skill (arg arguments "name") (arg arguments "resource")]
+
+    nil))
+
+(defn- invalidate-file! [cache file-path]
+  (when (and cache file-path)
+    (swap! cache (fn [m]
+                   (into {}
+                         (remove (fn [[k _]]
+                                   (and (vector? k)
+                                        (contains? #{:read :grep} (first k))
+                                        (or (= file-path (second k))
+                                            (and (= :grep (first k))
+                                                 (let [path (nth k 2)]
+                                                   (or (nil? path) (= "." path) (str/starts-with? (str file-path) (str path)))))))))
+                         m)))))
+
+(defn- invalidate-on-edit! [name arguments cache]
+  (when cache
+    (case name
+      ("fs__edit" "fs__write")
+      (invalidate-file! cache (arg arguments "file_path"))
+
+      "fs__multi_edit"
+      (doseq [entry (or (arg arguments "edits") [])]
+        (invalidate-file! cache (arg entry "file_path")))
+
+      nil)))
+
+(defn- cache-stub [name arguments cycle]
+  (if (= "skill__load" name)
+    (str (arg arguments "name") " already in context since cycle " cycle)
+    (str "unchanged since cycle " cycle " — already in your context")))
+
+(defn- maybe-cache-hit [name arguments result cache cycle]
+  (let [key (cache-key name arguments)]
+    (if (or (nil? cache) (nil? key) (:isError result) (nil? (:result result)))
+      result
+      (let [hash (sha-256 (:result result))
+            prior (get @cache key)]
+        (if (and prior (= hash (:hash prior)))
+          (do
+            (log/info :tool/cache-hit :tool name :cycle (:cycle prior))
+            (assoc result :result (cache-stub name arguments (:cycle prior))))
+          (do
+            (swap! cache assoc key {:hash hash :cycle (or cycle 1)})
+            result))))))
+
+(defn clear-window-cache!
+  "Empty the per-window tool cache. Called on compaction and at turn end."
+  [cache]
+  (when cache
+    (reset! cache {})))
+
 (defn- run-handler [name arguments caps]
   (if-let [tool (lookup name)]
     (let [cwd      (tool-cwd arguments)
@@ -156,17 +231,19 @@
   ([name arguments]
    (run-handler name arguments nil))
   ([name arguments allowed-tools]
-   (if (allowed-tool? allowed-tools name)
-      (run-handler name arguments nil)
-      (unknown-tool-error name)))
+   (execute name arguments allowed-tools nil nil nil nil))
   ([name arguments allowed-tools module-index]
-   (execute name arguments allowed-tools module-index nil))
+   (execute name arguments allowed-tools module-index nil nil nil))
   ([name arguments allowed-tools module-index caps]
+   (execute name arguments allowed-tools module-index caps nil nil))
+  ([name arguments allowed-tools module-index caps cache cycle]
    (if (allowed-tool? allowed-tools name)
      (do
        (when (and module-index (not (lookup name)))
          (activate-missing-tool! module-index name))
-       (run-handler name arguments caps))
+       (invalidate-on-edit! name arguments cache)
+       (let [raw (run-handler name arguments caps)]
+         (maybe-cache-hit name arguments raw cache cycle)))
      (unknown-tool-error name))))
 
 (defn present-result

@@ -10,7 +10,7 @@ Feature: multi_edit builtin
     When the tool "fs__multi_edit" is called with:
       | edits | [{:file_path "one.txt" :old_string "a" :new_string "A"} {:file_path "two.txt" :old_string "b" :new_string "B"} {:file_path "two.txt" :old_string "c" :new_string "C"}] |
     Then the tool result is not an error
-    And the tool result contains "replacement"
+    And the tool result contains "1: A"
     And the file "one.txt" has content "A"
     And the file "two.txt" has content "B\nC"
 

@@ -1082,6 +1082,7 @@
       (let [opts (mid-turn-compaction-opts ctx)
             total (compaction/estimate-prompt-tokens session-key opts)]
         (perform-compaction! session-key 1 total opts)
+        (tool-registry/clear-window-cache! (:window-cache ctx))
         (let [rebuilt (rebuild-chat-request session-key ctx)]
           (reset! current-request rebuilt)
           rebuilt)))))
@@ -1120,6 +1121,7 @@
 
         (< after before)
         (let [rebuilt (rebuild-chat-request session-key ctx)]
+          (tool-registry/clear-window-cache! (:window-cache ctx))
           (reset! current-request rebuilt)
           rebuilt)
 
@@ -1310,7 +1312,11 @@
                             args      (cond-> (or (:arguments tc) {})
                                          true (assoc "session_key" session-key)
                                          true (assoc :progress! progress!))
-                            raw-result (tool-registry/execute (:name tc) args allowed-tools module-index caps)]
+                            cache      (:window-cache tool-ctx)
+                            cycle-n    (or (some-> tool-ctx :cycle* deref :n) 1)
+                            raw-result (if cache
+                                         (tool-registry/execute (:name tc) args allowed-tools module-index caps cache cycle-n)
+                                         (tool-registry/execute (:name tc) args allowed-tools module-index caps))]
                         (when (= :cancelled (:error raw-result))
                           (when (compare-and-set! tool-state :running :cancelled)
                             (comm/on-tool-cancel ch session-key tc))
@@ -1393,7 +1399,8 @@
                                      :tool-selection-reason tool-reason
                                      :request-keys (-> request keys sort vec))
           current-request (atom request)
-          tool-count      (atom 0)]
+          tool-count      (atom 0)
+          window-cache    (atom {})]
       (when-let [done (:compaction-llm-done (active-compaction-state session-key))]
         (deref done 5000 nil))
       (let [cycle*      (atom {:n 1 :model model :origin (:origin charge)})
@@ -1436,7 +1443,9 @@
                             :caps           caps
                             :tool-count     tool-count
                             :ctx            ctx
-                            :end-aside!     end-aside!}
+                            :end-aside!     end-aside!
+                            :window-cache   window-cache
+                            :cycle*         cycle*}
             tool-fn       (partial record-tool-call! tool-ctx)
             run-loop      (fn [req]
                             (let [provider-name (api/display-name p)
@@ -1447,11 +1456,11 @@
                                               :max-parallel-tools max-parallel
                                               :prepare-tool-call  #(prepare-tool-call! tool-ctx %)
                                               :cancelled?         #(bridge/cancelled? session-key)
-                                              :after-tools        #(maybe-mid-turn-compact! session-key ctx % current-request)
+                                              :after-tools        #(maybe-mid-turn-compact! session-key (assoc ctx :window-cache window-cache) % current-request)
                                               :on-cycle           on-cycle
                                               :api                p})))
             first-result (run-loop request)
-            retry        (overflow-compact-retry! session-key ctx current-request first-result)
+            retry        (overflow-compact-retry! session-key (assoc ctx :window-cache window-cache) current-request first-result)
             loop-result  (cond
                            (nil? retry) first-result
                            (:unavailable? retry) retry

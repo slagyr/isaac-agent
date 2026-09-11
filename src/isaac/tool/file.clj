@@ -75,7 +75,7 @@
         (try
           (fs/mkdirs fs* (fs/parent file-path))
           (fs/spit fs* file-path content)
-          {:result (str "wrote " file-path)}
+          {:result (:result (format-file-content file-path (or content "") nil nil))}
           (catch Exception e
             {:isError true :error (.getMessage e)})))))
 
@@ -91,6 +91,32 @@
 
 (defn- apply-replacement [content old-string new-string replace-all]
   (str/replace content old-string new-string))
+
+(def ^:private edit-context-lines 2)
+
+(defn- index-line [content idx]
+  (if (neg? idx)
+    1
+    (inc (count (re-seq #"\n" (subs content 0 (min idx (count content))))))))
+
+(defn- format-numbered-window [content start-line end-line]
+  (let [all-lines (str/split-lines content)
+        total     (count all-lines)
+        start     (max 0 (dec start-line))
+        end       (min total end-line)
+        selected  (subvec (vec all-lines) start end)
+        numbered  (map-indexed (fn [i line] (str (+ start i 1) ": " line)) selected)]
+    (str/join "\n" numbered)))
+
+(defn- format-edit-result [old-content new-content old-string new-string]
+  (let [idx        (.indexOf ^String old-content ^String (str old-string))
+        start-line (index-line old-content idx)
+        new-lines  (max 1 (count (str/split-lines (or new-string ""))))
+        last-line  (+ start-line new-lines -1)
+        total      (count (str/split-lines new-content))
+        offset     (max 1 (- start-line edit-context-lines))
+        end        (min total (+ last-line edit-context-lines))]
+    (format-numbered-window new-content offset end)))
 
 (defn- single-edit-entry
   "Validate and apply one edit against current file content. Returns {:content ... :replacements n}
@@ -144,7 +170,7 @@
               {:isError true :error (:error result)}
               (do
                 (fs/spit fs* file-path (:content result))
-                {:result (str "edited " file-path)})))))))
+                {:result (format-edit-result content (:content result) old-string new-string)})))))))
 
 (defn multi-edit-tool
   "Apply N validated string replacements atomically.
@@ -177,7 +203,7 @@
                       {:isError true :error (:error result)}
                       (recur (inc i)
                              (assoc file-contents file-path (:content result))
-                             (conj summaries (str file-path ": "
-                                                  (:replacements result)
-                                                  " replacement(s)")))))))))))
-))
+                             (conj summaries (format-edit-result content
+                                                                 (:content result)
+                                                                 (get entry "old_string")
+                                                                 (get entry "new_string"))))))))))))))

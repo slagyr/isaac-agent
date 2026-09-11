@@ -242,7 +242,8 @@
     (nexus/register! [:fs] fs*)
     (nexus/register! [:root] abs-dir)
     (nexus/deregister! [:sessions])
-    (g/assoc! :root abs-dir)))
+    (g/assoc! :root abs-dir)
+    (g/dissoc! :mem-fs)))
 
 (defn- unescape-content [s]
   (-> s (str/replace "\\\"" "\"") (str/replace "\\n" "\n")))

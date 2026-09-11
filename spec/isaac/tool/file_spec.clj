@@ -188,6 +188,12 @@
       (let [result (sut/write-tool {"file_path" (str support/test-dir "/ok.txt") "content" "ok"})]
         (should (string? (:result result)))))
 
+    (it "returns the numbered file contents, not a receipt"
+      (let [result (sut/write-tool {"file_path" (str support/test-dir "/ok.txt") "content" "hello\nworld"})]
+        (should-be-nil (:isError result))
+        (should= "1: hello\n2: world" (:result result))
+        (should-not (str/includes? (:result result) "wrote "))))
+
     (it "auto-creates the crew quarters on first use"
       (let [root   support/test-dir
             session-key default-session-key
@@ -225,6 +231,17 @@
                                    "new_string" "foo = 42"})]
         (should-be-nil (:isError result))
         (should= "foo = 42\nbar = 2" (support/read-file "code.txt"))))
+
+    (it "returns the numbered region around the replacement, not a receipt"
+      (support/write-file! "code.txt" "alpha\nbeta\nfoo = 1\ngamma\ndelta\nepsilon")
+      (let [result (sut/edit-tool {"file_path"  (str support/test-dir "/code.txt")
+                                   "old_string" "foo = 1"
+                                   "new_string" "foo = 42"})]
+        (should-be-nil (:isError result))
+        (should= (str "1: alpha\n2: beta\n3: foo = 42\n4: gamma\n5: delta")
+                 (:result result))
+        (should-not (str/includes? (:result result) "epsilon"))
+        (should-not (str/includes? (:result result) "edited "))))
 
     (it "returns error when string not found"
       (support/write-file! "code.txt" "foo = 1")
@@ -271,7 +288,8 @@
         (should-be-nil (:isError result))
         (should= "ALPHA" (support/read-file "a.txt"))
         (should= "BETA" (support/read-file "b.txt"))
-        (should (str/includes? (:result result) "replacement"))))
+        (should (str/includes? (:result result) "1: ALPHA"))
+        (should (str/includes? (:result result) "1: BETA"))))
 
     (it "aborts when a later entry does not match"
       (support/write-file! "a.txt" "keep-me")

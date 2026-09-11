@@ -194,6 +194,64 @@
       (let [f (sut/tool-fn #{"write"})]
         (should (re-find #"unknown tool" (f "read" {}))))))
 
+  (describe "window cache"
+
+    (helper/with-captured-logs)
+
+    (it "returns a stub naming the earlier cycle when the same read hash matches"
+      (sut/register! {:name "fs__read" :handler (fn [_] {:result "1: alpha\n2: beta"})})
+      (let [cache (atom {})
+            first (sut/execute "fs__read" {"file_path" "code.txt"} #{"fs__read"} nil nil cache 1)
+            second (sut/execute "fs__read" {"file_path" "code.txt"} #{"fs__read"} nil nil cache 2)]
+        (should= "1: alpha\n2: beta" (:result first))
+        (should (re-find #"unchanged since cycle 1" (:result second)))
+        (should (re-find #"already in your context" (:result second)))
+        (should (some #(and (= :tool/cache-hit (:event %))
+                            (= "fs__read" (:tool %))
+                            (= 1 (:cycle %)))
+                      @log/captured-logs))))
+
+    (it "does not stub after an edit invalidates the file"
+      (sut/register! {:name "fs__read" :handler (fn [_] {:result "1: alpha"})})
+      (sut/register! {:name "fs__edit" :handler (fn [_] {:result "1: ALPHA"})})
+      (let [cache (atom {})]
+        (sut/execute "fs__read" {"file_path" "code.txt"} #{"fs__read"} nil nil cache 1)
+        (sut/execute "fs__edit" {"file_path" "code.txt" "old_string" "alpha" "new_string" "ALPHA"}
+                     #{"fs__edit"} nil nil cache 2)
+        (let [again (sut/execute "fs__read" {"file_path" "code.txt"} #{"fs__read"} nil nil cache 3)]
+          (should= "1: alpha" (:result again))
+          (should-not (some #(= :tool/cache-hit (:event %)) @log/captured-logs)))))
+
+    (it "returns a stub for a repeated grep over an unchanged tree"
+      (sut/register! {:name "fs__grep" :handler (fn [_] {:result "a.clj:1:(defn seed [] :marigold)\nb.clj:1:(defn water [] :marigold)"})})
+      (let [cache (atom {})
+            first (sut/execute "fs__grep" {"pattern" "marigold" "path" "."} #{"fs__grep"} nil nil cache 1)
+            second (sut/execute "fs__grep" {"pattern" "marigold" "path" "."} #{"fs__grep"} nil nil cache 2)]
+        (should (re-find #"a\.clj" (:result first)))
+        (should (re-find #"unchanged since cycle 1" (:result second)))
+        (should (some #(and (= :tool/cache-hit (:event %))
+                            (= "fs__grep" (:tool %))
+                            (= 1 (:cycle %)))
+                      @log/captured-logs))))
+
+    (it "returns a stub for a skill already loaded in this window"
+      (sut/register! {:name "skill__load" :handler (fn [_] {:result "Always quarantine new specimens for one cycle."})})
+      (let [cache (atom {})
+            first (sut/execute "skill__load" {"name" "greenhouse-protocol"} #{"skill__load"} nil nil cache 1)
+            second (sut/execute "skill__load" {"name" "greenhouse-protocol"} #{"skill__load"} nil nil cache 2)]
+        (should (re-find #"Always quarantine" (:result first)))
+        (should (re-find #"greenhouse-protocol" (:result second)))
+        (should (re-find #"already in context since cycle 1" (:result second)))
+        (should (some #(and (= :tool/cache-hit (:event %))
+                            (= "skill__load" (:tool %))
+                            (= 1 (:cycle %)))
+                      @log/captured-logs))))
+
+    (it "empties the cache when the turn compacts mid-turn"
+      (let [cache (atom {[:read "code.txt" nil nil] {:hash "abc" :cycle 1}})]
+        (sut/clear-window-cache! cache)
+        (should= {} @cache))))
+
   ;; endregion ^^^^^ tool-fn ^^^^^
 
   ;; region ----- Tool Definitions for Prompts -----
