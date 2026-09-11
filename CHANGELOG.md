@@ -5,6 +5,10 @@
 - Compaction summaries run at `:compaction {:effort 2}` (configurable), chunk whenever history exceeds `:max-request-tokens` (default 32k) regardless of the model window, and retry a transport-class drop (`:stream-stalled` / `"closed"`) once at half size before counting a consecutive failure. Logs `:session/compaction-chunk-retry` (isaac-jgng).
 - Loop-driver seam: `tool-loop/run` dispatches on provider `:drives-tool-loop?`; default loop unchanged; provider-driven loops compact between turns only and log `:turn/compaction-deferred` (isaac-1sdl).
 
+## 0.1.63
+
+- Tool results stop provoking re-reads (isaac-yk0u): `fs__edit` / `fs__multi_edit` / `fs__write` answer with the edited region, line-numbered like a read; a repeated read, grep or skill load whose result hash matches one seen earlier in the same context window returns a short "already in your context since cycle N" stub (hash-only cache in the turn's cycle map, invalidated by edits, cleared on compaction). Logs `:tool/cache-hit`.
+
 ## 0.1.62
 
 - Episodes storage layout: one directory per session under `sessions/<crew>/<session-id>/` with `session.edn` holding identity and overrides once; episodes nest inside (`episodes/<episode-id>/{episode.edn,current.ednl,scenes/}`); the recall index moves to `sessions/<crew>/recall/`; a fleet-wide `sessions/index.edn`; store-minted 17-digit episode ids; `isaac episodes migrate-layout [--dry-run]` moves an existing root (old ids kept) (isaac-b6w0).
