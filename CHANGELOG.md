@@ -5,6 +5,10 @@
 - Compaction summaries run at `:compaction {:effort 2}` (configurable), chunk whenever history exceeds `:max-request-tokens` (default 32k) regardless of the model window, and retry a transport-class drop (`:stream-stalled` / `"closed"`) once at half size before counting a consecutive failure. Logs `:session/compaction-chunk-retry` (isaac-jgng).
 - Loop-driver seam: `tool-loop/run` dispatches on provider `:drives-tool-loop?`; default loop unchanged; provider-driven loops compact between turns only and log `:turn/compaction-deferred` (isaac-1sdl).
 
+## 0.1.65
+
+- `episodes migrate-layout` carries each crew's recall index (rows, model, vectors) from `episodes/<crew>/` into `sessions/<crew>/recall/`, re-keyed by session id, and removes the legacy index files and emptied directories; previously it rebuilt placeholder rows that recall treated as stale (isaac-xqy1).
+
 ## 0.1.64
 
 - `episodes migrate-layout`: a flat session that is the thread of a leftover episode (post-mmod Discord/ACP threads) is stamped `:session-policy :episodes`, so session.edn and the fleet index agree; the dry-run line prints the policy (isaac-lhnq).
