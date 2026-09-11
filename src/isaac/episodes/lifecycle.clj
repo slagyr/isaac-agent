@@ -239,11 +239,16 @@
 
       :else
       (let [_ (when-not (:migrated-from existing)
-                (store/write-episode! fs* root (assoc existing :migrated-from episode-id) []))
+                (store/write-episode! fs* root (assoc existing
+                                                 :migrated-from episode-id
+                                                 :session-id (or (:session-id existing) (:thread existing)))
+                                      []))
             result (migrate/migrate-session!
                      {:fs fs* :root root :session session :transcript transcript
                       :provider provider :model model :force? false
-                      :episode-id episode-id})
+                      :episode-id episode-id
+                      ;; nest where the lifecycle keeps this episode (isaac-x62d)
+                      :nest-under (or (:session-id existing) (:thread existing))})
             closed (when-let [ep (:episode result)]
                      (let [merged (cond-> (assoc ep
                                             :id                episode-id

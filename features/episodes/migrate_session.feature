@@ -55,6 +55,7 @@ Feature: Episodes — migrate-session
       | gist  | text | 1-2: Wine pairing for pheasant\n3-4: Regatta scheduling                 |
     When isaac is run with "episodes migrate-session quiet-regatta"
     Then the exit code is 0
+    And the isaac file "episodes/cordelia" does not exist
     And the stdout matches:
       | pattern                                     |
       | migrating quiet-regatta -> episode          |

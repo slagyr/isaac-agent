@@ -106,6 +106,7 @@ Feature: Episodes — live (policy + lifecycle)
       | type    | message.role | message.content        |
       | message | user         | Set the watch rotation |
       | message | assistant    | Watches dogged         |
+    And the isaac file "episodes/cordelia" does not exist
 
   # ----- Seal at close -----
 

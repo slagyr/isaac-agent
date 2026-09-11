@@ -1,6 +1,7 @@
 (ns isaac.episodes.episode-steps
   "Feature steps for episode migration assertions."
   (:require
+    [isaac.session.store.impl-common]
     [clojure.string :as str]
     [clojure.edn :as edn]
     [gherclj.core :as g :refer [defgiven defthen defwhen helper!]]
@@ -104,7 +105,11 @@
         (fn []
           (let [root (root-dir)
                 fs*  (mem-fs)
-                crews (or (fs/children fs* (store/episodes-root root)) [])
+                ;; crews come from the nested sessions tree (post-b6w0) and any
+                ;; leftover legacy episodes/<crew>/ dirs
+                crews (distinct
+                        (concat (or (fs/children fs* (store/episodes-root root)) [])
+                                (keep :crew (vals (isaac.session.store.impl-common/scan-session-dirs fs* root)))))
                 eps (mapcat (fn [crew]
                               (map #(assoc % :crew crew)
                                    (store/list-episodes fs* root crew)))

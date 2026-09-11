@@ -120,7 +120,7 @@
      :force? :size-cap
    Returns {:exit 0|1 :status :closed|:partial|:already-migrated|:resumed|:error
             :episode ... :message ...}"
-  [{:keys [fs root session transcript provider model force? size-cap episode-id]
+  [{:keys [fs root session transcript provider model force? size-cap episode-id nest-under]
     :or {force? false}}]
   (let [crew (or (:crew session) "main")
         session-id (or (:id session) (:key session))
@@ -220,6 +220,9 @@
                 episode {:id            episode-id
                          :crew          crew
                          :status        status
+                         ;; nests under sessions/<crew>/<sid>/episodes/ — without
+                         ;; :session-id the store writes the legacy tree (isaac-x62d)
+                         :session-id    (or nest-under session-id)
                          :migrated-from session-id
                          :scene-ids     (mapv :id scenes)
                          :started-at    (first-message-timestamp transcript)
