@@ -1,6 +1,6 @@
 Feature: Cycle-limit configuration
   The tool loop's cycle budget (built-in default 100) is crew-configurable
-  as :cycle-limit — same layering as compaction config — and a dispatcher
+  as :cycle {:limit} — same layering as compaction config — and a dispatcher
   may override it on the charge (isaac-ntt6; formerly the tool loop max).
   Needed so hail crews can carry bigger budgets than chat crews, and so the
   loop-limit behavior is testable without queuing 500 cycles. When the budget
@@ -20,7 +20,7 @@ Feature: Cycle-limit configuration
     And the isaac EDN file "config/crew/oscar.edn" exists with:
       | path          | value |
       | model         | local |
-      | cycle-limit   | 1     |
+      | cycle.limit    | 1     |
     And the crew "oscar" allows tools: "exec/run"
     And the built-in tools are registered
     And the following sessions exist:

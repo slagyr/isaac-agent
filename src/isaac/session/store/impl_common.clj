@@ -1045,6 +1045,21 @@
     (update-entry-fn root identifier #(assoc % :updated-at now) fs)
     transcript-entry))
 
+(defn append-checkpoint! [get-session-fn update-entry-fn now-fn root identifier {:keys [cycle]} fs]
+  (let [entry            (get-session-fn root identifier fs)
+        id               (:id entry)
+        parent-id        (:id (last-transcript-entry fs (nested-or-flat-current root id fs)))
+        ckpt-id          (new-id)
+        now              (now-fn)
+        transcript-entry {:type      "checkpoint"
+                          :id        ckpt-id
+                          :parentId  parent-id
+                          :timestamp now
+                          :cycle     cycle}]
+    (append-entry! root id transcript-entry fs)
+    (update-entry-fn root identifier #(assoc % :updated-at now) fs)
+    transcript-entry))
+
 (defn append-compaction! [get-session-fn update-entry-fn now-fn root identifier {:keys [summary firstKeptEntryId tokensBefore turnRequest]} fs]
   (let [entry         (get-session-fn root identifier fs)
         id            (:id entry)

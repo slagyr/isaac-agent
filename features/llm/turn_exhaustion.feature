@@ -53,7 +53,7 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
     Given the isaac EDN file "config/crew/oscar.edn" exists with:
       | path        | value  |
       | model       | grover |
-      | cycle-limit | 1      |
+      | cycle.limit | 1      |
     And the crew "oscar" allows tools: "exec/run"
     And the following sessions exist:
       | name      | crew  |
@@ -84,7 +84,7 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
     And the isaac EDN file "config/crew/oscar.edn" exists with:
       | path        | value  |
       | model       | grover |
-      | cycle-limit | 1      |
+      | cycle.limit | 1      |
     And the crew "oscar" allows tools: "exec/run"
     And the following sessions exist:
       | name      | crew  |
@@ -114,7 +114,7 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
     And the isaac EDN file "config/crew/oscar.edn" exists with:
       | path        | value  |
       | model       | grover |
-      | cycle-limit | 1      |
+      | cycle.limit | 1      |
     And the crew "oscar" allows tools: "exec/run"
     And the following sessions exist:
       | name      | crew  |
@@ -141,7 +141,7 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
     And the isaac EDN file "config/crew/oscar.edn" exists with:
       | path        | value  |
       | model       | grover |
-      | cycle-limit | 0      |
+      | cycle.limit | 0      |
     And the crew "oscar" allows tools: "exec/run"
     And the following sessions exist:
       | name      | crew  |
@@ -160,7 +160,6 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
       | event    | result.ended-by | result.exhaustion |
       | turn-end | :cycle-limit    | :wrapped-up       |
 
-  @wip
   Scenario: a crew's wrap-up-prompt replaces the default wrap-up nudge (isaac-tic5)
     Given the memory comm answers :wrap-up on exhaustion
     And the isaac EDN file "config/crew/oscar.edn" exists with:

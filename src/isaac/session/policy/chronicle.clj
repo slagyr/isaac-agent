@@ -23,6 +23,7 @@
   (append-error! [_ name error] (store/append-error! store name error))
   (append-compaction! [_ name compaction] (store/append-compaction! store name compaction))
   (append-reckoning! [_ name reckoning] (store/append-reckoning! store name reckoning))
+  (append-checkpoint! [_ name checkpoint] (store/append-checkpoint! store name checkpoint))
   (splice-compaction! [_ name compaction] (store/splice-compaction! store name compaction))
   (truncate-after-compaction! [_ name] (store/truncate-after-compaction! store name))
   (record-turn-marker! [_ session-id marker] (store/record-turn-marker! store session-id marker))

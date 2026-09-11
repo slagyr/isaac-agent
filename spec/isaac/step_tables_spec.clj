@@ -285,7 +285,22 @@
                      {:headers ["key" "value"]
                       :rows    [["tools" "[]"]]}
                      {:tools []})]
-        (should (:pass? result)))))
+        (should (:pass? result))))
+
+    (it "matches a contains \"needle\" cell as a substring, not a literal"
+      (let [result (sut/match-object
+                     {:headers ["key" "value"]
+                      :rows    [["messages[-1].content" "contains \"Checkpoint: save work in progress\""]]}
+                     {:messages [{:role "user" :content "hello"}
+                                 {:role "user" :content "Checkpoint: save work in progress the way your instructions say to, then continue. Do not stop."}]})]
+        (should (:pass? result))))
+
+    (it "fails contains when the needle is absent"
+      (let [result (sut/match-object
+                     {:headers ["key" "value"]
+                      :rows    [["text" "contains \"Checkpoint\""]]}
+                     {:text "no nudge here"})]
+        (should-not (:pass? result)))))
 
   ;; endregion ^^^^^ Key-Value Vertical Table ^^^^^
 

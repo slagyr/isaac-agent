@@ -160,7 +160,8 @@
     "message"   (:message entry)
     "error"     {:role    "assistant"
                  :content (str "Error: " (or (:content entry) (:error entry) "Unknown error"))}
-    "reckoning" nil
+    "reckoning"  nil
+    "checkpoint" nil
     nil))
 
 (defn- transcript->messages

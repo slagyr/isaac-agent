@@ -195,4 +195,29 @@
       (require 'isaac.session.policy.chronicle)
       (let [{:keys [errors]} (sut/check-session-policy
                                {:config {:crew {"cordelia" {:session-policy :chronicle}}}})]
-        (should= [] errors)))))
+        (should= [] errors))))
+
+  (context "check-retired-cycle-limit"
+
+    (it "rejects a crew :cycle-limit and names :cycle {:limit}"
+      (let [{:keys [errors]} (sut/check-retired-cycle-limit
+                               {:config {:crew {"main" {:cycle-limit 120}}}})]
+        (should= 1 (count errors))
+        (should= "crew.main.cycle-limit" (:key (first errors)))
+        (should (re-find #":cycle \{:limit" (:value (first errors))))))
+
+    (it "load-config rejects a crew :cycle-limit inlined in isaac.edn"
+      (let [fs*  (fs/mem-fs)
+            root "/tmp/isaac-retired-cycle-limit"]
+        (nexus/-with-nested-nexus {:fs fs*}
+          (marigold.agent/with-real-manifest
+            (fs/mkdirs fs* (str root "/config"))
+            (fs/spit fs* (str root "/config/isaac.edn")
+                     (pr-str {:defaults  {:crew :main :model :local}
+                              :crew      {:main {:cycle-limit 120}}
+                              :models    {:local {:model "llama3.3:1b" :provider :anthropic}}
+                              :providers {:anthropic {}}}))
+            (let [result (loader/load-config-result {:root root :fs fs*})
+                  hits   (filter #(= "crew.main.cycle-limit" (:key %)) (:errors result))]
+              (should (seq hits))
+              (should (re-find #":cycle \{:limit" (:value (first hits)))))))))))

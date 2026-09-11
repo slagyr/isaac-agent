@@ -19,6 +19,7 @@
 (defonce ^:private delay-release* (atom nil))
 (defonce ^:private delay-complete* (atom nil))
 (defonce ^:private last-request* (atom nil))
+(defonce ^:private requests* (atom []))
 (defonce ^:private last-provider-request* (atom nil))
 (defonce ^:private provider-requests* (atom []))
 (defonce ^:private wait-gates* (atom {}))
@@ -34,6 +35,7 @@
   (reset! delay-release* nil)
   (reset! delay-complete* nil)
   (reset! last-request* nil)
+  (reset! requests* [])
   (reset! last-provider-request* nil)
   (reset! provider-requests* [])
   (reset! wait-gates* {}))
@@ -46,6 +48,11 @@
 
 (defn last-request []
   @last-request*)
+
+(defn requests
+  "All chat requests Grover has seen since the last reset, in order."
+  []
+  @requests*)
 
 (defn last-provider-request []
   @last-provider-request*)
@@ -386,6 +393,7 @@
   "Synchronous chat. Returns a response map instantly."
   [request provider-name cfg]
   (reset! last-request* request)
+  (swap! requests* conj request)
   (let [session-key  (:session-key cfg)
         delayed?     @delay-enabled*
         delay-error  (when delayed? (maybe-delay! session-key))

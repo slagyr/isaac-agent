@@ -14,4 +14,5 @@
     (should (contains? sut/server :manifest-refs))
     (should (contains? sut/server :comm-reserved-schema))
     (should (contains? sut/server :crew-model-aliases))
-    (should (contains? sut/server :tool-allow-tokens))))
+    (should (contains? sut/server :tool-allow-tokens))
+    (should (contains? sut/server :retired-cycle-limit))))

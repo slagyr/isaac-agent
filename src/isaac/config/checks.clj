@@ -252,3 +252,24 @@
                               :value (str "references undefined session policy (got \"" name "\"); known: " known-text)}))))
                      (or (:crew config) {})))
      :warnings []}))
+
+(defn- cycle-limit-error [prefix entity msg]
+  (when (and (map? entity) (contains? entity :cycle-limit))
+    {:key (str prefix ".cycle-limit") :value msg}))
+
+(defn check-retired-cycle-limit
+  "The retired :cycle-limit key is a hard error. Name :cycle {:limit ...}."
+  [{:keys [config result]}]
+  (let [msg            "retired — use :cycle {:limit ...}"
+        raw-defaults   [(get-in result [:root :defaults]) (:defaults config)]
+        raw-crews      [(get-in result [:root :crew])
+                        (get-in result [:raw :crew])
+                        (:crew config)]
+        default-errors (keep #(cycle-limit-error "defaults" % msg) raw-defaults)
+        crew-errors    (mapcat (fn [crews]
+                                 (when (map? crews)
+                                   (keep (fn [[crew-id crew]]
+                                           (cycle-limit-error (str "crew." (->id crew-id)) crew msg))
+                                         crews)))
+                               raw-crews)]
+    {:errors (vec (distinct (concat default-errors crew-errors))) :warnings []}))

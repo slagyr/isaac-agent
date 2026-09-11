@@ -21,6 +21,16 @@
                            "grover" {})]
         (should= "Hello Grover" (get-in resp [:message :content]))))
 
+    (it "records every chat request in order and forgets them on reset"
+      (sut/chat {:model "echo" :messages [{:role "user" :content "first"}]} "grover" {})
+      (sut/chat {:model "echo" :messages [{:role "user" :content "second"}]} "grover" {})
+      (should= ["first" "second"]
+               (mapv #(get-in % [:messages 0 :content]) (sut/requests)))
+      (should= "second" (get-in (sut/last-request) [:messages 0 :content]))
+      (sut/reset-queue!)
+      (should= [] (sut/requests))
+      (should-be-nil (sut/last-request)))
+
     (it "echoes the last user message when multiple"
       (let [resp (sut/chat {:model    "echo"
                             :messages [{:role "user" :content "First"}

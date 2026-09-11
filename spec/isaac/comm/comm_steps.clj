@@ -272,6 +272,10 @@
   isaac.comm.comm-steps/last-llm-request-does-not-contain
   "Absence assert on the last outbound LLM request (pr-str of the map).")
 
+(defthen "the last LLM request does not contain {needle:string}"
+  isaac.comm.comm-steps/last-llm-request-does-not-contain
+  "Absence assert on the last outbound LLM request (pr-str of the map).")
+
 (defn- skip-row? [value]
   (str/blank? (str value)))
 

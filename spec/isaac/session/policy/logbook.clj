@@ -70,6 +70,9 @@
   (append-reckoning! [_ name reckoning]
     (record! :append-reckoning! name nil)
     (policy/append-reckoning! inner name reckoning))
+  (append-checkpoint! [_ name checkpoint]
+    (record! :append-checkpoint! name nil)
+    (policy/append-checkpoint! inner name checkpoint))
   (splice-compaction! [_ name compaction]
     (record! :splice-compaction! name nil)
     (policy/splice-compaction! inner name compaction))

@@ -387,6 +387,25 @@
         (append-transcript-line! root id entry))
       entry))
 
+  (append-checkpoint! [_ name {:keys [cycle]}]
+    (let [id         (c/session-id name)
+          transcript (get-in @state [:transcripts id] [])
+          parent-id  (c/last-entry-id transcript)
+          ckpt-id    (c/new-id)
+          now        (now-iso)
+          entry      {:type      "checkpoint"
+                      :id        ckpt-id
+                      :parentId  parent-id
+                      :timestamp now
+                      :cycle     cycle}]
+      (swap! state (fn [s]
+                     (-> s
+                         (update-in [:transcripts id] (fnil conj []) entry)
+                         (assoc-in [:sessions id :updated-at] now))))
+      (when root
+        (append-transcript-line! root id entry))
+      entry))
+
   (append-compaction! [_ name {:keys [summary firstKeptEntryId tokensBefore turnRequest]}]
     (let [id            (c/session-id name)
           transcript    (get-in @state [:transcripts id] [])

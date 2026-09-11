@@ -70,6 +70,9 @@
     (re-matches #"\[\s*\]" s)
     {:type :empty-coll}
 
+    (str/starts-with? (str/trim s) "contains ")
+    {:type :contains :needles (->> (re-seq #"\"([^\"]+)\"" s) (mapv second))}
+
     :else
     {:type :literal :value s}))
 
@@ -91,6 +94,11 @@
     :empty-coll    (if (and (or (sequential? actual) (nil? actual)) (empty? (or actual [])))
                      {:match true}
                      {:match false :message (str "Expected [], got: " (pr-str actual))})
+    :contains      (let [needles (:needles cell)
+                         s       (if (string? actual) actual (pr-str actual))]
+                     (if (and (seq needles) (every? #(str/includes? s %) needles))
+                       {:match true}
+                       {:match false :message (str "Expected contains " (pr-str needles) ", got: " (pr-str actual))}))
     :nil           (if (nil? actual)
                      {:match true}
                      {:match false :message (str "Expected nil, got: " (pr-str actual))})

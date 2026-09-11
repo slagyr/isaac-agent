@@ -7,7 +7,6 @@ Feature: The :cycle config group
   Background:
     Given an Isaac root at "target/test-state"
 
-  @wip
   Scenario: the retired :cycle-limit key is rejected and names its replacement
     Given config file "isaac.edn" containing:
       """
@@ -22,7 +21,6 @@ Feature: The :cycle config group
       | crew\.main\.cycle-limit.*:cycle \{:limit  |
     And the exit code is 1
 
-  @wip
   Scenario: config schema lists the cycle knobs
     Given config file "isaac.edn" containing:
       """

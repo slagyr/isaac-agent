@@ -173,6 +173,11 @@
     (with-transcript-lock session-key
       #(policy/append-reckoning! (session-policy ctx) session-key {:text text}))))
 
+(defn- append-checkpoint! [ctx session-key cycle]
+  (when (and ctx session-key cycle)
+    (with-transcript-lock session-key
+      #(policy/append-checkpoint! (session-policy ctx) session-key {:cycle cycle}))))
+
 (defn- persist-tool-call!
   "Write the assistant toolCall entry as soon as the call is known."
   [ctx session-key tc]
@@ -480,14 +485,21 @@
     (string? raw) (parse-long raw)
     :else raw))
 
-(defn- resolve-cycle-limit [{:keys [cycle-limit config crew crew-cfg]}]
-  (let [raw (or cycle-limit
-                (:cycle-limit crew-cfg)
-                (get-in config [:crew (keyword crew) :cycle-limit])
-                (get-in config [:crew crew :cycle-limit])
-                (get-in config [:defaults :cycle-limit])
-                tool-loop/default-max-loops)]
-    (parse-long-or-raw raw)))
+(defn- crew-cycle [config crew crew-cfg]
+  (or (:cycle crew-cfg)
+      (get-in config [:crew (keyword crew) :cycle])
+      (get-in config [:crew crew :cycle])
+      {}))
+
+(defn- resolve-cycle [{:keys [cycle config crew crew-cfg]}]
+  (let [defaults (or (get-in config [:defaults :cycle]) {})
+        layered  (merge defaults (crew-cycle config crew crew-cfg) (or cycle {}))
+        limit    (or (:limit layered)
+                     tool-loop/default-max-loops)]
+    (assoc layered :limit (parse-long-or-raw limit))))
+
+(defn- resolve-cycle-limit [opts]
+  (:limit (resolve-cycle opts)))
 
 (defn- resolve-max-parallel-tools [{:keys [config crew crew-cfg]}]
   (let [raw (or (get-in crew-cfg [:tools :max-parallel])
@@ -538,8 +550,13 @@
 (def ^:private loop-exhausted-summary-instruction
   "You have hit the cycle limit. Do not call any more tools. Write a concise assistant reply for the user using what you learned so far. If you still cannot fully answer, summarize the useful findings and what remains unresolved.")
 
-(def ^:private wrap-up-nudge
-  "Your cycle budget for this turn is exhausted. Do not start new work. First save any work in progress the way your instructions say to, then reply with a short note: what is done, what is next, and the exact place to resume from. Your next turn resumes from this note.")
+(def default-wrap-up-prompt
+  "Your cycle budget for this turn is exhausted. Do not start new work. First save any work in progress the way your instructions say to, then reply with a short note: what is done, what is next, and the exact place to resume from.")
+
+(def default-checkpoint-prompt
+  "Checkpoint: save work in progress the way your instructions say to, then continue. Do not stop.")
+
+(def ^:private wrap-up-nudge default-wrap-up-prompt)
 
 (defn- loop-summary-request [request response]
   (let [assistant-msg (or (:message response)
@@ -619,9 +636,21 @@
              (assoc-in [:response :message :content] message)))
        result))))
 
-(defn- wrap-up-request [request]
+(defn- wrap-up-request
+  ([request] (wrap-up-request request wrap-up-nudge))
+  ([request prompt]
+   (assoc request :messages (conj (vec (:messages request))
+                                  {:role "user" :content prompt}))))
+
+(defn- checkpoint-due? [every n]
+  (and (some? every)
+       (pos? (long every))
+       (pos? (long n))
+       (zero? (mod (long n) (long every)))))
+
+(defn- with-checkpoint-nudge [request prompt]
   (assoc request :messages (conj (vec (:messages request))
-                                 {:role "user" :content wrap-up-nudge})))
+                                 {:role "user" :content prompt})))
 
 (defn- normalize-tool-calls [raw]
   (mapv (fn [tc]
@@ -685,14 +714,14 @@
       (guard-empty-terminal-response chat-fn @current-request)
       (assoc :exhaustion :stopped)))
 
-(defn- apply-wrap-up-exhaustion [result chat-fn followup-fn current-request tool-ctx]
+(defn- apply-wrap-up-exhaustion [result chat-fn followup-fn current-request tool-ctx wrap-up-prompt]
   (let [pending (or (seq (pending-tool-calls result))
                     (seq (response-tool-calls* (:response result))))]
     (when (seq pending)
       (let [results  (execute-pending-tools! tool-ctx pending)
             messages (followup-fn @current-request (or (:response result) result) pending results)]
         (reset! current-request (assoc @current-request :messages messages))))
-    (let [wrap-req     (wrap-up-request @current-request)
+    (let [wrap-req     (wrap-up-request @current-request (or wrap-up-prompt wrap-up-nudge))
           wrap-resp    (chat-fn wrap-req)
           wrap-calls   (or (seq (pending-tool-calls wrap-resp))
                            (seq (response-tool-calls* wrap-resp)))
@@ -1356,8 +1385,9 @@
   [session-key input ctx]
   (let [{:keys [provider allowed-tools effort boot-files rules-text skill-menu-text]} ctx
         charge        (:charge ctx)
-        {:keys [crew guidance model module-index nonce origin soul context-mode comm config crew-cfg cycle-limit]} charge
-        cycle-budget  (resolve-cycle-limit {:cycle-limit cycle-limit :config config :crew crew :crew-cfg crew-cfg})
+        {:keys [crew guidance model module-index nonce origin soul context-mode comm config crew-cfg cycle]} charge
+        cycle-cfg     (resolve-cycle {:cycle cycle :config config :crew crew :crew-cfg crew-cfg})
+        cycle-budget  (:limit cycle-cfg)
         max-parallel  (resolve-max-parallel-tools {:config config :crew crew :crew-cfg crew-cfg})
         caps          {:max-lines (get-in config [:tools :defaults :max-lines])
                        :max-bytes (get-in config [:tools :defaults :max-bytes])}
@@ -1456,7 +1486,19 @@
                                               :max-parallel-tools max-parallel
                                               :prepare-tool-call  #(prepare-tool-call! tool-ctx %)
                                               :cancelled?         #(bridge/cancelled? session-key)
-                                              :after-tools        #(maybe-mid-turn-compact! session-key (assoc ctx :window-cache window-cache) % current-request)
+                                              :after-tools        (fn [req]
+                                                                   (let [next (maybe-mid-turn-compact! session-key (assoc ctx :window-cache window-cache) req current-request)]
+                                                                     (if (or (:error next) (:unavailable? next))
+                                                                       next
+                                                                       (let [n (:n @cycle*)]
+                                                                         (if (checkpoint-due? (:checkpoint-every cycle-cfg) n)
+                                                                           (let [prompt (or (:checkpoint-prompt cycle-cfg) default-checkpoint-prompt)
+                                                                                 nudged (with-checkpoint-nudge next prompt)]
+                                                                             (log/info :turn/checkpoint-nudged :session session-key :cycle n)
+                                                                             (append-checkpoint! ctx session-key n)
+                                                                             (reset! current-request nudged)
+                                                                             nudged)
+                                                                           next)))))
                                               :on-cycle           on-cycle
                                               :api                p})))
             first-result (run-loop request)
@@ -1477,7 +1519,7 @@
                                                   (guard-empty-terminal-response chat-fn @current-request))
 
                                               (= :wrap-up policy)
-                                              (apply-wrap-up-exhaustion normalized chat-fn followup-fn current-request tool-ctx)
+                                              (apply-wrap-up-exhaustion normalized chat-fn followup-fn current-request tool-ctx (:wrap-up-prompt cycle-cfg))
 
                                               :else
                                               (apply-stop-exhaustion normalized chat-fn current-request input))]

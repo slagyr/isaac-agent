@@ -496,11 +496,23 @@
        :description
        "Maximum concurrent in-flight turns for this crew member",
        :validations [:positive?]},
-      :cycle-limit
-      {:type :int,
+      :cycle
+      {:type :map,
        :description
-       "Tool-call cycle budget for turns on this crew (default 100)",
-       :validations [:positive?]},
+       "Turn knobs: limit (was :cycle-limit), checkpoint-every, checkpoint-prompt, wrap-up-prompt",
+       :schema
+       {:limit
+        {:type :int,
+         :description "Tool-call cycle budget for turns on this crew (default 100)"},
+        :checkpoint-every
+        {:type :int,
+         :description "Nudge a checkpoint every N cycles; omit to leave checkpoints off"},
+        :checkpoint-prompt
+        {:type :string,
+         :description "Optional override of the drive's default checkpoint nudge"},
+        :wrap-up-prompt
+        {:type :string,
+         :description "Optional override of the drive's default wrap-up nudge"}}},
       :model
       {:type :id,
        :description "ID of the model this crew member uses.",
@@ -585,11 +597,23 @@
       :default 90000,
       :description
       "Idle-stall timeout (ms) for provider SSE/NDJSON streams; close and treat as weather when no bytes arrive"},
-     :cycle-limit
-     {:type :int,
+     :cycle
+     {:type :map,
       :description
-      "Default tool-call cycle budget for turns (default 100)",
-      :validations [:positive?]}}}},
+      "Default turn knobs: limit, checkpoint-every, checkpoint-prompt, wrap-up-prompt",
+      :schema
+      {:limit
+       {:type :int,
+        :description "Default tool-call cycle budget for turns (default 100)"},
+       :checkpoint-every
+       {:type :int,
+        :description "Nudge a checkpoint every N cycles; omit to leave checkpoints off"},
+       :checkpoint-prompt
+       {:type :string,
+        :description "Optional override of the drive's default checkpoint nudge"},
+       :wrap-up-prompt
+       {:type :string,
+        :description "Optional override of the drive's default wrap-up nudge"}}}}}},
   :attention
   {:schema
    {:name :attention,
@@ -855,4 +879,6 @@
   :tool-allow-tokens
   {:fn isaac.config.checks/check-tool-allow-tokens}
   :session-policy
-  {:fn isaac.config.checks/check-session-policy}}}
+  {:fn isaac.config.checks/check-session-policy}
+  :retired-cycle-limit
+  {:fn isaac.config.checks/check-retired-cycle-limit}}}

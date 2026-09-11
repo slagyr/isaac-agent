@@ -13,7 +13,6 @@ Feature: Checkpoints inside the turn
     Given default Grover setup
     And the built-in tools are registered
 
-  @wip
   Scenario: the checkpoint nudge rides the request after every Nth cycle
     Given the isaac EDN file "config/crew/oscar.edn" exists with:
       | path                   | value  |
@@ -48,7 +47,6 @@ Feature: Checkpoints inside the turn
       | type       | cycle |
       | checkpoint | 2     |
 
-  @wip
   Scenario: a crew's checkpoint-prompt replaces the default nudge text
     Given the isaac EDN file "config/crew/oscar.edn" exists with:
       | path                    | value                                          |
@@ -71,7 +69,6 @@ Feature: Checkpoints inside the turn
       | messages[-1].content | Oscar, put the lid back on and note the count. |
     And the last LLM request does not contain "save work in progress"
 
-  @wip
   Scenario: no checkpoint-every means no nudge, ever
     Given the isaac EDN file "config/crew/oscar.edn" exists with:
       | path        | value  |

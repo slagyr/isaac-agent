@@ -158,6 +158,8 @@
     (c/append-compaction! get-session update-sidecar-entry! now-iso root name compaction fs))
   (append-reckoning! [_ name reckoning]
     (c/append-reckoning! get-session update-sidecar-entry! now-iso root name reckoning fs))
+  (append-checkpoint! [_ name checkpoint]
+    (c/append-checkpoint! get-session update-sidecar-entry! now-iso root name checkpoint fs))
   (splice-compaction! [_ name compaction]
     (c/splice-compaction! get-session update-sidecar-entry! now-iso root name compaction fs))
   (truncate-after-compaction! [_ name]

@@ -1644,20 +1644,42 @@
           (sut/run-turn! charge))
         (should= [[:release token]] @events)))
 
-    (it "prefers charge cycle-limit over crew and defaults"
-      (should= 12 (#'sut/resolve-cycle-limit {:cycle-limit 12
-                                              :crew-cfg    {:cycle-limit 3}
+    (it "prefers charge cycle limit over crew and defaults"
+      (should= 12 (#'sut/resolve-cycle-limit {:cycle       {:limit 12}
+                                              :crew-cfg    {:cycle {:limit 3}}
                                               :crew        "oscar"
-                                              :config      {:defaults {:cycle-limit 5}
-                                                            :crew     {"oscar" {:cycle-limit 3}}}}))
-      (should= 3 (#'sut/resolve-cycle-limit {:crew-cfg {:cycle-limit 3}
+                                              :config      {:defaults {:cycle {:limit 5}}
+                                                            :crew     {"oscar" {:cycle {:limit 3}}}}}))
+      (should= 3 (#'sut/resolve-cycle-limit {:crew-cfg {:cycle {:limit 3}}
                                             :crew     "oscar"
-                                            :config   {:defaults {:cycle-limit 5}
-                                                       :crew     {"oscar" {:cycle-limit 8}}}}))
+                                            :config   {:defaults {:cycle {:limit 5}}
+                                                       :crew     {"oscar" {:cycle {:limit 8}}}}}))
       (should= 5 (#'sut/resolve-cycle-limit {:crew   "oscar"
-                                            :config {:defaults {:cycle-limit 5}}}))
+                                            :config {:defaults {:cycle {:limit 5}}}}))
       (should= tool-loop/default-max-loops
                (#'sut/resolve-cycle-limit {:crew "oscar" :config {}})))
+
+    (it "layers charge cycle map over crew and defaults"
+      (let [cycle (#'sut/resolve-cycle {:cycle    {:checkpoint-every 1}
+                                        :crew-cfg {:cycle {:limit 10 :checkpoint-every 5}}
+                                        :crew     "oscar"
+                                        :config   {:defaults {:cycle {:limit 100}}}})]
+        (should= 10 (:limit cycle))
+        (should= 1 (:checkpoint-every cycle))))
+
+    (it "default wrap-up and checkpoint prompts are task-agnostic"
+      (doseq [word ["git" "commit" "branch" "bean" "test" "verify"]]
+        (should-not (re-find (re-pattern (str "(?i)\\b" word "\\b")) sut/default-wrap-up-prompt))
+        (should-not (re-find (re-pattern (str "(?i)\\b" word "\\b")) sut/default-checkpoint-prompt)))
+      (should (re-find #"cycle budget for this turn is exhausted" sut/default-wrap-up-prompt))
+      (should-not (re-find #"Your next turn resumes from this note" sut/default-wrap-up-prompt))
+      (should (re-find #"Checkpoint: save work in progress" sut/default-checkpoint-prompt)))
+
+    (it "a checkpoint is due on every Nth cycle and never when unset"
+      (should (#'sut/checkpoint-due? 2 2))
+      (should-not (#'sut/checkpoint-due? 2 1))
+      (should-not (#'sut/checkpoint-due? nil 2))
+      (should-not (#'sut/checkpoint-due? 0 2)))
 
     (it "coerces a string wrap-up answer from the comm"
       (let [ch (memory-comm/channel (atom []) ":wrap-up")]
@@ -1972,7 +1994,7 @@
                                                  :crew           "main"
                                                  :comm           (memory-comm/channel (atom []) :wrap-up)
                                                  :context-window 4096
-                                                 :cycle-limit    0})
+                                                 :cycle          {:limit 0}})
                        :allowed-tools #{"logbook-entry"})]
         (tool-registry/clear!)
         (tool-registry/register! {:name        "logbook-entry"

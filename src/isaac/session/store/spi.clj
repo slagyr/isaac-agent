@@ -27,6 +27,7 @@
   (append-error! [this name error])
   (append-compaction! [this name compaction])
   (append-reckoning! [this name reckoning])
+  (append-checkpoint! [this name checkpoint])
   (splice-compaction! [this name compaction])
   (truncate-after-compaction! [this name])
   ;; Durable turn markers (isaac-7li9): resume ROUTING for an in-flight turn,

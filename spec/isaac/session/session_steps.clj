@@ -1734,6 +1734,13 @@
         result  (match/match-object table request)]
     (g/should= [] (:failures result))))
 
+(defn llm-request-n-matches [n table]
+  (await-turn!)
+  (let [idx     (dec (long (if (string? n) (parse-long n) n)))
+        request (nth (vec (grover/requests)) idx nil)
+        result  (match/match-object table request)]
+    (g/should= [] (:failures result))))
+
 (defn last-llm-request-has-no-effort []
   (await-turn!)
   (g/should-not (contains? (g/get :llm-request) :effort)))
@@ -2206,6 +2213,9 @@
    by grover/last-request) against the table using the match DSL. Use this for
    API-agnostic effort assertions; for wire-shape assertions use
    'the last outbound HTTP request matches:'.")
+
+(defthen #"LLM request (\d+) matches:" isaac.session.session-steps/llm-request-n-matches
+  "1-based indexed LLM request match (grover twin of 'outbound HTTP request N matches:').")
 
 (defthen "the last LLM request has no effort" isaac.session.session-steps/last-llm-request-has-no-effort
   "Awaits the turn, then asserts that the LLM request map has no :effort key.")
