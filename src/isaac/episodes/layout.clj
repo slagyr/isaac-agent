@@ -235,8 +235,10 @@
 (defn- rebuild-recall!
   "Write sessions/<crew>/recall/ for every crew. Rows come from the legacy
    episodes/<crew>/ index when it exists (vectors and model carried over,
-   re-keyed with :session-id); scenes it did not cover get placeholder rows
-   (re-embedded by `episodes index`). The legacy index files are removed."
+   re-keyed with :session-id) and nothing else — the scenes it did not cover
+   were skipped on purpose. Without a legacy index every closed scene gets a
+   placeholder row for `episodes index` to embed. The legacy index files are
+   removed."
   [fs* root]
   (doseq [crew (distinct
                  (concat (keep (fn [[_ loc]] (:crew loc)) (impl/scan-session-dirs fs* root))
@@ -261,7 +263,9 @@
                            {:session-id sid :episode-id eid :scene-id (:id scene) :kind kind
                             :vector [0.0] :model ""})))
                      (filter #(contains? #{:closed :partial} (keyword (name (or (:status %) :closed)))) eps))
-          rows     (into carried fresh)]
+          ;; With a legacy index, it is authoritative: the scenes it did not
+          ;; cover were skipped on purpose (routine), so no placeholders.
+          rows     (if legacy carried (into carried fresh))]
       (when (seq rows)
         (recall-index/write-index! fs* root crew rows))
       (delete-legacy-recall! fs* root crew))))
