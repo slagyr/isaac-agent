@@ -3,6 +3,8 @@
    episodes/<crew>/<eid>/ fold into sessions/<crew>/<sid>/ with nested
    episodes/<eid>/. Idempotent. --dry-run prints the plan."
   (:require
+    [cheshire.core :as json]
+    [clojure.edn :as edn]
     [clojure.string :as str]
     [isaac.episodes.store :as store]
     [isaac.fs :as fs]
@@ -204,23 +206,65 @@
         (copy-file! fs* (str legacy "/current.ednl") (str dest "/current.ednl")))
       (impl/delete-tree! fs* legacy))))
 
-(defn- rebuild-recall! [fs* root]
+(defn- legacy-recall-rows
+  "Rows of the pre-b6w0 per-crew index (episodes/<crew>/index.edn +
+   vectors.json) with their packed vectors, or nil when absent/unreadable."
+  [fs* root crew]
+  (let [meta-path (str root "/episodes/" crew "/index.edn")
+        vec-path  (str root "/episodes/" crew "/vectors.json")]
+    (when (and (fs/exists? fs* meta-path) (fs/exists? fs* vec-path))
+      (try
+        (let [meta (edn/read-string (or (fs/slurp fs* meta-path) "{}"))
+              rows (vec (or (:rows meta) []))
+              vecs (mapv int-array (json/parse-string (or (fs/slurp fs* vec-path) "[]")))]
+          (when (and (:scale meta) (= (count rows) (count vecs)))
+            (mapv (fn [row v] (assoc row :vector v)) rows vecs)))
+        (catch Exception _ nil)))))
+
+(defn- delete-legacy-recall! [fs* root crew]
+  (let [dir (str root "/episodes/" crew)]
+    (doseq [f ["index.edn" "vectors.json"]]
+      (let [path (str dir "/" f)]
+        (when (fs/exists? fs* path) (fs/delete fs* path))))
+    (when (and (fs/exists? fs* dir) (empty? (list-names fs* dir)))
+      (impl/delete-tree! fs* dir)))
+  (let [top (str root "/episodes")]
+    (when (and (fs/exists? fs* top) (empty? (list-names fs* top)))
+      (impl/delete-tree! fs* top))))
+
+(defn- rebuild-recall!
+  "Write sessions/<crew>/recall/ for every crew. Rows come from the legacy
+   episodes/<crew>/ index when it exists (vectors and model carried over,
+   re-keyed with :session-id); scenes it did not cover get placeholder rows
+   (re-embedded by `episodes index`). The legacy index files are removed."
+  [fs* root]
   (doseq [crew (distinct
                  (concat (keep (fn [[_ loc]] (:crew loc)) (impl/scan-session-dirs fs* root))
-                         (keep (fn [[_ row]] (:crew row)) (impl/read-index fs* root))))]
-    (let [eps (store/list-episodes fs* root crew)
-          rows (mapcat
-                 (fn [ep]
-                   (let [sid (or (:session-id ep) (:thread ep))
-                         eid (:id ep)]
-                     (mapcat
-                       (fn [scene]
-                         [{:session-id sid :episode-id eid :scene-id (:id scene) :kind :gist}
-                          {:session-id sid :episode-id eid :scene-id (:id scene) :kind :text}])
-                       (store/list-scenes fs* root crew eid))))
-                 (filter #(contains? #{:closed :partial} (keyword (name (or (:status %) :closed)))) eps))]
+                         (keep (fn [[_ row]] (:crew row)) (impl/read-index fs* root))
+                         (list-names fs* (str root "/episodes"))))]
+    (let [eps      (store/list-episodes fs* root crew)
+          eid->sid (into {} (map (fn [ep] [(:id ep) (or (:session-id ep) (:thread ep))]) eps))
+          legacy   (legacy-recall-rows fs* root crew)
+          carried  (->> (or legacy [])
+                        (keep (fn [row]
+                                (when-let [sid (get eid->sid (:episode-id row))]
+                                  (assoc row :session-id sid))))
+                        vec)
+          covered  (set (map (fn [r] [(:episode-id r) (:scene-id r) (:kind r)]) carried))
+          fresh    (mapcat
+                     (fn [ep]
+                       (let [sid (or (:session-id ep) (:thread ep))
+                             eid (:id ep)]
+                         (for [scene (store/list-scenes fs* root crew eid)
+                               kind  [:gist :text]
+                               :when (not (contains? covered [eid (:id scene) kind]))]
+                           {:session-id sid :episode-id eid :scene-id (:id scene) :kind kind
+                            :vector [0.0] :model ""})))
+                     (filter #(contains? #{:closed :partial} (keyword (name (or (:status %) :closed)))) eps))
+          rows     (into carried fresh)]
       (when (seq rows)
-        (recall-index/write-index! fs* root crew (mapv #(assoc % :vector [0.0] :model "") rows))))))
+        (recall-index/write-index! fs* root crew rows))
+      (delete-legacy-recall! fs* root crew))))
 
 (defn migrate-layout!
   "Move leftover flat sessions and leftover episodes/<crew>/<eid>/ into the

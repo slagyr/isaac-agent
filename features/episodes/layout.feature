@@ -403,3 +403,64 @@ Feature: Episodes storage layout — one directory per session under sessions/<c
       | discord-c999.session-policy | :episodes  |
       | harbor-log.session-policy   | :chronicle |
 
+  Scenario: migrate-layout carries a crew's recall vectors into sessions/<crew>/recall/ and removes the legacy index
+    The pre-b6w0 index lived at episodes/<crew>/{index.edn,vectors.json}.
+    Re-embedding at migration would need the provider and change every
+    vector; the rows are carried over as they are, re-keyed with the
+    session id, and the legacy files are removed. (The emptied episodes/
+    directories go too on a real filesystem; the in-memory test fs cannot
+    delete a directory, so only the files are asserted here.)
+    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path           | value            |
+      | model          | echo             |
+      | soul           | You are Cordelia |
+      | session-policy | :episodes         |
+    And the isaac EDN file "sessions/discord-c999/session.edn" exists with:
+      | path | value        |
+      | id   | discord-c999 |
+      | name | discord-c999 |
+      | crew | cordelia     |
+    And the isaac file "sessions/discord-c999/current.ednl" exists with:
+      """
+      {:type "message" :id "m1" :timestamp "2026-03-02T11:00:00" :message {:role "user" :content "Light the lamp"}}
+      """
+    And the isaac EDN file "episodes/cordelia/2026-03-02-1100-cd34/episode.edn" exists with:
+      | path       | value                  |
+      | id         | 2026-03-02-1100-cd34   |
+      | crew       | cordelia               |
+      | status     | closed                 |
+      | session-id | discord-c999           |
+      | thread     | discord-c999           |
+      | scene-ids  | [2026-03-02-1100-s2y2] |
+    And the isaac file "episodes/cordelia/2026-03-02-1100-cd34/2026-03-02-1100-s2y2.md" exists with:
+      """
+      ---
+      id: 2026-03-02-1100-s2y2
+      started-at: 2026-03-02T11:00:00
+      ended-at: 2026-03-02T11:05:00
+      gist: lamp
+      ---
+      Light the lamp
+      """
+    And the isaac file "episodes/cordelia/index.edn" exists with:
+      """
+      {:dims 3 :model "mini-embed" :scale 10000 :rows [{:episode-id "2026-03-02-1100-cd34" :scene-id "2026-03-02-1100-s2y2" :kind :gist :model "mini-embed"} {:episode-id "2026-03-02-1100-cd34" :scene-id "2026-03-02-1100-s2y2" :kind :text :model "mini-embed"}]}
+      """
+    And the isaac file "episodes/cordelia/vectors.json" exists with:
+      """
+      [[10000,0,0],[0,10000,0]]
+      """
+    When isaac is run with "episodes migrate-layout"
+    Then the exit code is 0
+    And the isaac file "sessions/cordelia/recall/index.edn" EDN contains:
+      | path  | value      |
+      | dims  | 3          |
+      | model | mini-embed |
+    And the isaac file "sessions/cordelia/recall/vectors.json" exists
+    And the index for crew "cordelia" has rows:
+      | session-id   | episode-id           | scene-id             | kind |
+      | discord-c999 | 2026-03-02-1100-cd34 | 2026-03-02-1100-s2y2 | gist |
+      | discord-c999 | 2026-03-02-1100-cd34 | 2026-03-02-1100-s2y2 | text |
+    And the isaac file "episodes/cordelia/index.edn" does not exist
+    And the isaac file "episodes/cordelia/vectors.json" does not exist
+
