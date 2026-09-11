@@ -77,6 +77,12 @@
                    :schema
                    {:factory
                     {:type :symbol, :validations [:present?]}}}}}},
+ :isaac/component
+ {:agent-lifecycle {:namespace isaac.agent.component}
+  :comm-delivery   {:namespace isaac.agent.component}
+  :episodes-worker {:namespace isaac.agent.component}
+  :turn-queue      {:namespace isaac.agent.component}}
+
  :isaac/cli
  {:auth
   {:usage "auth <subcommand> [options]",

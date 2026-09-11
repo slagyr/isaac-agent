@@ -1,14 +1,12 @@
 (ns isaac.comm.delivery.worker
   (:require
-    [isaac.comm.protocol :as comm]
     [isaac.comm.delivery.queue :as queue]
+    [isaac.comm.protocol :as comm]
     [isaac.comm.registry :as comm-registry]
     [isaac.logger :as log]
-    [isaac.scheduler.runtime :as scheduler]
     [isaac.nexus :as nexus]
-    [isaac.tool.memory :as memory]
-    [isaac.episodes.worker :as episodes-worker]
-    [isaac.turn.worker :as turn-worker])
+    [isaac.scheduler.runtime :as scheduler]
+    [isaac.tool.memory :as memory])
   (:import
     (java.time Instant)))
 
@@ -95,13 +93,9 @@
                          {:id      :delivery/tick
                           :trigger {:kind :interval :ms tick-ms}
                           :handler (fn [_] (tick! {}))})
-    (turn-worker/start! {:tick-ms tick-ms})
-    (episodes-worker/start! {})
     {:scheduler shared-scheduler
      :task-id   :delivery/tick}))
 
 (defn stop! [{:keys [scheduler task-id]}]
   (when scheduler
-    (scheduler/cancel! scheduler task-id)
-    (turn-worker/stop! {:scheduler scheduler :task-id :turn.queue/tick})
-    (episodes-worker/stop! {:scheduler scheduler :task-id :episodes/tick})))
+    (scheduler/cancel! scheduler task-id)))

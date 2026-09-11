@@ -1,6 +1,5 @@
 (ns isaac.comm.delivery.worker-spec
   (:require
-    [isaac.bridge.core :as bridge]
     [isaac.comm.delivery.queue :as queue]
     [isaac.comm.delivery.worker :as sut]
     [isaac.comm.protocol :as comm]
@@ -11,7 +10,6 @@
     [isaac.nexus :as nexus]
     [isaac.scheduler.runtime :as scheduler]
     [isaac.spec-helper :as helper]
-    [isaac.turn.queue :as turn-queue]
     [isaac.turnstile :as turnstile]
     [speclj.core :refer :all])
   (:import
@@ -113,30 +111,14 @@
         (try
           (nexus/register! [:scheduler] scheduler)
           (let [handle (sut/start! {:tick-ms 10000})]
-            (should= [{:id :delivery/tick :trigger {:kind :interval :ms 10000}}
-                      {:id :turn.queue/tick :trigger {:kind :interval :ms 10000}}
-                      {:id :episodes/tick :trigger {:kind :interval :ms 30000}}]
+            (should= [{:id :delivery/tick :trigger {:kind :interval :ms 10000}}]
                      (mapv #(select-keys % [:id :trigger]) (scheduler/list-tasks scheduler)))
             (sut/stop! handle))
           (finally
             (scheduler/stop! scheduler)
             (turnstile/set-wake-hook! nil))))))
 
-  (it "starts the turn-queue worker on the same scheduler"
-    (nexus/-with-nexus {}
-      (let [scheduler (-> (scheduler/create {:clock (fn [] (Instant/parse "2026-04-21T10:00:00Z"))})
-                          scheduler/start!)]
-        (try
-          (nexus/register! [:scheduler] scheduler)
-          (let [handle (sut/start! {:tick-ms 10000})]
-            (should= #{:delivery/tick :turn.queue/tick :episodes/tick}
-                     (set (map :id (scheduler/list-tasks scheduler))))
-            (sut/stop! handle))
-          (finally
-            (scheduler/stop! scheduler)
-            (turnstile/set-wake-hook! nil))))))
-
-  (it "stop! cancels delivery, turn-queue, and episodes ticks and clears the wake hook"
+  (it "stop! cancels only the delivery tick"
     (nexus/-with-nexus {:root "/test/isaac" :fs (fs/mem-fs)}
       (let [scheduler (-> (scheduler/create {:clock (fn [] (Instant/parse "2026-04-21T10:00:00Z"))})
                           scheduler/start!)]
@@ -144,18 +126,7 @@
           (nexus/register! [:scheduler] scheduler)
           (let [handle (sut/start! {:tick-ms 10000})]
             (sut/stop! handle)
-            (should= [] (scheduler/list-tasks scheduler))
-            (let [ran (atom [])]
-              (with-redefs [bridge/dispatch! (fn [charge]
-                                               (swap! ran conj charge)
-                                               {:content "should not run"})]
-                (turn-queue/enqueue! {:id "orphan" :session "harbor" :input "stay parked" :state :held})
-                (let [gate (reify turnstile/Turnstile
-                             (admit? [_ _] :pass)
-                             (release! [_ _] nil))
-                      {:keys [tokens]} (turnstile/admit-all! [gate] {})]
-                  (turnstile/release-all! tokens)))
-              (should= [] @ran)))
+            (should= [] (scheduler/list-tasks scheduler)))
           (finally
             (scheduler/stop! scheduler)
             (turnstile/set-wake-hook! nil))))))
