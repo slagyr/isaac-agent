@@ -89,6 +89,12 @@
   (let [leftover-s (leftover-session-dirs fs* root)
         leftover-e (leftover-episodes fs* root)
         episode-ids (set (map :id leftover-e))
+        ;; A flat session that is the :session-id/:thread of a leftover episode
+        ;; is a post-mmod thread: episodes nest under it, so it is owned by the
+        ;; episodes policy and must be stamped that way (isaac-lhnq).
+        thread-sids (set (keep (fn [ep] (or (:thread ep) (get-in ep [:entry :thread])
+                                            (get-in ep [:entry :session-id])))
+                               leftover-e))
         chronicle   (->> leftover-s
                          (remove #(contains? episode-ids (:id %)))
                          (remove #(already-nested? fs* root (:crew %) (:id %)))
@@ -96,7 +102,7 @@
                                 {:kind       :chronicle
                                  :from       (str "sessions/" (:id s))
                                  :to         (str "sessions/" (:crew s) "/" (:id s))
-                                 :policy     :chronicle
+                                 :policy     (if (contains? thread-sids (:id s)) :episodes :chronicle)
                                  :session-id (:id s)
                                  :crew       (:crew s)
                                  :id         (:id s)
@@ -127,7 +133,7 @@
 
 (defn- format-plan-line [item]
   (case (:kind item)
-    :chronicle (str (:from item) " -> " (:to item) " (chronicle)")
+    :chronicle (str (:from item) " -> " (:to item) " (" (name (or (:policy item) :chronicle)) ")")
     :episode   (str (when (:backing item)
                       (str (:from item) " -> " (:to item) "\n"))
                     (:legacy-from item) " -> " (:to item))))
@@ -145,7 +151,7 @@
         entry (assoc (or (:entry item) {})
                 :id sid
                 :crew crew
-                :session-policy :chronicle)]
+                :session-policy (or (:policy item) :chronicle))]
     (impl/mkdirs*! fs* dest)
     (when (fs/exists? fs* (str src "/current.ednl"))
       (impl/move-tree! fs* src dest)

@@ -327,3 +327,79 @@ Feature: Episodes storage layout — one directory per session under sessions/<c
     When isaac is run with "episodes migrate-layout"
     Then the stdout contains "nothing to migrate"
     And the exit code is 0
+
+  Scenario: migrate-layout stamps a post-mmod thread session as episodes when its episodes nest under it
+    After isaac-mmod an episode's backing transcript already lives under the
+    stable session id (a Discord channel, an ACP session), so the flat layout
+    holds sessions/<sid>/ plus episodes/<crew>/<eid>/ pointing at it. That
+    session is owned by the episodes policy: session.edn and the index must
+    both say so, while a plain flat session stays chronicle.
+    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path           | value            |
+      | model          | echo             |
+      | soul           | You are Cordelia |
+      | session-policy | :episodes         |
+    And the isaac EDN file "sessions/discord-c999/session.edn" exists with:
+      | path | value        |
+      | id   | discord-c999 |
+      | name | discord-c999 |
+      | crew | cordelia     |
+    And the isaac file "sessions/discord-c999/current.ednl" exists with:
+      """
+      {:type "message" :id "m1" :timestamp "2026-03-02T11:00:00" :message {:role "user" :content "Light the lamp"}}
+      """
+    And the isaac EDN file "sessions/harbor-log/session.edn" exists with:
+      | path | value      |
+      | id   | harbor-log |
+      | name | Harbor Log |
+      | crew | main       |
+    And the isaac file "sessions/harbor-log/current.ednl" exists with:
+      """
+      {:type "message" :id "m2" :timestamp "2026-03-02T09:00:00" :message {:role "user" :content "Status?"}}
+      """
+    And the isaac EDN file "episodes/cordelia/2026-03-02-1100-cd34/episode.edn" exists with:
+      | path       | value                  |
+      | id         | 2026-03-02-1100-cd34   |
+      | crew       | cordelia               |
+      | status     | closed                 |
+      | session-id | discord-c999           |
+      | thread     | discord-c999           |
+      | scene-ids  | [2026-03-02-1100-s2y2] |
+    And the isaac file "episodes/cordelia/2026-03-02-1100-cd34/2026-03-02-1100-s2y2.md" exists with:
+      """
+      ---
+      id: 2026-03-02-1100-s2y2
+      started-at: 2026-03-02T11:00:00
+      ended-at: 2026-03-02T11:05:00
+      gist: lamp
+      ---
+      Light the lamp
+      """
+    When isaac is run with "episodes migrate-layout --dry-run"
+    Then the stdout matches:
+      | pattern                                                                                          |
+      | sessions/discord-c999 -> sessions/cordelia/discord-c999 \(episodes\)                             |
+      | sessions/harbor-log -> sessions/main/harbor-log \(chronicle\)                                    |
+      | episodes/cordelia/2026-03-02-1100-cd34 -> sessions/cordelia/discord-c999/episodes/2026-03-02-1100-cd34 |
+    And the exit code is 0
+    When isaac is run with "episodes migrate-layout"
+    Then the exit code is 0
+    And the isaac file "sessions/cordelia/discord-c999/session.edn" EDN contains:
+      | path           | value        |
+      | id             | discord-c999 |
+      | crew           | cordelia     |
+      | session-policy | :episodes     |
+    And the isaac file "sessions/cordelia/discord-c999/current.ednl" exists
+    And the isaac file "sessions/cordelia/discord-c999/episodes/2026-03-02-1100-cd34/episode.edn" EDN contains:
+      | path       | value        |
+      | status     | closed       |
+      | session-id | discord-c999 |
+    And the isaac file "sessions/cordelia/discord-c999/episodes/2026-03-02-1100-cd34/scenes/2026-03-02-1100-s2y2.md" exists
+    And the isaac file "sessions/main/harbor-log/session.edn" EDN contains:
+      | path           | value     |
+      | session-policy | :chronicle |
+    And the isaac file "sessions/index.edn" EDN contains:
+      | path                        | value     |
+      | discord-c999.session-policy | :episodes  |
+      | harbor-log.session-policy   | :chronicle |
+
