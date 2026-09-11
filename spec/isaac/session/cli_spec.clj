@@ -115,6 +115,20 @@
     (should= #{:project/x :wip}
              (:tags (helper/get-session "/test/sessions" "joe"))))
 
+  (it "replaces tags from an EDN set literal"
+    (helper/create-session! "/test/sessions" "joe" {:crew "main" :tags #{:project/x}})
+    (should= 0 (sut/run-fn {:home "/test" :_raw-args ["set" "joe.tags" "#{:isaac :ci}"]}))
+    (should= #{:isaac :ci}
+             (:tags (helper/get-session "/test/sessions" "joe"))))
+
+  (it "explains both supported forms when tags are not a keyword set"
+    (helper/create-session! "/test/sessions" "joe" {:crew "main" :tags #{:project/x}})
+    (let [err (binding [*err* (java.io.StringWriter.)]
+                (should= 1 (sut/run-fn {:home "/test" :_raw-args ["set" "joe.tags" "not-a-set"]}))
+                (str *err*))]
+      (should-contain "#{:tag-1 :tag-2}" err)
+      (should-contain ".tags.<keyword>" err)))
+
   (it "removes a tag with sessions unset"
     (helper/create-session! "/test/sessions" "joe" {:crew "main" :tags #{:project/x :wip}})
     (should= 0 (sut/run-fn {:home "/test" :_raw-args ["unset" "joe.tags.wip"]}))

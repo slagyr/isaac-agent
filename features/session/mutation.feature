@@ -136,7 +136,6 @@ Feature: Session mutation
     And the stdout contains "wip"
     And the exit code is 0
 
-  @wip
   Scenario: isaac sessions set <id>.tags replaces the whole set from a set literal (isaac-tags-set)
     Given default Grover setup
     And the following sessions exist:
@@ -148,3 +147,13 @@ Feature: Session mutation
     Then the stdout JSON contains:
       | path | value           |
       | tags | ["ci", "isaac"] |
+
+  Scenario: isaac sessions set <id>.tags explains the set and member forms on bad input
+    Given default Grover setup
+    And the following sessions exist:
+      | name | crew | tags          |
+      | joe  | main | #{:project/x} |
+    When isaac is run with "sessions set joe.tags not-a-set"
+    Then the stderr contains "#{:tag-1 :tag-2}"
+    And the stderr contains ".tags.<keyword>"
+    And the exit code is 1

@@ -370,9 +370,17 @@
     (contains? #{"false" "nil" "true"} raw-value) (edn/read-string raw-value)
     (or (str/starts-with? raw-value "[")
         (str/starts-with? raw-value "{")
+        (str/starts-with? raw-value "#{")
         (str/starts-with? raw-value ":")
         (str/starts-with? raw-value "\"")) (edn/read-string raw-value)
     :else raw-value))
+
+(defn- set-value-guidance [path-str spec message]
+  (if (:set-type? spec)
+    (str message "; use `sessions set <id>." path-str
+         " #{:tag-1 :tag-2}` to replace the set, or `sessions set <id>."
+         path-str ".<keyword>` to add one member")
+    message))
 
 (defn- mutable-error [path-str spec]
   (cond
@@ -436,7 +444,10 @@
                           (let [conformed (binding [session-schema/*config* loaded-cfg]
                                             (session-schema/conform-read (:config nav-result)))]
                             (if (schema/error? conformed)
-                              (print-mutation-error! (path-message path-str conformed updated-value))
+                              (print-mutation-error!
+                                (set-value-guidance path-str
+                                                    (:spec path-result)
+                                                    (path-message path-str conformed updated-value)))
                               (do
                                 (store/update-session! session-store session-id {top-key       updated-value
                                                                                  :updated-at (str (memory/now))})
@@ -563,7 +574,7 @@
       (= "set" subcmd)
       (if (help-requested? (rest raw-args))
         (apply print-subcommand-help! set-help)
-        (run-mutation opts :set (second raw-args) (nth raw-args 2 nil)))
+        (run-mutation opts :set (second raw-args) (some->> (drop 2 raw-args) seq (str/join " "))))
 
       (= "unset" subcmd)
       (if (help-requested? (rest raw-args))
