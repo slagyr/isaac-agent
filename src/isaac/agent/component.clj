@@ -6,7 +6,6 @@
     [isaac.comm.delivery.worker :as delivery]
     [isaac.component.factory :as component-factory]
     [isaac.component.protocol :as component]
-    [isaac.episodes.worker :as episodes]
     [isaac.nexus :as nexus]
     [isaac.session.store.spi :as store]
     [isaac.turn.worker :as turn]))
@@ -58,10 +57,6 @@
 (defmethod component-factory/create :comm-delivery
   [_ {:keys [opts]}]
   (worker-component delivery/start! delivery/stop! opts))
-
-(defmethod component-factory/create :episodes-worker
-  [_ {:keys [opts]}]
-  (worker-component episodes/start! episodes/stop! opts))
 
 (defmethod component-factory/create :turn-queue
   [_ {:keys [opts]}]

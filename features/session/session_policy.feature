@@ -135,67 +135,6 @@ Feature: Session policy berth — chronicle and episodes are per-crew policies o
       | append-message!     | lantern-room |
       | clear-turn-marker!  | lantern-room |
 
-  Scenario: an episodes crew keeps its session id through a cold open
-    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
-      | path          | value            |
-      | model         | echo             |
-      | soul          | You are Cordelia |
-      | session-policy | episodes         |
-    And the following model responses are queued:
-      | type | content            | model |
-      | text | Charted, keep west | echo  |
-    When a charge is dispatched with:
-      | key         | value          |
-      | session-key | lantern-room   |
-      | crew        | cordelia       |
-      | input       | Light the lamp |
-    Then an episode exists for crew "cordelia" matching:
-      | key        | value                          |
-      | id         | #"\d{17}" |
-      | status     | open                           |
-      | session-id | lantern-room                   |
-    And the following sessions match:
-      | id           | crew     |
-      | lantern-room | cordelia |
-    And session "lantern-room" has transcript matching:
-      | type    | message.role | message.content    |
-      | message | user         | Light the lamp     |
-      | message | assistant    | Charted, keep west |
-
-  Scenario: a warm second turn on an episodes crew appends to the open episode
-    Given the isaac EDN file "config/crew/cordelia.edn" exists with:
-      | path          | value            |
-      | model         | echo             |
-      | soul          | You are Cordelia |
-      | session-policy | episodes         |
-    And the current time is "2026-03-01T10:00:00"
-    And the following model responses are queued:
-      | type | content            | model |
-      | text | Charted, keep west | echo  |
-      | text | Wick trimmed       | echo  |
-    When a charge is dispatched with:
-      | key         | value          |
-      | session-key | lantern-room   |
-      | crew        | cordelia       |
-      | input       | Light the lamp |
-    Given the current time is "2026-03-01T10:10:00"
-    When a charge is dispatched with:
-      | key         | value         |
-      | session-key | lantern-room  |
-      | crew        | cordelia      |
-      | input       | Trim the wick |
-    Then crew "cordelia" has 1 episode
-    And an episode exists for crew "cordelia" matching:
-      | key        | value        |
-      | status     | open         |
-      | session-id | lantern-room |
-    And session "lantern-room" has transcript matching:
-      | type    | message.role | message.content    |
-      | message | user         | Light the lamp     |
-      | message | assistant    | Charted, keep west |
-      | message | user         | Trim the wick      |
-      | message | assistant    | Wick trimmed       |
-
   Scenario: a conversation start without a session id asks the policy for one
     Chronicle answers the crew's existing session; episodes answers a fresh
     id (isaac-6yg0's acp scenario stays the proof of that side). Frequencies

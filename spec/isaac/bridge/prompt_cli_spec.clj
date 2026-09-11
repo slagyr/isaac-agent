@@ -366,38 +366,6 @@
             (sut/run (assoc base-opts :message "Hi" :resume true))))
         (should= "prompt-default" @used-key)))
 
-    (it "keeps --session as the session id for :session-policy :episodes crews"
-      (reset! loader-stub {:config (assoc-in synthetic-config [:crew crew-name :session-policy] :episodes)})
-      (let [used-key (atom nil)
-            ss       (store/registered-store)]
-        (with-redefs [bridge/dispatch! (fn [charge]
-                                         (reset! used-key (:session-key charge))
-                                         (comm/on-chatter (:comm charge) (:session-key charge) nil "Charted")
-                                         {})]
-          (with-out-str
-            (should= 0 (sut/run (assoc base-opts :message "Chart the reef" :session "reef-chat" :crew crew-name)))))
-        (should= "reef-chat" @used-key)
-        (should-not-be-nil (store/get-session ss "reef-chat"))))
-
-    (it "warm-routes a second prompt on an episode crew to the same session id"
-      (reset! loader-stub {:config (assoc-in synthetic-config [:crew crew-name :session-policy] :episodes)})
-      (let [keys (atom [])]
-        (with-redefs [bridge/dispatch! (fn [charge]
-                                         (swap! keys conj (:session-key charge))
-                                         (store/append-message! (store/registered-store)
-                                                                (:session-key charge)
-                                                                {:role "user" :content "x"})
-                                         (store/append-message! (store/registered-store)
-                                                                (:session-key charge)
-                                                                {:role "assistant" :content "y"})
-                                         (comm/on-chatter (:comm charge) (:session-key charge) nil "Ok")
-                                         {})]
-          (with-out-str
-            (sut/run (assoc base-opts :message "first" :session "reef-chat" :crew crew-name))
-            (sut/run (assoc base-opts :message "second" :session "reef-chat" :crew crew-name))))
-        (should= 2 (count @keys))
-        (should= ["reef-chat" "reef-chat"] @keys)))
-
     (it "prints the collision and exits 1 when --session belongs to another crew"
       (let [ss (store/registered-store)]
         (store/open-session! ss "lantern-room" {:crew crew-name})

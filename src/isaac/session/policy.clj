@@ -69,13 +69,10 @@
     :chronicle))
 
 (def ^:private builtin-factories
-  [[:chronicle 'isaac.session.policy.chronicle/create]
-   [:episodes  'isaac.session.policy.episodes/create]])
+  [[:chronicle 'isaac.session.policy.chronicle/create]])
 
 (defn- ensure-builtins!
-  "Register chronicle + episodes when their nses have not run (or factories
-   were cleared). Specs and CLI paths that never load isaac.agent.module
-   still need both names."
+  "Register the built-in chronicle policy when its namespace has not run."
   []
   (doseq [[kw sym] builtin-factories]
     (when-not (contains? @factories* kw)

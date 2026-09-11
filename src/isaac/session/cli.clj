@@ -21,7 +21,6 @@
     [isaac.session.migrate :as migrate]
     [isaac.session.store.impl-common :as store-common]
     [isaac.session.store.spi :as store]
-    [isaac.episodes.store :as episode-store]
     [isaac.tool.builtin :as builtin]
     [isaac.tool.memory :as memory]
     [isaac.tool.registry :as tool-registry])
@@ -38,7 +37,6 @@
     :assoc-fn (fn [m k v] (update m k (fnil conj []) v))]
    [nil  "--in-flight"          "Show only in-flight sessions"]
    [nil  "--not-in-flight"      "Show only idle sessions"]
-   [nil  "--all"                "Include episodes sessions with no open episode"]
    [nil  "--no-color"           "Disable color output"]
    ["-h" "--help"               "Show help"]])
 
@@ -477,19 +475,11 @@
             (println (str "unknown crew: " crew-filter)))
           1)
         (let [required-tags (set (map keyword (:tag opts)))
-              fs*           (fs/instance)
-              root          (resolve-root opts)
-              hide-empty-episodes? (not (:all opts))
               sessions      (->> (store/list-sessions session-store)
                                  (filter #(if crew-filter (= crew-filter (or (:crew %) "main")) true))
                                  (filter #(every? (fn [tag] (store/has-tag? % tag)) required-tags))
                                  (filter #(if (:in-flight opts) (store/in-flight? session-store (:id %)) true))
                                  (filter #(if (:not-in-flight opts) (not (store/in-flight? session-store (:id %))) true))
-                                 (remove (fn [entry]
-                                           (and hide-empty-episodes?
-                                                (= :episodes (or (:session-policy entry) :chronicle))
-                                                (nil? (episode-store/find-open-on-thread
-                                                        fs* root (or (:crew entry) "main") (:id entry))))))
                                  (sort-by #(or (:key %) (:id %)))
                                  vec)
               color?        (effective-color? opts)]

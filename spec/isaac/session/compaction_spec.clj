@@ -15,7 +15,6 @@
      [isaac.session.context :as session-ctx]
      [isaac.session.store.spi :as store]
      [isaac.session.spec-helper :as storage]
-     [isaac.episodes.lifecycle]
      [isaac.nexus :as nexus]
      [isaac.tool.registry :as tool-registry]
      [speclj.core :refer :all]))

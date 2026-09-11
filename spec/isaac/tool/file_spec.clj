@@ -116,8 +116,8 @@
           (should (re-find #"path outside allowed directories" (:error result))))))
 
     (it "allows reading in session cwd only with :cwd opt in"
-      (let [root   support/test-dir
-            session-key default-session-key
+      (let [root        support/test-dir
+            session-key "cwd-opt-in-session"
             cwd         (str support/test-dir "/project")]
         (store-helper/create-session! root session-key {:crew crew-name :cwd cwd})
         (.mkdirs (io/file cwd))

@@ -4,12 +4,8 @@
    declared in the manifest; this factory just yields the module instance."
   (:require
     [isaac.config.checks]
-    [isaac.episodes.cli]
     [isaac.module.protocol :as module]
-    [isaac.recall.cli]
-    [isaac.recall.embedding]
     [isaac.session.policy.chronicle]
-    [isaac.session.policy.episodes]
     [isaac.turn.cli]))
 
 (defn create-module []

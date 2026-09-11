@@ -7,7 +7,6 @@
     [isaac.comm.delivery.worker :as delivery]
     [isaac.component.factory :as component-factory]
     [isaac.component.protocol :as component]
-    [isaac.episodes.worker :as episodes]
     [isaac.nexus :as nexus]
     [isaac.session.store.spi :as store]
     [isaac.turn.worker :as turn]
@@ -37,7 +36,7 @@
 
   (it "contributes the lifecycle first and the workers after it"
     (let [components (:isaac/component (edn/read-string (slurp "resources/isaac-manifest.edn")))]
-      (should= [:agent-lifecycle :comm-delivery :episodes-worker :turn-queue]
+      (should= [:agent-lifecycle :comm-delivery :turn-queue]
                (vec (keys components)))
       (should= #{'isaac.agent.component}
                (set (map :namespace (vals components))))))
@@ -47,16 +46,13 @@
       (with-redefs [nexus/get       (constantly ::scheduler)
                     delivery/start! #(do (swap! calls conj [:delivery-start %]) ::delivery)
                     delivery/stop!  #(swap! calls conj [:delivery-stop %])
-                    episodes/start! #(do (swap! calls conj [:episodes-start %]) ::episodes)
-                    episodes/stop!  #(swap! calls conj [:episodes-stop %])
                     turn/start!     #(do (swap! calls conj [:turn-start %]) ::turn)
                     turn/stop!      #(swap! calls conj [:turn-stop %])]
-        (doseq [id [:comm-delivery :episodes-worker :turn-queue]]
+        (doseq [id [:comm-delivery :turn-queue]]
           (let [instance (component-factory/create id {})]
             (component/start instance)
             (component/stop instance))))
       (should= [[:delivery-start {}] [:delivery-stop ::delivery]
-                [:episodes-start {}] [:episodes-stop ::episodes]
                 [:turn-start {}] [:turn-stop ::turn]]
                @calls)))
 

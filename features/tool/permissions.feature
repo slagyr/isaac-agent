@@ -42,8 +42,6 @@ Feature: Global and crew tool allow/deny cascade
       | skill__list    |
       | comm__send     |
       | hail__send     |
-      | recall__search |
-      | recall__scene  |
 
   Scenario: Global deny exec is inherited
     Given config:
@@ -76,8 +74,6 @@ Feature: Global and crew tool allow/deny cascade
       | skill__list    |
       | comm__send     |
       | hail__send     |
-      | recall__search |
-      | recall__scene  |
 
   Scenario: Crew allow re-enables a globally denied tool
     Given config:
@@ -113,8 +109,6 @@ Feature: Global and crew tool allow/deny cascade
       | skill__list    |
       | comm__send     |
       | hail__send     |
-      | recall__search |
-      | recall__scene  |
 
   Scenario: Crew deny overlays and does not drop a global deny
     Given config:
@@ -148,8 +142,6 @@ Feature: Global and crew tool allow/deny cascade
       | skill__list    |
       | comm__send     |
       | hail__send     |
-      | recall__search |
-      | recall__scene  |
 
   Scenario: Crew deny all then allow memory leaves only memory tools
     Given config:
@@ -221,5 +213,3 @@ Feature: Global and crew tool allow/deny cascade
       | skill__list    |
       | comm__send     |
       | hail__send     |
-      | recall__search |
-      | recall__scene  |

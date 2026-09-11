@@ -80,7 +80,6 @@
  :isaac/component
  {:agent-lifecycle {:namespace isaac.agent.component}
   :comm-delivery   {:namespace isaac.agent.component}
-  :episodes-worker {:namespace isaac.agent.component}
   :turn-queue      {:namespace isaac.agent.component}}
 
  :isaac/cli
@@ -103,19 +102,7 @@
   :sessions
   {:usage "sessions [subcommand] [options]",
    :summary "Manage stored conversation sessions",
-   :namespace isaac.session.cli},
-  :embed
-  {:usage "embed [options] [text ...]",
-   :summary "Embed text with the configured embedding provider",
-   :namespace isaac.recall.embedding.cli},
-  :episodes
-  {:usage "episodes [subcommand] [options]",
-   :summary "Manage episodic memory (migrate sessions to scenes + gists)",
-   :namespace isaac.episodes.cli},
-  :recall
-  {:usage "recall [options] <query>",
-   :summary "Rank a crew's indexed scenes against a query",
-   :namespace isaac.recall.cli}},
+   :namespace isaac.session.cli}},
  :isaac.agent/llm-api
  {:messages {:factory isaac.llm.api.messages/make},
   :grover {:factory isaac.llm.api.grover/make},
@@ -143,9 +130,7 @@
   :skill/load {:factory isaac.tool.skill/load-skill-tool-factory},
   :skill/list {:factory isaac.tool.skill/list-skills-tool-factory},
   :memory/get {:factory isaac.tool.builtin/memory-get-tool-factory},
-  :comm/send {:factory isaac.tool.comm-send/comm-send-tool-factory},
-  :recall/search {:factory isaac.tool.builtin/recall-search-tool-factory},
-  :recall/scene {:factory isaac.tool.builtin/recall-scene-tool-factory}},
+  :comm/send {:factory isaac.tool.comm-send/comm-send-tool-factory}},
  :isaac.agent/provider-template
  {:anthropic
   {:template
@@ -792,83 +777,10 @@
     :description
     "Directory-name to prompt-type mapping for prepared prompts",
     :key-spec {:type :string},
-    :value-spec {:type :string}}},
-  :embedding
-  {:schema
-   {:name :embedding,
-    :type :map,
-    :description "Optional embedding capability (discriminated on :source)",
-    :schema
-    {:source
-     {:type :keyword,
-      :description "Embedding source discriminator",
-      :validations [[:one-of? :provider]]},
-     :provider
-     {:type :id,
-      :description "Provider id (or grover:<target> simulation alias) resolved through :providers / templates",
-      :validations [[:present-when? :source :provider]]},
-     :model
-     {:type :string,
-      :description "Wire model id for the embedding provider (never enters :models)",
-      :validations [[:present-when? :source :provider]]}}}},
-   :episodes
-   {:schema
-    {:name :episodes,
-     :type :map,
-     :description "Episodic memory settings (migration / gisting)",
-     :schema
-     {:gist-model
-      {:type :id,
-       :description "Chat model ref used for scene segmentation + gisting (defaults to :defaults :model)"},
-      :ttl-minutes
-      {:type :int,
-       :description "Warm-episode TTL in minutes (default 60)"},
-      :seal
-      {:type :map,
-       :description "Live-sealing triggers (topic drift is primary; size cap is the backstop)",
-       :schema
-       {:size-cap
-        {:type :int,
-         :description "Unsealed-tail message count that forces a seal (default 80)"},
-        :drift-threshold
-        {:type :double,
-         :description "Cosine below which the new exchange has drifted from the rolling open-scene vector"},
-        :min-tail
-        {:type :int,
-         :description "Minimum unsealed-tail messages before drift may fire"},
-        :idle-minutes
-        {:type :int,
-         :description "Minutes of quiet before the episodes worker idle-seals the whole tail (default 3)"}}}}}},
-   :recall
-   {:schema
-    {:name :recall,
-     :type :map,
-     :description "Hybrid retrieval weights, recency half-life, and match floor",
-     :schema
-     {:half-life
-      {:type :int,
-       :description "Recency half-life in days (default 30)"},
-      :floor-cos
-      {:type :double,
-       :description "Match-floor cosine (default 0.47; 0 disables)"},
-      :weights
-      {:type :map,
-       :description "Channel weights as parts multipliers (defaults 1, recency 0.5)",
-       :schema
-       {:text    {:type :double, :description "Text-vector cosine weight"},
-        :gist    {:type :double, :description "Gist-vector cosine weight"},
-        :lex     {:type :double, :description "Lexical term-overlap weight"},
-        :recency {:type :double, :description "Recency channel weight"}}}
-      :inject
-      {:type :map
-       :description "Recall-at-open injection tiers (defaults :full 1, :gists 2)"
-       :schema
-       {:full  {:type :int :description "Top hits that include distilled text"}
-        :gists {:type :int :description "Following hits that include gist only"}}}}}}}
+    :value-spec {:type :string}}}}
 
  :isaac.agent/session-policy
- {:chronicle {:factory isaac.session.policy.chronicle/create}
-  :episodes  {:factory isaac.session.policy.episodes/create}}
+ {:chronicle {:factory isaac.session.policy.chronicle/create}}
 
  :isaac.config/check
  {:comm-reserved-schema
@@ -879,9 +791,7 @@
   {:fn isaac.config.checks/check-crew-model-aliases},
   :manifest-refs {:fn isaac.config.checks/check-manifest-refs},
   :resolved-providers
-  {:fn isaac.config.checks/check-resolved-providers},
-  :embedding-provider
-  {:fn isaac.config.checks/check-embedding-provider}
+  {:fn isaac.config.checks/check-resolved-providers}
   :tool-allow-tokens
   {:fn isaac.config.checks/check-tool-allow-tokens}
   :session-policy

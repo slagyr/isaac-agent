@@ -11,6 +11,9 @@
 
   (describe "resolve-history-retention"
 
+    #_{:clj-kondo/ignore [:unresolved-symbol]}
+    (around [example] (nexus/-with-nested-nexus {:fs (fs/mem-fs)} (example)))
+
     (it "defaults to retain"
       (should= :retain (sut/resolve-history-retention {} "main" nil)))
 
