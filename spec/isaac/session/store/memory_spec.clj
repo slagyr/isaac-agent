@@ -17,7 +17,7 @@
     (it "truncates a torn trailing line on disk and in memory"
       (let [root "/test/memory-torn"
             s    (sut/create-store root)
-            path (c/current-transcript-path root "torn")
+            path (c/current-transcript-path root "main" "torn")
             mem  (fs/instance)]
         (store/open-session! s "torn" {:crew "main"})
         (store/append-message! s "torn" {:role "user" :content "Begin"})
@@ -56,7 +56,65 @@
       (let [s     (sut/create-store "/tmp/isaac")
             entry (store/open-session! s "friday-debug"
                                        {:crew "main" :config {:defaults {:history-retention :prune}}})]
-        (should= :prune (:history-retention entry)))))
+        (should= :prune (:history-retention entry))))
+
+    (it "stamps :session-policy :chronicle by default"
+      (let [s     (sut/create-store)
+            entry (store/open-session! s "harbor-log" {:crew "main"})]
+        (should= :chronicle (:session-policy entry))))
+
+    (it "stamps an explicit :session-policy"
+      (let [s     (sut/create-store)
+            entry (store/open-session! s "lantern-room" {:crew "cordelia" :session-policy :episodes})]
+        (should= :episodes (:session-policy entry))
+        (should= "cordelia" (:crew entry))))
+
+    (it "refuses an id that already belongs to another crew"
+      (let [s (sut/create-store)]
+        (store/open-session! s "lantern-room" {:crew "cordelia"})
+        (try
+          (store/open-session! s "lantern-room" {:crew "main"})
+          (should-fail "expected crew collision")
+          (catch clojure.lang.ExceptionInfo e
+            (should (re-find #"belongs to crew cordelia" (ex-message e)))
+            (should= :crew-collision (:reason (ex-data e)))))
+        (should= "cordelia" (:crew (store/get-session s "lantern-room")))))
+
+    (it "reuses an existing session when crew is omitted"
+      (let [s (sut/create-store)]
+        (store/open-session! s "trash-can" {:crew "oscar"})
+        (let [again (store/open-session! s "trash-can" {})]
+          (should= "oscar" (:crew again))
+          (should= "trash-can" (:id again)))))
+
+    (it "hydrates a session that exists on disk but not in the memory atom"
+      (let [root "/hydrate-root"
+            first (sut/create-store root)
+            _     (store/open-session! first "lantern-room" {:crew "cordelia" :session-policy :episodes})
+            second (sut/create-store root)
+            entry  (store/get-session second "lantern-room")]
+        (should= "lantern-room" (:id entry))
+        (should= "cordelia" (:crew entry))
+        (should= :episodes (:session-policy entry))))
+    )
+
+  (describe "rename-session!"
+
+    (it "moves the nested directory so the old id cannot hydrate from disk"
+      (let [root "/rename-root"
+            s    (sut/create-store root)
+            fs*  (fs/instance)]
+        (store/open-session! s "joe" {:crew "main" :tags #{:wip}})
+        (store/rename-session! s "joe" "skipper")
+        (should-be-nil (store/get-session s "joe"))
+        (should= "skipper" (:id (store/get-session s "skipper")))
+        (should-not (fs/exists? fs* (c/session-edn-path root "main" "joe")))
+        (should (fs/exists? fs* (c/session-edn-path root "main" "skipper")))
+        (let [fresh (sut/create-store root)]
+          (should-be-nil (store/get-session fresh "joe"))
+          (should= "skipper" (:id (store/get-session fresh "skipper")))
+          (should= #{:wip} (:tags (store/get-session fresh "skipper"))))))
+    )
 
   (describe "append-message!"
 
@@ -99,7 +157,17 @@
           (should= "2026-04-28T10:00:00" (:created-at entry))
           (should= "direct" (:chat-type entry))
           (should-not (contains? entry :createdAt))
-          (should-not (contains? entry :chatType))))))
+          (should-not (contains? entry :chatType)))))
+
+    (it "persists session.edn so last-input-tokens survive a disk read"
+      (let [root "/mem-persist"
+            s    (sut/create-store root)]
+        (store/open-session! s "lantern-room" {:crew "cordelia"})
+        (store/update-session! s "lantern-room" {:last-input-tokens 85 :model "beta"})
+        (let [path (c/session-edn-path root "cordelia" "lantern-room")
+              edn  (read-string (fs/slurp (fs/instance) path))]
+          (should= 85 (:last-input-tokens edn))
+          (should= "beta" (:model edn))))))
 
   (describe "drop-orphan-toolcalls"
 

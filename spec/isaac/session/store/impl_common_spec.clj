@@ -9,6 +9,7 @@
 
 (def ^:private test-dir "/test/impl-common")
 (def ^:private session-id "sess")
+(def ^:private crew-id "cordelia")
 
 (defn- fs* [] (nexus/get :fs))
 
@@ -16,6 +17,83 @@
   [{:type "message" :id "a" :role "user"      :content "first"}
    {:type "message" :id "b" :role "assistant" :content "second reported a CI regression"}
    {:type "message" :id "c" :role "user"      :content "third"}])
+
+(describe "impl-common nested session paths"
+
+  (it "nests a session directory under its crew"
+    (should= "/test/impl-common/sessions/cordelia/sess"
+             (sut/session-dir test-dir crew-id session-id)))
+
+  (it "session.edn lives under the nested session directory"
+    (should= "/test/impl-common/sessions/cordelia/sess/session.edn"
+             (sut/session-edn-path test-dir crew-id session-id)))
+
+  (it "current.ednl lives under the nested session directory"
+    (should= "/test/impl-common/sessions/cordelia/sess/current.ednl"
+             (sut/current-transcript-path test-dir crew-id session-id)))
+
+  (it "index.edn lives at sessions/index.edn"
+    (should= "/test/impl-common/sessions/index.edn"
+             (sut/index-path test-dir)))
+
+  (it "turn.edn lives under the nested session directory"
+    (should= "/test/impl-common/sessions/cordelia/sess/turn.edn"
+             (sut/turn-marker-path test-dir crew-id session-id)))
+  )
+
+(describe "impl-common sessions index"
+
+  #_{:clj-kondo/ignore [:unresolved-symbol]}
+  (around [example]
+    (nexus/-with-nexus {:fs (fs/mem-fs)}
+      (example)))
+
+  (it "writes and reads an index row keyed by session id"
+    (let [fs* (fs*)]
+      (sut/write-index! fs* test-dir
+                        {"lantern-room" {:crew "cordelia" :session-policy :episodes
+                                         :updated-at "2026-03-01T10:00:00"}})
+      (let [idx (sut/read-index fs* test-dir)]
+        (should= "cordelia" (get-in idx ["lantern-room" :crew]))
+        (should= :episodes (get-in idx ["lantern-room" :session-policy])))))
+
+  (it "locates a nested session via the index"
+    (let [fs* (fs*)]
+      (sut/write-index! fs* test-dir
+                        {"lantern-room" {:crew "cordelia" :session-policy :episodes}})
+      (should= {:crew "cordelia" :session-policy :episodes}
+               (select-keys (sut/locate-session test-dir "lantern-room" fs*)
+                            [:crew :session-policy]))
+      (should= (sut/session-dir test-dir "cordelia" "lantern-room")
+               (:dir (sut/locate-session test-dir "lantern-room" fs*)))))
+
+  (it "scans nested directories when the index does not know the session and repairs the index"
+    (let [fs*  (fs*)
+          path (sut/session-edn-path test-dir "cordelia" "lantern-room")]
+      (sut/mkdirs*! fs* (sut/session-dir test-dir "cordelia" "lantern-room"))
+      (sut/atomic-spit! fs* path
+                        (sut/write-edn {:id "lantern-room" :name "Lantern Room"
+                                        :crew "cordelia" :session-policy :chronicle}))
+      (sut/write-index! fs* test-dir {"harbor-log" {:crew "main" :session-policy :chronicle}})
+      (let [loc (sut/locate-session test-dir "lantern-room" fs*)]
+        (should= "cordelia" (:crew loc))
+        (should= :chronicle (:session-policy loc)))
+      (let [idx (sut/read-index fs* test-dir)]
+        (should= "main" (get-in idx ["harbor-log" :crew]))
+        (should= "cordelia" (get-in idx ["lantern-room" :crew]))
+        (should= :chronicle (get-in idx ["lantern-room" :session-policy])))))
+
+  (it "refuses a create when the id already belongs to another crew"
+    (let [fs* (fs*)]
+      (sut/write-index! fs* test-dir
+                        {"lantern-room" {:crew "cordelia" :session-policy :episodes}})
+      (try
+        (sut/assert-unique-session-id! test-dir "lantern-room" "main" fs*)
+        (should-fail "expected collision")
+        (catch clojure.lang.ExceptionInfo e
+          (should (re-find #"belongs to crew cordelia" (ex-message e)))
+          (should= :crew-collision (:reason (ex-data e)))))))
+  )
 
 (describe "impl-common ednl transcript"
 

@@ -44,9 +44,9 @@
       (helper/append-message! "/test/sessions" "roomy-chat" {:role "user" :content "Please inspect the session transcript footprint carefully."})
       (helper/append-message! "/test/sessions" "roomy-chat" {:role "assistant" :content "I am measuring transcript size separately from tokens."}))
     (let [output (with-out-str (should= 0 (sut/run-fn {:home "/test" :_raw-args ["list"]})))]
-      (should (re-find #"SESSION\s+AGE\s+SIZE\s+USED\s+WINDOW\s+PCT\s+CREW" output))
-      (should (re-find #"compact-chat\s+\S+\s+\d+B\s+0\s+32,768\s+\d+%\s+main" output))
-      (should (re-find #"roomy-chat\s+\S+\s+\d+(\.\d)?K\s+0\s+32,768\s+\d+%\s+main" output))
+      (should (re-find #"SESSION\s+AGE\s+SIZE\s+USED\s+WINDOW\s+PCT\s+CREW\s+POLICY" output))
+      (should (re-find #"compact-chat\s+\S+\s+\d+B\s+0\s+32,768\s+\d+%\s+main\s+chronicle" output))
+      (should (re-find #"roomy-chat\s+\S+\s+\d+(\.\d)?K\s+0\s+32,768\s+\d+%\s+main\s+chronicle" output))
       (should-not-contain "1,000,000" output)))
 
   (it "does not parse transcripts when listing SIZE"
@@ -71,6 +71,14 @@
         (let [output (with-out-str (should= 0 (sut/run-fn {:home "/test" :_raw-args ["show" "workbench"]})))]
           (should= #{:fs/read :fs/write} (set @registered))
           (should (re-find #"Tools\s+2" output))))))
+
+  (it "hydrates show from disk when the registered store's atom is empty"
+    (helper/create-session! "/test/sessions" "lantern-room" {:crew "cordelia"})
+    (let [fresh (isaac.session.store.memory/create-store "/test/sessions")]
+      (store/register-store! fresh)
+      (let [output (with-out-str (should= 0 (sut/run-fn {:home "/test" :_raw-args ["show" "lantern-room"]})))]
+        (should (re-find #"Crew\s+cordelia" output))
+        (should (re-find #"Session\s+lantern-room" output)))))
 
   (it "renders show output as JSON"
     (helper/create-session! "/test/sessions" "joe" {:crew "main" :tags #{:project/x}})

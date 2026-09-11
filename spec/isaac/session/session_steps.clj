@@ -114,16 +114,35 @@
 ;; Foundation parse-isaac-value special-cases tools.allow as a comma-split of
 ;; unqualified keywords (legacy allow-list tables). Polar cascade values are
 ;; EDN (:all, [:exec/run], [:memory/*]); read those first so crew overlays land.
+(defn- quote-hyphenated-edn-tokens
+  "Quote unquoted hyphenated tokens so `[2026-03-01-1000-s1x1]` is a string
+   vector. Bare hyphenated tokens are invalid EDN numbers."
+  [value]
+  (str/replace value
+               #"(?<=[\[\{\s,])(?<!:)([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)(?=[\]\}\s,])"
+               "\"$1\""))
+
 (alter-var-root #'ffs/parse-isaac-value
   (fn [orig]
     (fn [file-path path value]
-      (if (and (#{"tools.allow" "tools.deny"} path)
-               (or (str/starts-with? value "[")
-                   (str/starts-with? value "{")
-                   (str/starts-with? value ":")
-                   (str/starts-with? value "\"")
-                   (str/starts-with? value "#")))
+      (cond
+        (and (#{"tools.allow" "tools.deny"} path)
+             (or (str/starts-with? value "[")
+                 (str/starts-with? value "{")
+                 (str/starts-with? value ":")
+                 (str/starts-with? value "\"")
+                 (str/starts-with? value "#")))
         (edn/read-string value)
+
+        (and (or (str/starts-with? value "[")
+                 (str/starts-with? value "{"))
+             (re-find #"[0-9]+-[0-9A-Za-z]" value))
+        (try
+          (edn/read-string value)
+          (catch Exception _
+            (edn/read-string (quote-hyphenated-edn-tokens value))))
+
+        :else
         (orig file-path path value)))))
 
 ;; Foundation row-matches? treats the table value as a raw regex. Feature cells
@@ -218,7 +237,12 @@
   (store/chronicle-transcript (session-store) session-key))
 
 (defn- open-session! [session-name opts]
-  (store/open-session! (session-store) session-name opts))
+  (let [crew (or (:crew opts) "main")
+        cfg  (or (try (loader/snapshot "feature session open")
+                      (catch Exception _ nil))
+                 {})
+        pol  (policy/for-crew crew cfg (session-store))]
+    (policy/open-session! pol session-name opts)))
 
 (defn- update-session! [session-key updates]
   (store/update-session! (session-store) session-key updates))
@@ -994,11 +1018,17 @@
         (when (seq @errors)
           (throw (ex-info "concurrent toolResult append failed" {:errors @errors})))))))
 
+(defn- session-current-path [session]
+  (session-impl-common/current-transcript-path
+    (root-dir)
+    (or (:crew session) (:agent session) "main")
+    (:id session)))
+
 (defn every-transcript-line-valid-edn [key-str]
   (with-feature-fs
     (fn []
       (let [session (get-session key-str)
-            path    (session-impl-common/current-transcript-path (root-dir) (:id session))
+            path    (session-current-path session)
             text    (or (fs/slurp (mem-fs) path) "")
             lines   (vec (remove str/blank? (str/split-lines text)))]
         (g/should (seq lines))
@@ -1014,7 +1044,11 @@
             session (get-session key-str)
             entries (vec (get-transcript key-str))
             kept    (vec (drop (inc idx) entries))]
-        (session-impl-common/write-transcript! (root-dir) (:id session) kept (mem-fs))))))
+        (session-impl-common/write-transcript! (root-dir)
+                                              (or (:crew session) "main")
+                                              (:id session)
+                                              kept
+                                              (mem-fs))))))
 
 (defn compaction-spliced-into-session [key-str table]
   (g/assoc! :current-key key-str)
@@ -1056,6 +1090,8 @@
   ([content key-str]
    (user-sends-on-session content key-str nil))
   ([content key-str turnstiles]
+   (user-sends-on-session content key-str turnstiles nil))
+  ([content key-str turnstiles crew-id]
    (when-let [prior (g/get :turn-future)]
      (when (realized? prior)
        (g/dissoc! :turn-future)))
@@ -1079,7 +1115,7 @@
                                 :context-window (:context-window model-cfg)
                                 :origin         {:kind :cli}
                                 :comm           channel
-                                :crew           (active-crew-id)
+                                :crew           (or crew-id (active-crew-id))
                                 :config         cfg}
                          (seq turnstiles) (assoc :turnstiles turnstiles))]
      (g/assoc! :channel-events events)
@@ -1249,7 +1285,8 @@
       (let [entry      (get-session session-key)
             fs*        (mem-fs)
             root       (root-dir)
-            path       (session-impl-common/current-transcript-path root (:id entry))
+            path       (session-impl-common/current-transcript-path
+                          root (or (:crew entry) "main") (:id entry))
             transcript (get-transcript session-key)
             edn-lines  (mapv session-impl-common/write-edn transcript)]
         (fs/mkdirs fs* (fs/parent path))
@@ -1355,7 +1392,8 @@
 (defn- session-match-entry [entry]
   (assoc entry
          :crew (or (:crew entry) (:agent entry))
-         :file (str "sessions/" (:id entry) "/current.ednl")))
+         :file (str "sessions/" (or (:crew entry) (:agent entry) "main")
+                    "/" (:id entry) "/current.ednl")))
 
 (defn- transcript-match-entry [entry include-compaction-message? denormalize-tool-call? denormalize-tool-result?]
   (let [calls (transcript/tool-calls (:message entry))
@@ -1469,8 +1507,9 @@
     (g/should= [] (:failures result))))
 
 (defn session-file-is-quoted [expected-path]
-  (let [entry (current-session)]
-    (g/should= expected-path (str "sessions/" (:id entry) "/current.ednl"))))
+  (let [entry (current-session)
+        crew  (or (:crew entry) (:agent entry) "main")]
+    (g/should= expected-path (str "sessions/" crew "/" (:id entry) "/current.ednl"))))
 
 (defn most-recent-session-is [session-name]
   (let [expected (unquote-string session-name)
@@ -1979,6 +2018,14 @@
    turn-start so cancel/suspend see a live turn. Captures :llm-request
    (grover/last-request), :llm-result, :output. Use 'await-turn!' or a
    later step to force completion for async compaction scenarios.")
+
+(defn user-sends-on-session-as-crew [content key-str crew]
+  (user-sends-on-session content key-str nil crew))
+
+(defwhen #"the user sends \"(.+)\" on session \"([^\"]+)\" as crew \"([^\"]+)\""
+  isaac.session.session-steps/user-sends-on-session-as-crew
+  "Same as the two-arg send, with an explicit crew so a second session
+   on a named crew can run in one scenario.")
 
 (defwhen #"the turn ends on session \"([^\"]+)\"" isaac.session.session-steps/turn-ends-on-session)
 

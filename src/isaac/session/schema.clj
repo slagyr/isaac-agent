@@ -65,6 +65,7 @@
             :crew                (mutable {:type :string
                                            :validate known-crew?
                                            :message "crew does not exist"})
+            :session-policy      (immutable {:type :keyword})
             :model               (mutable {:type :string})
             :provider            (mutable {:type :string})
             :tags                (mutable {:type :ignore

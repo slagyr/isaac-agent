@@ -7,7 +7,8 @@
 
 (deftype ChroniclePolicy [store]
   policy/SessionPolicy
-  (open-session! [_ name opts] (store/open-session! store name opts))
+  (open-session! [_ name opts]
+    (store/open-session! store name (merge {:session-policy :chronicle} opts)))
   (delete-session! [_ name] (store/delete-session! store name))
   (rename-session! [_ old-name new-name] (store/rename-session! store old-name new-name))
   (list-sessions [_] (store/list-sessions store))

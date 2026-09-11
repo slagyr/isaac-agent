@@ -1,27 +1,28 @@
 (ns isaac.episodes.ids
-  "Timestamped episode/scene ids: <yyyy-MM-dd-HHmm>-<chaos>."
+  "Timestamped episode/scene ids: yyyyMMddHHmmssSSS (17 digits) minted from
+   the clock at creation. The store bumps by 1 ms on a collision inside the
+   same parent. Existing ids are kept as-is by migrate-layout."
   (:import
     (java.time Instant ZoneOffset)
-    (java.time.format DateTimeFormatter)
-    (java.util Random)))
+    (java.time.format DateTimeFormatter)))
 
 (def ^:private TS_FMT
-  (DateTimeFormatter/ofPattern "yyyy-MM-dd-HHmm"))
-
-(def ^:private BASE36 "0123456789abcdefghijklmnopqrstuvwxyz")
+  (DateTimeFormatter/ofPattern "yyyyMMddHHmmssSSS"))
 
 (defn now-ms []
   (System/currentTimeMillis))
 
 (defn chaos-suffix
-  "Few random base36 chars for same-minute uniqueness."
-  ([] (chaos-suffix 4))
-  ([n]
-   (let [rnd (Random.)]
-     (apply str (repeatedly n #(.charAt BASE36 (.nextInt rnd 36)))))))
+  "Legacy no-op. Ids are 17 digits with no chaos suffix; kept so older specs
+   that redef this var still load."
+  ([] "")
+  ([_n] ""))
 
 (defn- parse-instant [ts]
   (cond
+    (instance? Instant ts)
+    ts
+
     (number? ts)
     (Instant/ofEpochMilli (long ts))
 
@@ -47,9 +48,19 @@
     (Instant/ofEpochMilli (now-ms))))
 
 (defn timestamped-id
-  "Build `<yyyy-MM-dd-HHmm>-<chaos>` from a message/session timestamp."
-  ([ts] (timestamped-id ts (chaos-suffix)))
-  ([ts chaos]
-   (let [inst (parse-instant ts)
-         stamp (.format TS_FMT (.atOffset inst ZoneOffset/UTC))]
-     (str stamp "-" chaos))))
+  "Build `yyyyMMddHHmmssSSS` (17 digits) from an Instant or message timestamp.
+   Never minted from a message timestamp for episode/scene creation — callers
+   pass the clock Instant. Collision bump is the store's job (same parent)."
+  ([ts]
+   (let [inst (parse-instant ts)]
+     (.format TS_FMT (.atOffset inst ZoneOffset/UTC)))))
+
+(defn unique-timestamped-id
+  "Mint `timestamped-id` for `ts`, then bump by 1 ms until the id is not in
+   `used` (a set of sibling ids under the same parent)."
+  [ts used]
+  (loop [inst (parse-instant ts)]
+    (let [id (.format TS_FMT (.atOffset inst ZoneOffset/UTC))]
+      (if (contains? used id)
+        (recur (.plusMillis inst 1))
+        id))))

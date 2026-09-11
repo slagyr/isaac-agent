@@ -108,11 +108,12 @@
                (nil? (policy/get-session sess session-key))
                (or (:origin request) resolved-cwd))
       (policy/open-session! sess session-key
-                            {:crew          crew-id
-                             :cwd           resolved-cwd
-                             :origin        (:origin request)
-                             :config        cfg
-                             :session-store session-store*}))
+                            {:crew           crew-id
+                             :cwd            resolved-cwd
+                             :origin         (:origin request)
+                             :config         cfg
+                             :session-store  session-store*
+                             :session-policy (policy/policy-name crew-cfg)}))
     request))
 
 ;; endregion ^^^^^ Helpers ^^^^^

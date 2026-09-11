@@ -210,7 +210,7 @@ Feature: Sessions Command
     Then the exit code is 0
     And session "design-chat" does not exist
     And the isaac file "sessions/design-chat.jsonl" does not exist
-    And the isaac file "sessions/design-chat/current.ednl" does not exist
+    And the isaac file "sessions/main/design-chat/current.ednl" does not exist
 
   Scenario: sessions list output is colorized when --color always is set
     Given the following sessions exist:

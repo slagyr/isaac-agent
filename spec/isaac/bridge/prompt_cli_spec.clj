@@ -398,5 +398,16 @@
         (should= 2 (count @keys))
         (should= ["reef-chat" "reef-chat"] @keys)))
 
+    (it "prints the collision and exits 1 when --session belongs to another crew"
+      (let [ss (store/registered-store)]
+        (store/open-session! ss "lantern-room" {:crew crew-name})
+        (let [err (java.io.StringWriter.)]
+          (binding [*err* err]
+            (with-out-str
+              (should= 1 (sut/run (assoc base-opts :message "hello" :crew "ketch"
+                                         :session "lantern-room" :create :always)))))
+          (should (str/includes? (str err) "session lantern-room belongs to crew"))
+          (should= crew-name (:crew (store/get-session ss "lantern-room"))))))
+
     )
   )

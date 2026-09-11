@@ -25,18 +25,85 @@
 (defn- get-val [m k]
   (or (get m k) (get m (name k))))
 
-(defn- persist-transcript! [root session-id entries]
-  (when (and root session-id)
-    (c/write-transcript! root session-id entries (fs/instance))))
+(defn- persist-entry! [root entry transcript]
+  (when (and root entry)
+    (let [fs*  (fs/instance)
+          id   (:id entry)
+          crew (or (:crew entry) "main")]
+      (c/mkdirs*! fs* (c/session-dir root crew id))
+      (c/atomic-spit! fs* (c/session-edn-path root crew id)
+                      (c/write-edn (dissoc entry :session-file :effective-history-offset)))
+      (c/upsert-index-row! fs* root id {:crew           crew
+                                        :session-policy (or (:session-policy entry) :chronicle)
+                                        :updated-at     (:updated-at entry)
+                                        :id             id})
+      (when transcript
+        (c/write-transcript! root crew id transcript fs*)))))
 
-(defn- append-transcript-line! [root session-id entry]
-  (when (and root session-id)
-    (c/append-entry! root session-id entry (fs/instance))))
+(defn- persist-transcript! [root entry-or-id entries]
+  (when (and root entry-or-id)
+    (let [id   (if (map? entry-or-id) (:id entry-or-id) entry-or-id)
+          fs*  (fs/instance)
+          loc  (c/locate-session root id fs*)
+          crew (or (when (map? entry-or-id) (:crew entry-or-id))
+                   (:crew loc)
+                   "main")]
+      (c/write-transcript! root crew id entries fs*))))
+
+(defn- append-transcript-line!
+  ([root session-id entry]
+   (append-transcript-line! root session-id "main" entry))
+  ([root session-id crew entry]
+   (when (and root session-id)
+     (c/append-entry! root session-id entry (fs/instance)))))
 
 (defn- effective-config [passed-config]
   (or passed-config
       (loader/snapshot "session store config — ambient fallback when caller passes no :config")
       {}))
+
+(defn- resolve-policy [opts]
+  (or (:session-policy opts)
+      (when-let [raw (:session-store opts)]
+        (if (keyword? raw) raw (keyword raw)))
+      (when-let [crew (:crew opts)]
+        (when-let [raw (get-in (effective-config (:config opts)) [:crew crew :session-policy])]
+          (if (keyword? raw) raw (keyword raw))))
+      :chronicle))
+
+(defn- keywordize-policy [entry]
+  (cond-> entry
+    (and (contains? entry :session-policy) (string? (:session-policy entry)))
+    (update :session-policy keyword)))
+
+(defn- read-disk-session [root id]
+  (when root
+    (let [fs* (fs/instance)]
+      (when-let [loc (c/locate-session root id fs*)]
+        (let [path (str (or (:dir loc) (c/session-dir root (:crew loc) id)) "/session.edn")]
+          (when (fs/exists? fs* path)
+            (try
+              (let [raw (c/read-edn-line (fs/slurp fs* path))]
+                (when (map? raw)
+                  (-> raw c/keywordize-map keywordize-policy
+                      (assoc :id (or (:id raw) id)))))
+              (catch Exception _ nil))))))))
+
+(defn- ensure-hydrated!
+  "Load a session that exists on disk into the memory atom. Returns the entry or nil."
+  [root state id]
+  (or (get-in @state [:sessions id])
+      (when-let [entry (read-disk-session root id)]
+        (let [transcript (c/read-transcript-raw root id (fs/instance))]
+          (swap! state #(-> %
+                            (assoc-in [:sessions id] entry)
+                            (assoc-in [:transcripts id] (vec transcript))))
+          entry))))
+
+(defn- hydrate-all! [root state]
+  (when root
+    (doseq [id (keys (c/scan-session-dirs (fs/instance) root))]
+      (ensure-hydrated! root state id))))
 
 ;; endregion
 
@@ -53,7 +120,10 @@
   store/SessionStore
 
   (open-session! [_ name opts]
-    (let [opts      (c/entry-defaults opts)
+    (let [explicit-crew (when-let [c (:crew opts)]
+                          (let [s (str c)]
+                            (when-not (clojure.string/blank? s) s)))
+          opts      (c/entry-defaults opts)
           retention (resolve/resolve-history-retention (effective-config (:config opts))
                                                       (or (:crew opts) "main")
                                                       (:history-retention opts))
@@ -61,7 +131,14 @@
                         (when root
                           (naming/generate (store/ensure-naming-strategy! root (fs/instance)))))
           id        (c/session-id (or name "session"))
-          existing  (get-in @state [:sessions id])]
+          existing  (or (get-in @state [:sessions id])
+                        (ensure-hydrated! root state id))]
+      (when (and existing explicit-crew)
+        (let [have-crew (str (or (:crew existing) "main"))]
+          (when (not= explicit-crew have-crew)
+            (throw (ex-info (str "session " id " belongs to crew " have-crew)
+                            {:reason :crew-collision :id id
+                             :crew have-crew :wanted-crew explicit-crew})))))
       (cond
         (and existing (some? name) (not= name (:name existing)))
         (throw (ex-info (str "session already exists: " id)
@@ -80,16 +157,18 @@
                             :timestamp now
                             :version   3
                             :cwd       (or (:cwd opts) (System/getProperty "user.dir"))}
+              policy       (resolve-policy opts)
               entry        {:id                id
                             :key               id
                             :name              (or name id)
                             :nonce             (or (:nonce opts) (c/new-nonce))
-                             :created-at        now
-                             :updated-at        now
-                             :crew              (:crew opts)
-                             :tags              (or (:tags opts) #{})
-                             :channel           (:channel opts)
-                             :chat-type         (:chat-type opts)
+                            :created-at        now
+                            :updated-at        now
+                            :crew              (:crew opts)
+                            :session-policy    policy
+                            :tags              (or (:tags opts) #{})
+                            :channel           (:channel opts)
+                            :chat-type         (:chat-type opts)
                             :cwd               (or (:cwd opts) (System/getProperty "user.dir"))
                             :origin            (or (:origin opts) {:kind :cli})
                             :history-retention retention
@@ -104,19 +183,24 @@
                             (assoc-in [:sessions id] entry)
                             (assoc-in [:transcripts id] [header])))
           (when root
-            (persist-transcript! root id [header]))
+            (persist-entry! root entry [header]))
           (log/info :session/created :sessionId id)
           entry))))
 
   (delete-session! [_ name]
-    (let [id (c/session-id name)]
-      (when (get-in @state [:sessions id])
+    (let [id   (c/session-id name)
+          entry (get-in @state [:sessions id])]
+      (when entry
         (swap! state #(-> %
                           (update :sessions dissoc id)
                           (update :transcripts dissoc id)
                           (update :frozen dissoc id)))
         (when root
-          (c/delete-tree! (fs/instance) (c/session-dir root id)))
+          (let [fs*  (fs/instance)
+                crew (or (:crew entry) "main")]
+            (c/delete-tree! fs* (c/session-dir root crew id))
+            (c/delete-tree! fs* (c/session-dir root id))
+            (c/write-index! fs* root (dissoc (c/read-index fs* root) id))))
         true)))
 
   (rename-session! [this old-name new-name]
@@ -156,37 +240,54 @@
                           frozen (update :frozen dissoc old-id)
                           frozen (assoc-in [:frozen new-id] frozen)))
           (when root
-            (c/move-tree! (fs/instance) (c/session-dir root old-id) (c/session-dir root new-id)))
+            (let [fs*  (fs/instance)
+                  crew (or (:crew renamed) "main")]
+              (c/move-tree! fs* (c/session-dir root crew old-id) (c/session-dir root crew new-id))
+              (c/move-tree! fs* (c/session-dir root old-id) (c/session-dir root new-id))
+              ;; Rewrite session.edn so scan-session-dirs keys the moved
+              ;; tree by new-id. Leaving :id as old-id lets hydrate revive
+              ;; the source after the directory move.
+              (persist-entry! root renamed nil)
+              (c/write-index! fs* root (-> (c/read-index fs* root)
+                                           (dissoc old-id)
+                                           (assoc new-id {:crew           crew
+                                                          :session-policy (or (:session-policy renamed) :chronicle)
+                                                          :updated-at     (:updated-at renamed)
+                                                          :id             new-id})))))
           renamed))))
 
   (list-sessions [_]
+    (hydrate-all! root state)
     (->> (vals (:sessions @state)) (sort-by :id) vec))
 
   (list-sessions-by-agent [_ agent]
+    (hydrate-all! root state)
     (->> (vals (:sessions @state))
          (sort-by :id)
          (filter #(= agent (:crew %)))
          vec))
 
   (most-recent-session [_]
+    (hydrate-all! root state)
     (->> (vals (:sessions @state)) (sort-by :updated-at) last))
 
   (get-session [_ name]
-    (get-in @state [:sessions (c/session-id name)]))
+    (let [id (c/session-id name)]
+      (ensure-hydrated! root state id)))
 
   (get-transcript [_ name]
     (let [id (c/session-id name)]
-      (when (get-in @state [:sessions id])
+      (when (ensure-hydrated! root state id)
         (get-in @state [:transcripts id] []))))
 
   (active-transcript [_ name]
     (let [id (c/session-id name)]
-      (when (get-in @state [:sessions id])
+      (when (ensure-hydrated! root state id)
         (get-in @state [:transcripts id] []))))
 
   (chronicle-transcript [_ name]
     (let [id (c/session-id name)]
-      (when (get-in @state [:sessions id])
+      (when (ensure-hydrated! root state id)
         (vec (concat (mapcat identity (get-in @state [:frozen id] []))
                      (get-in @state [:transcripts id] []))))))
 
@@ -201,7 +302,10 @@
                                      (assoc u :compaction (merge (or (:compaction entry) {}) compaction))
                                      u)))]
                  (merge entry updates))))
-      (get-in @state [:sessions id])))
+      (let [updated (get-in @state [:sessions id])]
+        (when root
+          (persist-entry! root updated nil))
+        updated)))
 
   (append-message! [_ name message]
     (let [id             (c/session-id name)
@@ -232,7 +336,13 @@
                                         (get-val message :to)      (assoc :last-to (get-val message :to))
                                         resolved-agent             (assoc :crew resolved-agent)))))))
       (when root
-        (append-transcript-line! root id entry))
+        (append-transcript-line! root id entry)
+        (when-let [sess (get-in @state [:sessions id])]
+          (c/upsert-index-row! (fs/instance) root id
+                               {:crew           (or (:crew sess) "main")
+                                :session-policy (or (:session-policy sess) :chronicle)
+                                :updated-at     now
+                                :id             id})))
       entry))
 
   (append-error! [_ name error-entry]
@@ -324,7 +434,10 @@
                                        (update :compaction-count inc))))))
       (when root
         (when (= :retain retention)
-          (c/write-ednl! (fs/instance) (c/frozen-transcript-path root id n) prefix))
+          (let [fs*  (fs/instance)
+                loc  (c/locate-session root id fs*)
+                crew (or (get-in @state [:sessions id :crew]) (:crew loc) "main")]
+            (c/write-ednl! fs* (c/frozen-transcript-path root crew id n) prefix)))
         (persist-transcript! root id new-current))
       compaction-entry))
 

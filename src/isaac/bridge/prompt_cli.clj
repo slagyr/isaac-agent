@@ -22,7 +22,8 @@
     [isaac.session.store.spi :as store]
     [isaac.tool.builtin :as builtin]
     [isaac.tool.memory :as memory]
-    [isaac.turnstile :as turnstile]))
+    [isaac.turnstile :as turnstile])
+  (:import (clojure.lang ExceptionInfo)))
 
 (defn- stderr-line! [text]
   (binding [*out* *err*]
@@ -169,6 +170,20 @@
     (policy-default-target opts override cfg session-store)
     (session-frequencies/resolve-session-targets (frequencies-cli/build-frequencies opts) session-store)))
 
+(defn- refuse-crew-collision!
+  "Refuse --session when an explicit --crew disagrees with the stored crew.
+   Missing --crew keeps the stored identity. --with-crew is a turn override,
+   not a reassignment."
+  [session-store session-key requested-crew]
+  (when (and requested-crew session-key session-store)
+    (when-let [existing (store/get-session session-store session-key)]
+      (let [have (str (or (:crew existing) "main"))
+            want (str requested-crew)]
+        (when (not= have want)
+          (throw (ex-info (str "session " session-key " belongs to crew " have)
+                          {:reason :crew-collision :id session-key
+                           :crew have :wanted-crew want})))))))
+
 (defn- ensure-session! [target override opts cfg session-store]
   (let [crew-id (episode-crew-id opts override cfg)
         sess    (prompt-policy opts override cfg session-store)
@@ -176,6 +191,7 @@
     (cond
       (:session-key target)
       (do
+        (refuse-crew-collision! session-store (:session-key target) (:crew opts))
         (when (and sess (nil? (policy/get-session sess (:session-key target)))
                    (or (:create? target) (:session opts)))
           (policy/open-session! sess (:session-key target)
@@ -286,12 +302,17 @@
                 target        (resolve-target opts override cfg session-store)]
             (if (:error target)
               (do (print-error! (:message target)) 1)
-              (let [session-key (ensure-session! target override opts cfg session-store)
-                    session     (or (when-let [sess (prompt-policy opts override cfg session-store)]
-                                      (policy/get-session sess session-key))
-                                    (store/get-session session-store session-key))
-                    {:keys [comm text]} (make-prompt-comm (seq (:observer opts)))]
-                (dispatch-prompt! opts cfg session-store session-key session comm text)))))))))
+              (try
+                (let [session-key (ensure-session! target override opts cfg session-store)
+                      session     (or (when-let [sess (prompt-policy opts override cfg session-store)]
+                                        (policy/get-session sess session-key))
+                                      (store/get-session session-store session-key))
+                      {:keys [comm text]} (make-prompt-comm (seq (:observer opts)))]
+                  (dispatch-prompt! opts cfg session-store session-key session comm text))
+                (catch ExceptionInfo e
+                  (if (= :crew-collision (:reason (ex-data e)))
+                    (do (print-error! (ex-message e)) 1)
+                    (throw e)))))))))))
 
 (def option-spec
   (concat

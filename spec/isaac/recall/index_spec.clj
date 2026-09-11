@@ -28,8 +28,8 @@
   (before
     (fs/mkdirs @mem root))
 
-  (it "index path is episodes/<crew>/index.edn"
-    (should= (str root "/episodes/cordelia/index.edn")
+  (it "index path is sessions/<crew>/recall/index.edn"
+    (should= (str root "/sessions/cordelia/recall/index.edn")
              (sut/index-path root "cordelia")))
 
   (it "reads nothing when the index file is absent"

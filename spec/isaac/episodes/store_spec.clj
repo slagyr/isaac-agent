@@ -168,6 +168,28 @@
       (should= "open-ep" (:id (sut/find-open-on-thread mem @root "cordelia" "reef-chat")))
       (should-be-nil (sut/find-open-on-thread mem @root "cordelia" "missing"))))
 
+  (it "keeps a thread-only episode under the legacy episodes/<crew>/<eid>/ tree"
+    (let [mem (fs/mem-fs)
+          ep  {:id "live-seal" :crew "cordelia" :status :open
+               :thread "supper-chat" :scene-ids []}]
+      (fs/mkdirs mem @root)
+      (sut/write-episode! mem @root ep [])
+      (should (fs/exists? mem (str (sut/episode-path @root "cordelia" "live-seal") "/episode.edn")))
+      (should-not (fs/exists? mem (sut/nested-episode-edn-path @root "cordelia" "supper-chat" "live-seal")))))
+
+  (it "reads a nested episode even when the parent session has no session.edn"
+    (let [mem (fs/mem-fs)
+          ep  {:id "20260301100000000" :crew "cordelia" :status :open
+               :thread "reef-chat" :session-id "reef-chat" :scene-ids []}]
+      (fs/mkdirs mem @root)
+      (sut/write-episode! mem @root ep [])
+      (let [read-back (sut/read-episode mem @root "cordelia" "20260301100000000")]
+        (should= "reef-chat" (:thread read-back))
+        (should= "reef-chat" (:session-id read-back))
+        (should= :open (:status read-back)))
+      (should= "20260301100000000"
+               (:id (sut/find-open-on-thread mem @root "cordelia" "reef-chat")))))
+
   (it "deletes the episode directory so the record is gone"
     (let [mem (fs/mem-fs)
           ep  {:id "20260301100000000" :crew "cordelia" :status :open

@@ -78,15 +78,32 @@
     (log/info :episodes/opened :episode id :crew crew :session-id session-id :origin origin)
     episode))
 
+(defn- stamp-closed-counters!
+  "episode.edn holds transcript-level counters. Copy last-input-tokens off
+   the session before compaction zeroes them."
+  [fs* root episode session]
+  (let [stamped (assoc episode
+                  :status :closed
+                  :last-input-tokens (or (:last-input-tokens session) 0))]
+    (episode-store/write-episode! fs* root stamped [])
+    stamped))
+
 (defn- ensure-open-container!
   [{:keys [store crew session-id] :as opts}]
-  (let [fs*  (runtime-fs)
-        root (runtime-root)
-        crew (or crew "main")
-        open (find-open fs* root crew session-id)]
-    (if open
+  (let [fs*        (runtime-fs)
+        root       (runtime-root)
+        crew       (or crew "main")
+        open       (find-open fs* root crew session-id)
+        ttl        (lifecycle/ttl-minutes (runtime-cfg))
+        transcript (when (and store session-id)
+                     (store/chronicle-transcript store session-id))
+        warm?      (and open (lifecycle/warm? transcript ttl))]
+    (if warm?
       {:episode open :action :warm}
-      (let [prior (latest-on-session fs* root crew session-id)
+      (let [prior (or (when open
+                        (stamp-closed-counters! fs* root open
+                                                (when store (store/get-session store session-id))))
+                      (latest-on-session fs* root crew session-id))
             ep    (open-container! (cond-> opts
                                      prior (assoc :parent-episode (:id prior))))]
         {:episode ep :action (if prior :chained :opened)}))))
@@ -112,34 +129,48 @@
 (defn- compact-chain!
   "Close the open episode (if any) against the pre-splice transcript, splice
    the backing session in place (session id never changes), then open a
-   successor container on the same session-id."
+   successor container on the same session-id. A session that has never
+   opened a container still gets a closed sibling + successor — compaction
+   is the chain event."
   [{:keys [store crew session-id compaction cfg cwd origin session-compaction]}]
-  (let [fs*  (runtime-fs)
-        root (runtime-root)
-        crew (crew-of store session-id crew)
-        open (find-open fs* root crew session-id)
-        closed (when open
-                 (lifecycle/close-episode!
-                   {:fs            fs*
-                    :root          root
-                    :crew          crew
-                    :episode-id    (:id open)
-                    :session-store store
-                    :cfg           (or cfg (runtime-cfg))}))
-        spliced (store/splice-compaction! store session-id compaction)
-        successor (when (and open closed (not= :error (:status closed)))
-                    (open-container!
-                      {:store          store
-                       :crew           crew
-                       :session-id     session-id
-                       :parent-episode (:id open)
-                       :cwd            cwd
-                       :origin         origin
-                       :compaction     session-compaction}))]
+  (let [fs*     (runtime-fs)
+        root    (runtime-root)
+        crew    (crew-of store session-id crew)
+        session (when store (store/get-session store session-id))
+        open    (or (find-open fs* root crew session-id)
+                    (open-container! {:store      store
+                                      :crew       crew
+                                      :session-id session-id
+                                      :cwd        cwd
+                                      :origin     origin
+                                      :compaction session-compaction}))
+        closed-result (lifecycle/close-episode!
+                        {:fs            fs*
+                         :root          root
+                         :crew          crew
+                         :episode-id    (:id open)
+                         :session-store store
+                         :cfg           (or cfg (runtime-cfg))})
+        closed-ep (stamp-closed-counters!
+                    fs* root
+                    (or (when (and closed-result (not= :error (:status closed-result)))
+                          (:episode closed-result))
+                        (episode-store/read-episode fs* root crew (:id open))
+                        open)
+                    session)
+        spliced   (store/splice-compaction! store session-id compaction)
+        successor (open-container!
+                    {:store          store
+                     :crew           crew
+                     :session-id     session-id
+                     :parent-episode (:id closed-ep)
+                     :cwd            cwd
+                     :origin         origin
+                     :compaction     session-compaction})]
     (when successor
       (log/info :episodes/compact-chained
                 :session-id session-id
-                :closed (:id open)
+                :closed (:id closed-ep)
                 :successor (:id successor)))
     (when store
       (store/update-session! store session-id {:last-input-tokens 0}))
@@ -151,7 +182,7 @@
   (open-session! [_ name opts]
     (let [session-id (session-id* name)]
       (or (store/get-session store session-id)
-          (store/open-session! store session-id opts))))
+          (store/open-session! store session-id (merge {:session-policy :episodes} opts)))))
   (delete-session! [_ name] (store/delete-session! store name))
   (rename-session! [_ old-name new-name] (store/rename-session! store old-name new-name))
   (list-sessions [_] (store/list-sessions store))

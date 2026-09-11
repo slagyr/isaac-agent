@@ -21,6 +21,7 @@
     [isaac.session.migrate :as migrate]
     [isaac.session.store.impl-common :as store-common]
     [isaac.session.store.spi :as store]
+    [isaac.episodes.store :as episode-store]
     [isaac.tool.builtin :as builtin]
     [isaac.tool.memory :as memory]
     [isaac.tool.registry :as tool-registry])
@@ -37,6 +38,7 @@
     :assoc-fn (fn [m k v] (update m k (fnil conj []) v))]
    [nil  "--in-flight"          "Show only in-flight sessions"]
    [nil  "--not-in-flight"      "Show only idle sessions"]
+   [nil  "--all"                "Include episodes sessions with no open episode"]
    [nil  "--no-color"           "Disable color output"]
    ["-h" "--help"               "Show help"]])
 
@@ -117,7 +119,8 @@
 
 (def ^:private default-session-columns
   (conj session-columns
-        {:key :crew :header "CREW" :align :left}))
+        {:key :crew   :header "CREW"   :align :left}
+        {:key :policy :header "POLICY" :align :left}))
 
 (def ^:private tagged-session-columns
   [{:key :name   :header "Name"    :align :left}
@@ -134,12 +137,15 @@
                 (let [p (or p 0)]
                   (cond (> p 100) :red (>= p 80) :yellow :else nil)))}
    {:key :crew   :header "Crew"    :align :left}
+   {:key :policy :header "POLICY"  :align :left}
    {:key :tags   :header "Tags"    :align :left}])
 
 (defn- transcript-size-bytes [entry]
   (let [root (or (nexus/get :root) (loader/root))
+        crew (or (:crew entry) "main")
         path (when (and root (:id entry))
-               (store-common/current-transcript-path root (:id entry)))]
+               (or (store-common/current-transcript-path root crew (:id entry))
+                   (store-common/current-transcript-path root (:id entry))))]
     (if path
       (or (fs/size (fs/instance) path) 0)
       0)))
@@ -148,14 +154,16 @@
   (let [tokens (or (:last-input-tokens entry) 0)
         pct    (if (pos? context-window)
                    (int (Math/round (* 100.0 (/ tokens context-window)))) 0)
-        name   (or (:key entry) (:id entry))]
-    {:name   (str name (when (store/in-flight? session-store (:id entry)) " ✈️"))
+        session-name (or (:key entry) (:id entry))
+        policy       (or (:session-policy entry) :chronicle)]
+    {:name   (str session-name (when (store/in-flight? session-store (:id entry)) " ✈️"))
      :age    (if-let [ms (age-ms (:updated-at entry))] (format-age ms) "-")
      :size   (transcript-size-bytes entry)
      :used   tokens
      :window context-window
      :pct    pct
      :crew   (or (:crew entry) "main")
+     :policy (clojure.core/name policy)
      :tags   (text-tags (:tags entry))}))
 
 (defn- effective-color? [options]
@@ -458,11 +466,19 @@
             (println (str "unknown crew: " crew-filter)))
           1)
         (let [required-tags (set (map keyword (:tag opts)))
+              fs*           (fs/instance)
+              root          (resolve-root opts)
+              hide-empty-episodes? (not (:all opts))
               sessions      (->> (store/list-sessions session-store)
                                  (filter #(if crew-filter (= crew-filter (or (:crew %) "main")) true))
                                  (filter #(every? (fn [tag] (store/has-tag? % tag)) required-tags))
                                  (filter #(if (:in-flight opts) (store/in-flight? session-store (:id %)) true))
                                  (filter #(if (:not-in-flight opts) (not (store/in-flight? session-store (:id %))) true))
+                                 (remove (fn [entry]
+                                           (and hide-empty-episodes?
+                                                (= :episodes (or (:session-policy entry) :chronicle))
+                                                (nil? (episode-store/find-open-on-thread
+                                                        fs* root (or (:crew entry) "main") (:id entry))))))
                                  (sort-by #(or (:key %) (:id %)))
                                  vec)
               color?        (effective-color? opts)]

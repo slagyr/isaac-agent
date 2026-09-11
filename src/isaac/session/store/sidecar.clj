@@ -42,8 +42,13 @@
 ;; region ----- Storage -----
 
 (defn- write-sidecar! [root {:keys [id] :as entry} fs]
-  (c/atomic-spit! fs (c/session-edn-path root id)
-                  (c/write-edn (dissoc entry :session-file :effective-history-offset))))
+  (let [crew (or (:crew entry) (get-in (c/locate-session root id fs) [:crew]) "main")
+        path (c/session-edn-path root crew id)]
+    (c/atomic-spit! fs path
+                    (c/write-edn (dissoc entry :session-file :effective-history-offset)))
+    (c/upsert-index-row! fs root id {:crew           crew
+                                     :session-policy (or (:session-policy entry) :chronicle)
+                                     :updated-at     (:updated-at entry)})))
 
 (defn- read-session-store [root fs]
   (read-sidecar-store root fs))
@@ -79,8 +84,13 @@
 (defn- delete-session! [root identifier fs]
   (let [store (read-session-store root fs)]
     (when-let [id (c/resolve-entry-id store identifier)]
-      (c/delete-tree! fs (c/session-dir root id))
-      true)))
+      (let [loc  (c/resolve-session-loc root id fs)
+            crew (or (:crew loc) (:crew (get store id)) "main")
+            dir  (or (:dir loc) (c/session-dir root crew id))]
+        (c/delete-tree! fs dir)
+        (let [idx (c/read-index fs root)]
+          (c/write-index! fs root (dissoc idx id)))
+        true))))
 
 (defn- rename-session! [this root old-name new-name fs]
   (c/rename-session!

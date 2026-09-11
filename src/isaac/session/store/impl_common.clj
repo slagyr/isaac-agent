@@ -168,8 +168,16 @@
     (f)))
 
 (defn- session-key-from-path [path]
-  (when-let [[_ id] (re-find #"/sessions/([^/]+)/" (str path))]
-    id))
+  (let [s (str path)]
+    (or (when-let [[_ _id] (re-find #"/sessions/[^/]+/([^/]+)/" s)]
+          ;; Nested layout: sessions/<crew>/<sid>/... — skip reserved names.
+          (when-not (#{"recall" "turns" "index.edn"} _id)
+            (when-not (re-matches #".*\.(edn|ednl|jsonl|tmp)$" _id)
+              _id)))
+        (when-let [[_ id] (re-find #"/sessions/([^/]+)/" s)]
+          (when-not (#{"turns" "index.edn"} id)
+            (when-not (re-matches #".*\.(edn|ednl|jsonl|tmp)$" id)
+              id))))))
 
 (defn atomic-spit!
   "Crash-safe whole-file rewrite: write to path.tmp then rename into place."
@@ -210,26 +218,181 @@
 (defn sessions-dir [root]
   (str root "/sessions"))
 
-(defn session-dir [root session-id]
-  (str (sessions-dir root) "/" session-id))
+(defn crew-sessions-dir [root crew]
+  (str (sessions-dir root) "/" (name (or crew "main"))))
 
-(defn session-edn-path [root session-id]
-  (str (session-dir root session-id) "/session.edn"))
+(defn session-dir
+  "Session directory. 3-arity is the nested product layout
+   sessions/<crew>/<sid>/. 2-arity is the pre-b6w0 flat layout
+   sessions/<sid>/ (legacy reads, unit fixtures, jsonl migrate)."
+  ([root session-id]
+   (str (sessions-dir root) "/" session-id))
+  ([root crew session-id]
+   (str (crew-sessions-dir root crew) "/" session-id)))
 
-(defn sidecar-path [root session-id]
-  (session-edn-path root session-id))
+(defn session-edn-path
+  ([root session-id]
+   (str (session-dir root session-id) "/session.edn"))
+  ([root crew session-id]
+   (str (session-dir root crew session-id) "/session.edn")))
 
-(defn current-transcript-path [root session-id]
-  (str (session-dir root session-id) "/current.ednl"))
+(defn sidecar-path
+  ([root session-id]
+   (session-edn-path root session-id))
+  ([root crew session-id]
+   (session-edn-path root crew session-id)))
 
-(defn frozen-transcript-path [root session-id n]
-  (str (session-dir root session-id) "/" n ".ednl"))
+(defn current-transcript-path
+  ([root session-id]
+   (str (session-dir root session-id) "/current.ednl"))
+  ([root crew session-id]
+   (str (session-dir root crew session-id) "/current.ednl")))
 
-(defn transcript-path [root session-id]
-  (current-transcript-path root session-id))
+(defn frozen-transcript-path
+  ([root session-id n]
+   (str (session-dir root session-id) "/" n ".ednl"))
+  ([root crew session-id n]
+   (str (session-dir root crew session-id) "/" n ".ednl")))
+
+(defn transcript-path
+  ([root session-id]
+   (current-transcript-path root session-id))
+  ([root crew session-id]
+   (current-transcript-path root crew session-id)))
 
 (defn index-path [root]
   (str (sessions-dir root) "/index.edn"))
+
+(def ^:private reserved-session-names #{"turns" "index.edn" "recall"})
+
+(defn- ->index-key [k]
+  (if (keyword? k) (name k) (str k)))
+
+(defn- keywordize-index-row [row]
+  (let [m (if (map? row) (keywordize-map row) {})]
+    (cond-> m
+      (and (contains? m :session-policy) (string? (:session-policy m)))
+      (update :session-policy keyword)
+      (and (contains? m :crew) (keyword? (:crew m)))
+      (update :crew name))))
+
+(defn read-index
+  "sessions/index.edn as {id {:crew :session-policy :updated-at ...}}. Empty map when absent."
+  [fs root]
+  (let [path (index-path root)]
+    (if-not (exists?* fs path)
+      {}
+      (let [raw (try (edn/read-string (or (slurp* fs path) "{}"))
+                     (catch Exception _ nil))]
+        (if (map? raw)
+          (reduce-kv (fn [acc k v]
+                       (assoc acc (->index-key k) (keywordize-index-row v)))
+                     {}
+                     raw)
+          {})))))
+
+(defn write-index!
+  "Atomic rewrite of sessions/index.edn (temp + rename)."
+  [fs root index]
+  (atomic-spit! fs (index-path root) (write-edn index)))
+
+(defn upsert-index-row!
+  [fs root session-id row]
+  (let [id  (str session-id)
+        idx (read-index fs root)]
+    (write-index! fs root (assoc idx id (merge (get idx id) row {:id id})))))
+
+(defn- reserved-name? [name]
+  (or (contains? reserved-session-names name)
+      (str/starts-with? (str name) ".")
+      (re-matches #".*\.(edn|ednl|jsonl|tmp)$" (str name))))
+
+(defn- session-edn-at [fs path]
+  (when (exists?* fs path)
+    (try
+      (let [raw (edn/read-string (or (slurp* fs path) ""))]
+        (when (map? raw) (keywordize-index-row (keywordize-map raw))))
+      (catch Exception _ nil))))
+
+(defn scan-session-dirs
+  "Walk sessions/<crew>/<sid>/session.edn (and leftover flat sessions/<sid>/session.edn).
+   Returns {id {:crew :session-policy :updated-at :dir}}."
+  [fs root]
+  (let [dir (sessions-dir root)]
+    (if-not (exists?* fs dir)
+      {}
+      (reduce
+        (fn [acc name]
+          (if (reserved-name? name)
+            acc
+            (let [nested-edn (str dir "/" name)
+                  ;; name is either a crew dir or a leftover flat session id
+                  kids       (or (children* fs nested-edn) [])]
+              (if (exists?* fs (str nested-edn "/session.edn"))
+                ;; leftover flat sessions/<sid>/session.edn
+                (let [entry (session-edn-at fs (str nested-edn "/session.edn"))
+                      id    (or (:id entry) name)
+                      crew  (or (:crew entry) "main")]
+                  (assoc acc id (merge {:crew crew :dir nested-edn :id id} entry)))
+                ;; nested sessions/<crew>/<sid>/
+                (reduce
+                  (fn [acc2 sid]
+                    (if (reserved-name? sid)
+                      acc2
+                      (let [sdir (str nested-edn "/" sid)
+                            edn-path (str sdir "/session.edn")]
+                        (if-let [entry (session-edn-at fs edn-path)]
+                          (let [id   (or (:id entry) sid)
+                                crew (or (:crew entry) name)]
+                            (assoc acc2 id (merge {:crew crew :dir sdir :id id} entry)))
+                          acc2))))
+                  acc
+                  kids)))))
+        {}
+        (or (children* fs dir) [])))))
+
+(defn repair-index!
+  "Merge a scan of session directories into the derived index and rewrite it."
+  [fs root]
+  (let [scanned (scan-session-dirs fs root)
+        current (read-index fs root)
+        merged  (merge-with (fn [idx-row scanned-row]
+                              (merge idx-row
+                                     (select-keys scanned-row [:crew :session-policy :updated-at :id])))
+                            current
+                            (reduce-kv (fn [m k v]
+                                         (assoc m k (select-keys v [:crew :session-policy :updated-at :id])))
+                                       {}
+                                       scanned))]
+    (write-index! fs root merged)
+    merged))
+
+(defn locate-session
+  "Resolve a session id via the index, falling back to a directory scan that
+   repairs the index. Returns {:crew :session-policy :dir :id ...} or nil."
+  [root session-id fs]
+  (let [id      (str session-id)
+        indexed (get (read-index fs root) id)
+        found   (or (when indexed
+                      (let [crew (or (:crew indexed) "main")
+                            dir  (session-dir root crew id)]
+                        (assoc indexed :id id :crew crew :dir dir)))
+                    (get (scan-session-dirs fs root) id))]
+    (when found
+      (when-not indexed
+        (upsert-index-row! fs root id (select-keys found [:crew :session-policy :updated-at :id])))
+      found)))
+
+(defn assert-unique-session-id!
+  "Throw when session-id is already indexed (or on disk) under a different crew."
+  [root session-id crew fs]
+  (when-let [found (locate-session root session-id fs)]
+    (let [want (name (or crew "main"))
+          have (name (or (:crew found) "main"))]
+      (when (not= want have)
+        (throw (ex-info (str "session " session-id " belongs to crew " have)
+                        {:reason :crew-collision :id session-id
+                         :crew have :wanted-crew want}))))))
 
 (defn flat-jsonl-path [root session-id]
   (str (sessions-dir root) "/" session-id ".jsonl"))
@@ -240,8 +403,11 @@
 (defn turns-dir [root]
   (str (sessions-dir root) "/turns"))
 
-(defn turn-marker-path [root session-id]
-  (str (session-dir root session-id) "/turn.edn"))
+(defn turn-marker-path
+  ([root session-id]
+   (str (session-dir root session-id) "/turn.edn"))
+  ([root crew session-id]
+   (str (session-dir root crew session-id) "/turn.edn")))
 
 (defn legacy-turn-marker-path [root session-id]
   (str (turns-dir root) "/" session-id ".edn"))
@@ -250,8 +416,13 @@
 
 ;; region ----- Turn markers -----
 
+(defn- turn-marker-path-for [root session-id fs]
+  (if-let [loc (and fs (locate-session root session-id fs))]
+    (str (or (:dir loc) (session-dir root (:crew loc) session-id)) "/turn.edn")
+    (turn-marker-path root session-id)))
+
 (defn record-turn-marker!* [root session-id marker fs]
-  (let [path (turn-marker-path root session-id)]
+  (let [path (turn-marker-path-for root session-id fs)]
     (with-persist-lock session-id
       (fn []
         (atomic-spit! fs path (write-edn (assoc marker :session-id (str session-id))))))))
@@ -269,12 +440,12 @@
 (defn clear-turn-marker!* [root session-id fs]
   (with-persist-lock session-id
     (fn []
-      (delete*! fs (turn-marker-path root session-id)))))
+      (delete*! fs (turn-marker-path-for root session-id fs)))))
 
 (defn get-turn-marker* [root session-id fs]
   (with-persist-lock session-id
     (fn []
-      (let [path (turn-marker-path root session-id)]
+      (let [path (turn-marker-path-for root session-id fs)]
         (when (exists?* fs path)
           (edn/read-string (slurp* fs path)))))))
 
@@ -286,13 +457,23 @@
                 (assoc :session-id (str session-id)))))))
 
 (defn turn-markers* [root fs]
-  (let [dir          (sessions-dir root)
-        product      (if-let [children (children* fs dir)]
+  (let [scanned      (scan-session-dirs fs root)
+        nested       (->> scanned
+                          (keep (fn [[id loc]]
+                                  (let [dir (or (:dir loc) (session-dir root (:crew loc) id))]
+                                    (read-marker fs (str dir "/turn.edn") id))))
+                          vec)
+        nested-ids   (set (map :session-id nested))
+        dir          (sessions-dir root)
+        leftover     (if-let [children (children* fs dir)]
                        (->> children
+                            (remove reserved-name?)
                             (keep (fn [name]
-                                    (read-marker fs (turn-marker-path root name) name)))
+                                    (when-not (contains? nested-ids name)
+                                      (read-marker fs (turn-marker-path root name) name))))
                             vec)
                        [])
+        product      (into nested leftover)
         product-ids  (set (map :session-id product))
         turns-dir    (turns-dir root)
         legacy       (if-let [children (children* fs turns-dir)]
@@ -330,11 +511,22 @@
 (defn write-ednl! [fs path entries]
   (atomic-spit! fs path (apply str (map write-edn entries))))
 
-(defn read-transcript-raw [root session-id fs]
-  (read-ednl fs (current-transcript-path root session-id)))
+(defn- nested-or-flat-current [root session-id fs]
+  (if-let [loc (and fs (locate-session root session-id fs))]
+    (str (or (:dir loc) (session-dir root (:crew loc) session-id)) "/current.ednl")
+    (current-transcript-path root session-id)))
 
-(defn write-transcript! [root session-id entries fs]
-  (write-ednl! fs (current-transcript-path root session-id) entries))
+(defn read-transcript-raw
+  ([root session-id fs]
+   (read-ednl fs (nested-or-flat-current root session-id fs)))
+  ([root crew session-id fs]
+   (read-ednl fs (current-transcript-path root crew session-id))))
+
+(defn write-transcript!
+  ([root session-id entries fs]
+   (write-ednl! fs (nested-or-flat-current root session-id fs) entries))
+  ([root crew session-id entries fs]
+   (write-ednl! fs (current-transcript-path root crew session-id) entries)))
 
 (defn- parse-edn-line [s]
   (try
@@ -357,15 +549,20 @@
     (last-transcript-entry-unlocked fs path)))
 
 (defn append-entry! [root session-id entry fs]
-  (let [path (current-transcript-path root session-id)
+  (let [path (nested-or-flat-current root session-id fs)
         line (write-edn entry)]
     (mkdirs*! fs (fs/parent path))
     (with-persist-lock session-id
       (fn []
         (spit*! fs path line :append true)))))
 
+(defn- session-dir-for [root session-id fs]
+  (if-let [loc (locate-session root session-id fs)]
+    (or (:dir loc) (session-dir root (:crew loc) session-id))
+    (session-dir root session-id)))
+
 (defn frozen-segment-ns [root session-id fs]
-  (->> (or (children* fs (session-dir root session-id)) [])
+  (->> (or (children* fs (session-dir-for root session-id fs)) [])
        (keep (fn [name]
                (when (re-matches #"\d+\.ednl" name)
                  (Long/parseLong (subs name 0 (- (count name) 5))))))
@@ -373,7 +570,8 @@
        vec))
 
 (defn read-chronicle [root session-id fs]
-  (let [frozen  (mapcat #(read-ednl fs (frozen-transcript-path root session-id %))
+  (let [dir     (session-dir-for root session-id fs)
+        frozen  (mapcat #(read-ednl fs (str dir "/" % ".ednl"))
                         (frozen-segment-ns root session-id fs))
         current (read-transcript-raw root session-id fs)]
     (vec (concat frozen current))))
@@ -411,17 +609,41 @@
   (or (exists?* fs (flat-jsonl-path root session-id))
       (exists?* fs (flat-sidecar-path root session-id))))
 
+(defn- crew-of
+  ([entry] (crew-of entry nil))
+  ([entry fallback]
+   (name (or (:crew entry) fallback "main"))))
+
+(defn session-edn-for
+  "Prefer nested sessions/<crew>/<sid>/session.edn; fall back to leftover flat."
+  [root session-id crew fs]
+  (let [nested (when crew (session-edn-path root crew session-id))]
+    (cond
+      (and nested (exists?* fs nested)) nested
+      (exists?* fs (session-edn-path root session-id)) (session-edn-path root session-id)
+      :else (or nested (session-edn-path root session-id)))))
+
+(defn resolve-session-loc
+  "Locate a session by id (index then scan then leftover flat). Returns
+   {:id :crew :dir :session-policy ...} or nil."
+  [root session-id fs]
+  (or (locate-session root session-id fs)
+      (when (exists?* fs (session-edn-path root session-id))
+        (when-let [entry (session-edn-at fs (session-edn-path root session-id))]
+          (assoc entry :id session-id :dir (session-dir root session-id)
+                 :crew (crew-of entry))))))
+
 (defn assert-migrated! [root session-id fs]
   (when (and session-id
-             (not (exists?* fs (session-edn-path root session-id)))
+             (not (or (exists?* fs (session-edn-path root session-id))
+                      (some? (resolve-session-loc root session-id fs))))
              (leftover-flat? root session-id fs))
     (throw (unmigrated-error session-id))))
 
-(defn read-session-entry [with-session-defaults-fn root session-id fs]
+(defn- read-session-entry-at [with-session-defaults-fn root session-id path fs]
   (with-persist-lock session-id
     (fn []
-      (let [path (session-edn-path root session-id)
-            s    (or (slurp* fs path) "")]
+      (let [s (or (slurp* fs path) "")]
         (when (str/blank? s)
           (throw (unreadable-session session-id)))
         (let [raw (try
@@ -432,11 +654,28 @@
             (throw (unreadable-session session-id)))
           [session-id (with-session-defaults-fn (assoc (keywordize-map raw) :id session-id))])))))
 
+(defn read-session-entry
+  ([with-session-defaults-fn root session-id fs]
+   (read-session-entry with-session-defaults-fn root session-id nil fs))
+  ([with-session-defaults-fn root session-id crew fs]
+   (let [loc  (resolve-session-loc root session-id fs)
+         crew (or crew (:crew loc))
+         path (session-edn-for root session-id crew fs)]
+     (read-session-entry-at with-session-defaults-fn root session-id path fs))))
+
 (defn read-sidecar-store [with-session-defaults-fn root fs]
-  (let [dir (sessions-dir root)]
-    (->> (or (children* fs dir) [])
-         (filter #(exists?* fs (session-edn-path root %)))
-         (map #(read-session-entry with-session-defaults-fn root % fs))
+  (let [scanned (scan-session-dirs fs root)
+        flat    (let [dir (sessions-dir root)]
+                  (->> (or (children* fs dir) [])
+                       (remove reserved-name?)
+                       (filter #(exists?* fs (session-edn-path root %)))
+                       (map (fn [id] [id {:id id :crew "main" :dir (session-dir root id)}]))))
+        all     (merge (into {} (map (fn [[id loc]] [id loc]) flat)) scanned)]
+    (->> all
+         (keep (fn [[id loc]]
+                 (let [path (str (:dir loc) "/session.edn")]
+                   (when (exists?* fs path)
+                     (read-session-entry-at with-session-defaults-fn root id path fs)))))
          (into {}))))
 
 (defn normalize-index-store [with-session-defaults-fn raw]
@@ -481,68 +720,113 @@
       entry
 
       :else
-      (let [renamed (conform-session!
+      (let [crew    (crew-of entry)
+            renamed (conform-session!
                       (-> entry
                           (assoc :id new-id
                                  :key new-id
                                  :name (or new-name new-id)
                                  :updated-at (now-iso-fn))
                           (dissoc :session-file :effective-history-offset)))]
-        (move-tree! fs (session-dir root old-id) (session-dir root new-id))
+        (move-tree! fs (session-dir root crew old-id) (session-dir root crew new-id))
+        (let [idx (read-index fs root)]
+          (write-index! fs root (-> idx
+                                    (dissoc old-id)
+                                    (assoc new-id {:crew           crew
+                                                   :session-policy (or (:session-policy renamed) :chronicle)
+                                                   :updated-at     (:updated-at renamed)
+                                                   :id             new-id}))))
         (commit-fn store old-id renamed)
         renamed))))
 
+(defn- policy-stamp [opts]
+  (let [raw (or (:session-policy opts) (:session-store opts))]
+    (cond
+      (keyword? raw) raw
+      (string? raw)  (keyword raw)
+      :else          nil)))
+
 (defn create-session! [read-session-fn write-fn now-iso-fn normalize-ts-fn root identifier opts fs]
-  (let [opts     (entry-defaults opts)
+  (let [explicit-crew (when-let [c (:crew opts)]
+                        (let [s (str c)]
+                          (when-not (clojure.string/blank? s) s)))
+        opts     (entry-defaults opts)
         store    (read-session-fn root fs)
         name     (or identifier (naming/generate (session-store/ensure-naming-strategy! root fs)))
         id       (session-id name)
-        existing (get store id)]
+        existing (get store id)
+        crew     (or (when existing (crew-of existing))
+                     (crew-of opts (:crew opts)))]
     (assert-migrated! root id fs)
+    (when explicit-crew
+      (assert-unique-session-id! root id explicit-crew fs))
     (cond
-      (and existing (exists?* fs (current-transcript-path root id)) (not= name (:name existing)))
+      (and existing (not= name (:name existing)))
       (throw (ex-info (str "session already exists: " id)
                       {:name name :session-id id}))
 
-      (and existing (exists?* fs (current-transcript-path root id)))
+      (and existing (let [loc (locate-session root id fs)
+                          dir (or (:dir loc) (session-dir root (crew-of existing) id))]
+                      (exists?* fs (str dir "/current.ednl"))))
       (do
         (log/info :session/opened :sessionId id)
         existing)
+
+      existing
+      ;; Sidecar without transcript: recreate (matches pre-b6w0 sidecar spec).
+      (let [now           (or (normalize-ts-fn (:updated-at opts)) (now-iso-fn))
+            transcript-id (new-id)
+            policy        (or (:session-policy existing) (policy-stamp opts) :chronicle)
+            header        {:type      "session"
+                           :id        transcript-id
+                           :timestamp now
+                           :version   3
+                           :cwd       (System/getProperty "user.dir")}
+            entry         (assoc existing :sessionId transcript-id :updated-at now)]
+        (mkdirs*! fs (session-dir root (crew-of existing) id))
+        (write-transcript! root (crew-of existing) id [header] fs)
+        (write-fn store id (conform-session! (dissoc entry :session-file :effective-history-offset)))
+        (upsert-index-row! fs root id {:crew (crew-of existing) :session-policy policy :updated-at now})
+        (log/info :session/created :sessionId id)
+        entry)
 
       :else
       (let [now           (or (normalize-ts-fn (:updated-at opts)) (now-iso-fn))
             retention     (resolve-history-retention opts)
             transcript-id (new-id)
+            policy        (or (policy-stamp opts) :chronicle)
             header        {:type      "session"
                            :id        transcript-id
                            :timestamp now
                            :version   3
                            :cwd       (System/getProperty "user.dir")}
             entry         (with-session-defaults now-iso-fn normalize-ts-fn
-                            {:id                id
-                             :key               id
-                             :name              name
-                             :nonce             (or (:nonce opts) (new-nonce))
-                             :sessionId         transcript-id
-                             :origin            (:origin opts)
-                             :history-retention retention
-                             :created-at        now
-                             :updated-at        now
-                             :cwd               (or (:cwd opts) (System/getProperty "user.dir"))
-                             :crew              (:crew opts)
-                             :tags              (:tags opts)
-                             :channel           (:channel opts)
-                             :chat-type         (or (:chat-type opts) (:chatType opts))
-                             :compaction-count  0
-                             :segment           0
-                             :input-tokens      0
-                             :turn-input-tokens 0
-                             :last-input-tokens 0
-                             :output-tokens     0
-                             :total-tokens      0})]
-        (mkdirs*! fs (session-dir root id))
-        (write-transcript! root id [header] fs)
+                            (cond-> {:id                id
+                                     :key               id
+                                     :name              name
+                                     :nonce             (or (:nonce opts) (new-nonce))
+                                     :sessionId         transcript-id
+                                     :origin            (:origin opts)
+                                     :history-retention retention
+                                     :created-at        now
+                                     :updated-at        now
+                                     :cwd               (or (:cwd opts) (System/getProperty "user.dir"))
+                                     :crew              crew
+                                     :session-policy    policy
+                                     :tags              (:tags opts)
+                                     :channel           (:channel opts)
+                                     :chat-type         (or (:chat-type opts) (:chatType opts))
+                                     :compaction-count  0
+                                     :segment           0
+                                     :input-tokens      0
+                                     :turn-input-tokens 0
+                                     :last-input-tokens 0
+                                     :output-tokens     0
+                                     :total-tokens      0}))]
+        (mkdirs*! fs (session-dir root crew id))
+        (write-transcript! root crew id [header] fs)
         (write-fn store id (conform-session! (dissoc entry :session-file :effective-history-offset)))
+        (upsert-index-row! fs root id {:crew crew :session-policy policy :updated-at now})
         (log/info :session/created :sessionId id)
         entry))))
 
@@ -702,7 +986,7 @@
 (defn append-message! [get-session-fn update-entry-fn now-fn root identifier message fs]
   (let [entry            (get-session-fn root identifier fs)
         id               (:id entry)
-        parent-id        (:id (last-transcript-entry fs (current-transcript-path root id)))
+        parent-id        (:id (last-transcript-entry fs (nested-or-flat-current root id fs)))
         msg-id           (new-id)
         now              (now-fn)
         resolved-agent   (or (:crew message)
@@ -730,7 +1014,7 @@
 (defn append-error! [get-session-fn update-entry-fn now-fn root identifier error-entry fs]
   (let [entry            (get-session-fn root identifier fs)
         id               (:id entry)
-        parent-id        (:id (last-transcript-entry fs (current-transcript-path root id)))
+        parent-id        (:id (last-transcript-entry fs (nested-or-flat-current root id fs)))
         error-id         (new-id)
         now              (now-fn)
         transcript-entry (cond-> {:type      "error"
@@ -749,7 +1033,7 @@
 (defn append-reckoning! [get-session-fn update-entry-fn now-fn root identifier {:keys [text]} fs]
   (let [entry            (get-session-fn root identifier fs)
         id               (:id entry)
-        parent-id        (:id (last-transcript-entry fs (current-transcript-path root id)))
+        parent-id        (:id (last-transcript-entry fs (nested-or-flat-current root id fs)))
         rec-id           (new-id)
         now              (now-fn)
         transcript-entry {:type      "reckoning"
@@ -764,7 +1048,7 @@
 (defn append-compaction! [get-session-fn update-entry-fn now-fn root identifier {:keys [summary firstKeptEntryId tokensBefore turnRequest]} fs]
   (let [entry         (get-session-fn root identifier fs)
         id            (:id entry)
-        parent-id     (:id (last-transcript-entry fs (current-transcript-path root id)))
+        parent-id     (:id (last-transcript-entry fs (nested-or-flat-current root id fs)))
         compaction-id (new-id)
         now           (now-fn)
         compaction    (cond-> {:type             "compaction"
@@ -840,9 +1124,10 @@
         [compaction-entry new-current] (compacted-current transcript compactedEntryIds firstKeptEntryId summary tokensBefore now turnRequest)
         prefix     (frozen-segment transcript new-current)
         n          (or (:segment entry) 0)
-        current-path (current-transcript-path root id)]
+        dir          (session-dir-for root id fs)
+        current-path (str dir "/current.ednl")]
     (when (= :retain retention)
-      (write-ednl! fs (frozen-transcript-path root id n) prefix))
+      (write-ednl! fs (str dir "/" n ".ednl") prefix))
     (write-ednl! fs current-path new-current)
     (update-entry-fn root identifier
                      (fn [e]
@@ -861,7 +1146,7 @@
    line and rewrite the file. Returns the surviving entries when something was
    dropped, nil when the transcript was already whole or absent."
   [root session-id fs]
-  (let [path (current-transcript-path root session-id)]
+  (let [path (nested-or-flat-current root session-id fs)]
     (when (exists?* fs path)
       (let [lines (str/split-lines (fs/slurp fs path))
             valid (loop [n (count lines)]

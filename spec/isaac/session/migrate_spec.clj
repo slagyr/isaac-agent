@@ -55,6 +55,24 @@
     (sut/migrate-session! test-dir "done" (fs*))
     (should= :skipped (:status (sut/migrate-session! test-dir "done" (fs*)))))
 
+  (it "skips a nested sessions/<crew>/<id> directory as already migrated"
+    (let [fs* (fs*)
+          dir (c/session-dir test-dir "main" "done")]
+      (c/mkdirs*! fs* dir)
+      (c/atomic-spit! fs* (c/session-edn-path test-dir "main" "done")
+                      (c/write-edn {:id "done" :crew "main" :session-policy :chronicle}))
+      (c/write-ednl! fs* (c/current-transcript-path test-dir "main" "done")
+                     [{:type "session" :id "h1"}])
+      (c/upsert-index-row! fs* test-dir "done" {:crew "main" :session-policy :chronicle})
+      (should= :skipped (:status (sut/migrate-session! test-dir "done" fs*)))
+      (should-not (some #{"done"} (sut/leftover-ids test-dir fs*)))))
+
+  (it "still migrates leftover jsonl whose id appears in sessions/index.edn"
+    (write-jsonl! "quiet" [{:type "session" :id "h1"}])
+    (c/write-index! (fs*) test-dir {"quiet" {:id "quiet" :name "quiet"}})
+    (should= :migrated (:status (sut/migrate-session! test-dir "quiet" (fs*))))
+    (should (fs/exists? (fs*) (c/current-transcript-path test-dir "quiet"))))
+
   (it "reports missing when the id has no leftover files"
     (should= :missing (:status (sut/migrate-session! test-dir "ghost" (fs*)))))
 

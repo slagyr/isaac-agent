@@ -321,16 +321,18 @@
    they are dropped from the return)."
   ([distilled-messages resolved-scenes seal-reason]
    (seal-scenes distilled-messages resolved-scenes seal-reason {}))
-  ([distilled-messages resolved-scenes seal-reason {:keys [leave-open] :or {leave-open 0}}]
-   (let [drafts (mapv (fn [s]
+  ([distilled-messages resolved-scenes seal-reason {:keys [leave-open used-ids] :or {leave-open 0}}]
+   (let [used*  (atom (set used-ids))
+         drafts (mapv (fn [s]
                         (let [start-ord (:start-ord s)
                               end-ord   (:end-ord s)
                               slice     (subvec distilled-messages (dec start-ord) end-ord)
                               texts     (->> slice (keep :text) (str/join "\n"))
                               start-ts  (:timestamp (first slice))
                               end-ts    (:timestamp (last slice))
-                              scene-id  (ids/timestamped-id start-ts)
+                              scene-id  (ids/unique-timestamped-id start-ts @used*)
                               routine?  (or (:routine? s) (markers-only? slice))]
+                          (swap! used* conj scene-id)
                           (cond-> {:id          scene-id
                                    :start-id    (:start-id s)
                                    :end-id      (:end-id s)

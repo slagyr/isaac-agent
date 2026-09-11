@@ -1,7 +1,7 @@
 (ns isaac.recall.index
-  "Per-crew retrieval index: <root>/episodes/<crew>/index.edn + vectors.json.
+  "Per-crew retrieval index: <root>/sessions/<crew>/recall/index.edn + vectors.json.
 
-   Metadata {:dims :model :scale :rows [{:episode-id :scene-id :kind :model} ...]}.
+   Metadata {:dims :model :scale :rows [{:session-id :episode-id :scene-id :kind :model} ...]}.
    Row order = vectors.json order. Vectors are unit-normalized then
    quantized to ints at score/VECTOR_SCALE — JSON ints load through
    compiled cheshire + int-array coercion (~100ms at corpus scale; every
@@ -16,11 +16,14 @@
     [isaac.recall.score :as score]
     [isaac.session.store.impl-common :as impl]))
 
+(defn recall-dir [root crew]
+  (str (impl/crew-sessions-dir root crew) "/recall"))
+
 (defn index-path [root crew]
-  (str (store/crew-dir root crew) "/index.edn"))
+  (str (recall-dir root crew) "/index.edn"))
 
 (defn vectors-path [root crew]
-  (str (store/crew-dir root crew) "/vectors.json"))
+  (str (recall-dir root crew) "/vectors.json"))
 
 (defn vectors-raw
   "Raw vectors.json contents, or nil when absent."
@@ -51,7 +54,7 @@
         meta      {:dims  dims
                    :model model
                    :scale (long score/VECTOR_SCALE)
-                   :rows  (mapv #(select-keys % [:episode-id :scene-id :kind :model])
+                   :rows  (mapv #(select-keys % [:session-id :episode-id :scene-id :kind :model])
                                 packed)}
         meta-path (index-path root crew)
         vec-path  (vectors-path root crew)]
@@ -95,9 +98,10 @@
    Returns [{:episode-id :scene ...}]."
   [fs* root crew]
   (mapcat (fn [ep]
-            (let [eid (:id ep)]
+            (let [eid (:id ep)
+                  sid (or (:session-id ep) (:thread ep))]
               (map (fn [scene]
-                     {:episode-id eid :scene scene})
+                     {:session-id sid :episode-id eid :scene scene})
                    (store/list-scenes fs* root crew eid))))
           (store/list-episodes fs* root crew)))
 
@@ -138,11 +142,12 @@
             pairs    (list-closed-scenes fs* root crew)
             skipped-routine (count (filter #(true? (get-in % [:scene :routine])) pairs))
             indexable (remove #(true? (get-in % [:scene :routine])) pairs)
-            needed   (for [{:keys [episode-id scene]} indexable
+            needed   (for [{:keys [session-id episode-id scene]} indexable
                            {:keys [kind text]} (scene-payloads scene)
                            :let [k [(:id scene) kind model]]
                            :when (not (contains? keyed k))]
-                       {:episode-id episode-id
+                       {:session-id session-id
+                        :episode-id episode-id
                         :scene-id   (:id scene)
                         :kind       kind
                         :model      model

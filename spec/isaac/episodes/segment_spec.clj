@@ -246,6 +246,29 @@
         (should= "Wine pairing" (:gist (first scenes)))
         (should-not (contains? (first scenes) :continues))))
 
+    (it "bumps colliding scene ids by 1ms so siblings stay unique"
+      (let [msgs [{:id "a" :timestamp "2026-03-01T10:00:00" :text "Wine?" :dropped? false}
+                  {:id "b" :timestamp "2026-03-01T10:00:00" :text "Pinot." :dropped? false}
+                  {:id "c" :timestamp "2026-03-01T10:00:00" :text "Regatta?" :dropped? false}
+                  {:id "d" :timestamp "2026-03-01T10:00:00" :text "Saturday." :dropped? false}]
+            resolved [{:start-id "a" :end-id "b" :gist "Wine pairing" :start-ord 1 :end-ord 2}
+                      {:start-id "c" :end-id "d" :gist "Regatta" :start-ord 3 :end-ord 4}]
+            scenes (sut/seal-scenes msgs resolved :migrate)]
+        (should= 2 (count scenes))
+        (should= "20260301100000000" (:id (first scenes)))
+        (should= "20260301100000001" (:id (second scenes)))
+        (should= "Wine pairing" (:gist (first scenes)))
+        (should= "Regatta" (:gist (second scenes)))))
+
+    (it "bumps against already-used sibling ids from a prior span"
+      (let [msgs [{:id "c" :timestamp "2026-03-01T10:00:00" :text "Regatta?" :dropped? false}
+                  {:id "d" :timestamp "2026-03-01T10:00:00" :text "Saturday." :dropped? false}]
+            resolved [{:start-id "c" :end-id "d" :gist "Regatta" :start-ord 1 :end-ord 2}]
+            scenes (sut/seal-scenes msgs resolved :compaction
+                                    {:used-ids #{"20260301100000000"}})]
+        (should= "20260301100000001" (:id (first scenes)))
+        (should= "Regatta" (:gist (first scenes)))))
+
     (it "auto-marks a markers-only slice as routine without LLM judgment"
       (let [msgs [{:id "a" :timestamp "t1" :text "Check the pump." :dropped? false}
                   {:id "b" :timestamp "t2" :text "(tool exec command=pump --status)" :dropped? false}

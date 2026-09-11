@@ -32,6 +32,12 @@
             (session-steps/default-grover-setup)
             (session-steps/ensure-grover-provider-files!))
           (orig path table))))
+    (alter-var-root #'isaac.foundation.fs-steps/directory-has-exactly-n-files
+      (fn [orig]
+        (fn [path n-str]
+          (when (g/get :turn-future)
+            (session-steps/await-turn!))
+          (orig path n-str))))
     true))
 
 (fcli/register-isaac-run-wrapper!
@@ -139,6 +145,8 @@
         (g/should-not (str/includes? (str (:text scene)) needle))))))
 
 (defn crew-has-n-episodes [crew n-str]
+  (when (g/get :turn-future)
+    (session-steps/await-turn!))
   (with-feature-fs
     (fn []
       (let [n (if (string? n-str) (parse-long n-str) n-str)
@@ -256,11 +264,54 @@
 (defn- parse-cell [s]
   (let [s (str s)]
     (cond
+      ;; 17-digit episode/scene ids are opaque strings, not Longs.
+      (re-matches #"\d{17}" s) s
       (re-matches #"-?\d+" s) (parse-long s)
       (re-matches #"-?\d+\.\d+" s) (parse-double s)
       (or (str/starts-with? s "[") (str/starts-with? s "{") (str/starts-with? s ":"))
       (try (edn/read-string s) (catch Exception _ s))
       :else s)))
+
+(defn crew-has-closed-episode-on-session-with-scenes [crew episode-id session-id table]
+  (with-feature-fs
+    (fn []
+      (let [headers (:headers table)
+            rows    (:rows table)
+            scenes  (mapv (fn [row]
+                            (let [m (zipmap (map keyword headers) row)
+                                  routine? (let [v (str (:routine m ""))]
+                                             (or (= "true" v) (= "True" v)))]
+                              (cond-> {:id         (:id m)
+                                       :started-at (:started-at m)
+                                       :ended-at   (:ended-at m)
+                                       :gist       (:gist m)
+                                       :text       (:text m)
+                                       :start-id   (str (:id m) "-start")
+                                       :end-id     (str (:id m) "-end")
+                                       :seal-reason :migrate}
+                                routine? (assoc :routine true))))
+                          rows)
+            episode {:id         episode-id
+                     :crew       crew
+                     :status     :closed
+                     :session-id session-id
+                     :thread     session-id
+                     :scene-ids  (mapv :id scenes)
+                     :started-at (:started-at (first scenes))
+                     :ended-at   (:ended-at (last scenes))}
+            ss      (or (session-store/registered-store)
+                        (nexus/get-in [:sessions :store]))]
+        (store/write-episode! (mem-fs) (root-dir) episode scenes)
+        (when ss
+          (session-ctx/create-with-resolved-behavior!
+            session-id {:crew crew :cwd (root-dir) :origin {:kind :cli}
+                        :session-store ss :session-policy :episodes}))
+        (g/assoc! :current-episode (assoc episode :crew crew))))))
+
+(defgiven "crew {crew:string} has a closed episode {episode-id:string} on session {sid:string} with scenes:"
+  isaac.episodes.episode-steps/crew-has-closed-episode-on-session-with-scenes
+  "Nested-layout fixture: writes episode.edn + scenes under the session
+   and opens the backing session so recall tools can resolve it.")
 
 (defn crew-has-closed-episode-with-scenes [crew episode-id table]
   (with-feature-fs
@@ -339,10 +390,11 @@
     (fn []
       (g/should-not (fs/exists? (mem-fs) (recall-index/index-path (root-dir) crew))))))
 
-(defgiven "crew {crew:string} has a closed episode {episode-id:string} with scenes:"
+(defgiven #"crew \"([^\"]+)\" has a closed episode \"([^\"]+)\" with scenes:"
   isaac.episodes.episode-steps/crew-has-closed-episode-with-scenes
   "Writes episode.edn + scene .md via store/write-episode!. Synthesizes
-   start/end-ids and :seal-reason :migrate.")
+   start/end-ids and :seal-reason :migrate. Regex is anchored before
+   'on session' so the nested-layout Given does not match this phrase.")
 
 (defthen "the index for crew {crew:string} has rows:"
   isaac.episodes.episode-steps/index-for-crew-has-rows

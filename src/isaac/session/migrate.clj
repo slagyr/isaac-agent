@@ -43,6 +43,13 @@
                         (or (get store id) (get store (keyword id))))]
             (when (map? entry) (c/keywordize-map entry)))))))
 
+(defn- already-migrated? [root id fs]
+  (or (c/exists?* fs (c/current-transcript-path root id))
+      (when-let [loc (c/locate-session root id fs)]
+        (c/exists?* fs (str (or (:dir loc)
+                                (c/session-dir root (or (:crew loc) "main") id))
+                            "/current.ednl")))))
+
 (defn leftover-ids [root fs]
   (let [dir (c/sessions-dir root)
         names (or (c/children* fs dir) [])
@@ -59,11 +66,9 @@
     (->> (concat jsonl sidecars index-ids)
          (remove str/blank?)
          distinct
+         (remove #(already-migrated? root % fs))
          sort
          vec)))
-
-(defn- already-migrated? [root id fs]
-  (c/exists?* fs (c/current-transcript-path root id)))
 
 (defn- write-migrated! [root id entry frozen current fs]
   (c/mkdirs*! fs (c/session-dir root id))

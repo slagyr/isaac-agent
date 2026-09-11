@@ -28,7 +28,7 @@ Feature: Episodes — live (policy + lifecycle)
     And the exit code is 0
     And an episode exists for crew "cordelia" matching:
       | key        | value                          |
-      | id         | #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" |
+      | id         | #"\d{17}" |
       | status     | open                           |
       | session-id | reef-chat                      |
     And the following sessions match:
@@ -100,7 +100,7 @@ Feature: Episodes — live (policy + lifecycle)
       | key            | value                          |
       | status         | open                           |
       | session-id     | reef-chat                      |
-      | parent-episode | #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" |
+      | parent-episode | #"\d{17}" |
     And the episodes for crew "cordelia" on thread "reef-chat" chain by lineage
     And that episode's backing session has transcript matching:
       | type    | message.role | message.content        |
@@ -271,8 +271,8 @@ Feature: Episodes — live (policy + lifecycle)
     When isaac is run with "episodes list --crew cordelia"
     Then the stdout matches:
       | pattern                                                     |
-      | \d{4}-\d{2}-\d{2}-\d{4}-\w+\s+closed\s+reef-chat\s+1 scene |
-      | \d{4}-\d{2}-\d{2}-\d{4}-\w+\s+open\s+reef-chat\s+0 scenes  |
+      | \d{17}\s+closed\s+reef-chat\s+1 scene |
+      | \d{17}\s+open\s+reef-chat\s+0 scenes  |
     And the exit code is 0
 
   # ----- Recall at open (isaac-h5dk) -----
@@ -362,7 +362,7 @@ Feature: Episodes — live (policy + lifecycle)
     And the episodes for crew "cordelia" on thread "reef-chat" chain by lineage
     And that episode has recalled scenes:
       | scene-id                       | origin-episode                 |
-      | #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" | #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" |
+      | #"\d{17}" | #"\d{17}" |
     And the last LLM request matches:
       | key      | value                                                 |
       | messages | #"(?s)Previously in this conversation.*recall__scene" |
@@ -574,7 +574,7 @@ Feature: Episodes — live (policy + lifecycle)
       | gist                      | text                    | continues                      |
       | Wine pairing for pheasant | #"(?s)pinot noir"       |                                |
       | Regatta scheduling        | #"(?s)race is Saturday" |                                |
-      | Dessert wine pairing      | #"(?s)late harvest"     | #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" |
+      | Dessert wine pairing      | #"(?s)late harvest"     | #"\d{17}" |
 
     Scenario: without embedding, drift is inert but the size cap still seals
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:

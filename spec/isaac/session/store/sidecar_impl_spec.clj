@@ -28,10 +28,10 @@
         (.delete f)))))
 
 (defn- sidecar-path [id]
-  (c/session-edn-path test-dir id))
+  (c/session-edn-path test-dir "main" id))
 
 (defn- current-path [id]
-  (c/current-transcript-path test-dir id))
+  (c/current-transcript-path test-dir "main" id))
 
 (defn- read-sidecar [id]
   (edn/read-string (fs/slurp (nexus/get :fs) (sidecar-path id))))
@@ -165,6 +165,12 @@
                       e))]
         (should-not-be-nil error)
         (should= "session already exists: friday-debug" (ex-message error))))
+
+    (it "reuses an existing session when crew is omitted"
+      (sut/create-session! test-dir "trash-can" {:crew "oscar"})
+      (let [again (sut/create-session! test-dir "trash-can" {})]
+        (should= "oscar" (:crew again))
+        (should= "trash-can" (:id again))))
 
     (it "creates a fresh session when the sidecar exists but its transcript is missing"
       (let [first  (sut/create-session! test-dir test-key)

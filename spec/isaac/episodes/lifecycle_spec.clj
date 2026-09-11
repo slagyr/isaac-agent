@@ -54,17 +54,17 @@
           (should= :open (:status ep))
           (should= "reef-chat" (:thread ep))
           (should= "cordelia" (:crew ep))
-          (should= "2026-03-01-1000-ab12" (:id ep))
+          (should= "20260301100000000" (:id ep))
           (should-be-nil (:parent-episode ep))
-          (should= "2026-03-01-1000-ab12" (:id (session-store/get-session @ss (:id ep))))))))
+          (should= "20260301100000000" (:id (session-store/get-session @ss (:id ep))))))))
 
   (it "opens a successor with :parent-episode"
     (with-redefs [isaac.episodes.ids/chaos-suffix (constantly "cd34")]
       (binding [memory/*now* (java.time.Instant/parse "2026-03-01T11:45:00Z")]
         (let [ep (sut/open-episode! {:fs @mem :root @root :crew "cordelia"
                                      :thread "reef-chat" :session-store @ss
-                                     :parent-episode "2026-03-01-1000-ab12"})]
-          (should= "2026-03-01-1000-ab12" (:parent-episode ep))
+                                     :parent-episode "20260301100000000"})]
+          (should= "20260301100000000" (:parent-episode ep))
           (should= "reef-chat" (:thread ep))))))
 
   (it "seeds a successor transcript with a compaction summary as the first entry"
@@ -197,7 +197,7 @@
                                              :thread "reef-chat" :session-store @ss
                                              :cfg {:episodes {:ttl-minutes 60}}
                                              :cwd "/tmp" :origin {:kind :cli}})]
-          (should= "2026-03-01-1000-gh78" (:session-key resolved))
+          (should= "20260301100000000" (:session-key resolved))
           (should= :opened (:action resolved))
           (should= "reef-chat" (get-in resolved [:episode :thread]))))))
 

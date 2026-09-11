@@ -15,7 +15,7 @@ Feature: Session Storage
     Then the session count is 1
     And the following sessions match:
       | id         | file                                 | compaction-count | input-tokens | output-tokens | total-tokens |
-      | first-chat | sessions/first-chat/current.ednl     | 0               | 0           | 0            | 0           |
+      | first-chat | sessions/main/first-chat/current.ednl | 0               | 0           | 0            | 0           |
     And session "first-chat" has 1 transcript entry
     And session "first-chat" has transcript matching:
       | type    | id              | timestamp                               |
@@ -208,8 +208,8 @@ Feature: Session Storage
       | name   |
       | chat-1 |
       | chat-2 |
-    Then the file "sessions/chat-1/session.edn" exists
-    And the file "sessions/chat-2/session.edn" exists
+    Then the file "sessions/main/chat-1/session.edn" exists
+    And the file "sessions/main/chat-2/session.edn" exists
 
   Scenario: Message content stored as block arrays
     Given the following sessions exist:

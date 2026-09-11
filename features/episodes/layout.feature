@@ -17,13 +17,12 @@ Feature: Episodes storage layout — one directory per session under sessions/<c
   Background:
     Given default Grover setup
 
-  @wip
   Scenario: a cold open on an episodes crew creates the session directory once and the first episode beneath it
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path           | value            |
       | model          | echo             |
       | soul           | You are Cordelia |
-      | session-policy | episodes         |
+      | session-policy | :episodes         |
     And the following model responses are queued:
       | type | content            | model |
       | text | Charted, keep west | echo  |
@@ -36,7 +35,7 @@ Feature: Episodes storage layout — one directory per session under sessions/<c
       | path           | value        |
       | id             | lantern-room |
       | crew           | cordelia     |
-      | session-policy | episodes     |
+      | session-policy | :episodes     |
     And the directory "sessions/cordelia/lantern-room/episodes" has exactly 1 file
     And an episode exists for crew "cordelia" matching:
       | key        | value        |
@@ -46,13 +45,12 @@ Feature: Episodes storage layout — one directory per session under sessions/<c
     And the isaac file "sessions/index.edn" EDN contains:
       | path                        | value    |
       | lantern-room.crew           | cordelia |
-      | lantern-room.session-policy | episodes |
+      | lantern-room.session-policy | :episodes |
     And session "lantern-room" has transcript matching:
       | type    | message.role | message.content    |
       | message | user         | Light the lamp     |
       | message | assistant    | Charted, keep west |
 
-  @wip
   Scenario: a successor episode after compaction is a sibling under the same session; the closed episode keeps its final counters
     Given the isaac EDN file "config/models/local.edn" exists with:
       | path           | value      |
@@ -63,7 +61,15 @@ Feature: Episodes storage layout — one directory per session under sessions/<c
       | path           | value            |
       | model          | local            |
       | soul           | You are Cordelia |
-      | session-policy | episodes         |
+      | session-policy | :episodes         |
+    And the isaac EDN file "config/models/gist.edn" exists with:
+      | path     | value  |
+      | model    | gist   |
+      | provider | grover |
+    And config file "isaac.edn" containing:
+      """
+      {:episodes {:gist-model :gist}}
+      """
     And the following sessions exist:
       | name         | crew     | last-input-tokens |
       | lantern-room | cordelia | 85                |
@@ -76,6 +82,7 @@ Feature: Episodes storage layout — one directory per session under sessions/<c
     And the following model responses are queued:
       | type | content               | model      |
       | text | Full summary of prior | test-model |
+      | text | 1-4: Prior voyage     | gist       |
       | text | New response          | test-model |
     When the user sends "new input" on session "lantern-room"
     Then the directory "sessions/cordelia/lantern-room/episodes" has exactly 2 files
@@ -94,13 +101,12 @@ Feature: Episodes storage layout — one directory per session under sessions/<c
       | path           | value        |
       | id             | lantern-room |
       | crew           | cordelia     |
-      | session-policy | episodes     |
+      | session-policy | :episodes     |
     And session "lantern-room" has transcript matching:
       | type    | message.role | message.content |
       | message | user         | new input       |
       | message | assistant    | New response    |
 
-  @wip
   Scenario: a session-level pin set once applies to every episode of that session
     Given the isaac EDN file "config/models/alpha.edn" exists with:
       | path     | value   |
@@ -114,7 +120,7 @@ Feature: Episodes storage layout — one directory per session under sessions/<c
       | path           | value            |
       | model          | alpha            |
       | soul           | You are Cordelia |
-      | session-policy | episodes         |
+      | session-policy | :episodes         |
     And the isaac EDN file "config/isaac.edn" exists with:
       | path                 | value |
       | episodes.ttl-minutes | 5     |
@@ -136,13 +142,12 @@ Feature: Episodes storage layout — one directory per session under sessions/<c
       | path  | value |
       | model | beta  |
 
-  @wip
   Scenario: a chronicle session carries the policy stamp and the listing shows the policy column for both kinds
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path           | value            |
       | model          | echo             |
       | soul           | You are Cordelia |
-      | session-policy | episodes         |
+      | session-policy | :episodes         |
     And the following model responses are queued:
       | type | content | model |
       | text | Aye     | echo  |
@@ -153,12 +158,12 @@ Feature: Episodes storage layout — one directory per session under sessions/<c
       | path           | value      |
       | id             | harbor-log |
       | crew           | main       |
-      | session-policy | chronicle  |
+      | session-policy | :chronicle  |
     And the isaac file "sessions/main/harbor-log/current.ednl" exists
     And the isaac file "sessions/index.edn" EDN contains:
       | path                        | value     |
-      | harbor-log.session-policy   | chronicle |
-      | lantern-room.session-policy | episodes  |
+      | harbor-log.session-policy   | :chronicle |
+      | lantern-room.session-policy | :episodes  |
     When isaac is run with "sessions list"
     Then the stdout matches:
       | pattern                                                                  |
@@ -167,19 +172,18 @@ Feature: Episodes storage layout — one directory per session under sessions/<c
       | lantern-room\s+\S+\s+\S+\s+[\d,]+\s+[\d,]+\s+\d+%\s+cordelia\s+episodes    |
     And the exit code is 0
 
-  @wip
   Scenario: a session is found by id alone through the sessions index, and an id that exists under another crew is refused
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path           | value            |
       | model          | echo             |
       | soul           | You are Cordelia |
-      | session-policy | episodes         |
+      | session-policy | :episodes         |
     And the following model responses are queued:
       | type | content | model |
       | text | Lit     | echo  |
     When the user sends "Light the lamp" on session "lantern-room" as crew "cordelia"
     And isaac is run with "sessions show lantern-room"
-    Then the stdout contains "crew"
+    Then the stdout contains "Crew"
     And the stdout contains "cordelia"
     And the exit code is 0
     When isaac is run with "prompt --crew main --session lantern-room --create always -m 'hello'"
@@ -187,7 +191,6 @@ Feature: Episodes storage layout — one directory per session under sessions/<c
     And the exit code is 1
     And the isaac file "sessions/main/lantern-room/session.edn" does not exist
 
-  @wip
   Scenario: the sessions index is derived — a directory the index does not know is found by scan and the index repaired
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path  | value            |
@@ -198,7 +201,7 @@ Feature: Episodes storage layout — one directory per session under sessions/<c
       | id             | lantern-room |
       | name           | Lantern Room |
       | crew           | cordelia     |
-      | session-policy | chronicle    |
+      | session-policy | :chronicle    |
     And the isaac EDN file "sessions/index.edn" exists with:
       | path            | value |
       | harbor-log.crew | main  |
@@ -209,9 +212,8 @@ Feature: Episodes storage layout — one directory per session under sessions/<c
       | path                        | value     |
       | harbor-log.crew             | main      |
       | lantern-room.crew           | cordelia  |
-      | lantern-room.session-policy | chronicle |
+      | lantern-room.session-policy | :chronicle |
 
-  @wip
   Scenario: the recall index locates a scene by session id, episode id, and scene id
     Given config file "isaac.edn" containing:
       """
@@ -221,7 +223,7 @@ Feature: Episodes storage layout — one directory per session under sessions/<c
       | path           | value            |
       | model          | echo             |
       | soul           | You are Cordelia |
-      | session-policy | episodes         |
+      | session-policy | :episodes         |
     And crew "cordelia" has a closed episode "20260301100000000" on session "lantern-room" with scenes:
       | id                | started-at          | ended-at            | gist | text  |
       | 20260301100005000 | 2026-03-01T10:00:05 | 2026-03-01T10:05:00 | wine | pinot |
@@ -241,7 +243,6 @@ Feature: Episodes storage layout — one directory per session under sessions/<c
     Then the tool result is not an error
     And the tool result contains "pinot"
 
-  @wip
   Scenario: migrate-layout moves every session under its crew, folds a legacy episode into its session, rebuilds both indexes, and is a no-op the second time
     Given config file "isaac.edn" containing:
       """
@@ -251,7 +252,7 @@ Feature: Episodes storage layout — one directory per session under sessions/<c
       | path           | value            |
       | model          | echo             |
       | soul           | You are Cordelia |
-      | session-policy | episodes         |
+      | session-policy | :episodes         |
     And the isaac EDN file "sessions/harbor-log/session.edn" exists with:
       | path | value      |
       | id   | harbor-log |
@@ -301,13 +302,13 @@ Feature: Episodes storage layout — one directory per session under sessions/<c
     And the isaac file "sessions/main/harbor-log/session.edn" EDN contains:
       | path           | value     |
       | crew           | main      |
-      | session-policy | chronicle |
+      | session-policy | :chronicle |
     And the isaac file "sessions/main/harbor-log/current.ednl" exists
     And the isaac file "sessions/cordelia/lantern-room/session.edn" EDN contains:
       | path           | value        |
       | id             | lantern-room |
       | crew           | cordelia     |
-      | session-policy | episodes     |
+      | session-policy | :episodes     |
     And the isaac file "sessions/cordelia/lantern-room/episodes/2026-03-01-1000-ab12/episode.edn" EDN contains:
       | path       | value        |
       | status     | closed       |
@@ -318,7 +319,7 @@ Feature: Episodes storage layout — one directory per session under sessions/<c
       | path                        | value    |
       | harbor-log.crew             | main     |
       | lantern-room.crew           | cordelia |
-      | lantern-room.session-policy | episodes |
+      | lantern-room.session-policy | :episodes |
     And the index for crew "cordelia" has rows:
       | session-id   | episode-id           | scene-id             | kind |
       | lantern-room | 2026-03-01-1000-ab12 | 2026-03-01-1000-s1x1 | gist |

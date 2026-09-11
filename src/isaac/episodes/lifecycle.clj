@@ -246,10 +246,13 @@
                       :episode-id episode-id})
             closed (when-let [ep (:episode result)]
                      (let [merged (cond-> (assoc ep
-                                            :id         episode-id
-                                            :thread     (:thread existing)
-                                            :session-id (or (:session-id existing) (:thread existing))
-                                            :status     (or (:status ep) :closed))
+                                            :id                episode-id
+                                            :thread            (:thread existing)
+                                            :session-id        (or (:session-id existing) (:thread existing))
+                                            :status            (or (:status ep) :closed)
+                                            :last-input-tokens (or (:last-input-tokens session)
+                                                                   (:last-input-tokens existing)
+                                                                   0))
                                     (:parent-episode existing)
                                     (assoc :parent-episode (:parent-episode existing)))]
                        (store/write-episode! fs* root merged (or (:scenes result) [])
@@ -501,7 +504,8 @@
                                                   (= 1 (count resolved))))
                                        0 1)
                           new-scenes (segment/seal-scenes distilled resolved trigger
-                                                          {:leave-open leave-open})]
+                                                          {:leave-open leave-open
+                                                           :used-ids   (set (keep :id sealed))})]
                       (if (empty? new-scenes)
                         (do
                           (when new-mean (persist-vector! fs* root existing new-mean))

@@ -71,6 +71,13 @@
     (should= [:exec/run] (#'ffs/parse-isaac-value "config/crew/main.edn" "tools.allow" "[:exec/run]"))
     (should= [:memory/*] (#'ffs/parse-isaac-value "config/crew/main.edn" "tools.allow" "[:memory/*]")))
 
+  (it "keeps hyphenated scene-id vectors as strings, not EDN numbers"
+    (should= ["2026-03-01-1000-s1x1"]
+             (#'ffs/parse-isaac-value
+               "episodes/cordelia/2026-03-01-1000-ab12/episode.edn"
+               "scene-ids"
+               "[2026-03-01-1000-s1x1]")))
+
   (it "matches a validation error value against a #\"...\" table cell"
     (should (#'config-steps/row-matches?
               {:key "tools.allow" :value ":all is the list, not a list item — use :allow :all, never [:all]"}

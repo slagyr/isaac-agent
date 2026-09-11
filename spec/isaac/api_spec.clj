@@ -76,7 +76,7 @@
         (with-redefs [sidecar-store/create-store (fn [root] [:store root])
                       store/open-session!      (fn [& args] (reset! called (vec args)) {:id "s1"})]
           (sut/create-session! "/sdir" "my-session" {:crew "main"}))
-        (should= [[:store "/sdir"] "my-session" {:crew "main"}] @called)))
+        (should= [[:store "/sdir"] "my-session" {:session-policy :chronicle :crew "main"}] @called)))
 
     (it "get-session delegates to session store"
       (let [called (atom nil)]

@@ -14,9 +14,8 @@
       (let [errors (sut/validate-frequencies-options {:session "bridge" :session-tag ["wip"]})]
         (should (pos? (count errors)))))
 
-    (it "rejects --session combined with --create"
-      (let [errors (sut/validate-frequencies-options {:session "bridge" :create :always})]
-        (should (pos? (count errors)))))
+    (it "accepts --session combined with --create"
+      (should= [] (sut/validate-frequencies-options {:session "bridge" :create :always})))
 
     (it "accepts describe flags together"
       (should= [] (sut/validate-frequencies-options {:crew "ketch" :session-tag ["wip"]})))

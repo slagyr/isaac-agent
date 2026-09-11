@@ -60,9 +60,8 @@
   "Return a seq of usage error strings for illegal flag combinations."
   [opts]
   (cond-> []
-    (and (:session opts)
-         (or (has-session-tag? opts) (contains? opts :create)))
-    (conj "--session is mutually exclusive with --session-tag and --create")
+    (and (:session opts) (has-session-tag? opts))
+    (conj "--session is mutually exclusive with --session-tag")
 
     (and (:resume opts)
          (or (:session opts) (:crew opts) (has-session-tag? opts) (contains? opts :create)))

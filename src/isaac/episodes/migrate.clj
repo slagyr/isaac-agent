@@ -185,7 +185,8 @@
                     (let [sealed-scenes (segment/seal-scenes distilled (:ok result)
                                                              (if (:preceding-summary span)
                                                                :compaction
-                                                               :migrate))
+                                                               :migrate)
+                                                             {:used-ids (set (map :id @scenes-acc))})
                           span-ids (set (map :id raw-msgs))
                           kept (remove #(contains? span-ids (:start-id %)) @scenes-acc)]
                       (println (str "  span " span-n "/" (count spans) ": "

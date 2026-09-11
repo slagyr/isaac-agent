@@ -65,7 +65,7 @@ Feature: Episodes — migrate-session
       | migrated: 1 span, 2 scenes \(\d+\.\ds, 25 in, 12 out\) |
     And an episode exists for crew "cordelia" matching:
       | key           | value                          |
-      | id            | #"\d{4}-\d{2}-\d{2}-\d{4}-\w+" |
+      | id            | #"\d{17}" |
       | migrated-from | quiet-regatta                  |
     And that episode has scenes matching:
       | gist                      | text                    |
