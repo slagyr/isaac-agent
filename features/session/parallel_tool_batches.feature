@@ -112,26 +112,27 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
       | message | assistant    | never           |
 
   Scenario: one call fails and the other succeeds — each result is its own, the cycle completes
-    Given a streaming tool "test__quick" is registered that emits progress [] and returns "quick done"
+    Given a failing tool "test__broken" waits for tool "test__quick" then returns error "broken winch"
+    And a streaming tool "test__quick" is registered that emits progress [] and returns "quick done"
     And the following sessions exist:
       | name    |
       | on-deck |
     And the following model responses are queued:
-      | model | type       | tool_calls                                                                                                                       | content |
-      |       | tool_calls | [{"function":{"name":"fs__read","arguments":{"file_path":"/etc/passwd"}}},{"function":{"name":"test__quick","arguments":{}}}] |         |
-      | echo  | text       |                                                                                                                          | Noted.  |
+      | model | type       | tool_calls                                                                                                              | content |
+      |       | tool_calls | [{"function":{"name":"test__broken","arguments":{}}},{"function":{"name":"test__quick","arguments":{}}}] |         |
+      | echo  | text       |                                                                                                                         | Noted.  |
     When the user sends "go" on session "on-deck" via memory comm
     Then the memory comm has events matching:
       | event       | tool-name   |
-      | tool-result | test__quick |
-      | tool-result | fs__read    |
-      | reply       |             |
+      | tool-result | test__quick  |
+      | tool-result | test__broken |
+      | reply       |              |
     And session "on-deck" has transcript matching:
       | type    | message.role | message.content             |
-      | message | toolResult   | quick done                  |
-      | message | toolResult   | path outside allowed directories |
-      | message | assistant    | Noted.                      |
+      | message | toolResult   | quick done   |
+      | message | toolResult   | broken winch |
+      | message | assistant    | Noted.       |
     And the last LLM request matches:
-      | path                | value                                                      |
-      | messages[3].content | #"Error: path outside allowed directories: /etc/passwd"    |
-      | messages[4].content | quick done                                                 |
+      | path                | value               |
+      | messages[3].content | Error: broken winch |
+      | messages[4].content | quick done          |

@@ -89,4 +89,14 @@
         (let [before (registry/lookup "fs__read")]
           (should before)
           (sut/streaming-tool-registered "test__quick" "[]" "quick done")
-          (should= before (registry/lookup "fs__read")))))))
+          (should= before (registry/lookup "fs__read")))))
+
+    (it "holds a mock failure until the named tool completes"
+      (with-redefs [session-steps/crew-tool-allow (fn [_ _] nil)]
+        (sut/failing-tool-registered "test__broken" "test__quick" "broken winch"))
+      (let [run* (future ((:handler (registry/lookup "test__broken")) {}))]
+        (should= ::pending (deref run* 20 ::pending))
+        (#'sut/mark-tool-complete! "test__quick")
+        (should= {:isError true :error "broken winch"}
+                 (dissoc (deref run* 1000 ::timeout) :after-result!)))))
+  )

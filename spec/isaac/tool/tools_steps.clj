@@ -711,6 +711,19 @@
     (allow-mock-tool! tool-name)
     nil))
 
+(defn failing-tool-registered [tool-name waits-for error]
+  (registry/register!
+    {:name        tool-name
+     :description (str "failing mock " tool-name)
+     :parameters  {:type "object" :properties {}}
+     :handler     (fn [_args]
+                    (deref (completion-signal waits-for) 1000 false)
+                    {:isError true
+                     :error error
+                     :after-result! #(mark-tool-complete! tool-name)})})
+  (allow-mock-tool! tool-name)
+  nil)
+
 (defn rendezvous-tool-registered [tool-name result n]
   (let [release   (promise)
         in-flight (atom 0)
@@ -761,6 +774,11 @@
 (defgiven #"a streaming tool \"([^\"]+)\" is registered that emits progress (.+) and returns \"([^\"]+)\""
   isaac.tool.tools-steps/streaming-tool-registered
   "Registers a mock tool whose handler calls ctx :progress! for each chunk then returns the given string.")
+
+(defgiven
+  #"a failing tool \"([^\"]+)\" waits for tool \"([^\"]+)\" then returns error \"([^\"]+)\""
+  isaac.tool.tools-steps/failing-tool-registered
+  "Registers a concurrent mock failure whose result waits for the named tool's completion signal.")
 
 (defgiven #"a rendezvous tool \"([^\"]+)\" is registered that returns \"([^\"]+)\" once (\d+) calls are in flight"
   isaac.tool.tools-steps/rendezvous-tool-registered
