@@ -43,6 +43,24 @@ Feature: Resume repair and comm staleness
       | level | event                     | session | repair     |
       | :warn | :resume/transcript-repair | logbook | :torn-line |
 
+  Scenario: a legacy hail marker is requeued and removed from its original path
+    Given the following sessions exist:
+      | name        |
+      | engine-room |
+    And the isaac EDN file "sessions/turns/engine-room.edn" exists with:
+      | path          | value          |
+      | source        | :hail          |
+      | delivery-id   | legacy-hail    |
+      | prompt        | Seal the leak. |
+      | bound-session | :engine-room   |
+      | suspended     | true           |
+    When interrupted turns are resumed at "2026-04-21T10:00:00Z"
+    Then the isaac file "hail/deliveries/legacy-hail.edn" EDN contains:
+      | path               | value                |
+      | id                 | legacy-hail          |
+      | resume/requeued-at | 2026-04-21T10:00:00Z |
+    And no turn marker exists for session "engine-room"
+
   Scenario: a stale comm marker is dropped, not resumed
     Nobody wants a surprise reply to a conversation they abandoned — outside
     the resume window the marker is discarded and the transcript untouched.

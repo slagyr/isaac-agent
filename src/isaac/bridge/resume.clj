@@ -123,9 +123,10 @@
     (or (policy/repair-transcript! sess session-id)
         (repair-dangling-tool-calls! sess session-id))))
 
-(defn- requeue-hail! [root marker]
+(defn- requeue-hail! [root marker now-ms]
   (when-let [delivery (some-> (marker->delivery marker)
-                              (assoc :attempts (resume-attempts marker)))]
+                              (assoc :attempts (resume-attempts marker)
+                                     :resume/requeued-at (str (Instant/ofEpochMilli now-ms))))]
     (write-delivery! root delivery)
     true))
 
@@ -178,7 +179,7 @@
         (try
           (cond
             (= :hail source)
-            (when (requeue-hail! root marker)
+            (when (requeue-hail! root marker now-ms)
               {:requeued 1})
 
             (#{:comm :cron :cli} source)

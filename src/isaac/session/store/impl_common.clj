@@ -444,7 +444,10 @@
 (defn clear-turn-marker!* [root session-id fs]
   (with-persist-lock session-id
     (fn []
-      (delete*! fs (turn-marker-path-for root session-id fs)))))
+      (doseq [path [(turn-marker-path-for root session-id fs)
+                    (turn-marker-path root session-id)
+                    (legacy-turn-marker-path root session-id)]]
+        (delete*! fs path)))))
 
 (defn get-turn-marker* [root session-id fs]
   (with-persist-lock session-id

@@ -61,7 +61,31 @@
       (should= 0 (:dropped entry)))
     (let [delivery-path (str test-root "/hail/deliveries/c27493a3.edn")]
       (should (fs/exists? (nexus/get :fs) delivery-path))
+      (should= "2026-07-07T16:37:28Z"
+               (:resume/requeued-at (clojure.edn/read-string (fs/slurp (nexus/get :fs) delivery-path))))
       (should= nil (store/get-turn-marker (store/registered-store) "isaac-verify"))))
+
+  (it "clears the legacy marker path after requeueing its hail"
+    (let [fs*         (nexus/get :fs)
+          session-id  "isaac-verify"
+          marker-path (str test-root "/sessions/turns/" session-id ".edn")
+          marker      {:source      :hail
+                       :session-id  session-id
+                       :delivery-id "legacy-hail"
+                       :delivery    {:id            "legacy-hail"
+                                     :prompt        "verify the bean"
+                                     :bound-session session-id}}]
+      (fs/mkdirs fs* (fs/parent marker-path))
+      (fs/spit fs* marker-path (pr-str marker))
+      ;; The memory store represents the startup scan result while the legacy
+      ;; disk file preserves the exact path that resume must remove.
+      (store/record-turn-marker! (store/registered-store) session-id marker)
+      (sut/resume-interrupted-turns! {:session-store (store/registered-store)
+                                      :root          test-root
+                                      :cfg           {}
+                                      :now           (Instant/parse "2026-07-07T16:37:28Z")})
+      (should-not (fs/exists? fs* marker-path))
+      (should (fs/exists? fs* (str test-root "/hail/deliveries/legacy-hail.edn")))))
 
   (it "logs scan-complete with dropped comm count for a stale comm marker"
     (helper/create-session! test-root "firewatch")
