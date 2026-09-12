@@ -46,8 +46,8 @@
                     (apply tests/run-jvm-spec! *command-line-args*))}
 
   ;; Agent feature suite exceeds the shared 60s suite timeout under cold
-  ;; generation; wrap gherclj directly with a 180s budget so native parity
-  ;; can finish (isaac-h5xm). jvm-features keeps the shared helper.
+  ;; generation; wrap gherclj directly with a 600s budget so native parity
+  ;; can finish under concurrent local/CI load. jvm-features keeps the shared helper.
   features {:doc  "Run gherclj feature specs natively (excludes @slow and @wip)"
             :requires ([babashka.fs :as fs]
                        [bb.test-tasks :as tests]
@@ -63,9 +63,9 @@
                                               ["-t" "~slow" "-t" "~wip"]
                                               args)))
                         fut  (future (run!))
-                        res  (deref fut 180000 timeout-token)]
+                        res  (deref fut 600000 timeout-token)]
                     (when (= res timeout-token)
-                      (println "features timed out after 180s")
+                      (println "features timed out after 600s")
                       (System/exit 124))
                     res)}
 

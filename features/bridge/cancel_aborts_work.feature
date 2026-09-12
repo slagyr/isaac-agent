@@ -18,10 +18,11 @@ Feature: Cancel Aborts In-Flight Turn Work
       | cancel-test |
 
   Scenario: cancel between tool-loop iterations skips the next chat call
-    Given the following model responses are queued:
-      | type      | tool_call | arguments                  | content              |
-      | tool_call | exec__run | {"command": "sleep 0.05"}  |                      |
-      | text      |           |                            | Should never appear  |
+    Given a blocking tool "test__anchor" is registered that returns cancelled once the turn is cancelled
+    And the following model responses are queued:
+      | type      | tool_call   | arguments | content             |
+      | tool_call | test__anchor | {}        |                     |
+      | text      |              |           | Should never appear |
     When the user sends "do stuff" on session "cancel-test"
     And the turn is cancelled on session "cancel-test" after 1 tool call
     Then the turn result is "cancelled"
@@ -30,10 +31,11 @@ Feature: Cancel Aborts In-Flight Turn Work
       | message | Should never appear |
 
   Scenario: session remains usable after a cancel mid-loop
-    Given the following model responses are queued:
-      | type      | tool_call | arguments                  | content              |
-      | tool_call | exec__run | {"command": "sleep 0.05"}  |                      |
-      | text      |           |                            | Should never appear  |
+    Given a blocking tool "test__anchor" is registered that returns cancelled once the turn is cancelled
+    And the following model responses are queued:
+      | type      | tool_call   | arguments | content             |
+      | tool_call | test__anchor | {}        |                     |
+      | text      |              |           | Should never appear |
     When the user sends "do stuff" on session "cancel-test"
     And the turn is cancelled on session "cancel-test" after 1 tool call
     Then the turn result is "cancelled"

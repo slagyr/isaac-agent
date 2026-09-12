@@ -66,6 +66,36 @@
       (should= ["jetty" "quay"] @ran)
       (should= [] (queue/list-held))))
 
+  (it "runs a wake requested while another tick is dispatching"
+    (queue/enqueue! {:id "first" :session "jetty" :input "one" :turnstiles []})
+    (let [started (promise)
+          release (promise)
+          ran     (atom [])]
+      (with-redefs [bridge/dispatch! (fn [charge]
+                                       (swap! ran conj (:session-key charge))
+                                       (when (= "jetty" (:session-key charge))
+                                         (deliver started true)
+                                         @release)
+                                       {})]
+        (let [active-tick (future (sut/tick!))]
+          @started
+          (queue/enqueue! {:id "second" :session "quay" :input "two" :turnstiles []})
+          (sut/tick!)
+          (deliver release true)
+          (deref active-tick 1000 ::timeout)))
+      (should= ["jetty" "quay"] @ran)
+      (should= [] (queue/list-held))))
+
+  (it "accepts the next tick after queue inspection fails"
+    (let [calls (atom 0)]
+      (with-redefs [queue/list-held (fn []
+                                     (if (= 1 (swap! calls inc))
+                                       (throw (ex-info "broken queue" {}))
+                                       []))]
+        (should-throw Exception "broken queue" (sut/tick!))
+        (sut/tick!))
+      (should= 2 @calls)))
+
   (it "does not drop a held turn that parks again on wake"
     (queue/enqueue! {:id         "berth-1"
                      :session    "harbor"

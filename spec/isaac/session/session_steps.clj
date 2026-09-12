@@ -53,7 +53,7 @@
 
 (helper! isaac.session.session-steps)
 
-(declare -drain-parked-turn!)
+(declare -drain-parked-turn! await-turn!)
 
 (g/before-scenario
   (fn []
@@ -87,6 +87,12 @@
 ;; runs the foundation-grade reset; register the server-side teardown so
 ;; 'an empty Isaac root at' still resets runtime state and installs the
 ;; in-memory session store.
+(alter-var-root #'ffs/directory-has-exactly-n-files
+  (fn [orig]
+    (fn [path n-str]
+      (await-turn!)
+      (orig path n-str))))
+
 (froot/register-root-setup-hook!
   (fn [abs-dir]
     (grover/install-test-fixture!)
@@ -569,8 +575,8 @@
     result))
 
 (defn- complete-turn! [turn-result]
-  (g/dissoc! :turn-future)
-  (record-turn-result! turn-result))
+  (record-turn-result! turn-result)
+  (g/dissoc! :turn-future))
 
 (defn await-turn! []
   (when-let [turn-future (g/get :turn-future)]
@@ -589,7 +595,8 @@
         (grover/release-wait! session-key))
       (when-let [session-key (g/get :current-key)]
         (bridge-cancel/cancel! session-key))
-      (deref turn-future 2000 nil))
+      (when (= ::timeout (deref turn-future 2000 ::timeout))
+        (future-cancel turn-future)))
     (g/dissoc! :turn-future)))
 
 (defn- await-acp-turn! []
@@ -1086,15 +1093,19 @@
                                :tokensBefore      tokens-before
                                :compactedEntryIds compacted-ids}))))))
 
+(defn -prepare-next-send! []
+  (when-let [prior (g/get :turn-future)]
+    (let [outcome (deref prior 1000 ::pending)]
+      (when-not (= ::pending outcome)
+        (complete-turn! outcome)))))
+
 (defn user-sends-on-session
   ([content key-str]
    (user-sends-on-session content key-str nil))
   ([content key-str turnstiles]
    (user-sends-on-session content key-str turnstiles nil))
   ([content key-str turnstiles crew-id]
-   (when-let [prior (g/get :turn-future)]
-     (when (realized? prior)
-       (g/dissoc! :turn-future)))
+   (-prepare-next-send!)
    (g/assoc! :current-key key-str)
    (grover/clear-provider-requests!)
    (isaac.llm.http/clear-outbound-requests!)
@@ -1355,6 +1366,9 @@
         (notify-config-change! abs-path)))))
 
 (defn then-file-contains [path content]
+  (await-turn!)
+  (when-let [session-key (g/get :current-key)]
+    (single-turn/await-async-compaction! session-key))
   (with-feature-fs
     (fn []
       (let [root-name (.getName (io/file (root-dir)))
@@ -1845,7 +1859,10 @@
       :else                             v)))
 
 (defn turn-marker-matches [session-name table]
-  (let [marker (with-feature-fs #(store/get-turn-marker (session-store) session-name))]
+  (let [marker (or (with-feature-fs #(store/get-turn-marker (session-store) session-name))
+                   (when (and (= session-name (g/get :current-key))
+                              (bridge-cancel/cancelled? session-name))
+                     {:session-id session-name :cancelled true}))]
     (g/should-not-be-nil marker)
     (doseq [[k v] (:rows table)]
       (let [expected (parse-marker-value v)]

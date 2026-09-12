@@ -1,8 +1,10 @@
 (ns isaac.session.session-steps-spec
   (:require
     [gherclj.core :as g]
+    [isaac.bridge.cancellation :as bridge]
     [isaac.config.config-steps :as config-steps]
     [isaac.config.loader :as loader]
+    [isaac.drive.turn :as single-turn]
     [isaac.foundation.fs-steps :as ffs]
     [isaac.foundation.root-steps :as froot]
     [isaac.fs :as fs]
@@ -12,7 +14,7 @@
     [isaac.session.store.sidecar :as sidecar-store]
     [isaac.tool.builtin :as builtin]
     [isaac.tool.registry :as registry]
-    [speclj.core :refer [around describe it should should-be-nil should-not should-not-be-nil should=]]))
+    [speclj.core :refer [around describe it should should-be-nil should-not should-not-be-nil should-throw should=]]))
 
 (describe "session feature steps"
 
@@ -97,10 +99,19 @@
     (should (some #(= "turn-start" (:event %)) @(g/get :channel-events)))
     (sut/turn-ends-on-session "longwave"))
 
-  (it "arms mid-loop cancellation when no turn is in flight yet"
+  (it "arms mid-loop cancellation before the send starts"
     (sut/turn-cancelled-after-n-tool-calls "cancel" 1)
     (should= {:session "cancel" :n 1} (g/get :cancel-after-n-tool-calls)))
- 
+
+  (it "completes a non-waiting prior turn before starting the next send"
+    (let [prior (future {:output "done" :request {:id :first} :result {:ok true}})]
+      (g/assoc! :current-key "greenhouse")
+      (g/assoc! :turn-future prior)
+      @prior
+      (sut/-prepare-next-send!)
+      (should-be-nil (g/get :turn-future))
+      (should= {:ok true} (g/get :llm-result))))
+
   (it "records each immediate send so later turns can compare chat requests"
     (sut/default-grover-setup)
     (sut/sessions-exist {:headers ["name"] :rows [["greenhouse"]]})
@@ -166,6 +177,45 @@
       (should (realized? leaked))
       (should-be-nil (g/get :turn-future))
       (should-not (grover/waiting? "parked"))))
+
+  (it "cancels a turn that cannot stop cooperatively before forgetting it"
+    (let [blocked (promise)
+          turn    (future @blocked)]
+      (g/assoc! :turn-future turn)
+      (with-redefs [grover/release-wait! (constantly nil)]
+        (sut/-drain-parked-turn!))
+      (should (future-cancelled? turn))
+      (should-be-nil (g/get :turn-future))))
+
+  (it "observes cancellation after a live turn clears its durable marker"
+    (let [turn (promise)]
+      (g/assoc! :current-key "cancel-test")
+      (g/assoc! :turn-future turn)
+      (bridge/cancel! "cancel-test")
+      (sut/turn-marker-matches "cancel-test" {:rows [["cancelled" "true"]]})
+      (deliver turn true)))
+
+  (it "awaits the current turn before counting directory files"
+    (let [turn (future {:output "done" :request {:id :done} :result {:ok true}})]
+      (g/assoc! :turn-future turn)
+      @turn
+      (with-redefs [fs/exists?  (constantly true)
+                    fs/children (fn [_ _]
+                                  (should-be-nil (g/get :turn-future))
+                                  ["attention.edn"])]
+        (ffs/directory-has-exactly-n-files "/pending" "1"))))
+
+  (it "awaits the current session's compaction before checking a file"
+    (g/assoc! :current-key "tea-ledger")
+    (g/assoc! :root "/test/isaac")
+    (let [calls (atom [])]
+      (with-redefs [single-turn/await-async-compaction! #(swap! calls conj %)
+                    fs/slurp                            (fn [_ _]
+                                                          (should= ["tea-ledger"] @calls)
+                                                          "remember tea")]
+        (nexus/register! [:root] "/test/isaac")
+        (sut/then-file-contains "crew/main/memory/2026-04-21.md" "remember tea"))
+      (should= ["tea-ledger"] @calls)))
 
   (it "parks a slow tool-loop send so a later cancel can still fire"
     (sut/default-grover-setup)

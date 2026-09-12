@@ -29,6 +29,8 @@
   (swap! queue into responses))
 
 (defn reset-queue! []
+  (doseq [release (vals @wait-gates*)]
+    (deliver release true))
   (reset! queue [])
   (reset! delay-enabled* false)
   (reset! delay-started* nil)
@@ -71,9 +73,8 @@
   (some-> (get @wait-gates* session-key) (deliver true)))
 
 (defn- dequeue! []
-  (let [resp (first @queue)]
-    (when resp (swap! queue subvec 1))
-    resp))
+  (let [[responses _] (swap-vals! queue #(if (seq %) (subvec % 1) %))]
+    (first responses)))
 
 (defn- await-promise [atom*]
   (let [p @atom*]

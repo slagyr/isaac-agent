@@ -355,17 +355,15 @@ Feature: Sessions Command
     Given the following sessions exist:
       | name        |
       | design-chat |
-    And the following model responses are queued:
-      | type | content | model | wait |
-      | text | working | echo  | true |
+    And the LLM response is delayed by 30 seconds
     When the user sends "more" on session "design-chat"
     And isaac is run with "sessions cancel design-chat"
     Then the exit code is 0
     And a turn marker exists for session "design-chat" with:
       | key       | value |
       | cancelled | true  |
-    And session "design-chat" in-flight status is true
     When the turn ends on session "design-chat"
+    Then session "design-chat" in-flight status is false
 
   Scenario: sessions cancel stamps :cancelled on an orphan marker
     Given the following sessions exist:

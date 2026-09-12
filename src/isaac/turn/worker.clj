@@ -15,7 +15,7 @@
 
 (def default-tick-ms 10000)
 
-(def ^:private ticking? (atom false))
+(defonce ^:private tick-state* (atom :idle))
 
 (defn- wake-config [record]
   (or (loader/snapshot "turn-queue wake — resolve parked request against live config")
@@ -76,17 +76,39 @@
                (not (:error result)))
       (queue/delete-held! (:id record)))))
 
+(defn- request-tick! []
+  (loop []
+    (let [state @tick-state*]
+      (cond
+        (= :idle state)    (if (compare-and-set! tick-state* :idle :running) :run (recur))
+        (= :running state) (if (compare-and-set! tick-state* :running :pending) :pending (recur))
+        :else              :pending))))
+
+(defn- finish-tick! []
+  (loop []
+    (let [state @tick-state*]
+      (cond
+        (= :pending state) (if (compare-and-set! tick-state* :pending :running) :run (recur))
+        (= :running state) (if (compare-and-set! tick-state* :running :idle) :idle (recur))
+        :else              :idle))))
+
 (defn tick!
   ([] (tick! {}))
   ([{:keys [now]}]
    (let [now (or now (memory/now))]
-     (binding [queue/*root* (or queue/*root* (nexus/get :root) (loader/root))]
-       (when (compare-and-set! ticking? false true)
-         (try
-           (doseq [record (queue/list-held)]
-             (process-record! now record))
-           (finally
-             (reset! ticking? false))))))))
+     (when (= :run (request-tick!))
+       (binding [queue/*root* (or queue/*root* (nexus/get :root) (loader/root))]
+         (loop []
+           (let [failure    (try
+                              (doseq [record (queue/list-held)]
+                                (process-record! now record))
+                              nil
+                              (catch Throwable t t))
+                 next-state (finish-tick!)]
+             (when failure
+               (throw failure))
+             (when (= :run next-state)
+               (recur)))))))))
 
 (defn start!
   [{:keys [tick-ms]

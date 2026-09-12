@@ -140,7 +140,25 @@
                                        {:session-key "wait-session"}))]
         (helper/await-condition #(sut/waiting? "wait-session"))
         (sut/release-wait! "wait-session")
-        (should= "Scripted answer" (get-in @response [:message :content])))))
+        (should= "Scripted answer" (get-in @response [:message :content]))))
+
+    (it "reset releases every waiting response before forgetting its gates"
+      (sut/enqueue! [{:type "text" :content "Old answer" :wait true}
+                     {:type "text" :content "Older answer" :wait true}])
+      (let [first-response  (future (sut/chat {:model "echo" :messages [{:role "user" :content "Old prompt"}]}
+                                              "grover"
+                                              {:session-key "old-session"}))
+            second-response (future (sut/chat {:model "echo" :messages [{:role "user" :content "Older prompt"}]}
+                                              "grover"
+                                              {:session-key "older-session"}))]
+        (helper/await-condition #(and (sut/waiting? "old-session")
+                                      (sut/waiting? "older-session")))
+        (sut/reset-queue!)
+        (should= #{"Old answer" "Older answer"}
+                 (set (map #(get-in (deref % 1000 ::timeout) [:message :content])
+                           [first-response second-response])))
+        (should-not (sut/waiting? "old-session"))
+        (should-not (sut/waiting? "older-session")))))
 
   ;; endregion ^^^^^ Scripted Mode ^^^^^
 
