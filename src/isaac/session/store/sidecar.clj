@@ -42,8 +42,9 @@
 ;; region ----- Storage -----
 
 (defn- write-sidecar! [root {:keys [id] :as entry} fs]
-  (let [crew (or (:crew entry) (get-in (c/locate-session root id fs) [:crew]) "main")
-        path (c/session-edn-path root crew id)]
+  (let [loc  (c/locate-session root id fs)
+        crew (or (:crew entry) (:crew loc) "main")
+        path (str (or (:dir loc) (c/session-dir root crew id)) "/session.edn")]
     (c/atomic-spit! fs path
                     (c/write-edn (dissoc entry :session-file :effective-history-offset)))
     (c/upsert-index-row! fs root id {:crew           crew

@@ -371,13 +371,16 @@
   "Resolve a session id via the index, falling back to a directory scan that
    repairs the index. Returns {:crew :session-policy :dir :id ...} or nil."
   [root session-id fs]
-  (let [id      (str session-id)
-        indexed (get (read-index fs root) id)
-        found   (or (when indexed
-                      (let [crew (or (:crew indexed) "main")
-                            dir  (session-dir root crew id)]
-                        (assoc indexed :id id :crew crew :dir dir)))
-                    (get (scan-session-dirs fs root) id))]
+  (let [id          (str session-id)
+        indexed     (get (read-index fs root) id)
+        indexed-loc (when indexed
+                      (let [crew (or (:crew indexed) "main")]
+                        (assoc indexed :id id :crew crew :dir (session-dir root crew id))))
+        scanned     (get (scan-session-dirs fs root) id)
+        found       (if (and indexed-loc
+                             (exists?* fs (str (:dir indexed-loc) "/session.edn")))
+                      indexed-loc
+                      (or scanned indexed-loc))]
     (when found
       (when-not indexed
         (upsert-index-row! fs root id (select-keys found [:crew :session-policy :updated-at :id])))
@@ -422,10 +425,11 @@
     (turn-marker-path root session-id)))
 
 (defn record-turn-marker!* [root session-id marker fs]
-  (let [path (turn-marker-path-for root session-id fs)]
-    (with-persist-lock session-id
-      (fn []
-        (atomic-spit! fs path (write-edn (assoc marker :session-id (str session-id))))))))
+  (when-let [loc (and fs (locate-session root session-id fs))]
+    (let [path (str (or (:dir loc) (session-dir root (:crew loc) session-id)) "/turn.edn")]
+      (with-persist-lock session-id
+        (fn []
+          (atomic-spit! fs path (write-edn (assoc marker :session-id (str session-id)))))))))
 
 (defn request-cancel!* [root session-id fs]
   (with-persist-lock session-id
