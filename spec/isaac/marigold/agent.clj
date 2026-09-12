@@ -3,6 +3,7 @@
    api alias registration, and foundation+agent manifest rebinding. Themed
    names and aboard helpers live in foundation's `isaac.marigold`."
   (:require
+    [clojure.edn :as edn]
     [isaac.config.check-contributions :as check-contributions]
     [isaac.config.schema-compose :as schema-compose]
     [isaac.config.schema.root :as config-schema]
@@ -90,7 +91,14 @@
 (def baseline-manifest baseline-agent-manifest)
 
 (def ^:private baseline-foundation-index
-  {:isaac.foundation {:coord {} :manifest marigold/baseline-foundation-manifest :path nil}
+  {:isaac.foundation {:coord    {}
+                      :manifest (assoc-in marigold/baseline-foundation-manifest
+                                          [:berths :isaac/component]
+                                          (get-in (some-> (discovery/manifest-resource :isaac.foundation)
+                                                          slurp
+                                                          edn/read-string)
+                                                  [:berths :isaac/component]))
+                      :path     nil}
    :isaac.agent      {:coord {} :manifest baseline-agent-manifest :path nil}})
 
 (defn register-grover-test-fixture!
