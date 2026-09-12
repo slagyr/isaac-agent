@@ -3,6 +3,7 @@
     [clojure.string :as str]
     [clojure.java.io :as io]
     [c3kit.apron.schema :as cs]
+    [isaac.comm.registry :as comm-registry]
     [isaac.config.berths :as berths]
     [isaac.config.schema-base :as schema-base]
     [isaac.config.schema-compose :as schema-compose]
@@ -74,6 +75,28 @@
   [{:keys [module-index]}]
   {:errors (vec (comm-reserved-schema-errors module-index))
    :warnings []})
+
+(defn- contributed-comm-types [module-index]
+  (->> module-index
+       vals
+       (mapcat #(keys (or (get-in % [:manifest :isaac.server/comm])
+                          (get-in % [:manifest :isaac.agent/comm]))))
+       (map ->id)
+       set))
+
+(defn check-comm-types
+  [{:keys [config module-index]}]
+  (let [known (into (contributed-comm-types module-index)
+                    (comm-registry/registered-names))]
+    {:errors   (vec
+                 (keep (fn [[slot slice]]
+                         (when-let [comm-type (some-> (:type slice) ->id)]
+                           (when-not (contains? known comm-type)
+                             {:key   (str "comms." (->id slot))
+                              :path  (str "comms." (->id slot))
+                              :value (str "unknown :type " (pr-str comm-type))})))
+                       (:comms config)))
+     :warnings []}))
 
 (defn- broad-directory-warning [crew-id directory {:keys [root]}]
   (when (string? directory)

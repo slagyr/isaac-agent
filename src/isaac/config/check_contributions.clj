@@ -4,6 +4,7 @@
 
 (def server
   {:comm-reserved-schema    {:fn 'isaac.config.checks/check-comm-reserved-schema}
+   :comm-types              {:fn 'isaac.config.checks/check-comm-types}
    :crew-broad-directories  {:fn 'isaac.config.checks/check-crew-broad-directories}
    :crew-model-aliases      {:fn 'isaac.config.checks/check-crew-model-aliases}
    :manifest-refs           {:fn 'isaac.config.checks/check-manifest-refs}

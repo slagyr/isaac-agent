@@ -1,5 +1,6 @@
 (ns isaac.config.checks-spec
   (:require
+    [isaac.comm.registry :as comm-registry]
     [isaac.config.checks :as sut]
     [isaac.config.loader :as loader]
     [isaac.config.root :as root]
@@ -10,6 +11,34 @@
     [speclj.core :refer [describe context it should should=]]))
 
 (describe "config checks"
+
+  (context "check-comm-types"
+
+    (it "rejects a comm type that no module contributes"
+      (let [{:keys [errors]} (sut/check-comm-types
+                               {:config {:comms {:bigbird {:type :unknown-type}}}
+                                :module-index {}})]
+        (should= [{:key   "comms.bigbird"
+                   :path  "comms.bigbird"
+                   :value "unknown :type \"unknown-type\""}]
+                 errors)))
+
+    (it "accepts a comm type contributed by a module"
+      (let [{:keys [errors]} (sut/check-comm-types
+                               {:config {:comms {:bert {:type :telly}}}
+                                :module-index
+                                {:isaac.comm.telly
+                                 {:manifest {:isaac.server/comm {:telly {}}}}}})]
+        (should= [] errors)))
+
+    (it "accepts a comm type registered programmatically"
+      (binding [comm-registry/*registry* (atom (comm-registry/fresh-registry))]
+        (comm-registry/register-factory! :embedded (constantly ::comm))
+        (let [{:keys [errors]} (sut/check-comm-types
+                                 {:config {:comms {:bert {:type :embedded}}}
+                                  :module-index {}})]
+          (should= [] errors))))
+    )
 
   (context "check-crew-model-aliases"
 
