@@ -1,20 +1,21 @@
 (ns isaac.bridge.prompt-cli
   (:require
-    [isaac.cli.api :as cli-api]
     [cheshire.core :as json]
     [clojure.string :as str]
     [clojure.tools.cli :as tools-cli]
+    [isaac.agent.config.runtime :as runtime]
     [isaac.bridge.core :as bridge]
     [isaac.charge :as charge]
+    [isaac.cli.api :as cli-api]
     [isaac.cli.registry :as cli]
     [isaac.comm.protocol :as comm]
     [isaac.comm.render :as render]
+    [isaac.config.api :as config]
     [isaac.config.loader :as loader]
     [isaac.config.root :as root]
-    [isaac.agent.config.runtime :as runtime]
-    [isaac.fs :as fs]
     [isaac.drive.observer :as observer]
     [isaac.drive.turn :as single-turn]
+    [isaac.fs :as fs]
     [isaac.session.context :as session-ctx]
     [isaac.session.frequencies :as session-frequencies]
     [isaac.session.frequencies-cli :as frequencies-cli]
@@ -113,12 +114,23 @@
   (binding [*out* *err*]
     (println message)))
 
+(defn- load-result [opts]
+  (or (:load-result opts)
+      (when (contains? opts :config)
+        {:config (:config opts)})
+      (loader/load-config-result {:root (root-of opts)
+                                  :fs   (fs/instance)})))
+
 (defn- ensure-local-config! [opts]
-  (let [result (loader/load-config-result {:root (root-of opts)
-                                           :fs   (fs/instance)})]
+  (let [result (load-result opts)]
     (when (:missing-config? result)
       (print-error! (get-in result [:errors 0 :value]))
       false)))
+
+(defn- install-config! [opts]
+  (if (contains? opts :config)
+    (config/dangerously-install-config! (:config opts) "prompt-cli")
+    (loader/load-config! (root-of opts) (fs/instance) "prompt-cli")))
 
 (defn- episode-crew-id [opts override cfg]
   (or (:with-crew override)
@@ -295,7 +307,7 @@
         (if (= false (ensure-local-config! opts))
           1
           (let [root          (root-of opts)
-                cfg           (loader/load-config! root (fs/instance) "prompt-cli")
+                cfg           (install-config! opts)
                 _             (runtime/install! {:config cfg})
                 session-store (store/registered-store)
                 override      (frequencies-cli/build-override opts)

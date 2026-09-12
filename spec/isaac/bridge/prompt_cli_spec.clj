@@ -1,15 +1,15 @@
 (ns isaac.bridge.prompt-cli-spec
   (:require
     [clojure.string :as str]
-    [isaac.marigold :as marigold]
+    [isaac.agent.config.runtime :as runtime]
     [isaac.bridge.core :as bridge]
+    [isaac.bridge.prompt-cli :as sut]
     [isaac.charge :as charge]
     [isaac.comm.protocol :as comm]
-    [isaac.bridge.prompt-cli :as sut]
     [isaac.config.loader :as loader]
-    [isaac.agent.config.runtime :as runtime]
-    [isaac.session.spec-helper :as helper]
+    [isaac.marigold :as marigold]
     [isaac.session.context :as session-ctx]
+    [isaac.session.spec-helper :as helper]
     [isaac.session.store.spi :as store]
     [isaac.tool.builtin :as builtin]
     [isaac.turnstile :as turnstile]
@@ -133,6 +133,17 @@
         (let [output (with-out-str
                        (should= 0 (sut/run (assoc base-opts :message "Hello"))))]
           (should (str/includes? output "Test response")))))
+
+    (it "preserves the resolved module index threaded through CLI dispatch"
+      (let [threaded-config (assoc synthetic-config :module-index {:isaac.episodes {}})
+            captured        (atom nil)]
+        (with-redefs [bridge/dispatch! (fn [charge]
+                                         (reset! captured charge)
+                                         (comm/on-chatter (:comm charge) (:session-key charge) nil "Ok")
+                                         {})]
+          (with-out-str
+            (should= 0 (sut/run (assoc base-opts :config threaded-config :message "Hello")))))
+        (should= (:module-index threaded-config) (get-in @captured [:config :module-index]))))
 
     (it "uses prompt-default as the default session"
       (let [used-key (atom nil)]
