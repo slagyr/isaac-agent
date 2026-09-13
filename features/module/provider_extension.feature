@@ -85,7 +85,7 @@ Feature: Provider extension
 
   Scenario: A provider with an unknown :api is rejected at config-load
     # Phase 7 of brth (isaac-ho18) replaced :llm-api-exists? with
-    # [:registered-in? :isaac.server/llm-api]. The error name shifted
+    # [:registered-in? :isaac.http/llm-api]. The error name shifted
     # accordingly.
     Given an empty Isaac root at "/tmp/isaac"
     And the isaac file "isaac.edn" exists with:

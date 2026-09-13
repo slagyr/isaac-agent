@@ -81,7 +81,7 @@
                                  (keyword marigold/bearing-command) {:factory 'isaac.marigold/bearing-slash-factory}
                                  (keyword marigold/muster-command)  {:factory 'isaac.marigold/muster-slash-factory}}
 
-   :isaac.server/comm {(keyword marigold/longwave) {:namespace 'isaac.marigold-comms}
+   :isaac.http/comm {(keyword marigold/longwave) {:namespace 'isaac.marigold-comms}
                         (keyword marigold/skybeam)  {:namespace 'isaac.marigold-comms}
                         (keyword marigold/logbook)  {:namespace 'isaac.marigold-comms}}
 

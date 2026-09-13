@@ -168,7 +168,7 @@ Feature: Config Command
 
   Scenario: validate reports unknown llm api refs with file and valid set
     # Phase 7 of brth (isaac-ho18): :llm-api-exists? was replaced by
-    # [:registered-in? :isaac.server/llm-api]. The validator's failure
+    # [:registered-in? :isaac.http/llm-api]. The validator's failure
     # message changed from "unknown api" to the berth-namespaced form,
     # but bad-value / file / valid-set rendering is preserved.
     Given config file "providers/bogus.edn" containing:
@@ -210,7 +210,7 @@ Feature: Config Command
 
   Scenario: validate reports unknown provider refs with file and valid set
     # Phase 7 of brth (isaac-ho18): :provider-exists? was replaced by
-    # [:registered-in? :isaac.server/provider [:providers]]. Wording
+    # [:registered-in? :isaac.http/provider [:providers]]. Wording
     # shifted from "references undefined provider" to the validator's
     # "must be one of …" (small accepted set), with valid-set rendering
     # preserved.
@@ -238,7 +238,7 @@ Feature: Config Command
 
   Scenario: validate reports unknown comm type refs with file and valid set
     # Phase 8 of brth (isaac-qqgv) replaced :comm-exists? with
-    # [:registered-in? :isaac.server/comm [:comms]]. The validator's
+    # [:registered-in? :isaac.http/comm [:comms]]. The validator's
     # identity message shifted accordingly; bad-value / file / valid-set
     # rendering is preserved.
     Given config file "isaac.edn" containing:

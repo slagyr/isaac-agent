@@ -217,7 +217,7 @@ Feature: Config Composition
 
   Scenario: model.provider must reference an existing provider
     # Phase 7 of brth (isaac-ho18): :provider-exists? was replaced by
-    # [:registered-in? :isaac.server/provider [:providers]]. The
+    # [:registered-in? :isaac.http/provider [:providers]]. The
     # validator picks the small-set form when ≤5 ids are accepted.
     Given config file "isaac.edn" containing:
       """

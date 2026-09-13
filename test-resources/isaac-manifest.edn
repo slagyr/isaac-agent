@@ -2,9 +2,9 @@
  :version  "0.0.0"
  :builtin? true
  :factory  isaac.module.protocol/module
- :description "Test-only comm schema + server comm berth so agent CI matches the server-owned :comms shape without pulling isaac-server onto the classpath."
+ :description "Test-only comm schema + server comm berth so agent CI matches the server-owned :comms shape without pulling isaac-http onto the classpath."
 
- :berths {:isaac.server/comm {:description "Communication channels (test fixture berth declaration for :registered-in? :isaac.server/comm)."
+ :berths {:isaac.http/comm {:description "Communication channels (test fixture berth declaration for :registered-in? :isaac.http/comm)."
                               :register-fn   isaac.comm.registry/register-instance!
                               :deregister-fn isaac.comm.registry/deregister-instance!
                               :schema      {:type       :map
@@ -23,11 +23,11 @@
                    :value-spec  {:name           :comm
                                  :type           :map
                                  :factory        isaac.comm.factory/create!
-                                 :dynamic-schema {:berth :isaac.server/comm :path [:extra-schema]}
+                                 :dynamic-schema {:berth :isaac.http/comm :path [:extra-schema]}
                                  :schema         {:type {:type         :id
                                                          :options-from :comms
                                                          :description  "Manifest comm kind to instantiate"
-                                                         :validations  [[:registered-in? :isaac.server/comm [:comms]]]}
+                                                         :validations  [[:registered-in? :isaac.http/comm [:comms]]]}
                                                   :crew {:type        :id
                                                          :description "Crew id this comm routes into"
                                                          :validations [:crew-exists?]}}}}}}}

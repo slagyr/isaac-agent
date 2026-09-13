@@ -28,7 +28,7 @@
                                {:config {:comms {:bert {:type :telly}}}
                                 :module-index
                                 {:isaac.comm.telly
-                                 {:manifest {:isaac.server/comm {:telly {}}}}}})]
+                                 {:manifest {:isaac.http/comm {:telly {}}}}}})]
         (should= [] errors)))
 
     (it "accepts a comm type registered programmatically"

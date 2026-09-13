@@ -13,7 +13,7 @@
 
 (defn- manifest-comm-entry [module-index impl-kw]
   (some (fn [[_ entry]]
-          (get-in entry [:manifest :isaac.server/comm impl-kw]))
+          (get-in entry [:manifest :isaac.http/comm impl-kw]))
         module-index))
 
 (defn- send-schema-for-slot [module-index slot-cfg]
