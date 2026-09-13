@@ -142,18 +142,6 @@
         (sut/release-wait! "wait-session")
         (should= "Scripted answer" (get-in @response [:message :content]))))
 
-    (it "stays parked after cancellation until the fixture releases it"
-      (sut/enqueue! [{:type "text" :content "Scripted answer" :wait true}])
-      (let [response (future (sut/chat {:model "echo" :messages [{:role "user" :content "Ignored"}]}
-                                       "grover"
-                                       {:session-key "wait-session"}))]
-        (helper/await-condition #(sut/waiting? "wait-session"))
-        (bridge/cancel! "wait-session")
-        (should (sut/waiting? "wait-session"))
-        (should-not (realized? response))
-        (sut/release-wait! "wait-session")
-        (should= :cancelled (:error @response))))
-
     (it "reset releases every waiting response before forgetting its gates"
       (sut/enqueue! [{:type "text" :content "Old answer" :wait true}
                      {:type "text" :content "Older answer" :wait true}])

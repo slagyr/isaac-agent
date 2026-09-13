@@ -116,7 +116,19 @@
   (let [release (promise)]
     (swap! wait-gates* assoc session-key release)
     (try
-      @release
+      (loop []
+        (cond
+          (realized? release)
+          @release
+
+          (bridge/cancelled? session-key)
+          :cancelled
+
+          :else
+          (let [result (deref release 1 ::timeout)]
+            (if (= ::timeout result)
+              (recur)
+              result))))
       (finally
         (swap! wait-gates* dissoc session-key)))
     (when (bridge/cancelled? session-key)
