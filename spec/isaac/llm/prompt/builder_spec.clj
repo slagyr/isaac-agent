@@ -305,12 +305,63 @@
         (should= 1 (count filtered))
         (should= "real" (get-in (first filtered) [:content 0 :text]))))
 
-    (it "drops blank tool results"
-      (let [messages [{:role "toolResult" :content ""}
-                      {:role "toolResult" :content "ok"}]
+    (it "replays a tool batch as one assistant message of tool_use blocks, then one user message of tool_result blocks in call order"
+      (let [messages [{:role "user" :content "go"}
+                      {:role "assistant" :content [{:type "toolCall" :id "tc-1" :name "fs__read" :arguments {:path "a"}}
+                                                   {:type "toolCall" :id "tc-2" :name "fs__read" :arguments {:path "b"}}]}
+                      {:role "toolResult" :id "tc-1" :content "alpha"}
+                      {:role "toolResult" :id "tc-2" :content "beta"}
+                      {:role "assistant" :content "done"}]
             filtered (sut/filter-messages-anthropic messages nil)]
-        (should= 1 (count filtered))
-        (should= "ok" (get-in (first filtered) [:content 0 :text]))))
+        (should= ["user" "assistant" "user" "assistant"] (mapv :role filtered))
+        (should= [{:type "tool_use" :id "tc-1" :name "fs__read" :input {:path "a"}}
+                  {:type "tool_use" :id "tc-2" :name "fs__read" :input {:path "b"}}]
+                 (:content (nth filtered 1)))
+        (should= [{:type "tool_result" :tool_use_id "tc-1" :content "alpha"}
+                  {:type "tool_result" :tool_use_id "tc-2" :content "beta"}]
+                 (:content (nth filtered 2)))))
+
+    (it "groups consecutive one-call entries and keeps the user message before them"
+      (let [messages [{:role "user" :content "hoist the sails"}
+                      {:role "assistant" :content [{:type "toolCall" :id "tc-1" :name "exec__run" :arguments {:command "echo main"}}]}
+                      {:role "assistant" :content [{:type "toolCall" :id "tc-2" :name "exec__run" :arguments {:command "echo jib"}}]}
+                      {:role "toolResult" :toolCallId "tc-1" :content "main up"}
+                      {:role "toolResult" :toolCallId "tc-2" :content "jib up"}]
+            filtered (sut/filter-messages-anthropic messages nil)]
+        (should= ["user" "assistant" "user"] (mapv :role filtered))
+        (should= "hoist the sails" (get-in (first filtered) [:content 0 :text]))
+        (should= ["tc-1" "tc-2"] (mapv :id (:content (nth filtered 1))))
+        (should= ["tc-1" "tc-2"] (mapv :tool_use_id (:content (nth filtered 2))))
+        (should= ["main up" "jib up"] (mapv :content (:content (nth filtered 2))))))
+
+    (it "marks a failed tool result with is_error"
+      (let [messages [{:role "assistant" :content [{:type "toolCall" :id "tc-w" :name "exec__run" :arguments {}}]}
+                      {:role "toolResult" :id "tc-w" :content "Error: winch jammed" :isError true}]
+            filtered (sut/filter-messages-anthropic messages nil)]
+        (should= {:type "tool_result" :tool_use_id "tc-w" :content "Error: winch jammed" :is_error true}
+                 (get-in (nth filtered 1) [:content 0]))))
+
+    (it "replays a blank tool result as (empty) so its call stays paired"
+      (let [messages [{:role "assistant" :content [{:type "toolCall" :id "tc-1" :name "exec__run" :arguments {}}]}
+                      {:role "toolResult" :id "tc-1" :content ""}]
+            filtered (sut/filter-messages-anthropic messages nil)]
+        (should= "(empty)" (get-in (nth filtered 1) [:content 0 :content]))
+        (should= "tc-1" (get-in (nth filtered 1) [:content 0 :tool_use_id]))))
+
+    (it "caps tool result content by the context window"
+      (let [messages [{:role "assistant" :content [{:type "toolCall" :id "tc-1" :name "fs__read" :arguments {}}]}
+                      {:role "toolResult" :id "tc-1" :content (apply str (repeat 4000 "x"))}]
+            filtered (sut/filter-messages-anthropic messages 100)]
+        (should-contain "characters truncated" (get-in (nth filtered 1) [:content 0 :content]))))
+
+    (it "keeps assistant text alongside its tool calls"
+      (let [messages [{:role "assistant" :content [{:type "text" :text "checking the winch"}
+                                                   {:type "toolCall" :id "tc-1" :name "exec__run" :arguments {:command "winch test"}}]}
+                      {:role "toolResult" :id "tc-1" :content "ok"}]
+            filtered (sut/filter-messages-anthropic messages nil)]
+        (should= [{:type "text" :text "checking the winch"}
+                  {:type "tool_use" :id "tc-1" :name "exec__run" :input {:command "winch test"}}]
+                 (:content (first filtered)))))
 
     (it "filters empty text parts from block content"
       (let [messages [{:role "assistant" :content [{:type "text" :text ""}

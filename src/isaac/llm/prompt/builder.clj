@@ -120,38 +120,79 @@
          (remove nil?)
          vec)))
 
+(defn- tool-use-block [tc]
+  {:type  "tool_use"
+   :id    (:id tc)
+   :name  (:name tc)
+   :input (or (:arguments tc) {})})
+
+(defn- tool-result-id [msg]
+  (or (:toolCallId msg) (:id msg)))
+
+(defn- capped-text [text context-window]
+  (if context-window (truncate-tool-result text context-window) text))
+
+(defn- tool-result-block [msg context-window]
+  (let [text (or (content->text (:content msg)) (str (or (:content msg) "")))]
+    (cond-> {:type        "tool_result"
+             :tool_use_id (tool-result-id msg)
+             :content     (capped-text (if (str/blank? text) "(empty)" text) context-window)}
+      (:isError msg) (assoc :is_error true))))
+
+(defn- tool-use-message? [message]
+  (and (= "assistant" (:role message))
+       (some #(= "tool_use" (:type %)) (:content message))))
+
+(defn- tool-result-message? [message]
+  (and (= "user" (:role message))
+       (seq (:content message))
+       (every? #(= "tool_result" (:type %)) (:content message))))
+
+(defn- append-or-conj
+  "Merge `message`'s blocks into the previous message when it satisfies
+   `mergeable?`; otherwise add `message` as its own entry."
+  [out mergeable? message]
+  (if (and (seq out) (mergeable? (peek out)))
+    (conj (pop out) (update (peek out) :content into (:content message)))
+    (conj out message)))
+
 (defn filter-messages-anthropic
   "Filter messages for Anthropic-compatible providers.
+   Tool calls replay as assistant tool_use blocks and results as user
+   tool_result blocks keyed by tool_use_id (isaac-lddb). Adjacent tool calls
+   group into one assistant message and adjacent results into one user
+   message, so batch entries and older one-call entries replay alike.
    Preserves current-turn text blocks so trusted framing can ride alongside the
    user content in the request body."
   [messages context-window]
-  (let [msgs (vec messages)
-        n    (count msgs)]
-    (->> (range n)
-         (keep (fn [i]
-                 (let [msg      (nth msgs i)
-                       next-msg (when (< (inc i) n) (nth msgs (inc i)))]
-                   (cond
-                     (and (= "user" (:role msg)) (some-> next-msg tool-call?))
-                     nil
+  (reduce
+    (fn [out msg]
+      (cond
+        (tool-call? msg)
+        (let [text    (text-blocks (:content msg))
+              message {:role    "assistant"
+                       :content (into (or text []) (map tool-use-block (extract-tool-calls-from-msg msg)))}]
+          (if text
+            (conj out message)
+            (append-or-conj out tool-use-message? message)))
 
-                     (tool-call? msg)
-                     nil
+        (= "toolResult" (:role msg))
+        (if (tool-result-id msg)
+          (append-or-conj out tool-result-message?
+                          {:role "user" :content [(tool-result-block msg context-window)]})
+          (let [text (content->text (:content msg))]
+            (if (non-blank-text? text)
+              (conj out {:role "user" :content [(text-block (capped-text text context-window))]})
+              out)))
 
-                     (= "toolResult" (:role msg))
-                     (let [text (content->text (:content msg))]
-                       (when (non-blank-text? text)
-                         {:role    "user"
-                          :content [(text-block (if context-window
-                                                  (truncate-tool-result text context-window)
-                                                  text))]}))
+        (contains? #{"user" "assistant"} (:role msg))
+        (if-let [content (text-blocks (:content msg))]
+          (conj out {:role (:role msg) :content content})
+          out)
 
-                     (contains? #{"user" "assistant"} (:role msg))
-                     (when-let [content (text-blocks (:content msg))]
-                       {:role (:role msg) :content content})
-
-                     :else nil))))
-         vec)))
+        :else out))
+    []
+    messages))
 
 (defn- entry->message
   "Convert a transcript entry to an LLM message, or nil if the entry has no message shape."

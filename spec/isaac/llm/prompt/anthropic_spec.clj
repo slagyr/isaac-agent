@@ -47,7 +47,25 @@
             first-user (first (:messages p))]
         ;; First user message is the penultimate user message (2 user messages total)
         (should (vector? (:content first-user)))
-        (should= "ephemeral" (get-in first-user [:content 0 :cache_control :type])))))
+        (should= "ephemeral" (get-in first-user [:content 0 :cache_control :type]))))
+
+    (it "places the cache breakpoint on the last tool_result block when that message is the penultimate user message"
+      (let [transcript [{:type "session" :id "sess-1" :timestamp 1000}
+                        {:type "message" :id "m1" :timestamp 2000 :message {:role "user" :content "go"}}
+                        {:type "message" :id "m2" :timestamp 3000
+                         :message {:role    "assistant"
+                                   :content [{:type "toolCall" :id "tc-1" :name "fs__read" :arguments {:path "a"}}
+                                             {:type "toolCall" :id "tc-2" :name "fs__read" :arguments {:path "b"}}]}}
+                        {:type "message" :id "m3" :timestamp 4000 :message {:role "toolResult" :id "tc-1" :content "alpha"}}
+                        {:type "message" :id "m4" :timestamp 5000 :message {:role "toolResult" :id "tc-2" :content "beta"}}
+                        {:type "message" :id "m5" :timestamp 6000 :message {:role "assistant" :content "done"}}
+                        {:type "message" :id "m6" :timestamp 7000 :message {:role "user" :content "next"}}]
+            messages   (:messages (sut/build {:model "claude-sonnet-4-6" :soul "You are Isaac." :transcript transcript}))
+            results    (nth messages 2)]
+        (should= "user" (:role results))
+        (should= ["tool_result" "tool_result"] (mapv :type (:content results)))
+        (should-be-nil (get-in results [:content 0 :cache_control]))
+        (should= "ephemeral" (get-in results [:content 1 :cache_control :type])))))
 
   (context "tools"
 
