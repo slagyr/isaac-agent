@@ -39,9 +39,9 @@
       (should= {:strategy "must be one of :rubberband, :slinky"}
                (schema/message-map result))))
 
-  (it "conforms effort 2 and max-request-tokens 32000"
-    (should= {:effort 2 :max-request-tokens 32000}
-             (schema/conform! sut/config-schema {:effort 2 :max-request-tokens 32000})))
+  (it "conforms compaction effort 2"
+    (should= {:effort 2}
+             (schema/conform! sut/config-schema {:effort 2})))
 
   (it "conforms a crew override of compaction effort 5"
     (should= {:effort 5}

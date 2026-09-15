@@ -46,22 +46,22 @@
   (describe "resolve-config"
     (it "defaults to rubberband with percentage threshold and head"
       (should= {:async? false :strategy :rubberband :head 0.3 :threshold 0.8
-                :effort 2 :max-request-tokens 32000}
+                :effort 2}
                (sut/resolve-config {} 32768)))
 
     (it "merges session overrides"
       (should= {:async? false :strategy :slinky :head 0.4 :threshold 0.8
-                :effort 2 :max-request-tokens 32000}
+                :effort 2}
                (sut/resolve-config {:compaction {:strategy :slinky :threshold 0.8 :head 0.4}} 200)))
 
     (it "coerces string strategy values"
       (should= {:async? false :strategy :slinky :head 0.4 :threshold 0.8
-                :effort 2 :max-request-tokens 32000}
+                :effort 2}
                (sut/resolve-config {:compaction {:strategy "slinky" :threshold 0.8 :head 0.4}} 200)))
 
     (it "merges a compaction effort override"
       (should= {:async? false :strategy :rubberband :head 0.3 :threshold 0.8
-                :effort 5 :max-request-tokens 32000}
+                :effort 5}
                (sut/resolve-config {:compaction {:effort 5}} 32768)))))
 
   (describe "should-compact?"
@@ -226,7 +226,7 @@
         (with-redefs [session-ctx/resolve-behavior
                       (fn [_key _opts]
                         {:compaction {:async? false :strategy :rubberband :head 0.3 :threshold 0.8
-                                      :effort 2 :max-request-tokens 32000}
+                                      :effort 2}
                          :model-cfg  {:allows-effort false}})]
           (sut/compact! key-str
                         {:model          "test-model"
@@ -247,7 +247,7 @@
         (with-redefs [session-ctx/resolve-behavior
                       (fn [_key _opts]
                         {:compaction {:async? false :strategy :rubberband :head 0.3 :threshold 0.8
-                                      :effort 5 :max-request-tokens 32000}
+                                      :effort 5}
                          :model-cfg  {}})]
           (sut/compact! key-str
                         {:model          "test-model"
@@ -919,7 +919,7 @@
                     (= true (:chunked result))))
         (should (sut/partial-splice? result))))
 
-    (it "chunks a 90k-token history under max-request-tokens 32000 on a 278k window"
+    (it "summarizes a 90k-token history in one request on a 278k window"
       (let [key-str   "isaac:main:cli:chat:cap90k"
             _session  (storage/create-session! test-root key-str)
             block     (apply str (repeat 12000 "word "))
@@ -936,7 +936,7 @@
         (with-redefs [session-ctx/resolve-behavior
                       (fn [_key _opts]
                         {:compaction {:async? false :strategy :rubberband :head 0.3 :threshold 0.8
-                                      :effort 2 :max-request-tokens 32000}
+                                      :effort 2}
                          :model-cfg  {}})]
           (log/capture-logs
             (let [result (sut/compact! key-str
@@ -944,11 +944,11 @@
                                         :soul           "You are helpful."
                                         :context-window 278000
                                         :chat-fn        mock-chat})]
-              (should (>= (count @calls) 3))
-              (should-not-be-nil (first (filter #(= :session/compaction-chunked (:event %)) @log/captured-logs)))
-              (should (string? (:summary result))))))))
+              (should= 1 (count @calls))
+              (should-be-nil (first (filter #(= :session/compaction-chunked (:event %)) @log/captured-logs)))
+              (should= "Summary 1" (:summary result)))))))
 
-    (it "plans a single chunk when history is under the request cap"
+    (it "plans a single chunk when history is under the window"
       (let [key-str   "isaac:main:cli:chat:cap20k"
             _session  (storage/create-session! test-root key-str)
             _msg1     (storage/append-message! test-root key-str {:role "user" :content "Hello from the Marigold"})
@@ -960,7 +960,7 @@
         (with-redefs [session-ctx/resolve-behavior
                       (fn [_key _opts]
                         {:compaction {:async? false :strategy :rubberband :head 0.3 :threshold 0.8
-                                      :effort 2 :max-request-tokens 32000}
+                                      :effort 2}
                          :model-cfg  {}})]
           (let [result (sut/compact! key-str
                                      {:model          "test-model"

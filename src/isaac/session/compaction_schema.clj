@@ -9,7 +9,6 @@
                          :validations [[:percentage? "e.g. 0.3 for 30% of context-window"]]}
    :async?              {:type :boolean}
    :effort              {:type :int}
-   :max-request-tokens  {:type :int}
    :head-threshold      {:type        :ignore
                          :validations [[:less-than? :head :threshold]]
                          :description "Derived: head must stay below threshold"}})

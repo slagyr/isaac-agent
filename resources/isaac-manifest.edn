@@ -297,10 +297,6 @@
         {:type :ignore,
          :description "Derived: head must stay below threshold",
          :validations [[:less-than? :head :threshold]]},
-        :max-request-tokens
-        {:type :int,
-         :description
-         "Cap on summarization request size in tokens (default 32000)"},
         :strategy
         {:type :keyword,
          :validations [[:one-of? :rubberband :slinky]]},
@@ -465,10 +461,6 @@
         {:type :ignore,
          :description "Derived: head must stay below threshold",
          :validations [[:less-than? :head :threshold]]},
-        :max-request-tokens
-        {:type :int,
-         :description
-         "Cap on summarization request size in tokens (default 32000)"},
         :strategy
         {:type :keyword,
          :validations [[:one-of? :rubberband :slinky]]},
@@ -534,10 +526,6 @@
        {:type :ignore,
         :description "Derived: head must stay below threshold",
         :validations [[:less-than? :head :threshold]]},
-       :max-request-tokens
-       {:type :int,
-        :description
-        "Cap on summarization request size in tokens (default 32000)"},
        :strategy
        {:type :keyword, :validations [[:one-of? :rubberband :slinky]]},
        :threshold
@@ -688,10 +676,6 @@
         {:type :ignore,
          :description "Derived: head must stay below threshold",
          :validations [[:less-than? :head :threshold]]},
-        :max-request-tokens
-        {:type :int,
-         :description
-         "Cap on summarization request size in tokens (default 32000)"},
         :strategy
         {:type :keyword,
          :validations [[:one-of? :rubberband :slinky]]},

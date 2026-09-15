@@ -134,7 +134,7 @@
       (should= :reset (:context-mode behavior))
       (should= 6 (:effort behavior))
       (should= {:async? false :strategy :rubberband :head 0.3 :threshold 0.7
-                :effort 2 :max-request-tokens 32000} (:compaction behavior)))
+                :effort 2} (:compaction behavior)))
     (config/dangerously-install-config! nil "spec"))
 
   (it "honors an explicit session-level model override over the crew model"
@@ -167,7 +167,7 @@
       (should= :prune (:history-retention session))
       (should= 9 (:effort session))
       (should= {:async? false :strategy :rubberband :head 0.3 :threshold 0.8
-                :effort 2 :max-request-tokens 32000}
+                :effort 2}
                (:compaction (sut/resolve-behavior "s"))))
     (config/dangerously-install-config! nil "spec"))
 
@@ -221,7 +221,7 @@
                            :providers {"grover" {:api "grover"}}} "spec")
     (helper/create-session! test-root "no-config" {:crew crew-name})
     (should= {:async? false :strategy :rubberband :head 0.3 :threshold 0.8
-              :effort 2 :max-request-tokens 32000}
+              :effort 2}
              (:compaction (sut/resolve-behavior "no-config")))
     (config/dangerously-install-config! nil "spec"))
 
@@ -234,7 +234,7 @@
     (helper/create-session! test-root "tracked" {:crew crew-name})
     (store/update-session! (store/registered-store) "tracked" {:compaction {:consecutive-failures 2}})
     (should= {:async? false :strategy :slinky :head 0.4 :threshold 0.8
-              :effort 2 :max-request-tokens 32000}
+              :effort 2}
              (:compaction (sut/resolve-behavior "tracked")))
     (config/dangerously-install-config! nil "spec"))
 
@@ -246,7 +246,7 @@
                            :providers {"grover" {:api "grover"}}} "spec")
     (helper/create-session! test-root "ledger" {:crew crew-name})
     (should= {:async? false :strategy :rubberband :head 0.3 :threshold 0.8
-              :effort 5 :max-request-tokens 32000}
+              :effort 5}
              (:compaction (sut/resolve-behavior "ledger")))
     (config/dangerously-install-config! nil "spec"))
 
