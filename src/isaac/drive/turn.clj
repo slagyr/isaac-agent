@@ -178,26 +178,33 @@
     (with-transcript-lock session-key
       #(policy/append-checkpoint! (session-policy ctx) session-key {:cycle cycle}))))
 
+(defn- elapsed-ms [start-ns]
+  (/ (- (System/nanoTime) start-ns) 1000000.0))
+
 (defn- persist-tool-call!
   "Write the assistant toolCall entry as soon as the call is known."
   [ctx session-key tc]
   (when (and ctx session-key tc)
-    (append-message! ctx session-key
-                     {:role    "assistant"
-                      :content [{:type      "toolCall"
-                                 :id        (:id tc)
-                                 :name      (or (:name tc) (get-in tc [:function :name]))
-                                 :arguments (or (:arguments tc) (get-in tc [:function :arguments]))}]})))
+    (let [start-ns (System/nanoTime)]
+      (append-message! ctx session-key
+                       {:role    "assistant"
+                        :content [{:type      "toolCall"
+                                   :id        (:id tc)
+                                   :name      (or (:name tc) (get-in tc [:function :name]))
+                                   :arguments (or (:arguments tc) (get-in tc [:function :arguments]))}]})
+      (log/debug :tool/call-persisted :elapsed-ms (elapsed-ms start-ns)))))
 
 (defn- persist-tool-result!
   "Write the toolResult entry as soon as the tool returns."
   [ctx session-key tc result]
   (when (and ctx session-key tc)
-    (let [error? (boolean (or (and (string? result) (str/starts-with? result "Error:"))
-                              (and (map? result) (:isError result))))]
+    (let [start-ns (System/nanoTime)
+          error?   (boolean (or (and (string? result) (str/starts-with? result "Error:"))
+                                (and (map? result) (:isError result))))]
       (append-message! ctx session-key
                        (cond-> {:role "toolResult" :id (:id tc) :content result}
-                               error? (assoc :isError true))))))
+                               error? (assoc :isError true)))
+      (log/debug :tool/result-persisted :elapsed-ms (elapsed-ms start-ns)))))
 
 (defn run-tool-calls!
   "Legacy dump of [tool-call result] pairs. Mid-loop persist (isaac-l7lv)
@@ -312,17 +319,19 @@
        (reduce + 0)))
 
 (defn- log-token-drift! [ctx session-key result]
-  (let [sess            (session-policy ctx)
+  (let [start-ns        (System/nanoTime)
+        sess            (session-policy ctx)
         provider-tokens (provider-prompt-tokens (response-tokens result))]
     (when (pos? provider-tokens)
       (let [stamped (transcript-stamped-prompt-tokens sess session-key)
             ratio   (/ (double provider-tokens) (double (max 1 stamped)))]
         (policy/update-session! sess session-key {:token-drift-ratio ratio})
         (log/debug :session/token-drift
-                   :session  session-key
-                   :stamped  stamped
-                   :provider provider-tokens
-                   :ratio    ratio)))))
+                   :session    session-key
+                   :stamped    stamped
+                   :provider   provider-tokens
+                   :ratio      ratio
+                   :elapsed-ms (elapsed-ms start-ns))))))
 
 (defn- process-response* [ctx session-key result {:keys [model provider]}]
   (if (:error result)
@@ -978,7 +987,8 @@
   (assoc opts :tools (when provider (active-tools provider allowed-tools module-index))))
 
 (defn- run-compaction-check! [session-key {:keys [context-window model provider] :as opts} attempt allow-async?]
-  (let [estimate-opts (compaction-estimate-opts session-key opts)
+  (let [check-ns      (System/nanoTime)
+        estimate-opts (assoc (compaction-estimate-opts session-key opts) :caller :check)
         entry         (session-entry estimate-opts session-key)
         total-tokens  (compaction/estimate-prompt-tokens session-key estimate-opts)
         config        (or (:compaction estimate-opts)
@@ -993,7 +1003,8 @@
                :total-tokens total-tokens
                :gauge gauge
                :ratio ratio
-               :context-window context-window)
+               :context-window context-window
+               :elapsed-ms (elapsed-ms check-ns))
     (cond
       (= :reset (:context-mode estimate-opts))
       (log/info :session/compaction-skipped
@@ -1109,7 +1120,7 @@
     (if (conversation-blocked? session-key ctx)
       (blocked-result (or (:config (:charge ctx)) (nexus/get :config)) session-key)
       (let [opts (mid-turn-compaction-opts ctx)
-            total (compaction/estimate-prompt-tokens session-key opts)]
+            total (compaction/estimate-prompt-tokens session-key (assoc opts :caller :overflow))]
         (perform-compaction! session-key 1 total opts)
         (tool-registry/clear-window-cache! (:window-cache ctx))
         (let [rebuilt (rebuild-chat-request session-key ctx)]
@@ -1128,14 +1139,14 @@
         opts     (mid-turn-compaction-opts ctx)
         context-window (:context-window (:charge ctx))
         config   (:config (:charge ctx))
-        before   (compaction/estimate-prompt-tokens session-key opts)]
+        before   (compaction/estimate-prompt-tokens session-key (assoc opts :caller :before))]
     (when driven?
       (log/info :turn/compaction-deferred
                 :session session-key
                 :reason :provider-driven))
     (when-not driven?
       (run-compaction-check! session-key opts 1 false))
-    (let [after      (compaction/estimate-prompt-tokens session-key opts)
+    (let [after      (compaction/estimate-prompt-tokens session-key (assoc opts :caller :after))
           guard-line (context-window-guard-line-tokens context-window)]
       (cond
         (and (pos? (or context-window 0))
@@ -1435,8 +1446,11 @@
         (deref done 5000 nil))
       (let [cycle*      (atom {:n 1 :model model :origin (:origin charge)})
             chat-fn     (chat-fn-for ch session-key p @current-request cycle*)
+            followup-elapsed* (atom nil)
             followup-fn (fn [req response tool-calls tool-results]
-                          (let [messages (api/followup-messages p req response tool-calls tool-results)]
+                          (let [start-ns (System/nanoTime)
+                                messages (api/followup-messages p req response tool-calls tool-results)]
+                            (reset! followup-elapsed* (elapsed-ms start-ns))
                             (reset! current-request (assoc req :messages messages))
                             messages))
             pending-aside* (atom nil)
@@ -1487,7 +1501,12 @@
                                               :prepare-tool-call  #(prepare-tool-call! tool-ctx %)
                                               :cancelled?         #(bridge/cancelled? session-key)
                                               :after-tools        (fn [req]
-                                                                   (let [next (maybe-mid-turn-compact! session-key (assoc ctx :window-cache window-cache) req current-request)]
+                                                                   (let [start-ns (System/nanoTime)
+                                                                         next     (maybe-mid-turn-compact! session-key (assoc ctx :window-cache window-cache) req current-request)]
+                                                                     (when-let [ms @followup-elapsed*]
+                                                                       (log/debug :turn/followup-built :elapsed-ms ms)
+                                                                       (reset! followup-elapsed* nil))
+                                                                     (log/debug :turn/after-tools :elapsed-ms (elapsed-ms start-ns))
                                                                      (if (or (:error next) (:unavailable? next))
                                                                        next
                                                                        (let [n (:n @cycle*)]

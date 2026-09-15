@@ -8,7 +8,6 @@ Feature: Cycle timing — every step between a tool batch and the next request i
     And the built-in tools are registered
     And the crew "main" allows tools: "exec/run"
 
-  @wip
   Scenario: one tool batch logs the elapsed time of each step before the next request
     Given the following sessions exist:
       | name |

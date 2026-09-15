@@ -523,11 +523,29 @@
     (str (or (:dir loc) (session-dir root (:crew loc) session-id)) "/current.ednl")
     (current-transcript-path root session-id)))
 
+(defn- elapsed-ms [start-ns]
+  (/ (- (System/nanoTime) start-ns) 1000000.0))
+
+(defn- log-transcript-read! [path entries start-ns fs]
+  (log/debug :session/transcript-read
+             :path path
+             :entries (count entries)
+             :bytes (or (when (and fs path) (fs/size fs path)) 0)
+             :elapsed-ms (elapsed-ms start-ns)))
+
 (defn read-transcript-raw
   ([root session-id fs]
-   (read-ednl fs (nested-or-flat-current root session-id fs)))
+   (let [path    (nested-or-flat-current root session-id fs)
+         start-ns (System/nanoTime)
+         entries (read-ednl fs path)]
+     (log-transcript-read! path entries start-ns fs)
+     entries))
   ([root crew session-id fs]
-   (read-ednl fs (current-transcript-path root crew session-id))))
+   (let [path    (current-transcript-path root crew session-id)
+         start-ns (System/nanoTime)
+         entries (read-ednl fs path)]
+     (log-transcript-read! path entries start-ns fs)
+     entries)))
 
 (defn write-transcript!
   ([root session-id entries fs]

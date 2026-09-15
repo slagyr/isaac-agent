@@ -70,15 +70,24 @@
    optional pending user input), not lagging session counters."
   [session-key {:keys [session-store session-policy charge soul boot-files rules-text skill-menu-text
                        context-window model tools nonce guidance origin input
-                       transcript context-mode]
+                       transcript context-mode caller]
                 :or   {soul ""}}]
-  (let [session-store (or session-store (nexus/get-in [:sessions :store]))
+  (let [start-ns      (System/nanoTime)
+        session-store (or session-store (nexus/get-in [:sessions :store]))
         sess          (or session-policy
                           (when charge (policy/for-request charge))
                           (when session-store (policy/wrap session-store)))
+        load-ns       (System/nanoTime)
         transcript    (or transcript
                           (when sess (policy/get-transcript sess session-key)))
+        load-ms       (/ (- (System/nanoTime) load-ns) 1000000.0)
+        _             (log/debug :session/transcript-read
+                                 :path session-key
+                                 :entries (count (or transcript []))
+                                 :bytes 0
+                                 :elapsed-ms load-ms)
         transcript    (transcript-for-estimate transcript context-mode input)
+        build-ns      (System/nanoTime)
         prompt        (prompt-builder/build {:soul              soul
                                              :boot-files        boot-files
                                              :rules-text        rules-text
@@ -89,8 +98,16 @@
                                              :transcript        transcript
                                              :model             model
                                              :tools                        tools
-                                              :include-tool-batching-hint? false})]
-    (:tokenEstimate prompt)))
+                                              :include-tool-batching-hint? false})
+        build-ms      (/ (- (System/nanoTime) build-ns) 1000000.0)
+        estimate      (:tokenEstimate prompt)
+        elapsed-ms    (/ (- (System/nanoTime) start-ns) 1000000.0)]
+    (log/debug :session/token-estimate
+               :caller caller
+               :elapsed-ms elapsed-ms
+               :load-ms load-ms
+               :build-ms build-ms)
+    estimate))
 
 (defn compaction-target [entries {:keys [strategy head]} context-window]
   (let [tokens*     (mapv :tokens entries)
