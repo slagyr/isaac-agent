@@ -46,35 +46,49 @@
     :else
     nil))
 
+(defn- tool-call-line [tc]
+  (str "[tool call " (:name tc) " " (json/generate-string (or (:arguments tc) {})) "]"))
+
+(defn- tool-result-text [msg context-window]
+  (let [text (or (content->text (:content msg)) (str (or (:content msg) "")))
+        text (if (str/blank? text) "(empty)" text)]
+    (str (if (:isError msg) "[tool error]" "[tool result]") "\n"
+         (if context-window (truncate-tool-result text context-window) text))))
+
+(defn- conj-text [out kind role text]
+  (if (and (seq out) (= kind (::kind (peek out))))
+    (conj (pop out) (update (peek out) :content str (if (= :tool-call kind) "\n" "\n\n") text))
+    (conj out {::kind kind :role role :content text})))
+
 (defn filter-messages
-  "Filter a sequence of raw message maps for Ollama-compatible providers.
-   Skips tool call entries and user messages immediately before a tool call.
-   Converts tool results to user messages (truncated when context-window provided)."
+  "Filter messages for providers without a native tool-message shape.
+   Replays the whole conversation as plain text: tool calls become assistant
+   \"[tool call name {args}]\" lines and results become user \"[tool result]\"
+   messages (truncated when context-window provided). No message is dropped;
+   adjacent calls or adjacent results merge into one message."
   [messages context-window]
-  (let [msgs (vec messages)
-        n    (count msgs)]
-    (->> (range n)
-         (keep (fn [i]
-                 (let [msg      (nth msgs i)
-                       next-msg (when (< (inc i) n) (nth msgs (inc i)))]
-                   (cond
-                     (and (= "user" (:role msg)) (some-> next-msg tool-call?))
-                     nil
-                     (tool-call? msg)
-                     nil
-                      (= "toolResult" (:role msg))
-                      (let [text (content->text (:content msg))]
-                        (when text
-                          {:role    "user"
-                           :content (if context-window
-                                      (truncate-tool-result text context-window)
-                                      text)}))
-                      (contains? #{"user" "assistant"} (:role msg))
-                       (let [text (content->text (:content msg))]
-                         (when text
-                           {:role (:role msg) :content text}))
-                      :else nil))))
-          vec)))
+  (->> messages
+       (reduce
+         (fn [out msg]
+           (cond
+             (tool-call? msg)
+             (let [text  (content->text (:content msg))
+                   calls (str/join "\n" (map tool-call-line (extract-tool-calls-from-msg msg)))]
+               (if (non-blank-text? text)
+                 (conj out {::kind :text :role "assistant" :content (str text "\n\n" calls)})
+                 (conj-text out :tool-call "assistant" calls)))
+
+             (= "toolResult" (:role msg))
+             (conj-text out :tool-result "user" (tool-result-text msg context-window))
+
+             (contains? #{"user" "assistant"} (:role msg))
+             (if-let [text (content->text (:content msg))]
+               (conj out {::kind :text :role (:role msg) :content text})
+               out)
+
+             :else out))
+         [])
+       (mapv #(dissoc % ::kind))))
 
 (defn- format-tool-call-for-openai [tc]
   {:type     "function"

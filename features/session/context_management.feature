@@ -235,4 +235,4 @@ Feature: Context Management
       | toolResult |              | AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ |
     Then the prompt "What does it say?" on session "context-truncate" matches:
       | key                 | value                    |
-      | messages[1].content | #"AAAA.*truncated.*ZZZZ" |
+      | messages[3].content | #"AAAA.*truncated.*ZZZZ" |

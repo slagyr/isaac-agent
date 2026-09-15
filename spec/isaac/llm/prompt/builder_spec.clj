@@ -207,19 +207,33 @@
                   {:role "assistant" :content "Recovered"}]
                  (:messages p))))
 
-    (it "includes tool results as user messages and excludes the preceding user turn and tool call"
+    (it "replays the user turn, tool call, and tool result as text"
       (let [p (sut/build {:model "test" :soul "Test." :transcript tool-transcript})
             system (str "Test.\n\n" turn-instructions/parallel-tool-calls-hint)]
         (should= [{:role "system" :content system}
-                  {:role "user" :content "README contents"}
+                  {:role "user" :content "Read the README"}
+                  {:role "assistant" :content "[tool call read {\"filePath\":\"README.md\"}]"}
+                  {:role "user" :content "[tool result]\nREADME contents"}
                   {:role "assistant" :content "Here is the README summary."}]
                  (:messages p))))
+
+    (it "merges a tool batch into one call message and one result message"
+      (let [transcript [{:type "message" :message {:role "user" :content "Check both"}}
+                        {:type "message" :message {:role "assistant" :content [{:type "toolCall" :id "a" :name "exec__run" :arguments {:command "echo a"}}
+                                                                              {:type "toolCall" :id "b" :name "exec__run" :arguments {:command "echo b"}}]}}
+                        {:type "message" :message {:role "toolResult" :toolCallId "a" :content "a"}}
+                        {:type "message" :message {:role "toolResult" :toolCallId "b" :content "boom" :isError true}}]
+            p          (sut/build {:model "test" :soul "Test." :transcript transcript})]
+        (should= [{:role "user" :content "Check both"}
+                  {:role "assistant" :content "[tool call exec__run {\"command\":\"echo a\"}]\n[tool call exec__run {\"command\":\"echo b\"}]"}
+                  {:role "user" :content "[tool result]\na\n\n[tool error]\nboom"}]
+                 (subvec (:messages p) 1))))
 
     (it "truncates large tool results when context-window is provided"
       (let [large-content (apply str (repeat 200 "x"))
             large-tool-tr (assoc-in tool-transcript [3 :message :content] large-content)
             p             (sut/build {:model "test" :soul "Test." :transcript large-tool-tr :context-window 100})]
-        (should-contain "characters truncated" (get-in p [:messages 1 :content]))))
+        (should-contain "characters truncated" (get-in p [:messages 3 :content]))))
 
     (it "includes token estimate"
       (let [p (sut/build {:model "test" :soul "Test." :transcript sample-transcript})]
@@ -265,21 +279,24 @@
                   {:role "user" :content "Newest question"}]
                  (subvec (:messages p) 1))))
 
-    (it "filters tool calls from post-compaction messages"
+    (it "replays tool calls in post-compaction messages"
       (let [p (sut/build {:model "test" :soul "You are Isaac." :transcript compacted-with-tool-call-transcript})]
         (should= "system" (get-in p [:messages 0 :role]))
         (should-contain "You are Isaac." (get-in p [:messages 0 :content]))
         (should= [{:role "user" :content (sut/compaction-summary-text {:summary "Earlier conversation summary."})}
-                  {:role "user" :content "File contents here"}
+                  {:role "user" :content "Read the file"}
+                  {:role "assistant" :content "[tool call read_file {\"path\":\"foo.txt\"}]"}
+                  {:role "user" :content "[tool result]\nFile contents here"}
                   {:role "assistant" :content "The file says hello."}]
                  (subvec (:messages p) 1))))
 
-    (it "filters tool calls from messages preserved by firstKeptEntryId"
+    (it "replays tool calls in messages preserved by firstKeptEntryId"
       (let [p (sut/build {:model "test" :soul "You are Isaac." :transcript partially-compacted-with-tool-call-transcript})]
         (should= "system" (get-in p [:messages 0 :role]))
         (should-contain "You are Isaac." (get-in p [:messages 0 :content]))
         (should= [{:role "user" :content (sut/compaction-summary-text {:summary "Summary"})}
-                  {:role "user" :content "File contents here"}
+                  {:role "assistant" :content "[tool call read_file {\"path\":\"foo.txt\"}]"}
+                  {:role "user" :content "[tool result]\nFile contents here"}
                   {:role "assistant" :content "The file says hello."}
                   {:role "user" :content "Follow-up"}]
                  (subvec (:messages p) 1)))))
