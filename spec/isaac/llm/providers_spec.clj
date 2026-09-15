@@ -5,7 +5,7 @@
     [isaac.marigold :as marigold]
     [isaac.marigold.agent :as marigold.agent]
     [isaac.nexus :as nexus]
-    [speclj.core :refer [after around describe it should-be-nil should-contain should=]]))
+    [speclj.core :refer [after around describe it should-be-nil should-contain should-not should=]]))
 
 (describe "isaac.llm.providers"
 
@@ -71,12 +71,8 @@
         (should= "none" (:auth d))
         (should= nil (:models d))))
 
-    (it "returns claude-cli config for claude with subscription shell-out defaults"
-      (let [d (sut/template "claude")]
-        (should= "claude-cli" (:api d))
-        (should= "none" (:auth d))
-        (should= "claude" (:command d))
-        (should= false (:stream-supports-tool-calls d)))))
+    (it "does not provide a built-in Claude Code template"
+      (should-be-nil (sut/template "claude"))))
 
   (describe "defaults"
 
@@ -120,7 +116,7 @@
         (should-contain "openai" known)
         (should-contain "chatgpt" known)
         (should-contain "xai" known)
-        (should-contain "claude" known))))
+        (should-not (contains? known "claude")))))
 
   (describe "registry"
 

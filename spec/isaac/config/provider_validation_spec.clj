@@ -33,6 +33,14 @@
                (mapv #(select-keys % [:key :value :bad-value :valid-values])
                      (filter #(= "providers.bogus.api" (:key %)) (:errors result))))))
 
+  (it "rejects the removed built-in :claude provider template"
+    (marigold/write-config!
+      {:providers {:dreamy {:type :claude}}})
+    (let [result (marigold/load-config)]
+      (should (some #(and (= "providers.dreamy.type" (:key %))
+                          (= "claude" (:bad-value %)))
+                    (:errors result)))))
+
   (it "rejects providers with an unknown :type target"
     (marigold/write-config!
       {:providers {:dreamy {:type :ghost-provider :api-key "test"}}})

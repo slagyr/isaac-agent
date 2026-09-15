@@ -168,12 +168,6 @@
             :chatgpt-account-id? true
             :token-exchange {:requested-token "openai-api-key"
                              :subject-token-type "urn:ietf:params:oauth:token-type:id_token"}}}}
-  :claude
-  {:template
-   {:api "claude-cli",
-    :auth "none",
-    :command "claude",
-    :stream-supports-tool-calls false}}
   :grok
   {:template
    {:api "chat-completions",
