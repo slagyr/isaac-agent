@@ -202,6 +202,11 @@
                                     "/outside/secret.txt"
                                     {:cwd "/work/project"})))
 
+    (it "does not expand the retired :role token to the session workdir"
+      (should-not (sut/path-allowed? {:allow [:role]} nil
+                                    "/work/project/hello.txt"
+                                    {:cwd "/work/project"})))
+
     (it "expands :quarters to the crew area and descendants, not cwd"
       (should (sut/path-allowed? {:allow [:quarters]} nil
                                  "/isaac-state/crew/main/notes.txt"

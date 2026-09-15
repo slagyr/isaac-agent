@@ -150,7 +150,6 @@
   (cond
     (#{:cwd "cwd"} token) cwd
     (#{:quarters "quarters"} token) quarters
-    (#{:role "role"} token) cwd
     (string? token) token
     :else nil))
 

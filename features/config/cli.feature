@@ -277,7 +277,6 @@ Feature: Config Command
     And the stdout contains "OK"
     And the exit code is 0
 
-  @wip
   Scenario: validate warns when a crew directory includes the Isaac state root (isaac-dwjy)
     Given config file "isaac.edn" containing:
       """
@@ -295,7 +294,6 @@ Feature: Config Command
     And the stdout contains "OK"
     And the exit code is 0
 
-  @wip
   Scenario: validate rejects the retired :role directory token
     Given config file "isaac.edn" containing:
       """

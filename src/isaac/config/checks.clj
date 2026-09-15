@@ -104,17 +104,17 @@
       (cond
         (and user-home (= directory user-home))
         {:key   (str "crew." crew-id ".tools.directories")
-         :value (str "grants the entire user home (" user-home ") — use :role for the session workspace")}
+         :value (str "grants the entire user home (" user-home ") — use :cwd for the session workspace")}
 
         (and root (fs-bounds/path-inside? root directory))
         {:key   (str "crew." crew-id ".tools.directories")
-         :value (str "includes the Isaac state directory (" root ") — use :role for the session workspace")}
+         :value (str "includes the Isaac state directory (" root ") — use :cwd for the session workspace")}
 
         (and user-home (fs-bounds/path-inside? user-home directory)
              (not= (fs-bounds/canonical-path user-home)
                    (fs-bounds/canonical-path directory)))
         {:key   (str "crew." crew-id ".tools.directories")
-         :value (str "grants a parent of the user home (" directory ") — use :role for the session workspace")}))))
+         :value (str "grants a parent of the user home (" directory ") — use :cwd for the session workspace")}))))
 
 (defn known-model-ids+aliases
   "Model ids plus each registered model's provider :model string."

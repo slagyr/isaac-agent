@@ -60,7 +60,6 @@ Feature: Global and crew directory allow/deny
       | message | toolResult   | true            | #"(?s).*path outside allowed directories.*" |
       | message | assistant    |                 | done                                        |
 
-  @wip
   Scenario: :role is not a directory grant
     Given config file "isaac.edn" containing:
       """

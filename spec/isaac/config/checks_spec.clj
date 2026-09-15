@@ -106,7 +106,7 @@
                                   :root   "/srv/isaac-state/config"})]
         (should= 1 (count warnings))
         (should (re-find #"Isaac state directory" (:value (first warnings))))
-        (should (re-find #":role" (:value (first warnings)))))))
+        (should (re-find #":cwd" (:value (first warnings)))))))
 
   (context "check-tool-allow-tokens"
 

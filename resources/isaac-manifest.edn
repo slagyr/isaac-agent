@@ -355,7 +355,7 @@
      :directories
      {:type :map,
       :description
-      "Global directory allow/deny. Empty means no paths. Tokens: :cwd, :quarters, :role, or absolute paths.",
+      "Global directory allow/deny. Empty means no paths. Tokens: :cwd, :quarters, or absolute paths.",
       :schema
       {:allow
        {:type :seq,
@@ -409,7 +409,7 @@
         :directories
         {:type :map,
          :description
-         "Crew directory overlay. :allow/:deny of :cwd, :quarters, :role, or absolute paths. Overlay, not replace.",
+         "Crew directory overlay. :allow/:deny of :cwd, :quarters, or absolute paths. Overlay, not replace.",
          :schema
          {:allow
           {:type :seq,
