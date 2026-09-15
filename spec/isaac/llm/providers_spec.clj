@@ -69,14 +69,7 @@
       (let [d (sut/template "grover")]
         (should= "grover" (:api d))
         (should= "none" (:auth d))
-        (should= nil (:models d))))
-
-    (it "returns claude-cli config for claude with subscription shell-out defaults"
-      (let [d (sut/template "claude")]
-        (should= "claude-cli" (:api d))
-        (should= "none" (:auth d))
-        (should= "claude" (:command d))
-        (should= false (:stream-supports-tool-calls d)))))
+        (should= nil (:models d)))))
 
   (describe "defaults"
 
@@ -119,8 +112,7 @@
         (should-contain "ollama" known)
         (should-contain "openai" known)
         (should-contain "chatgpt" known)
-        (should-contain "xai" known)
-        (should-contain "claude" known))))
+        (should-contain "xai" known))))
 
   (describe "registry"
 
