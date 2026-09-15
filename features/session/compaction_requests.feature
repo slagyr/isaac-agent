@@ -135,3 +135,64 @@ Feature: Compaction request shaping — low effort, a size cap, and one retry at
     And session "log-keeper" has chronicle matching:
       | type       | summary                 |
       | compaction | Merged log of two weeks |
+
+  @wip
+  Scenario: a history that fits the window is summarized in a single request (isaac-7gjs)
+    Given the isaac EDN file "config/models/local.edn" exists with:
+      | path           | value      |
+      | model          | test-model |
+      | provider       | grover     |
+      | context-window | 800        |
+    And the following sessions exist:
+      | name       | last-input-tokens | compaction.head | #comment                       |
+      | log-keeper | 700               | 0.1             | last provider tokens over line |
+    And session "log-keeper" has transcript:
+      | type    | message.role | message.content                                                                  |
+      | message | user         | Week one: the Marigold cleared port under Cordelia with stores for ninety days   |
+      | message | assistant    | Logged week one with the manifest, the watch bill, and the starcore trim figures |
+      | message | user         | Week two: Joe rerouted the quantum-anvil coolant after the aft junction fouled   |
+      | message | assistant    | Logged week two with the coolant reroute, the junction inspection, and the fix   |
+    And the following model responses are queued:
+      | type | content                  | model      |
+      | text | Summary of weeks one-two | test-model |
+      | text | Logged.                  | test-model |
+    When the user sends "and week three?" on session "log-keeper"
+    Then session "log-keeper" has chronicle matching:
+      | type       | summary                  |
+      | compaction | Summary of weeks one-two |
+    And session "log-keeper" has transcript matching:
+      | type    | message.role | message.content |
+      | message | assistant    | Logged.         |
+
+  @wip
+  Scenario: a summary prompt larger than the window is compacted in chunks that fit the window (isaac-7gjs)
+    Given the isaac EDN file "config/models/local.edn" exists with:
+      | path           | value      |
+      | model          | test-model |
+      | provider       | grover     |
+      | context-window | 700        |
+    And the following sessions exist:
+      | name       | last-input-tokens | compaction.head | #comment                       |
+      | log-keeper | 600               | 0.1             | last provider tokens over line |
+    And session "log-keeper" has transcript:
+      | type    | message.role | message.content                                                                  |
+      | message | user         | Week one: the Marigold cleared port under Cordelia with stores for ninety days   |
+      | message | assistant    | Logged week one with the manifest, the watch bill, and the starcore trim figures |
+      | message | user         | Week two: Joe rerouted the quantum-anvil coolant after the aft junction fouled   |
+      | message | assistant    | Logged week two with the coolant reroute, the junction inspection, and the fix   |
+      | message | user         | Week three: Oscar recalibrated skybeam after the solar flare scrambled its lock  |
+      | message | assistant    | Logged week three with the recalibration, the flare timing, and the new offsets  |
+    And the following model responses are queued:
+      | type | content                    | model      |
+      | text | Summary of week one        | test-model |
+      | text | Summary of week two        | test-model |
+      | text | Summary of week three      | test-model |
+      | text | Merged log of three weeks  | test-model |
+      | text | Logged.                    | test-model |
+    When the user sends "and week four?" on session "log-keeper"
+    Then the log has entries matching:
+      | level | event                       | chunks |
+      | :info | :session/compaction-chunked | 3      |
+    And session "log-keeper" has chronicle matching:
+      | type       | summary                   |
+      | compaction | Merged log of three weeks |

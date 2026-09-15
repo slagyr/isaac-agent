@@ -136,3 +136,62 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
       | path                | value               |
       | messages[3].content | Error: broken winch |
       | messages[4].content | quick done          |
+
+  @wip
+  Scenario: the transcript records a batch as one assistant entry, with results in call order (isaac-gihe)
+    Given a gated tool "test__slow" is registered that returns "slow done" once tool "test__quick" has completed
+    And a streaming tool "test__quick" is registered that emits progress [] and returns "quick done"
+    And the following sessions exist:
+      | name    |
+      | on-deck |
+    And the following model responses are queued:
+      | model | type       | tool_calls                                                                                              | content |
+      |       | tool_calls | [{"function":{"name":"test__slow","arguments":{}}},{"function":{"name":"test__quick","arguments":{}}}] |         |
+      | echo  | text       |                                                                                                         | Noted.  |
+    When the user sends "go" on session "on-deck" via memory comm
+    Then session "on-deck" has transcript matching:
+      | type    | message.role | message.content[0].name | message.content[1].name | message.content |
+      | message | assistant    | test__slow              | test__quick             |                 |
+      | message | toolResult   |                         |                         | slow done       |
+      | message | toolResult   |                         |                         | quick done      |
+      | message | assistant    |                         |                         | Noted.          |
+    And every toolResult in session "on-deck" pairs with a toolCall by id
+
+  @wip
+  Scenario: one call fails and the other succeeds — results are recorded in call order (isaac-gihe)
+    Given a failing tool "test__broken" waits for tool "test__quick" then returns error "broken winch"
+    And a streaming tool "test__quick" is registered that emits progress [] and returns "quick done"
+    And the following sessions exist:
+      | name    |
+      | on-deck |
+    And the following model responses are queued:
+      | model | type       | tool_calls                                                                                                | content |
+      |       | tool_calls | [{"function":{"name":"test__broken","arguments":{}}},{"function":{"name":"test__quick","arguments":{}}}] |         |
+      | echo  | text       |                                                                                                           | Noted.  |
+    When the user sends "go" on session "on-deck" via memory comm
+    Then session "on-deck" has transcript matching:
+      | type    | message.role | message.content |
+      | message | toolResult   | broken winch    |
+      | message | toolResult   | quick done      |
+      | message | assistant    | Noted.          |
+
+  @wip
+  Scenario: a batch rebuilt from the transcript replays as one assistant message with every call, then the results in call order (isaac-gihe)
+    Given a gated tool "test__slow" is registered that returns "slow done" once tool "test__quick" has completed
+    And a streaming tool "test__quick" is registered that emits progress [] and returns "quick done"
+    And the following sessions exist:
+      | name    |
+      | on-deck |
+    And the following model responses are queued:
+      | model | type       | tool_calls                                                                                              | content |
+      |       | tool_calls | [{"function":{"name":"test__slow","arguments":{}}},{"function":{"name":"test__quick","arguments":{}}}] |         |
+      | echo  | text       |                                                                                                         | Noted.  |
+    When the user sends "go" on session "on-deck" via memory comm
+    And the prompt for session "on-deck" is built for provider "openai"
+    Then the prompt messages contain a tool call with:
+      | path                        | value       |
+      | tool_calls[0].function.name | test__slow  |
+      | tool_calls[1].function.name | test__quick |
+    And the prompt messages contain a tool result with:
+      | path    | value     |
+      | content | slow done |
