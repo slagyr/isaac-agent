@@ -55,4 +55,5 @@
     (let [result (sut/web-search-tool {"query" "clojure"})]
       (should (:isError result))
       (should (str/includes? (:error result) "web_search"))
-      (should (str/includes? (:error result) "api_key")))))
+      (should (str/includes? (:error result) "api-key"))
+      (should-not (str/includes? (:error result) "api_key")))))

@@ -20,7 +20,7 @@
 
 (defn- web-search-config-error []
   {:isError true
-   :error   "web_search not configured: set :tools :web_search :api_key (e.g. ${BRAVE_API_KEY})"})
+   :error   "web_search not configured: set :tools :web_search :api-key (e.g. ${BRAVE_API_KEY})"})
 
 (defn- brave-search-url [query num-results]
   (str brave-search-endpoint
