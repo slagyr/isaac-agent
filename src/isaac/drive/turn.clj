@@ -181,18 +181,26 @@
 (defn- elapsed-ms [start-ns]
   (/ (- (System/nanoTime) start-ns) 1000000.0))
 
-(defn- persist-tool-call!
-  "Write the assistant toolCall entry as soon as the call is known."
-  [ctx session-key tc]
-  (when (and ctx session-key tc)
+(defn- tool-call-content [tc]
+  {:type      "toolCall"
+   :id        (:id tc)
+   :name      (or (:name tc) (get-in tc [:function :name]))
+   :arguments (or (:arguments tc) (get-in tc [:function :arguments]))})
+
+(defn- persist-tool-batch!
+  "Write one assistant entry whose content is every toolCall in model order.
+   Crash mid-batch leaves this entry and no results until the batch flush."
+  [ctx session-key tcs]
+  (when (and ctx session-key (seq tcs))
     (let [start-ns (System/nanoTime)]
       (append-message! ctx session-key
-                       {:role    "assistant"
-                        :content [{:type      "toolCall"
-                                   :id        (:id tc)
-                                   :name      (or (:name tc) (get-in tc [:function :name]))
-                                   :arguments (or (:arguments tc) (get-in tc [:function :arguments]))}]})
-      (log/debug :tool/call-persisted :elapsed-ms (elapsed-ms start-ns)))))
+                       {:role "assistant" :content (mapv tool-call-content tcs)})
+      (log/debug :tool/call-persisted :elapsed-ms (elapsed-ms start-ns) :count (count tcs)))))
+
+(defn- persist-tool-call!
+  "Legacy single-call write. Prefer persist-tool-batch! for a response batch."
+  [ctx session-key tc]
+  (persist-tool-batch! ctx session-key (when tc [tc])))
 
 (defn- persist-tool-result!
   "Write the toolResult entry as soon as the tool returns."
@@ -710,11 +718,25 @@
 
 (declare prepare-tool-call! guard-empty-terminal-response)
 
+(defn- persist-tool-results-in-order!
+  "Write toolResult entries in model call order. Nil slots (cancelled) are skipped.
+   Mid-batch crash: assistant batch entry is on disk, results written so far are not
+   flushed until this call."
+  [ctx session-key tool-calls results]
+  (doseq [[tc result] (map vector tool-calls results)]
+    (when (and tc result)
+      (persist-tool-result! ctx session-key tc result))))
+
 (defn- execute-pending-tools! [tool-ctx tool-calls]
-  (mapv (fn [tc]
-          (let [{:keys [run]} (prepare-tool-call! tool-ctx tc)]
-            (run)))
-        tool-calls))
+  (let [ctx (:ctx tool-ctx)
+        session-key (:session-key tool-ctx)]
+    (persist-tool-batch! ctx session-key tool-calls)
+    (let [results (mapv (fn [tc]
+                          (let [{:keys [run]} (prepare-tool-call! tool-ctx tc)]
+                            (run)))
+                        tool-calls)]
+      (persist-tool-results-in-order! ctx session-key tool-calls results)
+      results)))
 
 (defn- apply-stop-exhaustion [result chat-fn current-request input]
   (-> result
@@ -1340,7 +1362,6 @@
     (comm/on-tool-call ch session-key tc)
     (when-let [end-aside! (:end-aside! tool-ctx)]
       (end-aside!))
-    (persist-tool-call! (:ctx tool-ctx) session-key tc)
     (bridge/on-cancel! session-key cancel-queued!)
     {:tool-call      tc
      :cancel-queued cancel-queued!
@@ -1364,7 +1385,6 @@
                         (let [result        (tool-registry/present-result raw-result)
                               after-result! (when (map? raw-result) (:after-result! raw-result))]
                           (when (compare-and-set! tool-state :running :completed)
-                            (persist-tool-result! ctx session-key tc result)
                             (swap! tool-count inc)
                             (comm/on-tool-result ch session-key tc result)
                             (when after-result!
@@ -1383,11 +1403,15 @@
 (defn- record-tool-call!
   "Legacy single-call path: announce then execute one tool immediately."
   [tool-ctx name arguments]
-  (let [{:keys [run]} (prepare-tool-call! tool-ctx {:id        (str (java.util.UUID/randomUUID))
-                                                    :name      name
-                                                    :arguments arguments
-                                                    :type      "toolCall"})]
-    (run)))
+  (let [tc {:id        (str (java.util.UUID/randomUUID))
+            :name      name
+            :arguments arguments
+            :type      "toolCall"}]
+    (persist-tool-batch! (:ctx tool-ctx) (:session-key tool-ctx) [tc])
+    (let [{:keys [run]} (prepare-tool-call! tool-ctx tc)
+          result (run)]
+      (persist-tool-result! (:ctx tool-ctx) (:session-key tool-ctx) tc result)
+      result)))
 
 (defn- execute-llm-turn!
   "Build the chat request, drive the tool-loop, and persist the final
@@ -1499,6 +1523,8 @@
                                              {:max-loops          cycle-budget
                                               :max-parallel-tools max-parallel
                                               :prepare-tool-call  #(prepare-tool-call! tool-ctx %)
+                                              :on-tool-batch      #(persist-tool-batch! ctx session-key %)
+                                              :on-tool-batch-results #(persist-tool-results-in-order! ctx session-key %1 %2)
                                               :cancelled?         #(bridge/cancelled? session-key)
                                               :after-tools        (fn [req]
                                                                    (let [start-ns (System/nanoTime)

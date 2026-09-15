@@ -67,7 +67,10 @@
             (cancel-queued)))
         executions))
 
-(defn- execute-tool-batch [tool-calls tool-fn {:keys [cancelled? max-parallel-tools prepare-tool-call]}]
+(defn- execute-tool-batch [tool-calls tool-fn {:keys [cancelled? max-parallel-tools prepare-tool-call
+                                                       on-tool-batch on-tool-batch-results]}]
+  (when on-tool-batch
+    (on-tool-batch tool-calls))
   (let [parallelism (max 1 (long (or max-parallel-tools default-max-parallel-tools)))
         executions  (mapv #(prepare-tool-execution % tool-fn prepare-tool-call) tool-calls)
         next-index   (atom -1)
@@ -93,6 +96,8 @@
         workers      (mapv (fn [_] (future (worker)))
                            (range (min parallelism (count executions))))]
     (run! deref workers)
+    (when on-tool-batch-results
+      (on-tool-batch-results tool-calls @results))
     {:results    (->> @results (remove nil?) vec)
      :cancelled? @cancelled*}))
 
@@ -112,7 +117,8 @@
 
 (defn -run-default
   "Isaac's built-in tool-call loop. Byte-for-byte the historical `run` body."
-  [chat-fn followup-fn request tool-fn {:keys [max-loops cancelled? after-tools max-parallel-tools on-cycle prepare-tool-call]
+  [chat-fn followup-fn request tool-fn {:keys [max-loops cancelled? after-tools max-parallel-tools on-cycle prepare-tool-call
+                                               on-tool-batch on-tool-batch-results]
                                         :or   {max-loops          default-max-loops
                                                cancelled?         (constantly false)
                                                after-tools        identity
@@ -159,9 +165,11 @@
                 (do
                   (when on-cycle (on-cycle :end cycle-n response))
                   (let [{:keys [results cancelled?]}
-                        (execute-tool-batch tool-calls tool-fn {:cancelled?         cancelled?
-                                                                :max-parallel-tools max-parallel-tools
-                                                                :prepare-tool-call  prepare-tool-call})]
+                        (execute-tool-batch tool-calls tool-fn {:cancelled?            cancelled?
+                                                                :max-parallel-tools    max-parallel-tools
+                                                                :prepare-tool-call     prepare-tool-call
+                                                                :on-tool-batch         on-tool-batch
+                                                                :on-tool-batch-results on-tool-batch-results})]
                     (if cancelled?
                       {:response     nil
                        :tool-calls   (into all-tools tool-calls)

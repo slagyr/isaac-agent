@@ -55,28 +55,6 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
       | messages[3].content | slow done  |
       | messages[4].content | quick done |
 
-  Scenario: the transcript records every call before any result, and results pair with calls by id
-    Given a gated tool "test__slow" is registered that returns "slow done" once tool "test__quick" has completed
-    And a streaming tool "test__quick" is registered that emits progress [] and returns "quick done"
-    And the following sessions exist:
-      | name    |
-      | on-deck |
-    And the following model responses are queued:
-      | model | type       | tool_calls                                                                                              | content |
-      |       | tool_calls | [{"function":{"name":"test__slow","arguments":{}}},{"function":{"name":"test__quick","arguments":{}}}] |         |
-      | echo  | text       |                                                                                                         | Noted.  |
-    When the user sends "go" on session "on-deck" via memory comm
-    Then session "on-deck" has transcript matching:
-      | type    | message.role | message.content[0].name |
-      | message | assistant    | test__slow              |
-      | message | assistant    | test__quick             |
-    And session "on-deck" has transcript matching:
-      | type    | message.role | message.content |
-      | message | toolResult   | quick done      |
-      | message | toolResult   | slow done       |
-      | message | assistant    | Noted.          |
-    And every toolResult in session "on-deck" pairs with a toolCall by id
-
   Scenario: tools.max-parallel is a config knob with a default of 4
     Given an Isaac root at "target/test-state"
     When isaac is run with "config get tools.max-parallel"
@@ -127,17 +105,11 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
       | tool-result | test__quick  |
       | tool-result | test__broken |
       | reply       |              |
-    And session "on-deck" has transcript matching:
-      | type    | message.role | message.content             |
-      | message | toolResult   | quick done   |
-      | message | toolResult   | broken winch |
-      | message | assistant    | Noted.       |
     And the last LLM request matches:
       | path                | value               |
       | messages[3].content | Error: broken winch |
       | messages[4].content | quick done          |
 
-  @wip
   Scenario: the transcript records a batch as one assistant entry, with results in call order (isaac-gihe)
     Given a gated tool "test__slow" is registered that returns "slow done" once tool "test__quick" has completed
     And a streaming tool "test__quick" is registered that emits progress [] and returns "quick done"
@@ -157,7 +129,6 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
       | message | assistant    |                         |                         | Noted.          |
     And every toolResult in session "on-deck" pairs with a toolCall by id
 
-  @wip
   Scenario: one call fails and the other succeeds — results are recorded in call order (isaac-gihe)
     Given a failing tool "test__broken" waits for tool "test__quick" then returns error "broken winch"
     And a streaming tool "test__quick" is registered that emits progress [] and returns "quick done"
@@ -175,7 +146,6 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
       | message | toolResult   | quick done      |
       | message | assistant    | Noted.          |
 
-  @wip
   Scenario: a batch rebuilt from the transcript replays as one assistant message with every call, then the results in call order (isaac-gihe)
     Given a gated tool "test__slow" is registered that returns "slow done" once tool "test__quick" has completed
     And a streaming tool "test__quick" is registered that emits progress [] and returns "quick done"

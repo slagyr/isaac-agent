@@ -1604,7 +1604,7 @@
   (await-acp-turn!)
   (let [transcript      (with-feature-fs #(get-transcript key-str))
         tool-call-ids   (->> transcript
-                             (keep #(transcript/first-tool-call (:message %)))
+                             (mapcat #(transcript/tool-calls (:message %)))
                              (map :id)
                              set)
         tool-result-ids (->> transcript
