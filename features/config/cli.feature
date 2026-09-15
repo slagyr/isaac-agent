@@ -277,6 +277,7 @@ Feature: Config Command
     And the stdout contains "OK"
     And the exit code is 0
 
+  @wip
   Scenario: validate warns when a crew directory includes the Isaac state root (isaac-dwjy)
     Given config file "isaac.edn" containing:
       """
@@ -290,9 +291,26 @@ Feature: Config Command
       | pattern                                      |
       | warning: :crew\.scrapper\.tools\.directories |
       | Isaac state directory                        |
-      | :role                                        |
+      | :cwd                                         |
     And the stdout contains "OK"
     And the exit code is 0
+
+  @wip
+  Scenario: validate rejects the retired :role directory token
+    Given config file "isaac.edn" containing:
+      """
+      {:defaults  {:crew :main :model :llama}
+       :crew      {:main {}}
+       :models    {:llama {:model "llama3.3:1b" :provider :anthropic}}
+       :providers {:anthropic {}}
+       :tools     {:directories {:allow [:role]}}}
+      """
+    When isaac is run with "config validate"
+    Then the stderr matches:
+      | pattern                    |
+      | tools\.directories\.allow |
+      | must be :cwd               |
+    And the exit code is 1
 
   # ----- Validate overlay (--as) -----
 

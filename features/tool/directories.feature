@@ -59,6 +59,33 @@ Feature: Global and crew directory allow/deny
       | message | toolResult   |                 |                                             |
       | message | toolResult   | true            | #"(?s).*path outside allowed directories.*" |
       | message | assistant    |                 | done                                        |
+
+  @wip
+  Scenario: :role is not a directory grant
+    Given config file "isaac.edn" containing:
+      """
+      {:defaults    {:crew :main :model :echo}
+       :providers   {:grover {:base-url "http://test" :api "grover"}}
+       :models      {:echo {:model "echo" :provider :grover :context-window 32768}}
+       :tools       {:directories {:allow [:role]}}}
+      """
+    And config file "crew/main.edn" containing:
+      """
+      {:tools {:allow [:fs/read]}}
+      """
+    And file "/work/project/hello.txt" contains "hi there"
+    And the following sessions exist:
+      | name       | cwd           |
+      | fence-test | /work/project |
+    And the following model responses are queued:
+      | type      | tool     | arguments                               |
+      | tool_call | fs__read | {"file_path": "/work/project/hello.txt"} |
+      | text      |          | Got it                                  |
+    When the user sends "read hello" on session "fence-test"
+    Then session "fence-test" has transcript matching:
+      | type    | message.role | message.isError |
+      | message | toolResult   | true            |
+
   Scenario: Global quarters grant allows the crew area and not cwd
     Given config file "isaac.edn" containing:
       """
