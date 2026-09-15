@@ -1,15 +1,11 @@
 Feature: Token accounting — one unit, one source
   Compaction plans (should-compact?, compaction-target, needs-chunking?,
   chunk sizing, tokens-saved) must run on real per-entry token counts, not
-  on a chars/4 guess over the stringified entry map. Today nothing in the
-  turn driver stamps :tokens on transcript entries, so every planning number
-  is a heuristic over `(str message)` — it produced :tokens-before of 1.4M
-  and 2.4K for the same kind of history on 2026-08-25 and tripped chunking
-  while the provider reported 128K in a 256K window. Contract: (1) every
+  on a chars/4 guess over the stringified entry map. Contract: (1) every
   transcript entry is stamped at write time from CONTENT (text chars/4,
-  ceiling); (2) compaction reads stamped counts only; (3) after every model
-  response the provider's prompt tokens are reconciled against the stamped
-  sum and logged as :session/token-drift — report-only. (isaac-pqjn)
+  ceiling); (2) compaction reads stamped counts only; (3) the gauge is a
+  running tally — the last prompt tokens plus that response's output tokens
+  plus the stamped tokens of entries appended since.
 
   Background:
     Given default Grover setup
@@ -35,48 +31,6 @@ Feature: Token accounting — one unit, one source
       | message | assistant    | #*     | tool call — arguments counted    |
       | message | toolResult   | 20     | 80-char file body / 4            |
       | message | assistant    | 10     | 40 chars / 4                     |
-
-  Scenario: compaction plans from stamped counts, not a stringified guess
-    Given the isaac EDN file "config/models/local.edn" exists with:
-      | path           | value      |
-      | model          | test-model |
-      | provider       | grover     |
-      | context-window | 32768      |
-    And the isaac EDN file "config/crew/main.edn" exists with:
-      | path  | value            |
-      | model | local            |
-      | soul  | You are Atticus. |
-    And the following sessions exist:
-      | name  | total-tokens |
-      | tally | 1700         |
-    And session "tally" has transcript:
-      | type    | message.role | message.content                                   | tokens |
-      | message | user         | dump the config                                   | 4      |
-      | message | assistant    | dump output, stamped far above its text length    | 750    |
-    And the following model responses are queued:
-      | type | content         | model      | usage.input_tokens |
-      | text | Summary of dump | test-model | 900                |
-      | text | Here you go     | test-model | 300                |
-    When the user sends "and again" on session "tally"
-    Then the log has entries matching:
-      | event                | stamped        | provider | ratio        |
-      | :session/token-drift | #"7[0-9][0-9]" | 900      | #"1\.[0-9]+" |
-
-  Scenario: provider prompt tokens are reconciled against stamped counts and drift is logged
-    Given the following sessions exist:
-      | name  |
-      | gauge |
-    And session "gauge" has transcript:
-      | type    | message.role | message.content | tokens |
-      | message | user         | earlier ask     | 100    |
-      | message | assistant    | earlier reply   | 100    |
-    And the following model responses are queued:
-      | type | content | model | usage.input_tokens |
-      | text | ok      | echo  | 260                |
-    When the user sends "now this" on session "gauge"
-    Then the log has entries matching:
-      | event                | stamped        | provider | ratio        |
-      | :session/token-drift | #"2[0-9][0-9]" | 260      | #"1\.[0-9]+" |
 
   Scenario: a mid-turn provider count over the threshold compacts before the next cycle
     Given the isaac EDN file "config/models/local.edn" exists with:
@@ -129,44 +83,6 @@ Feature: Token accounting — one unit, one source
       | name   | last-input-tokens | turn-input-tokens |
       | cycles | 340               | 960               |
 
-  Scenario: the gauge is calibrated by the last observed drift ratio
-    Given the isaac EDN file "config/models/local.edn" exists with:
-      | path           | value      |
-      | model          | test-model |
-      | provider       | grover     |
-      | context-window | 1000       |
-    And the isaac EDN file "config/crew/main.edn" exists with:
-      | path  | value            |
-      | model | local            |
-      | soul  | You are Atticus. |
-    And the following sessions exist:
-      | name       |
-      | calibrated |
-    And session "calibrated" has transcript:
-      | type    | message.role | message.content | tokens |
-      | message | user         | first ask       | 100    |
-      | message | assistant    | first reply     | 100    |
-    And the following model responses are queued:
-      | type | content      | model      | usage.input_tokens |
-      | text | second reply | test-model | 300                |
-      | text | folded       | test-model |                    |
-      | text | third reply  | test-model | 200                |
-    When the user sends "second ask" on session "calibrated"
-    Then the log has entries matching:
-      | event                | provider | ratio        |
-      | :session/token-drift | 300      | #"1\.[0-9]+" |
-    Given session "calibrated" has transcript:
-      | type    | message.role | message.content | tokens |
-      | message | user         | padding ask     | 200    |
-      | message | assistant    | padding reply   | 200    |
-    When the user sends "third ask" on session "calibrated"
-    Then the log has entries matching:
-      | event                     | gauge | ratio        |
-      | :session/compaction-check | 300   | #"1\.[0-9]+" |
-    And session "calibrated" has transcript matching:
-      | type    | message.role | message.content |
-      | message | assistant    | folded          |
-
   Scenario: anthropic-shaped cached input stamps 908 and compacts on the next turn
     Given the isaac EDN file "config/models/local.edn" exists with:
       | path           | value      |
@@ -200,8 +116,7 @@ Feature: Token accounting — one unit, one source
       | type    | message.role | message.content |
       | message | assistant    | second reply    |
 
-  @wip
-  Scenario: compaction plans from stamped counts, not a stringified guess (isaac-4erp)
+  Scenario: compaction plans from stamped counts, not a stringified guess
     Given the isaac EDN file "config/models/local.edn" exists with:
       | path           | value      |
       | model          | test-model |
@@ -227,8 +142,7 @@ Feature: Token accounting — one unit, one source
       | event                        | tokens-before |
       | :session/compaction-analysis | #"75[0-9]"    |
 
-  @wip
-  Scenario: the gauge is the last prompt plus its output plus the entries appended since (isaac-4erp)
+  Scenario: the gauge is the last prompt plus its output plus the entries appended since
     Given the crew "main" allows tools: "fs/read"
     And the isaac file "crew/main/notes.txt" exists with:
       """
@@ -246,8 +160,7 @@ Feature: Token accounting — one unit, one source
       | event                     | gauge |
       | :session/compaction-check | 360   |
 
-  @wip
-  Scenario: entries appended since the last response can cross the threshold and compact before the next cycle (isaac-4erp)
+  Scenario: entries appended since the last response can cross the threshold and compact before the next cycle
     Given the isaac EDN file "config/models/local.edn" exists with:
       | path           | value      |
       | model          | test-model |
@@ -284,8 +197,7 @@ Feature: Token accounting — one unit, one source
       | type    | message.role | message.content |
       | message | assistant    | done            |
 
-  @wip
-  Scenario: after a compaction the gauge counts the stamped history, not the stale provider count (isaac-4erp)
+  Scenario: after a compaction the gauge counts the stamped history, not the stale provider count
     Given the following sessions exist:
       | name   | last-input-tokens |
       | galley | 900               |

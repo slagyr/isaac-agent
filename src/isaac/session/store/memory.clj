@@ -176,9 +176,10 @@
                             :segment           0
                             :input-tokens      0
                             :turn-input-tokens 0
-                            :last-input-tokens 0
-                            :output-tokens     0
-                            :total-tokens      0}]
+                            :last-input-tokens  0
+                            :last-output-tokens 0
+                            :output-tokens      0
+                            :total-tokens       0}]
           (swap! state #(-> %
                             (assoc-in [:sessions id] entry)
                             (assoc-in [:transcripts id] [header])))
@@ -437,7 +438,8 @@
           now        (now-iso)
           [compaction-entry new-current] (c/compacted-current transcript compactedEntryIds firstKeptEntryId summary tokensBefore now turnRequest)
           prefix     (c/frozen-segment transcript new-current)
-          n          (or (get-in @state [:sessions id :segment]) 0)]
+          n          (or (get-in @state [:sessions id :segment]) 0)
+          tally      (c/restart-tally-fields new-current)]
       (swap! state (fn [s]
                      (cond-> s
                        (= :retain retention)
@@ -448,6 +450,7 @@
                        (update-in [:sessions id]
                                   #(-> %
                                        (assoc :updated-at now)
+                                       (merge tally)
                                        (cond-> (= :retain retention) (assoc :segment (inc n)))
                                        (dissoc :effective-history-offset :session-file)
                                        (update :compaction-count inc))))))

@@ -204,6 +204,19 @@
       (let [session (helper/get-session test-dir "cycle-stamp")]
         (should= 850 (:last-input-tokens session))))
 
+    (it "points the tally cursor at the last transcript entry when stamping a response"
+      (helper/create-session! test-dir "tally-cursor")
+      (helper/append-message! test-dir "tally-cursor" {:role "user" :content "read my notes"})
+      (let [last-id (:id (last (helper/get-transcript test-dir "tally-cursor")))]
+        (#'sut/stamp-provider-prompt! {:session-store (store/registered-store)
+                                       :charge        {:context-window 1000}}
+                                      "tally-cursor"
+                                      {:usage {:input_tokens 300 :output_tokens 40}})
+        (let [session (helper/get-session test-dir "tally-cursor")]
+          (should= 300 (:last-input-tokens session))
+          (should= 40 (:last-output-tokens session))
+          (should= last-id (:tally-after-id session)))))
+
     (it "includes cached input in the provider stamp for anthropic-shaped usage"
       (helper/create-session! test-dir "claude-cache-stamp")
       (sut/process-response! "claude-cache-stamp"
@@ -233,23 +246,45 @@
           (should= 2708 (:prompt-tokens event))
           (should= 1000 (:context-window event)))))
 
-    (it "persists the last observed token drift ratio on the session entry"
-      (helper/create-session! test-dir "drift-ratio")
-      (helper/append-message! test-dir "drift-ratio" {:role "user" :content "earlier ask" :tokens 100})
-      (helper/append-message! test-dir "drift-ratio" {:role "assistant" :content "earlier reply" :tokens 100})
-      (helper/append-message! test-dir "drift-ratio" {:role "user" :content "now this"})
-      (sut/process-response! {:root test-dir :fs (fs/mem-fs)}
-                             "drift-ratio"
+    (it "stores the last response's output tokens on the session entry"
+      (helper/create-session! test-dir "output-stamp")
+      (sut/process-response! "output-stamp"
                              {:content      "ok"
-                              :token-counts {:input-tokens 260 :output-tokens 1}
+                              :token-counts {:input-tokens 300 :output-tokens 40}
                               :response     {:message {:role "assistant" :content "ok"}
-                                             :usage   {:input_tokens 260
-                                                       :output_tokens 1}}}
+                                             :usage   {:input_tokens 300
+                                                       :output_tokens 40}}}
                              {:model "echo" :provider "grover:grok"})
-      (let [session (helper/get-session test-dir "drift-ratio")]
-        (should= (/ 260.0 202) (:token-drift-ratio session))))
+      (let [session (helper/get-session test-dir "output-stamp")]
+        (should= 300 (:last-input-tokens session))
+        (should= 40 (:last-output-tokens session))))
 
-    (it "logs token drift from stamped prompt entries against provider prompt tokens"
+    (it "excludes reasoning tokens from last-output-tokens when the provider is not stateful"
+      (helper/create-session! test-dir "reasoning-drop")
+      (#'sut/stamp-provider-prompt! {:session-store (store/registered-store)
+                                     :charge        {:context-window 1000}
+                                     :provider      (->TestProvider marigold/starcore {:api marigold/sky-api})}
+                                    "reasoning-drop"
+                                    {:usage {:input_tokens 200
+                                             :output_tokens 50
+                                             :output_tokens_details {:reasoning_tokens 30}}})
+      (let [session (helper/get-session test-dir "reasoning-drop")]
+        (should= 200 (:last-input-tokens session))
+        (should= 20 (:last-output-tokens session))))
+
+    (it "keeps reasoning tokens in last-output-tokens when the provider is stateful"
+      (helper/create-session! test-dir "reasoning-keep")
+      (#'sut/stamp-provider-prompt! {:session-store (store/registered-store)
+                                     :charge        {:context-window 1000}
+                                     :provider      (->TestProvider marigold/starcore {:api marigold/sky-api :stateful true})}
+                                    "reasoning-keep"
+                                    {:usage {:input_tokens 200
+                                             :output_tokens 50
+                                             :output_tokens_details {:reasoning_tokens 30}}})
+      (let [session (helper/get-session test-dir "reasoning-keep")]
+        (should= 50 (:last-output-tokens session))))
+
+    (it "does not log token drift"
       (helper/create-session! test-dir "drift-test")
       (helper/append-message! test-dir "drift-test" {:role "user" :content "earlier ask" :tokens 100})
       (helper/append-message! test-dir "drift-test" {:role "assistant" :content "earlier reply" :tokens 100})
@@ -263,11 +298,10 @@
                                                :usage   {:input_tokens 260
                                                          :output_tokens 1}}}
                                {:model "echo" :provider "grover:grok"})
-        (let [event (first (filter #(= :session/token-drift (:event %)) @log/captured-logs))]
-          (should-not-be-nil event)
-          (should= 202 (:stamped event))
-          (should= 260 (:provider event))
-          (should= (/ 260.0 202) (:ratio event))))))
+        (let [event (first (filter #(= :session/token-drift (:event %)) @log/captured-logs))
+              session (helper/get-session test-dir "drift-test")]
+          (should-be-nil event)
+          (should-be-nil (:token-drift-ratio session))))))
 
   (describe "empty terminal response guard"
 

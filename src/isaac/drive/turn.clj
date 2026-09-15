@@ -274,11 +274,32 @@
         context-window)
       raw-prompt)))
 
+(defn- provider-stateful? [ctx]
+  (boolean (get (some-> (or (:provider ctx) (:provider (:charge ctx)))
+                        api/config)
+                :stateful)))
+
+(defn- replayable-output-tokens [ctx result]
+  (let [output    (or (:output-tokens (response-tokens result)) 0)
+        reasoning (usage-reasoning-tokens (response-usage result))]
+    (if (and reasoning (not (provider-stateful? ctx)))
+      (max 0 (- output reasoning))
+      output)))
+
+(defn- last-transcript-id [ctx session-key]
+  (when-let [sess (session-policy ctx)]
+    (:id (last (or (policy/get-transcript sess session-key) [])))))
+
 (defn- stamp-provider-prompt! [ctx session-key result]
   (let [sess          (session-policy ctx)
-        prompt-tokens (normalized-provider-prompt-tokens ctx session-key result)]
+        prompt-tokens (normalized-provider-prompt-tokens ctx session-key result)
+        output-tokens (replayable-output-tokens ctx result)
+        cursor        (last-transcript-id ctx session-key)]
     (when (pos? prompt-tokens)
-      (policy/update-session! sess session-key {:last-input-tokens prompt-tokens}))
+      (policy/update-session! sess session-key
+                              (cond-> {:last-input-tokens  prompt-tokens
+                                       :last-output-tokens output-tokens}
+                                cursor (assoc :tally-after-id cursor))))
     prompt-tokens))
 
 (defn- store-response! [ctx session-key result {:keys [model provider]}]
@@ -311,42 +332,21 @@
                              stop-reason (assoc :stopReason stop-reason)
                              reasoning (assoc :reasoning reasoning)))
     (policy/update-session! sess session-key
-                           (cond-> {:input-tokens      (+ (or (:input-tokens session-entry) 0) turn-input-tokens)
-                                    :turn-input-tokens turn-input-tokens
-                                    :last-input-tokens prompt-tokens
-                                    :output-tokens     (+ (or (:output-tokens session-entry) 0) output-tokens)
-                                    :total-tokens      (+ (+ (or (:input-tokens session-entry) 0) turn-input-tokens)
-                                                          (+ (or (:output-tokens session-entry) 0) output-tokens))}
+                           (cond-> {:input-tokens       (+ (or (:input-tokens session-entry) 0) turn-input-tokens)
+                                    :turn-input-tokens  turn-input-tokens
+                                    :last-input-tokens  prompt-tokens
+                                    :last-output-tokens (replayable-output-tokens ctx result)
+                                    :output-tokens      (+ (or (:output-tokens session-entry) 0) output-tokens)
+                                    :total-tokens       (+ (+ (or (:input-tokens session-entry) 0) turn-input-tokens)
+                                                           (+ (or (:output-tokens session-entry) 0) output-tokens))}
                                    cache-read (assoc :cache-read (+ (or (:cache-read session-entry) 0) cache-read))
                                    cache-write (assoc :cache-write (+ (or (:cache-write session-entry) 0) cache-write))))
     nil))
 
-(defn- transcript-stamped-prompt-tokens [sess session-key]
-  (->> (or (policy/active-transcript sess session-key) [])
-       (keep :tokens)
-       (reduce + 0)))
-
-(defn- log-token-drift! [ctx session-key result]
-  (let [start-ns        (System/nanoTime)
-        sess            (session-policy ctx)
-        provider-tokens (provider-prompt-tokens (response-tokens result))]
-    (when (pos? provider-tokens)
-      (let [stamped (transcript-stamped-prompt-tokens sess session-key)
-            ratio   (/ (double provider-tokens) (double (max 1 stamped)))]
-        (policy/update-session! sess session-key {:token-drift-ratio ratio})
-        (log/debug :session/token-drift
-                   :session    session-key
-                   :stamped    stamped
-                   :provider   provider-tokens
-                   :ratio      ratio
-                   :elapsed-ms (elapsed-ms start-ns))))))
-
 (defn- process-response* [ctx session-key result {:keys [model provider]}]
   (if (:error result)
     (report-error! ctx session-key provider result {:model model :provider provider})
-    (do
-      (log-token-drift! ctx session-key result)
-      (store-response! ctx session-key result {:model model :provider provider}))))
+    (store-response! ctx session-key result {:model model :provider provider})))
 
 (defn process-response!
   ([session-key result {:keys [model provider]}]
@@ -1008,23 +1008,39 @@
 (defn- compaction-estimate-opts [_session-key {:keys [provider allowed-tools module-index] :as opts}]
   (assoc opts :tools (when provider (active-tools provider allowed-tools module-index))))
 
+(defn- session-transcript [session-key opts]
+  (when-let [sess (session-policy opts)]
+    (or (policy/get-transcript sess session-key) [])))
+
+(defn- session-gauge [session-key opts]
+  (let [entry (or (session-entry opts session-key) {})
+        tx    (session-transcript session-key opts)]
+    (compaction/context-gauge entry tx (:input opts))))
+
 (defn- run-compaction-check! [session-key {:keys [context-window model provider] :as opts} attempt allow-async?]
   (let [check-ns      (System/nanoTime)
-        estimate-opts (assoc (compaction-estimate-opts session-key opts) :caller :check)
+        estimate-opts (compaction-estimate-opts session-key opts)
         entry         (session-entry estimate-opts session-key)
-        total-tokens  (compaction/estimate-prompt-tokens session-key estimate-opts)
+        tx            (session-transcript session-key estimate-opts)
+        gauge         (compaction/context-gauge entry tx (:input estimate-opts))
+        plan          (compaction/plan-compaction tx entry context-window)
         config        (or (:compaction estimate-opts)
                           (compaction/resolve-config entry context-window))
-        gauge         (compaction/context-gauge total-tokens entry)
-        ratio         (compaction/calibration-ratio entry)
         prov-name     (when provider (api/display-name provider))]
+    (log/debug :session/compaction-analysis
+               :session session-key
+               :provider prov-name
+               :model model
+               :tokens-before (:tokens-before plan)
+               :compact-count (:compact-count plan)
+               :strategy (:strategy plan)
+               :context-window context-window)
     (log/debug :session/compaction-check
                :session session-key
                :provider prov-name
                :model model
-               :total-tokens total-tokens
+               :total-tokens gauge
                :gauge gauge
-               :ratio ratio
                :context-window context-window
                :elapsed-ms (elapsed-ms check-ns))
     (cond
@@ -1033,14 +1049,14 @@
                 :session session-key
                 :provider prov-name
                 :model model
-                :total-tokens total-tokens
+                :total-tokens gauge
                 :context-window context-window
                 :reason :context-reset)
 
-      (compaction/should-compact? total-tokens (assoc entry :compaction config) context-window)
+      (compaction/should-compact? gauge (assoc entry :compaction config) context-window)
       (if (and allow-async? (:async? config))
         (start-async-compaction! session-key estimate-opts)
-        (perform-compaction! session-key attempt total-tokens estimate-opts)))))
+        (perform-compaction! session-key attempt gauge estimate-opts)))))
 
 
 (defn- context-window-guard-line-tokens [context-window]
@@ -1142,7 +1158,7 @@
     (if (conversation-blocked? session-key ctx)
       (blocked-result (or (:config (:charge ctx)) (nexus/get :config)) session-key)
       (let [opts (mid-turn-compaction-opts ctx)
-            total (compaction/estimate-prompt-tokens session-key (assoc opts :caller :overflow))]
+            total (session-gauge session-key opts)]
         (perform-compaction! session-key 1 total opts)
         (tool-registry/clear-window-cache! (:window-cache ctx))
         (let [rebuilt (rebuild-chat-request session-key ctx)]
@@ -1161,14 +1177,14 @@
         opts     (mid-turn-compaction-opts ctx)
         context-window (:context-window (:charge ctx))
         config   (:config (:charge ctx))
-        before   (compaction/estimate-prompt-tokens session-key (assoc opts :caller :before))]
+        before   (session-gauge session-key opts)]
     (when driven?
       (log/info :turn/compaction-deferred
                 :session session-key
                 :reason :provider-driven))
     (when-not driven?
       (run-compaction-check! session-key opts 1 false))
-    (let [after      (compaction/estimate-prompt-tokens session-key (assoc opts :caller :after))
+    (let [after      (session-gauge session-key opts)
           guard-line (context-window-guard-line-tokens context-window)]
       (cond
         (and (pos? (or context-window 0))

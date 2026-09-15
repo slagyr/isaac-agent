@@ -28,25 +28,50 @@
 (defn resolve-config [session-entry context-window]
   (session-ctx/resolve-compaction-config {} session-entry {:crew-cfg {} :model-cfg {} :provider-cfg {}} context-window))
 
-(defn- clamp-drift-ratio [ratio]
-  (-> (double (or ratio 1.0))
-      (max 1.0)
-      (min 3.0)))
+(defn- tally-history-entries [transcript]
+  (remove #(= "session" (:type %)) (or transcript [])))
 
-(defn calibration-ratio [session-entry]
-  (clamp-drift-ratio (:token-drift-ratio session-entry)))
+(defn- assistant-output? [entry]
+  (= "assistant" (get-in entry [:message :role])))
+
+(defn- entries-after [transcript after-id]
+  (if after-id
+    (->> (tally-history-entries transcript)
+         (drop-while #(not= after-id (:id %)))
+         rest)
+    []))
+
+(defn- stamped-sum [entries]
+  (reduce + 0 (map #(or (:tokens %) 0) entries)))
+
+(defn- pending-input-tokens [input]
+  (let [s (str input)]
+    (if (str/blank? s)
+      0
+      (long (Math/ceil (/ (double (count s)) 4.0))))))
 
 (defn context-gauge
-  "Token gauge for compaction / context-window decisions: max of the calibrated
-  live prompt estimate and last successful provider prompt_tokens."
-  [estimated-tokens session-entry]
-  (let [estimated  (or estimated-tokens 0)
-        calibrated (long (Math/ceil (* (double estimated) (calibration-ratio session-entry))))]
-    (max calibrated (or (:last-input-tokens session-entry) 0))))
+  "Running tally: last prompt tokens + last output tokens + stamped :tokens of
+   entries appended since that response (not the assistant output itself), plus
+   pending user input that is not yet on the transcript."
+  ([session-entry]
+   (context-gauge session-entry nil nil))
+  ([session-entry transcript]
+   (context-gauge session-entry transcript nil))
+  ([session-entry transcript pending-input]
+   (let [last-in  (or (:last-input-tokens session-entry) 0)
+         last-out (or (:last-output-tokens session-entry) 0)
+         after-id (:tally-after-id session-entry)
+         delta    (if after-id
+                    (stamped-sum (remove assistant-output? (entries-after transcript after-id)))
+                    (if (pos? last-in)
+                      0
+                      (stamped-sum (tally-history-entries transcript))))]
+     (+ last-in last-out delta (pending-input-tokens pending-input)))))
 
-(defn should-compact? [estimated-tokens session-entry context-window]
+(defn should-compact? [gauge session-entry context-window]
   (let [{:keys [threshold]} (resolve-config session-entry context-window)]
-    (>= (context-gauge estimated-tokens session-entry) (* threshold context-window))))
+    (>= (or gauge 0) (* threshold context-window))))
 
 (defn partial-splice?
   "True when compactable material remains after this splice.
@@ -129,6 +154,20 @@
              :first-kept-entry-id (:id first-kept)
              :tokens-before       (reduce + 0 (map :tokens compacted))})
           (recur (dec idx) (+ head-size (:tokens (nth entries idx)))))))))
+
+(declare effective-history-entries compactables)
+
+(defn plan-compaction
+  "Stamped compaction plan for the live history. Does not stringify the prompt."
+  [transcript session-entry context-window]
+  (let [history      (effective-history-entries (or transcript []))
+        compactables (compactables history context-window)
+        strategy     (resolve-config session-entry context-window)
+        target       (compaction-target compactables strategy context-window)]
+    (assoc target
+           :compactable-count   (count compactables)
+           :history-entry-count (count history)
+           :strategy            (:strategy strategy))))
 
 ;; endregion ^^^^^ Policy / Schema ^^^^^
 
@@ -539,28 +578,21 @@
       (deliver compaction-llm-done true))
     (if (response-error response)
       response
-      (let [summary          (prompt-builder/non-blank-summary (response-content response))
-            spliced-transcript (atom nil)
-            splice!          (fn []
-                               (let [compaction-entry (policy/splice-compaction! sess key-str
-                                                                                 {:summary           summary
-                                                                                  :turnRequest       turn-request
-                                                                                  :firstKeptEntryId  first-kept-entry-id
-                                                                                  :tokensBefore      tokens-before
-                                                                                  :compactedEntryIds compacted-ids})]
-                                 (reset! spliced-transcript (policy/get-transcript sess key-str))
-                                 compaction-entry))
-            _                (when splice-ready
-                               (deref splice-ready 30000 nil))
+      (let [summary (prompt-builder/non-blank-summary (response-content response))
+            splice! (fn []
+                      (policy/splice-compaction! sess key-str
+                                                 {:summary           summary
+                                                  :turnRequest       turn-request
+                                                  :firstKeptEntryId  first-kept-entry-id
+                                                  :tokensBefore      tokens-before
+                                                  :compactedEntryIds compacted-ids}))
+            _       (when splice-ready
+                      (deref splice-ready 30000 nil))
             compaction-entry (cond-> (if transcript-lock
                                        (locking transcript-lock (splice!))
                                        (splice!))
                                chunked? (assoc :chunked true)
-                               oversized? (assoc :partial true))
-            system-text      (if boot-files (str soul "\n\n" boot-files) soul)
-            new-total        (llm/estimate-tokens {:messages [{:role "system" :content system-text}
-                                                               {:role "user"   :content summary}]})]
-        (policy/update-session! sess key-str {:last-input-tokens new-total})
+                               oversized? (assoc :partial true))]
         compaction-entry)))))
 
 ;; endregion ^^^^^ Orchestration ^^^^^

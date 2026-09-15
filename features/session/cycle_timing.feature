@@ -21,9 +21,11 @@ Feature: Cycle timing — every step between a tool batch and the next request i
       | event                    | caller  | entries | bytes | elapsed-ms |
       | :tool/call-persisted     |         |         |       | #*         |
       | :tool/result-persisted   |         |         |       | #*         |
-      | :session/transcript-read |         | #*      | #*    | #*         |
-      | :session/token-estimate  | :before |         |       | #*         |
-      | :session/token-estimate  | :check  |         |       | #*         |
-      | :session/token-estimate  | :after  |         |       | #*         |
       | :turn/followup-built     |         |         |       | #*         |
       | :turn/after-tools        |         |         |       | #*         |
+    And the log has no entries matching:
+      | event                    | caller  |
+      | :session/transcript-read |         |
+      | :session/token-estimate  | :before |
+      | :session/token-estimate  | :check  |
+      | :session/token-estimate  | :after  |

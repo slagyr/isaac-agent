@@ -91,7 +91,8 @@
             :output-tokens       (system-managed {:type :int})
             :total-tokens        (system-managed {:type :int})
             :last-input-tokens   (system-managed {:type :int})
-            :token-drift-ratio   (system-managed {:type :double})
+            :last-output-tokens  (system-managed {:type :int})
+            :tally-after-id      (system-managed {:type :string})
             :cache-read          (system-managed {:type :int})
             :cache-write         (system-managed {:type :int})}})
 

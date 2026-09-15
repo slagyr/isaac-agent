@@ -62,7 +62,8 @@
                       :output-tokens       2
                      :total-tokens        3
                      :last-input-tokens   1
-                     :token-drift-ratio   1.5
+                     :last-output-tokens  2
+                     :tally-after-id      "a1"
                       :cache-read          4
                       :cache-write         5})))
 

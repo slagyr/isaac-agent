@@ -69,20 +69,14 @@
       (should-not (sut/should-compact? 159 {:compaction {:strategy :slinky :threshold 0.8 :head 0.4}} 200))
       (should (sut/should-compact? 160 {:compaction {:strategy :slinky :threshold 0.8 :head 0.4}} 200)))
 
-    (it "uses the max of the calibrated estimate and last-input-tokens"
+    (it "uses the caller-supplied gauge, not a hidden last-input floor"
       (should (sut/should-compact? 310778 {:last-input-tokens 100000} 278528))
-      (should (sut/should-compact? 30 {:last-input-tokens 850
-                                       :compaction {:strategy :slinky :threshold 0.8 :head 0.4}}
-                                     1000))
+      (should-not (sut/should-compact? 30 {:last-input-tokens 850
+                                          :compaction {:strategy :slinky :threshold 0.8 :head 0.4}}
+                                        1000))
       (should-not (sut/should-compact? 30 {:total-tokens 5000 :last-input-tokens 30
-                                            :compaction {:strategy :slinky :threshold 0.8 :head 0.4}}
-                                          200)))
-
-    (it "calibrates the estimate by the persisted drift ratio"
-      (should= 900 (sut/context-gauge 600 {:token-drift-ratio 1.5}))
-      (should= 900 (sut/context-gauge 600 {:token-drift-ratio 1.5 :last-input-tokens 850}))
-      (should= 600 (sut/context-gauge 600 {:token-drift-ratio 0.5}))
-      (should= 1800 (sut/context-gauge 600 {:token-drift-ratio 5.0})))
+                                           :compaction {:strategy :slinky :threshold 0.8 :head 0.4}}
+                                         200)))
 
     (it "returns true when the estimate reaches the default threshold"
       (should (sut/should-compact? 9000 {} 10000)))
@@ -102,6 +96,48 @@
     (it "works with small context windows"
       (should (sut/should-compact? 80 {} 100))
       (should-not (sut/should-compact? 79 {} 100))))
+
+  (describe "context-gauge"
+    (it "is last prompt plus last output plus stamped entries after the tally cursor"
+      (should= 360 (sut/context-gauge {:last-input-tokens  300
+                                       :last-output-tokens 40
+                                       :tally-after-id     "a1"}
+                                      [{:id "u1" :type "message" :message {:role "user"} :tokens 10}
+                                       {:id "a1" :type "message" :message {:role "assistant"} :tokens 40}
+                                       {:id "t1" :type "message" :message {:role "toolResult"} :tokens 20}])))
+
+    (it "does not add the assistant output that last-output-tokens already covers"
+      (should= 340 (sut/context-gauge {:last-input-tokens  300
+                                       :last-output-tokens 40
+                                       :tally-after-id     "u1"}
+                                      [{:id "u1" :type "message" :message {:role "user"} :tokens 10}
+                                       {:id "a1" :type "message" :message {:role "assistant"} :tokens 40}])))
+
+    (it "uses last-input-tokens as the whole prompt when there is no tally cursor"
+      (should= 850 (sut/context-gauge {:last-input-tokens 850}
+                                      [{:id "u" :tokens 20}
+                                       {:id "a" :tokens 20}])))
+
+    (it "sums remaining stamped history when last-input-tokens is 0 and there is no cursor"
+      (should= 15 (sut/context-gauge {:last-input-tokens 0}
+                                     [{:type "session" :id "hdr"}
+                                      {:type "compaction" :id "c1" :tokens 7}
+                                      {:type "message" :id "a1" :tokens 8}])))
+
+    (it "adds pending input that is not yet on the transcript"
+      (should= 341 (sut/context-gauge {:last-input-tokens  300
+                                       :last-output-tokens 40
+                                       :tally-after-id     "a1"}
+                                      [{:id "a1" :type "message" :message {:role "assistant"} :tokens 40}]
+                                      "1234"))))
+
+  (describe "plan-compaction"
+    (it "uses stamped per-entry tokens for tokens-before, not a stringified guess"
+      (let [plan (sut/plan-compaction [{:type "message" :id "u" :message {:role "user" :content "dump the config"} :tokens 4}
+                                       {:type "message" :id "a" :message {:role "assistant" :content "dump output, stamped far above its text length"} :tokens 750}]
+                                      {}
+                                      32768)]
+        (should= 754 (:tokens-before plan)))))
 
   (describe "partial-splice?"
     (it "is true for a chunked splice"
@@ -699,6 +735,25 @@
           (should-contain "Recent answer" prompt-body)
           (should-not-contain "Older question" prompt-body)
           (should-not-contain "Older answer" prompt-body))))
+
+    (it "restarts the tally from stamped remaining history, not the pre-compaction provider count"
+      (let [key-str "isaac:main:cli:chat:tally-restart"]
+        (storage/create-session! test-root key-str)
+        (storage/update-session! test-root key-str {:last-input-tokens  900
+                                                   :last-output-tokens 40})
+        (let [user (storage/append-message! test-root key-str {:role "user" :content "inventory the galley"})
+              asst (storage/append-message! test-root key-str {:role "assistant" :content "twelve casks, four short"})]
+          (storage/splice-compaction! test-root key-str {:summary          "Galley counted, casks low"
+                                                         :firstKeptEntryId (:id asst)
+                                                         :compactedEntryIds [(:id user)]})
+          (let [entry      (storage/get-session test-root key-str)
+                transcript (storage/get-transcript test-root key-str)
+                remaining  (remove #(= "session" (:type %)) transcript)
+                stamped    (reduce + 0 (map #(or (:tokens %) 0) remaining))]
+            (should= stamped (:last-input-tokens entry))
+            (should= 0 (:last-output-tokens entry))
+            (should= (:id (last remaining)) (:tally-after-id entry))
+            (should (< (:last-input-tokens entry) 100))))))
 
     (it "updates last-input-tokens after compaction without resetting cumulative totals"
       (let [key-str   "isaac:main:cli:chat:rebound123"

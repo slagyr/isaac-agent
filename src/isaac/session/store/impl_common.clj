@@ -622,6 +622,7 @@
           (update :input-tokens #(or % 0))
           (update :turn-input-tokens #(or % 0))
           (update :last-input-tokens #(or % 0))
+          (update :last-output-tokens #(or % 0))
           (update :output-tokens #(or % 0))
           (update :total-tokens #(or % 0))))))
 
@@ -845,9 +846,10 @@
                                      :segment           0
                                      :input-tokens      0
                                      :turn-input-tokens 0
-                                     :last-input-tokens 0
-                                     :output-tokens     0
-                                     :total-tokens      0}))]
+                                     :last-input-tokens  0
+                                     :last-output-tokens 0
+                                     :output-tokens      0
+                                     :total-tokens       0}))]
         (mkdirs*! fs (session-dir root crew id))
         (write-transcript! root crew id [header] fs)
         (write-fn store id (conform-session! (dissoc entry :session-file :effective-history-offset)))
@@ -1155,6 +1157,18 @@
   (let [kept-ids (set (map :id new-current))]
     (vec (remove #(contains? kept-ids (:id %)) transcript))))
 
+(defn- history-entries [transcript]
+  (remove #(= "session" (:type %)) (or transcript [])))
+
+(defn restart-tally-fields
+  "Post-compaction session fields: stamped remaining history, never the
+   pre-compaction provider count."
+  [transcript]
+  (let [entries (vec (history-entries transcript))]
+    {:last-input-tokens  (reduce + 0 (map #(or (:tokens %) 0) entries))
+     :last-output-tokens 0
+     :tally-after-id     (:id (last entries))}))
+
 (defn splice-compaction! [get-session-fn update-entry-fn now-fn root identifier {:keys [compactedEntryIds firstKeptEntryId summary tokensBefore turnRequest]} fs]
   (let [entry      (get-session-fn root identifier fs)
         id         (:id entry)
@@ -1165,7 +1179,8 @@
         prefix     (frozen-segment transcript new-current)
         n          (or (:segment entry) 0)
         dir          (session-dir-for root id fs)
-        current-path (str dir "/current.ednl")]
+        current-path (str dir "/current.ednl")
+        tally        (restart-tally-fields new-current)]
     (when (= :retain retention)
       (write-ednl! fs (str dir "/" n ".ednl") prefix))
     (write-ednl! fs current-path new-current)
@@ -1173,6 +1188,7 @@
                      (fn [e]
                        (-> e
                            (assoc :updated-at now)
+                           (merge tally)
                            (cond-> (= :retain retention) (assoc :segment (inc n)))
                            (dissoc :effective-history-offset :session-file)
                            (update :compaction-count inc)))
