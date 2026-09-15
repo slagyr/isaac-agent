@@ -25,7 +25,7 @@
                        io.github.slagyr/isaac-foundation-test-support {:git/url "https://github.com/slagyr/isaac-foundation.git" :git/sha "1c8e45b5fdbbebfe5ff671c31fd1a138bbb8b434" :deps/root "spec-support"}
                        speclj/speclj                          {:mvn/version "3.13.0"}
                        babashka/process                       {:mvn/version "0.5.22"}
-                       io.github.slagyr/gherclj               {:git/tag "v1.4.0" :git/sha "85245b1"}
+                       io.github.slagyr/gherclj               {:git/tag "v1.5.0" :git/sha "c1df8cc"}
                        io.github.cleancoders/c3kit-wire       {:git/tag "2.5.1" :git/sha "1fae444"}
                        org.babashka/http-client               {:mvn/version "0.4.22"}
                        marigold.bridge/marigold.bridge        {:git/url "https://github.com/slagyr/isaac-foundation.git"
@@ -46,7 +46,7 @@
                        io.github.slagyr/isaac-foundation-test-support {:git/url "https://github.com/slagyr/isaac-foundation.git" :git/sha "1c8e45b5fdbbebfe5ff671c31fd1a138bbb8b434" :deps/root "spec-support"}
                        speclj/speclj                          {:mvn/version "3.13.0"}
                        babashka/process                       {:mvn/version "0.5.22"}
-                       io.github.slagyr/gherclj               {:git/tag "v1.4.0" :git/sha "85245b1"}
+                       io.github.slagyr/gherclj               {:git/tag "v1.5.0" :git/sha "c1df8cc"}
                        io.github.cleancoders/c3kit-wire       {:git/tag "2.5.1" :git/sha "1fae444"}
                        org.babashka/http-client               {:mvn/version "0.4.22"}
                        marigold.bridge/marigold.bridge        {:git/url "https://github.com/slagyr/isaac-foundation.git"
@@ -68,7 +68,7 @@
                        io.github.slagyr/isaac-foundation-test-support {:git/url "https://github.com/slagyr/isaac-foundation.git" :git/sha "1c8e45b5fdbbebfe5ff671c31fd1a138bbb8b434" :deps/root "spec-support"}
                            speclj/speclj                          {:mvn/version "3.13.0"}
                            babashka/process                       {:mvn/version "0.5.22"}
-                           io.github.slagyr/gherclj               {:git/tag "v1.4.0" :git/sha "85245b1"}
+                           io.github.slagyr/gherclj               {:git/tag "v1.5.0" :git/sha "c1df8cc"}
                            io.github.cleancoders/c3kit-wire       {:git/tag "2.5.1" :git/sha "1fae444"}
                            org.babashka/http-client               {:mvn/version "0.4.22"}
                            marigold.bridge/marigold.bridge        {:git/url "https://github.com/slagyr/isaac-foundation.git"
