@@ -43,12 +43,10 @@ Feature: Crew Command
       | ketch .* echo        |
     And the exit code is 0
 
-  Scenario: crew list with no configured crew members shows the default
+  @wip
+  Scenario: crew list with no configured crew members does not invent main
     When isaac is run with "crew list"
-    Then the stdout matches:
-      | pattern              |
-      | Name .* Model .* Provider .* Soul |
-      | main                 |
+    Then the stdout does not contain "main"
     And the exit code is 0
 
   Scenario: crew show renders key-value detail with the full soul

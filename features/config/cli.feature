@@ -185,6 +185,21 @@ Feature: Config Command
       | valid: .*chat-completions.*                                          |
     And the exit code is 1
 
+  @wip
+  Scenario: validate requires defaults.crew
+    Given config file "isaac.edn" containing:
+      """
+      {:defaults  {:model :llama}
+       :crew      {:yopp {}}
+       :models    {:llama {:model "llama3.3:1b" :provider :anthropic}}
+       :providers {:anthropic {}}}
+      """
+    When isaac is run with "config validate"
+    Then the stderr matches:
+      | pattern        |
+      | defaults\.crew |
+    And the exit code is 1
+
   Scenario: validate reports unknown tool refs with file and valid set
     # Phase 6 of the berth epic (isaac-w7o5) replaced the legacy
     # :tool-exists? validator with [:registered-in? :isaac.agent/tools].

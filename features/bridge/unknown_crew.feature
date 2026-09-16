@@ -54,3 +54,23 @@ Feature: Unknown crew rejects the turn
     And the log has entries matching:
       | level | event          | session | crew |
       | :info | :drive/turn-accepted | stale   | main |
+
+  @wip
+  Scenario: a session with no crew uses defaults.crew
+    Given config file "isaac.edn" containing:
+      """
+      {:defaults {:crew "yopp" :model "grover"}
+       :tools    {:directories {:allow [:cwd :quarters]}}}
+      """
+    And config file "crew/yopp.edn" containing:
+      """
+      {:model :grover :soul "You are Yopp."}
+      """
+    And the following sessions exist:
+      | name       |
+      | unlabeled  |
+    When the user sends "hello" on session "unlabeled"
+    Then the system prompt contains "You are Yopp."
+    And the log has entries matching:
+      | level | event                | session    | crew |
+      | :info | :drive/turn-accepted | unlabeled  | yopp |
