@@ -172,17 +172,6 @@
     (config/dangerously-install-config! nil "spec"))
 
 
-  (it "falls back to main when defaults.crew is absent"
-    (config/dangerously-install-config! {:defaults  {:model "spark" :history-retention :prune}
-                           :crew      {"main" {:model "spark" :soul crew-soul}}
-                           :models    {"spark" {:model "echo" :provider "grover" :context-window 1000}}
-                           :providers {"grover" {:api "grover"}}} "spec")
-    (sut/create-with-resolved-behavior! "s" {})
-    (let [session (helper/get-session test-root "s")]
-      (should= "main" (:crew session))
-      (should= (str test-root "/.isaac/crew/main") (:cwd session))
-      (should= :prune (:history-retention session)))
-    (config/dangerously-install-config! nil "spec"))
 
   (it "creates a session in an explicit session store"
     (config/dangerously-install-config! {:defaults  {:crew crew-name :model "spark" :history-retention :prune}

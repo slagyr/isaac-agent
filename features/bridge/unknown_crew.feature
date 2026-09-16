@@ -55,7 +55,6 @@ Feature: Unknown crew rejects the turn
       | level | event          | session | crew |
       | :info | :drive/turn-accepted | stale   | main |
 
-  @wip
   Scenario: a session with no crew uses defaults.crew
     Given config file "isaac.edn" containing:
       """

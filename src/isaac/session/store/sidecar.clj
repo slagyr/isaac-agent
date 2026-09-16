@@ -43,7 +43,7 @@
 
 (defn- write-sidecar! [root {:keys [id] :as entry} fs]
   (let [loc  (c/locate-session root id fs)
-        crew (or (:crew entry) (:crew loc) "main")
+        crew (or (:crew entry) (:crew loc))
         path (str (or (:dir loc) (c/session-dir root crew id)) "/session.edn")]
     (c/atomic-spit! fs path
                     (c/write-edn (dissoc entry :session-file :effective-history-offset)))
@@ -86,7 +86,7 @@
   (let [store (read-session-store root fs)]
     (when-let [id (c/resolve-entry-id store identifier)]
       (let [loc  (c/resolve-session-loc root id fs)
-            crew (or (:crew loc) (:crew (get store id)) "main")
+            crew (or (:crew loc) (:crew (get store id)))
             dir  (or (:dir loc) (c/session-dir root crew id))]
         (c/delete-tree! fs dir)
         (let [idx (c/read-index fs root)]

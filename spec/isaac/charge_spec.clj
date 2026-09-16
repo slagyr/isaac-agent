@@ -121,6 +121,23 @@
           (should= "N0NCE-stubbed" (:nonce charge))
           (should= 4096 (:context-window charge)))))
 
+    (it "uses defaults.crew when the request and session are unlabeled"
+      (let [cfg (assoc base-cfg
+                       :defaults {:crew marigold/first-mate}
+                       :crew {marigold/first-mate (crew-cfg marigold/first-mate test-model-id "Cordelia")})]
+        (with-redefs [loader/snapshot              (fn [_] cfg)
+                      session-ctx/resolve-behavior (fn [_ opts]
+                                                     (stub-behavior (:crew opts) "Cordelia" test-model-id 4096))]
+          (should= marigold/first-mate (sut/agent (sut/build {:session-key "s1" :input "hi"}))))))
+
+    (it "rejects main when it is not configured"
+      (with-redefs [loader/snapshot              (fn [_] {:defaults {:crew marigold/first-mate}
+                                                         :crew {marigold/first-mate {}}})
+                    session-ctx/resolve-behavior (fn [_ _] (stub-behavior "main" "Legacy" test-model-id 4096))]
+        (let [charge (sut/build {:session-key "s1" :input "hi" :crew "main"})]
+          (should (sut/unresolved? charge))
+          (should= :unknown-crew (:charge/reason charge)))))
+
     (it "preserves explicit guidance alongside origin"
       (with-redefs [loader/snapshot              (fn [_] base-cfg)
                     session-ctx/resolve-behavior (fn [_ _] (stub-behavior "main" "You are Atticus." test-model-id 4096))]

@@ -20,8 +20,7 @@
   (let [args        (string-key-map args)
         session-key (get args "session_key")]
     (or (some->> session-key (store/get-session (bounds/session-store args)) :crew)
-        (get-in (loader/snapshot "tool memory: default crew") [:defaults :crew])
-        "main")))
+        (get-in (loader/snapshot "tool memory: default crew") [:defaults :crew]))))
 
 (defn- memory-dir [root crew-id]
   (str root "/crew/" crew-id "/memory"))

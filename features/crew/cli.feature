@@ -43,8 +43,8 @@ Feature: Crew Command
       | ketch .* echo        |
     And the exit code is 0
 
-  @wip
   Scenario: crew list with no configured crew members does not invent main
+    Given an empty Isaac root at "target/test-state"
     When isaac is run with "crew list"
     Then the stdout does not contain "main"
     And the exit code is 0

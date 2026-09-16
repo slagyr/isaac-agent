@@ -110,8 +110,7 @@
 
 (defn- resolve-behavior* [cfg root session-entry]
   (let [crew-id        (or (:crew session-entry)
-                           (get-in cfg [:defaults :crew])
-                           "main")
+                           (get-in cfg [:defaults :crew]))
         model-override (normalize-model-ref (:model session-entry))
         ctx            (resolve/resolve-crew-context cfg crew-id
                                                     (cond-> {:root root}

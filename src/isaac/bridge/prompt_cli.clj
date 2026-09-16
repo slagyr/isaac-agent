@@ -135,8 +135,7 @@
 (defn- episode-crew-id [opts override cfg]
   (or (:with-crew override)
       (:crew opts)
-      (get-in cfg [:defaults :crew])
-      "main"))
+      (get-in cfg [:defaults :crew])))
 
 (defn- prompt-policy [opts override cfg session-store]
   (policy/for-request {:crew          (episode-crew-id opts override cfg)
@@ -189,7 +188,7 @@
   [session-store session-key requested-crew]
   (when (and requested-crew session-key session-store)
     (when-let [existing (store/get-session session-store session-key)]
-      (let [have (str (or (:crew existing) "main"))
+      (let [have (str (:crew existing))
             want (str requested-crew)]
         (when (not= have want)
           (throw (ex-info (str "session " session-key " belongs to crew " have)

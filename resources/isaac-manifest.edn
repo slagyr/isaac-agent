@@ -538,9 +538,9 @@
       :validations [[:one-of? :full :reset]]},
      :crew
      {:type :id,
-      :default "main",
+      :required? true,
       :description "Default crew member id",
-      :validations [:crew-exists?]},
+      :validations [:present? :crew-exists?]},
      :effort
      {:type :int,
       :description

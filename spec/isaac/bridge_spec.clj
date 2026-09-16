@@ -536,7 +536,7 @@
     (it "cancelled? is true when the turn marker is stamped :cancelled"
       (helper/with-memory-store
         (let [s (store/registered-store)]
-          (store/open-session! s "stamp-cancel" {})
+          (store/open-session! s "stamp-cancel" {:crew "main"})
           (store/record-turn-marker! s "stamp-cancel" {:source :cli :cancelled true})
           (should (bridge-cancel/cancelled? "stamp-cancel")))))
     )

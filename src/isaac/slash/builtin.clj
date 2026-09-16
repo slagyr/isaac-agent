@@ -51,7 +51,7 @@
 
 (defn handle-crew [session-key input ctx]
   (let [{:keys [args]} (parse-command input)
-        current-crew (or (:crew ctx) "main")
+        current-crew (or (:crew ctx) (get-in ctx [:config :defaults :crew]))
         crew-members (or (:crew-members ctx) {})]
     (if (str/blank? args)
       {:type    :command

@@ -110,6 +110,7 @@
         models     (:models cfg)
         agent-id   (or (:crew (with-feature-fs #(get-session key-str)))
                        (:agent (with-feature-fs #(get-session key-str)))
+                       (get-in cfg [:defaults :crew])
                        "main")
         agent-cfg  (get agents agent-id)
         model-id   (:model agent-cfg)
@@ -175,7 +176,9 @@
         captured* (atom [])
         channel   (memory-comm/channel events (g/get :memory-comm-exhaustion-policy))
         cfg       (with-feature-fs #(:config (loader/load-config-result {:root (root) :fs (or (g/get :mem-fs) (nexus/get :fs) (fs/real-fs))})))
-        _         (with-feature-fs #(store/open-session! (session-store) key-str {}))
+        existing  (with-feature-fs #(get-session key-str))
+        crew      (or (:crew existing) (:agent existing) (get-in cfg [:defaults :crew]) "main")
+        _         (with-feature-fs #(store/open-session! (session-store) key-str {:crew crew}))
         opts      (channel-send-opts key-str channel)
         armed     (g/get :cancel-after-n-tool-calls)]
     (g/assoc! :current-key key-str)

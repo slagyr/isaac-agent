@@ -105,7 +105,7 @@
   ([crew-id cfg]
    (for-crew crew-id cfg (store/registered-store)))
   ([crew-id cfg store]
-   (let [crew-id  (or (->id crew-id) "main")
+   (let [crew-id  (or (->id crew-id) (get-in cfg [:defaults :crew]))
          crew-cfg (get-in cfg [:crew crew-id])
          name     (policy-name crew-cfg)]
      (create name store))))
@@ -147,8 +147,7 @@
                           (some-> (nexus/get :config) deref)
                           {})
               crew-id (or (:crew request)
-                          (get-in cfg [:defaults :crew])
-                          "main")
+                          (get-in cfg [:defaults :crew]))
               store   (or (:session-store request) (store/registered-store))]
           (when store
             (for-crew crew-id cfg store))))))

@@ -185,7 +185,6 @@ Feature: Config Command
       | valid: .*chat-completions.*                                          |
     And the exit code is 1
 
-  @wip
   Scenario: validate requires defaults.crew
     Given config file "isaac.edn" containing:
       """

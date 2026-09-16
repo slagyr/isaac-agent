@@ -41,6 +41,11 @@
                (lexicon/conform (runtime-spec sut/defaults)
                                 {:crew :main :model (keyword test-model-id)})))
 
+    (it "requires a default crew without supplying an implicit identity"
+      (let [crew-spec (get-in sut/defaults [:schema :crew])]
+        (should (:required? crew-spec))
+        (should-not (contains? crew-spec :default))))
+
     (it "defaults conforms stream-idle-timeout-ms"
       (should= {:stream-idle-timeout-ms 100}
                (lexicon/conform (runtime-spec sut/defaults)

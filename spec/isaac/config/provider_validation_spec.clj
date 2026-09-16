@@ -68,7 +68,8 @@
             root "/test/provider-cli-load"
             cfg-root (paths/config-root root)]
         (fs/mkdirs fs* cfg-root)
-        (fs/spit fs* (str cfg-root "/isaac.edn") "{}")
+        (fs/spit fs* (str cfg-root "/isaac.edn")
+                 "{:defaults {:crew :main} :crew {:main {}}}")
         (fs/spit fs* (str cfg-root "/providers/chatgpt.edn") "{:type :chatgpt}")
         (let [result (loader/load-config-result {:root root :fs fs*})]
           (should= [] (:errors result))

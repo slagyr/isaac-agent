@@ -1,5 +1,6 @@
 (ns isaac.session.store.memory
   (:require
+    [clojure.string :as str]
     [isaac.config.loader :as loader]
     [isaac.config.resolve :as resolve]
     [isaac.fs :as fs]
@@ -29,7 +30,7 @@
   (when (and root entry)
     (let [fs*  (fs/instance)
           id   (:id entry)
-          crew (or (:crew entry) "main")]
+          crew (:crew entry)]
       (c/mkdirs*! fs* (c/session-dir root crew id))
       (c/atomic-spit! fs* (c/session-edn-path root crew id)
                       (c/write-edn (dissoc entry :session-file :effective-history-offset)))
@@ -46,16 +47,12 @@
           fs*  (fs/instance)
           loc  (c/locate-session root id fs*)
           crew (or (when (map? entry-or-id) (:crew entry-or-id))
-                   (:crew loc)
-                   "main")]
+                   (:crew loc))]
       (c/write-transcript! root crew id entries fs*))))
 
-(defn- append-transcript-line!
-  ([root session-id entry]
-   (append-transcript-line! root session-id "main" entry))
-  ([root session-id crew entry]
-   (when (and root session-id)
-     (c/append-entry! root session-id entry (fs/instance)))))
+(defn- append-transcript-line! [root session-id entry]
+  (when (and root session-id)
+    (c/append-entry! root session-id entry (fs/instance))))
 
 (defn- effective-config [passed-config]
   (or passed-config
@@ -122,11 +119,11 @@
   (open-session! [_ name opts]
     (let [explicit-crew (when-let [c (:crew opts)]
                           (let [s (str c)]
-                            (when-not (clojure.string/blank? s) s)))
+                            (when-not (str/blank? s) s)))
           opts      (c/entry-defaults opts)
           retention (resolve/resolve-history-retention (effective-config (:config opts))
-                                                      (or (:crew opts) "main")
-                                                      (:history-retention opts))
+                                                       (:crew opts)
+                                                       (:history-retention opts))
           name      (or name
                         (when root
                           (naming/generate (store/ensure-naming-strategy! root (fs/instance)))))
@@ -134,7 +131,7 @@
           existing  (or (get-in @state [:sessions id])
                         (ensure-hydrated! root state id))]
       (when (and existing explicit-crew)
-        (let [have-crew (str (or (:crew existing) "main"))]
+        (let [have-crew (str (:crew existing))]
           (when (not= explicit-crew have-crew)
             (throw (ex-info (str "session " id " belongs to crew " have-crew)
                             {:reason :crew-collision :id id
@@ -198,7 +195,7 @@
                           (update :frozen dissoc id)))
         (when root
           (let [fs*  (fs/instance)
-                crew (or (:crew entry) "main")]
+                crew (:crew entry)]
             (c/delete-tree! fs* (c/session-dir root crew id))
             (c/delete-tree! fs* (c/session-dir root id))
             (c/write-index! fs* root (dissoc (c/read-index fs* root) id))))
@@ -242,7 +239,7 @@
                           frozen (assoc-in [:frozen new-id] frozen)))
           (when root
             (let [fs*  (fs/instance)
-                  crew (or (:crew renamed) "main")]
+                  crew (:crew renamed)]
               (c/move-tree! fs* (c/session-dir root crew old-id) (c/session-dir root crew new-id))
               (c/move-tree! fs* (c/session-dir root old-id) (c/session-dir root new-id))
               ;; Rewrite session.edn so scan-session-dirs keys the moved
@@ -316,8 +313,7 @@
           now            (now-iso)
           session        (get-in @state [:sessions id])
           resolved-agent (or (:crew message)
-                             (when (#{"assistant" "error" "toolResult"} (:role message)) (:crew session))
-                             (when (= "assistant" (:role message)) "main"))
+                             (when (#{"assistant" "error" "toolResult"} (:role message)) (:crew session)))
           normalized-msg (c/stamp-message-tokens
                            (c/normalize-message (cond-> message
                                                  resolved-agent (assoc :crew resolved-agent))))
@@ -340,7 +336,7 @@
         (append-transcript-line! root id entry)
         (when-let [sess (get-in @state [:sessions id])]
           (c/upsert-index-row! (fs/instance) root id
-                               {:crew           (or (:crew sess) "main")
+                               {:crew           (:crew sess)
                                 :session-policy (or (:session-policy sess) :chronicle)
                                 :updated-at     now
                                 :id             id})))
@@ -458,7 +454,7 @@
         (when (= :retain retention)
           (let [fs*  (fs/instance)
                 loc  (c/locate-session root id fs*)
-                crew (or (get-in @state [:sessions id :crew]) (:crew loc) "main")]
+                crew (or (get-in @state [:sessions id :crew]) (:crew loc))]
             (c/write-ednl! fs* (c/frozen-transcript-path root crew id n) prefix)))
         (persist-transcript! root id new-current))
       compaction-entry))

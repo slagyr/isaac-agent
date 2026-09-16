@@ -10,6 +10,9 @@
 
 (def ^:private ->id schema/->id)
 
+(defn default-crew [cfg]
+  (get-in (loader/normalize-config (or cfg {})) [:defaults :crew]))
+
 (defn resolve-provider [cfg provider-id]
   (let [cfg         (loader/normalize-config cfg)
         provider-id (->id provider-id)]

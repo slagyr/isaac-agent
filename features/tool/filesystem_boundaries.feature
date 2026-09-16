@@ -88,7 +88,7 @@ Feature: Per-crew filesystem boundaries
     Given config file "crew/main.edn" containing:
       """
       {:tools {:allow       [:fs/read]
-               :directories {:allow [:cwd]}}
+               :directories {:allow [:cwd]}}}
       """
     And file "/work/project/hello.txt" contains "hi there"
     And the following sessions exist:

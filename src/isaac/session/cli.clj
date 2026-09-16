@@ -140,7 +140,7 @@
 
 (defn- transcript-size-bytes [entry]
   (let [root (or (nexus/get :root) (loader/root))
-        crew (or (:crew entry) "main")
+        crew (:crew entry)
         path (when (and root (:id entry))
                (or (store-common/current-transcript-path root crew (:id entry))
                    (store-common/current-transcript-path root (:id entry))))]
@@ -160,7 +160,7 @@
      :used   tokens
      :window context-window
      :pct    pct
-     :crew   (or (:crew entry) "main")
+     :crew   (:crew entry)
      :policy (clojure.core/name policy)
      :tags   (text-tags (:tags entry))}))
 
@@ -186,13 +186,13 @@
 (defn list-all
   "Returns a vector of sessions sorted alphabetically by name. When
     crew-filter is provided, only sessions for that crew member are
-    included. Sessions without an explicit crew are treated as 'main'."
+    included. Sessions without an explicit crew use defaults.crew."
   ([crew-filter]
    (list-all (nexus/get-in [:sessions :store]) crew-filter))
   ([explicit-store crew-filter]
    (let [session-store (session-store explicit-store)]
      (->> (store/list-sessions session-store)
-          (filter #(if crew-filter (= crew-filter (or (:crew %) "main")) true))
+          (filter #(if crew-filter (= crew-filter (:crew %)) true))
           (sort-by #(or (:key %) (:id %)))
           vec))))
 
@@ -213,7 +213,7 @@
         ;; crew's window. (When a --crew filter is set, every session
         ;; resolves through the same crew, which matches prior behavior.)
         rows          (mapv (fn [entry]
-                              (let [cw (resolve-context-window cfg (or (:crew entry) "main"))]
+                              (let [cw (resolve-context-window cfg (or (:crew entry) (get-in cfg [:defaults :crew])))]
                                 (session->row entry cw session-store)))
                             sessions)
         columns       (cond
@@ -476,7 +476,7 @@
           1)
         (let [required-tags (set (map keyword (:tag opts)))
               sessions      (->> (store/list-sessions session-store)
-                                 (filter #(if crew-filter (= crew-filter (or (:crew %) "main")) true))
+                                 (filter #(if crew-filter (= crew-filter (:crew %)) true))
                                  (filter #(every? (fn [tag] (store/has-tag? % tag)) required-tags))
                                  (filter #(if (:in-flight opts) (store/in-flight? session-store (:id %)) true))
                                  (filter #(if (:not-in-flight opts) (not (store/in-flight? session-store (:id %))) true))
@@ -486,7 +486,7 @@
           (cond
             (or (:json opts) (:edn opts))
             (print-session-data
-              (mapv #(session->payload (assoc % :crew (or (:crew %) "main"))) sessions)
+              (mapv #(session->payload (assoc % :crew (or (:crew %) (get-in cfg [:defaults :crew])))) sessions)
               opts)
 
             (empty? sessions)

@@ -26,7 +26,8 @@
 ;; in the run describe return this; the missing-config test resets the atom
 ;; to a missing-config result.
 (def synthetic-config
-  {:crew   {crew-name {:name crew-name :soul crew-soul :model "grover"}
+  {:defaults {:crew crew-name}
+   :crew   {crew-name {:name crew-name :soul crew-soul :model "grover"}
             "ketch"   {:name "ketch" :soul "You are a pirate." :model "grover2"}}
    :models {"grover"  {:alias "grover"  :model "echo"     :provider "grover" :context-window 32768}
             "grover2" {:alias "grover2" :model "echo-alt" :provider "grover" :context-window 16384}}})
@@ -249,7 +250,7 @@
         (with-out-str
           (sut/run (assoc base-opts :message "Hi" :session "fresh-prompt")))
         (let [session (helper/get-session "/test/prompt" "fresh-prompt")]
-          (should= "main" (:crew session))
+          (should= crew-name (:crew session))
           (should-not (contains? session :agent)))))
 
     (it "outputs JSON when --json is set"

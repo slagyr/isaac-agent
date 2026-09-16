@@ -21,6 +21,10 @@
 
   (around [example] (nexus/-with-nested-nexus {:fs (fs/mem-fs)} (example)))
 
+  (it "does not invent a main crew member when the crew table is empty"
+    (with-redefs [loader/load-config! (fn [& _] {:crew {} :models {}})]
+      (should= [] (vec (sut/resolve-crew crew-opts)))))
+
   (it "renders list output as JSON with sorted tags"
     (with-redefs [loader/load-config! (fn [& _] crew-cfg)]
       (let [output (with-out-str (should= 0 (sut/run (assoc crew-opts :json true))))

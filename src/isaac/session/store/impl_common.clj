@@ -123,11 +123,14 @@
 (defn session-id [identifier]
   (slugify identifier))
 
+(declare effective-config)
+
 (defn entry-defaults [opts]
-  (merge {:crew      (or (:crew opts) "main")
-          :channel   (:channel opts)
-          :chat-type (or (:chat-type opts) (:chatType opts))}
-         (into {} (remove (comp nil? val) opts))))
+  (let [config (effective-config (:config opts))]
+    (merge {:crew      (or (:crew opts) (resolve/default-crew config))
+            :channel   (:channel opts)
+            :chat-type (or (:chat-type opts) (:chatType opts))}
+           (into {} (remove (comp nil? val) opts)))))
 
 (defn effective-config [passed-config]
   (or passed-config
@@ -135,9 +138,10 @@
       {}))
 
 (defn resolve-history-retention [opts]
-  (resolve/resolve-history-retention (effective-config (:config opts))
-                                    (or (:crew opts) "main")
-                                    (:history-retention opts)))
+  (let [config (effective-config (:config opts))]
+    (resolve/resolve-history-retention config
+                                       (or (:crew opts) (resolve/default-crew config))
+                                       (:history-retention opts))))
 
 (defn conform-session-read [entry]
   (-> entry
@@ -219,7 +223,7 @@
   (str root "/sessions"))
 
 (defn crew-sessions-dir [root crew]
-  (str (sessions-dir root) "/" (name (or crew "main"))))
+  (str (sessions-dir root) "/" (name crew)))
 
 (defn session-dir
   "Session directory. 3-arity is the nested product layout
@@ -332,7 +336,7 @@
                 ;; leftover flat sessions/<sid>/session.edn
                 (let [entry (session-edn-at fs (str nested-edn "/session.edn"))
                       id    (or (:id entry) name)
-                      crew  (or (:crew entry) "main")]
+                      crew  (or (:crew entry) (resolve/default-crew (effective-config (:config entry))))]
                   (assoc acc id (merge {:crew crew :dir nested-edn :id id} entry)))
                 ;; nested sessions/<crew>/<sid>/
                 (reduce
@@ -374,7 +378,7 @@
   (let [id          (str session-id)
         indexed     (get (read-index fs root) id)
         indexed-loc (when indexed
-                      (let [crew (or (:crew indexed) "main")]
+                      (when-let [crew (:crew indexed)]
                         (assoc indexed :id id :crew crew :dir (session-dir root crew id))))
         scanned     (get (scan-session-dirs fs root) id)
         found       (if (and indexed-loc
@@ -390,8 +394,8 @@
   "Throw when session-id is already indexed (or on disk) under a different crew."
   [root session-id crew fs]
   (when-let [found (locate-session root session-id fs)]
-    (let [want (name (or crew "main"))
-          have (name (or (:crew found) "main"))]
+    (let [want (name crew)
+          have (name (:crew found))]
       (when (not= want have)
         (throw (ex-info (str "session " session-id " belongs to crew " have)
                         {:reason :crew-collision :id session-id
@@ -638,7 +642,7 @@
 (defn- crew-of
   ([entry] (crew-of entry nil))
   ([entry fallback]
-   (name (or (:crew entry) fallback "main"))))
+   (name (or (:crew entry) fallback (resolve/default-crew (effective-config (:config entry)))))))
 
 (defn session-edn-for
   "Prefer nested sessions/<crew>/<sid>/session.edn; fall back to leftover flat."
@@ -695,7 +699,7 @@
                   (->> (or (children* fs dir) [])
                        (remove reserved-name?)
                        (filter #(exists?* fs (session-edn-path root %)))
-                       (map (fn [id] [id {:id id :crew "main" :dir (session-dir root id)}]))))
+                       (map (fn [id] [id {:id id :dir (session-dir root id)}]))))
         all     (merge (into {} (map (fn [[id loc]] [id loc]) flat)) scanned)]
     (->> all
          (keep (fn [[id loc]]
@@ -1017,8 +1021,7 @@
         msg-id           (new-id)
         now              (now-fn)
         resolved-agent   (or (:crew message)
-                             (when (#{"assistant" "error" "toolResult"} (:role message)) (:crew entry))
-                             (when (= "assistant" (:role message)) "main"))
+                             (when (#{"assistant" "error" "toolResult"} (:role message)) (:crew entry)))
         normalized-msg   (stamp-message-tokens
                            (normalize-message (cond-> message
                                                 resolved-agent (assoc :crew resolved-agent))))

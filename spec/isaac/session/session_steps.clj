@@ -53,7 +53,7 @@
 
 (helper! isaac.session.session-steps)
 
-(declare -drain-parked-turn! await-turn!)
+(declare -drain-parked-turn! await-turn! loaded-config)
 
 (g/before-scenario
   (fn []
@@ -197,11 +197,47 @@
   (g/dissoc! :feature-config))
 
 (defonce ^:private foundation-minimal-config-patched? (atom false))
+(defonce ^:private foundation-config-file-patched? (atom false))
+(defonce ^:private foundation-isaac-file-patched? (atom false))
 
 (when (compare-and-set! foundation-minimal-config-patched? false true)
   (when-let [minimal-config-var (ns-resolve 'isaac.foundation.root-steps 'minimal-config)]
     (alter-var-root minimal-config-var
                     #(assoc % :tools (assoc (or (:tools %) {}) :max-parallel 4)))))
+
+(defn- stamp-fixture-default-crew [path content]
+  (if-not (= "isaac.edn" path)
+    content
+    (try
+      (let [cfg (edn/read-string content)]
+        (if (or (not (map? cfg))
+                (contains? (or (:defaults cfg) {}) :crew)
+                (and (contains? (or (:defaults cfg) {}) :model)
+                     (contains? cfg :crew)))
+          content
+          (let [crew-id (if (= 1 (count (:crew cfg)))
+                          (first (keys (:crew cfg)))
+                          "main")]
+            (pr-str (-> cfg
+                        (assoc-in [:defaults :crew] crew-id)
+                        (update :crew (fn [crew]
+                                        (let [crew (or crew {})]
+                                          (if (contains? crew crew-id)
+                                            crew
+                                            (assoc crew crew-id {}))))))))))
+      (catch Exception _ content))))
+
+(when (compare-and-set! foundation-config-file-patched? false true)
+  (alter-var-root #'config-steps/config-file-containing
+                  (fn [orig]
+                    (fn [path content]
+                      (orig path (stamp-fixture-default-crew path content))))))
+
+(when (compare-and-set! foundation-isaac-file-patched? false true)
+  (alter-var-root #'ffs/isaac-file-exists-with-content
+                  (fn [orig]
+                    (fn [path content]
+                      (orig path (stamp-fixture-default-crew path content))))))
 
 (defn- notify-config-change! [_path]
   (invalidate-feature-config!))
@@ -242,13 +278,20 @@
 (defn- get-chronicle-transcript [session-key]
   (store/chronicle-transcript (session-store) session-key))
 
+(defn- fixture-crew [entry]
+  (or (:crew entry)
+      (:agent entry)
+      (get-in (loaded-config) [:defaults :crew])
+      "main"))
+
 (defn- open-session! [session-name opts]
-  (let [crew (or (:crew opts) "main")
-        cfg  (or (try (loader/snapshot "feature session open")
+  (let [cfg  (or (try (loader/snapshot "feature session open")
                       (catch Exception _ nil))
+                 (loaded-config)
                  {})
+        crew (or (:crew opts) (get-in cfg [:defaults :crew]) "main")
         pol  (policy/for-crew crew cfg (session-store))]
-    (policy/open-session! pol session-name opts)))
+    (policy/open-session! pol session-name (assoc opts :crew crew))))
 
 (defn- update-session! [session-key updates]
   (store/update-session! (session-store) session-key updates))
@@ -327,7 +370,7 @@
            (select-keys model-cfg [:enforce-context-window]))))
 
 (defn- current-agent-config []
-  (let [agent-id (or (:crew (current-session)) (:agent (current-session)) "main")]
+  (let [agent-id (fixture-crew (current-session))]
     (get (merged-agents) agent-id)))
 
 (defn- crew-config-path [crew-id]
@@ -348,8 +391,7 @@
       (:agent (current-session))
       (when (= 1 (count (configured-crew-ids)))
         (first (configured-crew-ids)))
-      (get-in (loaded-config) [:defaults :crew])
-      "main"))
+      (get-in (loaded-config) [:defaults :crew])))
 
 (defn- update-crew-config! [crew-id f]
   (with-feature-fs
@@ -956,7 +998,11 @@
         opts  (cond-> {}
                 (some? value) (assoc (keyword field) value))
         entry (with-feature-fs #(do (commit-feature-config!)
-                                    (session-ctx/create-with-resolved-behavior! name opts)))]
+                                    (session-ctx/create-with-resolved-behavior!
+                                      name
+                                      (assoc opts :crew (or (:crew opts)
+                                                            (get-in (loaded-config) [:defaults :crew])
+                                                            "main")))))]
     (g/assoc! :last-session entry)
     (g/assoc! :current-key (:id entry))))
 
@@ -1028,7 +1074,7 @@
 (defn- session-current-path [session]
   (session-impl-common/current-transcript-path
     (root-dir)
-    (or (:crew session) (:agent session) "main")
+    (fixture-crew session)
     (:id session)))
 
 (defn every-transcript-line-valid-edn [key-str]
@@ -1052,7 +1098,7 @@
             entries (vec (get-transcript key-str))
             kept    (vec (drop (inc idx) entries))]
         (session-impl-common/write-transcript! (root-dir)
-                                              (or (:crew session) "main")
+                                              (fixture-crew session)
                                               (:id session)
                                               kept
                                               (mem-fs))))))
@@ -1297,7 +1343,7 @@
             fs*        (mem-fs)
             root       (root-dir)
             path       (session-impl-common/current-transcript-path
-                          root (or (:crew entry) "main") (:id entry))
+                          root (fixture-crew entry) (:id entry))
             transcript (get-transcript session-key)
             edn-lines  (mapv session-impl-common/write-edn transcript)]
         (fs/mkdirs fs* (fs/parent path))
@@ -1331,7 +1377,7 @@
   (with-feature-fs
     (fn []
       (let [session    (get-session key-str)
-            agent-id   (or (:crew session) (:agent session) "main")
+            agent-id   (fixture-crew session)
             cfg        (loaded-config)
             model-cfg  (current-model-config)
             ctx        (assoc (resolve/resolve-crew-context cfg agent-id)
@@ -1406,7 +1452,7 @@
 (defn- session-match-entry [entry]
   (assoc entry
          :crew (or (:crew entry) (:agent entry))
-         :file (str "sessions/" (or (:crew entry) (:agent entry) "main")
+         :file (str "sessions/" (fixture-crew entry)
                     "/" (:id entry) "/current.ednl")))
 
 (defn- transcript-match-entry [entry include-compaction-message? denormalize-tool-call? denormalize-tool-result?]
@@ -1522,7 +1568,7 @@
 
 (defn session-file-is-quoted [expected-path]
   (let [entry (current-session)
-        crew  (or (:crew entry) (:agent entry) "main")]
+        crew  (fixture-crew entry)]
     (g/should= expected-path (str "sessions/" crew "/" (:id entry) "/current.ednl"))))
 
 (defn most-recent-session-is [session-name]
@@ -1635,7 +1681,7 @@
   (append-message! key-str {:role "user" :content content})
   (let [transcript (get-transcript key-str)
         session    (get-session key-str)
-        agent-id   (or (:crew session) (:agent session) "main")
+        agent-id   (fixture-crew session)
         cfg        (loaded-config)
         agents     (merged-agents)
         models     (loaded-models)
@@ -1825,7 +1871,7 @@
       (let [key-str       (current-key)
             session       (get-session key-str)
             transcript    (get-transcript key-str)
-            agent-id      (or (:crew session) (:agent session) "main")
+            agent-id      (fixture-crew session)
             cfg           (loaded-config)
             model-cfg     (current-model-config)
             ctx           (assoc (resolve/resolve-crew-context cfg agent-id)

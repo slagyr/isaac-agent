@@ -57,8 +57,7 @@
                     (cli-common/build-cfg crew models)
                     (loader/load-config! root (fs/instance) "crew cli"))
         cfg       (loader/normalize-config cfg)
-        crew-map  (cond-> (:crew cfg)
-                    (not (contains? (:crew cfg) "main")) (assoc "main" {}))]
+        crew-map  (:crew cfg)]
     (map (fn [[crew-id crew-member]]
            (let [model-id   (or (:model crew-member) (get-in cfg [:defaults :model]))
                  model-cfg  (get-in cfg [:models model-id])

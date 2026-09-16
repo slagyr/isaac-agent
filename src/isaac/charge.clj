@@ -135,13 +135,9 @@
         ss*             (store/registered-store)
         session-entry   (when (and ss* session-key (satisfies? store/SessionStore ss*))
                           (store/get-session ss* session-key))
-        crew-id         (or crew (:crew session-entry) (get-in config* [:defaults :crew]) "main")
+        crew-id         (or crew (:crew session-entry) (get-in config* [:defaults :crew]))
         known-crews     (or (:crew config*) {})
-        default-crew    (get-in config* [:defaults :crew])
-        unknown?        (and (seq known-crews)
-                             (not (or (= crew-id "main")
-                                      (contains? known-crews crew-id)
-                                      (= crew-id default-crew))))
+        unknown?        (and crew-id (not (contains? known-crews crew-id)))
         session-context (delay (session-ctx/resolve-behavior session-key
                                                              (behavior-opts crew-id
                                                                             {:model-override model-override

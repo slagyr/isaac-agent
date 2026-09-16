@@ -47,7 +47,7 @@
   (or (c/exists?* fs (c/current-transcript-path root id))
       (when-let [loc (c/locate-session root id fs)]
         (c/exists?* fs (str (or (:dir loc)
-                                (c/session-dir root (or (:crew loc) "main") id))
+                                (c/session-dir root (:crew loc) id))
                             "/current.ednl")))))
 
 (defn leftover-ids [root fs]

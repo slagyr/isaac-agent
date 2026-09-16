@@ -31,7 +31,7 @@
         alias     (or (:alias model-cfg) model-alias)
         provider  (model-name (:provider model-cfg))]
     {:result (json/generate-string
-                {:crew        (or (:crew session) "main")
+                {:crew        (or (:crew session) (get-in cfg [:defaults :crew]))
                  :model       {:alias    alias
                                :upstream (:model model-cfg)}
                  :provider    (or provider "")
@@ -54,7 +54,7 @@
     (if (nil? session)
       {:isError true :error (str "session not found: " session-key)}
       (let [cfg      (loader/snapshot "session_info tool: model/crew resolution")
-            crew-id  (or (:crew session) "main")
+            crew-id  (or (:crew session) (get-in cfg [:defaults :crew]))
             crew-cfg (or (get-in cfg [:crew crew-id]) {})
             defaults (:defaults cfg)]
         (build-session-state session (resolve-model-alias session crew-cfg defaults) cfg)))))
@@ -78,7 +78,7 @@
         (if (nil? session)
           {:isError true :error (str "session not found: " session-key)}
           (let [cfg        (loader/snapshot "session_model tool: model/crew resolution")
-                crew-id    (or (:crew session) "main")
+                crew-id    (or (:crew session) (get-in cfg [:defaults :crew]))
                 crew-cfg   (or (get-in cfg [:crew crew-id]) {})
                 defaults   (:defaults cfg)
                 models     (or (:models cfg) {})
