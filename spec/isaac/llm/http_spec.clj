@@ -94,6 +94,14 @@
             (deliver release true)
             (bridge/end-turn! "http-cancel" turn)))))
 
+    (it "returns OpenAI-compatible embedding data under Grover simulation"
+      (let [result (sut/post-json! "https://api.openai.com/v1/embeddings"
+                                   {"Authorization" "Bearer test"}
+                                   {:model "text-embedding-3-large" :input ["hello"]}
+                                   {:simulate-provider "openai"})]
+        (should= [[5 532 104 111]] (mapv :embedding (:data result)))
+        (should= "https://api.openai.com/v1/embeddings" (:url (grover/last-provider-request)))))
+
     (it "routes simulated provider JSON calls through grover"
       (grover/enqueue! [{:model "gpt-5" :type "text" :content "ok"}])
       (let [result (sut/post-json! "https://api.openai.com/v1/chat/completions"

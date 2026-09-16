@@ -287,7 +287,7 @@
         args      (get-in tool-call [:function :arguments])]
     (if (string? args) args (json/generate-string args))))
 
-(defn- embed-json [body]
+(defn- embed-vectors [body]
   (let [input (or (:input body) [])
         texts (cond
                 (string? input) [input]
@@ -302,14 +302,25 @@
                              (int (first s))
                              (int (last s))])))
                       texts)]
-    {:embeddings vectors
-     :model (:model body)}))
+    vectors))
+
+(defn- ollama-embed-json [body]
+  {:embeddings (embed-vectors body)
+   :model      (:model body)})
+
+(defn- embeddings-json [body]
+  {:data  (mapv (fn [idx vector]
+                  {:index idx :embedding vector})
+                (range)
+                (embed-vectors body))
+   :model (:model body)})
 
 (defn post-json!
   [provider url headers body]
   (capture-provider-request! provider url headers body)
   (cond
-    (str/ends-with? url "/api/embed") (embed-json body)
+    (str/ends-with? url "/api/embed") (ollama-embed-json body)
+    (str/ends-with? url "/embeddings") (embeddings-json body)
     :else
     (let [response (provider-response body nil)]
       (if (or (:error response) (:unavailable? response))
