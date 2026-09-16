@@ -76,7 +76,7 @@ Feature: Context-window guard when compaction cannot save the turn
     And the memory comm has events matching:
       | event    | kind               | error      | consecutive-failures |
       | bulletin | compaction/start   |            |                      |
-      | bulletin | compaction/failure | :llm-error | 3                    |
+      | bulletin | compaction/failure | :context-overflow | 3                    |
     And session "giving-up" matches:
       | key                             | value              |
       | compaction.consecutive-failures | 3                  |
@@ -106,7 +106,7 @@ Feature: Context-window guard when compaction cannot save the turn
     And the memory comm has events matching:
       | event    | kind               | error      | consecutive-failures |
       | bulletin | compaction/start   |            |                      |
-      | bulletin | compaction/failure | :llm-error | 1                    |
+      | bulletin | compaction/failure | :context-overflow | 1                    |
     And session "logbook" matches:
       | key                             | value |
       | compaction.consecutive-failures | 1     |
@@ -134,7 +134,7 @@ Feature: Context-window guard when compaction cannot save the turn
     And the memory comm has events matching:
       | event    | kind               | error      | consecutive-failures |
       | bulletin | compaction/start   |            |                      |
-      | bulletin | compaction/failure | :llm-error | 3                    |
+      | bulletin | compaction/failure | :context-overflow | 3                    |
     And session "longwave" matches:
       | key                             | value               |
       | compaction.consecutive-failures | 3                   |

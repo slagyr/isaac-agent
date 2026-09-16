@@ -16,7 +16,6 @@ Feature: The provider response schema (isaac-g71i)
   Scenario 1 exercises every built-in adapter against one reply; the rest pin
   the fields the drive depends on.
 
-  @wip
   Scenario Outline: <provider> returns its reply in the drive's response schema
     Given default Grover setup
     And the isaac EDN file "config/models/harbor.edn" exists with:
@@ -51,7 +50,6 @@ Feature: The provider response schema (isaac-g71i)
       | grover:chatgpt   |
       | grover:ollama    |
 
-  @wip
   Scenario: an off-contract adapter return fails the turn as a provider contract error
     Given default Grover setup
     And the following sessions exist:
@@ -69,7 +67,6 @@ Feature: The provider response schema (isaac-g71i)
       | level  | event                            | provider |
       | :error | :chat/provider-contract-violated | grover   |
 
-  @wip
   Scenario: a valid adapter return reaches the drive with nothing dropped
     Given default Grover setup
     And the following sessions exist:
@@ -93,7 +90,6 @@ Feature: The provider response schema (isaac-g71i)
       | #index | type    | message.role | message.content |
       | -1     | message | assistant    | Sails trimmed.  |
 
-  @wip
   Scenario: OpenAI-style usage stamps the context size without adding cached tokens
     Given default Grover setup
     And the isaac EDN file "config/models/snuffy.edn" exists with:
@@ -131,7 +127,6 @@ Feature: The provider response schema (isaac-g71i)
       | usage.prompt-tokens     | 1000  |
       | usage.cache-read-tokens | 900   |
 
-  @wip
   Scenario: Anthropic-style usage stamps input plus cache read plus cache write as the context size
     Given default Grover setup
     And the isaac EDN file "config/models/tinfoil.edn" exists with:
@@ -158,7 +153,6 @@ Feature: The provider response schema (isaac-g71i)
       | usage.cache-read-tokens  | 800   |
       | usage.cache-write-tokens | 100   |
 
-  @wip
   Scenario: a tool turn sums usage for stats but stamps context size from its last request
     Given default Grover setup
     And the built-in tools are registered
@@ -183,8 +177,7 @@ Feature: The provider response schema (isaac-g71i)
       | name      | last-input-tokens | turn-input-tokens | output-tokens |
       | paperclip | 1050              | 2050              | 50            |
 
-  @wip
-  Scenario Outline: <provider> maps wire stop "<wire>" to <expected>
+  Scenario Outline: <provider> maps wire stop <wire> to <expected>
     Given default Grover setup
     And the isaac EDN file "config/models/harbor.edn" exists with:
       | path     | value      |
@@ -221,7 +214,6 @@ Feature: The provider response schema (isaac-g71i)
       | grover:ollama    | stop                         | :end-turn   |
       | grover:ollama    | length                       | :max-tokens |
 
-  @wip
   Scenario: a tool call with unparseable arguments comes back to the model as its tool result
     Given default Grover setup
     And the built-in tools are registered
@@ -251,7 +243,6 @@ Feature: The provider response schema (isaac-g71i)
       | -2     | toolResult |              |          | #"(?s)(?=.*arguments)(?=.*fs__grep).*" |
       | -1     | message    | assistant    |          | I will try that again.                 |
 
-  @wip
   Scenario: a rate-limited provider reports its own retry-after on the error
     Given default Grover setup
     And the isaac EDN file "config/models/snuffy.edn" exists with:
@@ -274,7 +265,6 @@ Feature: The provider response schema (isaac-g71i)
       | retry-after-ms | 60000         |
     And the turn result is unavailable with retry-after-ms 60000 and reason wall
 
-  @wip
   Scenario: a context-overflow error compacts and retries without matching error text
     Given default Grover setup
     And the isaac EDN file "config/models/grover.edn" exists with:
@@ -284,10 +274,11 @@ Feature: The provider response schema (isaac-g71i)
       | context-window | 200    |
     And the following sessions exist:
       | name     | last-input-tokens |
-      | longhaul | 165               |
+      | longhaul | 100               |
     And the following model responses are queued:
       | type  | content                 | model |
       | error | context length exceeded | echo  |
+      | text  | Compacted conversation. | echo  |
       | text  | Sails trimmed.          | echo  |
     When the user sends "trim the sails" on session "longhaul"
     Then the last provider response matches:
@@ -298,13 +289,15 @@ Feature: The provider response schema (isaac-g71i)
       | #index | type    | message.role | message.content |
       | -1     | message | assistant    | Sails trimmed.  |
 
-  @wip
   Scenario Outline: <provider> streams text deltas to the comm
     Given default Grover setup
     And the isaac EDN file "config/models/harbor.edn" exists with:
       | path     | value      |
       | model    | harbor-1   |
       | provider | <provider> |
+    And the provider "<provider>" is configured with:
+      | key                   | value |
+      | stream-non-tool-turns | true  |
     And the isaac EDN file "config/crew/main.edn" exists with:
       | path  | value            |
       | model | harbor           |
@@ -319,8 +312,8 @@ Feature: The provider response schema (isaac-g71i)
     Then the memory comm has events matching:
       | event      | text                   |
       | turn-start |                        |
-      | chatter    | Sails                  |
-      | chatter    | trimmed                |
+      | chatter    | #"Sails\s"            |
+      | chatter    | #"trimmed\s"          |
       | chatter    | at last.               |
       | reply      | Sails trimmed at last. |
       | turn-end   |                        |
@@ -332,7 +325,6 @@ Feature: The provider response schema (isaac-g71i)
       | grover:chatgpt   |
       | grover:ollama    |
 
-  @wip
   Scenario: reasoning streams to the comm and the transcript records the requested effort
     Given default Grover setup
     And the following sessions exist:

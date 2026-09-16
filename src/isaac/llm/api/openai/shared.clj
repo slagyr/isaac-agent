@@ -154,15 +154,21 @@
 ;; endregion ^^^^^ Auth ^^^^^
 
 (defn parse-usage [usage]
-  {:input-tokens  (or (:prompt_tokens usage) (:input_tokens usage) 0)
-   :output-tokens (or (:completion_tokens usage) (:output_tokens usage) 0)})
+  (let [prompt-tokens    (or (:prompt_tokens usage) (:input_tokens usage) 0)
+        output-tokens    (or (:completion_tokens usage) (:output_tokens usage) 0)
+        cache-read       (or (get-in usage [:prompt_tokens_details :cached_tokens])
+                             (get-in usage [:input_tokens_details :cached_tokens]))
+        reasoning-tokens (get-in usage [:output_tokens_details :reasoning_tokens])]
+    (cond-> {:prompt-tokens prompt-tokens :output-tokens output-tokens}
+      (some? cache-read)       (assoc :cache-read-tokens cache-read)
+      (some? reasoning-tokens) (assoc :reasoning-tokens reasoning-tokens))))
 
 (defn followup-messages
   "Build the next iteration's :messages vector. Assistant message carries
    tool_calls in OpenAI function-call wire format; tool replies are role=tool."
   [request response tool-calls tool-results]
   (let [assistant-msg {:role       "assistant"
-                       :content    (get-in response [:message :content])
+                       :content    (:content response)
                        :tool_calls (mapv (fn [tc]
                                            {:id       (:id tc)
                                             :type     "function"

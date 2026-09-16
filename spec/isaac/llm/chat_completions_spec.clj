@@ -29,13 +29,13 @@
     (it "parses a text response from choices array"
       (with-redefs [http/post (fn [_ _] (chat-response "Hello!"))]
         (let [result (sut/chat {:model "gpt-5" :messages []} "openai" test-config)]
-          (should= "Hello!" (get-in result [:message :content]))
+          (should= "Hello!" (:content result))
           (should= "gpt-5" (:model result)))))
 
     (it "parses token usage"
       (with-redefs [http/post (fn [_ _] (chat-response "Hi" :prompt-tokens 42 :completion-tokens 18))]
         (let [result (sut/chat {:model "gpt-5" :messages []} "openai" test-config)]
-          (should= 42 (:input-tokens (:usage result)))
+          (should= 42 (:prompt-tokens (:usage result)))
           (should= 18 (:output-tokens (:usage result))))))
 
     (it "extracts tool calls with string arguments"
@@ -144,7 +144,7 @@
 
     (it "uses completion tokens when prompt tokens are absent"
       (let [usage (shared/parse-usage {:completion_tokens 7})]
-        (should= 0 (:input-tokens usage))
+        (should= 0 (:prompt-tokens usage))
         (should= 7 (:output-tokens usage)))))
 
   (describe "followup-messages"
@@ -153,7 +153,7 @@
       (let [tool-calls   [{:id "tc1" :name "read" :arguments {:path "x"}}
                           {:id "tc2" :name "write" :arguments {:path "y" :content "z"}}]
             tool-results ["file contents" "wrote ok"]
-            response     {:message {:role "assistant" :content "thinking..."}}
+            response     {:content "thinking..."}
             request      {:messages [{:role "user" :content "go"}]}
             messages     (sut/followup-messages request response tool-calls tool-results)
             assistant    (nth messages 1)]
@@ -205,10 +205,10 @@
                                         (fn [c] (swap! chunks conj c))
                                         "openai" test-config)]
             (should= true (:stream @captured-body))
-            (should= "Hello world" (get-in result [:message :content]))
+            (should= "Hello world" (:content result))
             (should= "gpt-5" (:model result))
-            (should= 10 (:input-tokens (:usage result)))
-            (should= 3 (count @chunks))))))
+            (should= 10 (:prompt-tokens (:usage result)))
+            (should= 2 (count @chunks))))))
 
     (it "returns error on failure"
       (with-redefs [llm-http/post-sse! (fn [& _] {:error :connection-refused})]

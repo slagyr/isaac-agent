@@ -60,7 +60,7 @@
                                  "chatgpt" oauth-device-config)]
             (should= 1 (count (:tool-calls result)))
             (should= {:path "README"} (:arguments (first (:tool-calls result))))
-            (should (map? (get-in result [:message :tool_calls 0 :function :arguments])))))))
+            (should (map? (get-in result [:tool-calls 0 :arguments])))))))
 
     (it "uses OAuth access token when auth is oauth-device"
       (let [captured-headers (atom nil)
@@ -95,7 +95,7 @@
             (should= "https://chatgpt.com/backend-api/codex/responses" @captured-url)
             (should= true (:stream @captured-body))
             (should= "You are Codex." (:instructions @captured-body))
-            (should= "Hello from Codex" (get-in result [:message :content]))))))
+            (should= "Hello from Codex" (:content result))))))
 
     (it "sanitizes responses input messages to supported keys"
       (let [captured-body (atom nil)
@@ -315,7 +315,7 @@
       (let [result (@#'sut/->responses-request
                      {:model                 "snuffy-codex"
                       :stateful              true
-                      :previous_response_id  "resp-1"
+                      :previous-response-id  "resp-1"
                       :messages              [{:role "user" :content "count the cans"}
                                               {:role       "assistant"
                                                :content    ""
@@ -332,7 +332,7 @@
     (it "without stateful, full context is resent and previous_response_id is omitted"
       (let [result (@#'sut/->responses-request
                      {:model                "snuffy-codex"
-                      :previous_response_id "resp-1"
+                      :previous-response-id "resp-1"
                       :messages             [{:role "user" :content "count the cans"}
                                              {:role "tool" :tool_call_id "fc_1" :content "ok"}]})]
         (should= false (:store result))
@@ -400,9 +400,9 @@
                       auth-store/token-expired? (fn [_] false)]
           (let [result (sut/chat {:model "gpt-5.4" :messages [{:role "user" :content "hi"}]}
                                  "chatgpt" oauth-device-config)]
-          (should= 32 (get-in result [:response :usage :output_tokens_details :reasoning_tokens]))
-          (should= "high" (get-in result [:response :reasoning :effort]))
-          (should= "Step by step." (get-in result [:response :reasoning :summary]))))))
+          (should= 32 (get-in result [:provider-data :usage :output_tokens_details :reasoning_tokens]))
+          (should= "high" (get-in result [:provider-data :reasoning :effort]))
+          (should= "Step by step." (get-in result [:provider-data :reasoning :summary]))))))
 
     (it "logs responses reasoning diagnostics including summary"
       (let [token (jwt-with-account-id "acct-123")]
@@ -494,7 +494,7 @@
                                         "chatgpt" oauth-device-config)]
             (should= "https://chatgpt.com/backend-api/codex/responses" @captured-url)
             (should= true (:stream @captured-body))
-            (should= "Hello world" (get-in result [:message :content]))
+            (should= "Hello world" (:content result))
             (should= 2 (count @chunks))))))
 
     (it "returns codex tool calls parsed from responses SSE events"

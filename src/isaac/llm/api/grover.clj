@@ -24,6 +24,8 @@
 (defonce ^:private provider-requests* (atom []))
 (defonce ^:private wait-gates* (atom {}))
 (defonce ^:private drive-own-loop?* (atom false))
+(defonce ^:private raw-response* (atom nil))
+(defonce ^:private wire-stop-reason* (atom nil))
 
 (defn enqueue! [responses]
   (swap! queue into responses))
@@ -40,7 +42,15 @@
   (reset! requests* [])
   (reset! last-provider-request* nil)
   (reset! provider-requests* [])
+  (reset! raw-response* nil)
+  (reset! wire-stop-reason* nil)
   (reset! wait-gates* {}))
+
+(defn set-raw-response! [response]
+  (reset! raw-response* response))
+
+(defn set-wire-stop-reason! [reason]
+  (reset! wire-stop-reason* reason))
 
 (defn enable-delay! []
   (reset! delay-enabled* true))
@@ -73,8 +83,13 @@
   (some-> (get @wait-gates* session-key) (deliver true)))
 
 (defn- dequeue! []
-  (let [[responses _] (swap-vals! queue #(if (seq %) (subvec % 1) %))]
-    (first responses)))
+  (or (when-let [raw @raw-response*]
+        (reset! raw-response* nil)
+        (with-meta raw {::raw-response true}))
+      (let [[responses _] (swap-vals! queue #(if (seq %) (subvec % 1) %))]
+        (cond-> (first responses)
+          @wire-stop-reason* (assoc :wire-stop-reason (deref wire-stop-reason*))
+          @wire-stop-reason* (#(do (reset! wire-stop-reason* nil) %))))))
 
 (defn- await-promise [atom*]
   (let [p @atom*]
@@ -152,14 +167,15 @@
            token-counts)))
 
 (defn- scripted-response [scripted model]
-  (let [resp-model     (if (contains? scripted :model) (:model scripted) model)
+  (let [resp-model     (or (not-empty (:model scripted)) model)
         input-tokens   (or (get-in scripted [:usage :input_tokens]) (:prompt_eval_count scripted) (:prompt_tokens scripted) (:input_tokens scripted) (:usage.input_tokens scripted) (:prompt_eval_count token-counts))
         output-tokens  (or (get-in scripted [:usage :output_tokens]) (:eval_count scripted) (:completion_tokens scripted) (:output_tokens scripted) (:usage.output_tokens scripted) (:eval_count token-counts))
         token-overrides {:prompt_eval_count input-tokens
                          :eval_count        output-tokens}
         metadata       (cond-> {}
                          (:reasoning scripted) (assoc :reasoning (:reasoning scripted))
-                         (:usage scripted)     (assoc :usage (:usage scripted)))]
+                         (:usage scripted)     (assoc :usage (:usage scripted))
+                         (:wire-stop-reason scripted) (assoc :wire-stop-reason (:wire-stop-reason scripted)))]
     (cond
       (= "exception" (:type scripted))
       (throw (Exception. (or (:content scripted) "grover exception")))
@@ -170,15 +186,17 @@
         (:reason scripted) (assoc :reason (keyword (:reason scripted))))
 
       (= "http-error" (:type scripted))
-      (cond-> {:error :api-error
-               :status (long (or (:status scripted) 500))
-               :message (or (:message scripted) (:content scripted) "http error")
-               :model resp-model}
-        (:retry-after scripted) (assoc :retry-after (long (:retry-after scripted)))
-        (:id scripted) (assoc :response-id (:id scripted)))
+      (api/normalize-error
+        (cond-> {:error :api-error
+                 :status (long (or (:status scripted) 500))
+                 :message (or (:message scripted) (:content scripted) "http error")}
+          (:retry-after scripted) (assoc :retry-after (long (:retry-after scripted)))))
 
       (= "error" (:type scripted))
-      {:error :llm-error :message (:content scripted) :model resp-model}
+      (api/normalize-error {:error (if (str/includes? (str/lower-case (or (:content scripted) "")) "context")
+                                     :context-overflow
+                                     :llm-error)
+                            :message (:content scripted)})
 
       (= "reasoning" (:type scripted))
       (let [summary (:content scripted)]
@@ -226,8 +244,11 @@
 (defn- context-window-error [request cfg]
   (let [enforce?       (:enforce-context-window cfg)
         context-window (:context-window cfg)]
-    (when (and enforce? context-window (> (api/estimate-tokens request) context-window))
+    (when (and enforce? (empty? @queue) context-window (> (api/estimate-tokens request) context-window))
       {:error :llm-error :message "context length exceeded" :model (:model request)})))
+
+(defn- compaction-request? [body]
+  (str/includes? (str body) "produce a faithful, thorough summary of the conversation"))
 
 (defn- provider-response [body provider-config]
   (or (context-window-error body provider-config)
@@ -247,34 +268,46 @@
 
 (defn- chat-completions-json [response]
   {:choices [{:message {:role    "assistant"
-                        :content (get-in response [:message :content])}}]
+                        :content (get-in response [:message :content])
+                        :tool_calls (get-in response [:message :tool_calls])}
+              :finish_reason (or (:wire-stop-reason response)
+                                 (if (seq (get-in response [:message :tool_calls])) "tool_calls" "stop"))}]
    :model   (:model response)
-   :usage   {:prompt_tokens (:prompt_eval_count response)
-             :completion_tokens (:eval_count response)}})
+   :usage   (merge {:prompt_tokens (:prompt_eval_count response)
+                    :completion_tokens (:eval_count response)}
+                   (:usage response))})
 
 (defn- messages-json [response]
   (let [tool-call (first (get-in response [:message :tool_calls]))
-        content   (cond-> [{:type "text" :text (or (get-in response [:message :content]) "")}]
+        text      (get-in response [:message :content])
+        blocks    (mapv (fn [chunk] {:type "text" :text chunk})
+                        (if (vector? text) text [(or text "")]))
+        content   (cond-> blocks
                     tool-call (conj {:type  "tool_use"
                                      :id    (or (:id tool-call) "tc_grover")
                                      :name  (get-in tool-call [:function :name])
                                      :input (get-in tool-call [:function :arguments])}))]
     {:content     content
      :model       (:model response)
-     :stop_reason (if tool-call "tool_use" "end_turn")
+     :stop_reason (or (:wire-stop-reason response) (if tool-call "tool_use" "end_turn"))
      :usage       (merge {:input_tokens  (:prompt_eval_count response)
                           :output_tokens (:eval_count response)}
                          (:usage response))}))
 
 (defn- responses-json [response]
-  {:output [{:type    "message"
+  (let [wire (or (:wire-stop-reason response) "completed")
+        [status reason] (str/split wire #":" 2)]
+    {:output [{:type    "message"
              :role    "assistant"
              :content [{:type "output_text" :text (get-in response [:message :content])}]}]
-   :model  (:model response)
-   :usage  (merge {:input_tokens (:prompt_eval_count response)
-                   :output_tokens (:eval_count response)}
-                  (:usage response))
-   :reasoning (:reasoning response)})
+     :model  (:model response)
+     :status status
+     :incomplete_details (when reason {:reason reason})
+     :wire-stop-reason (:wire-stop-reason response)
+     :usage  (merge {:input_tokens (:prompt_eval_count response)
+                     :output_tokens (:eval_count response)}
+                    (:usage response))
+     :reasoning (:reasoning response)}))
 
 (defn- function-call-item [response]
   (let [tool-call (first (get-in response [:message :tool_calls]))]
@@ -328,6 +361,7 @@
         (cond
           (str/ends-with? url "/responses") (responses-json response)
           (str/ends-with? url "/messages")  (messages-json response)
+          (str/ends-with? url "/api/chat")  response
           :else                             (chat-completions-json response))))))
 
 (defn- content-chunks [content]
@@ -361,6 +395,7 @@
                          :item_id (:id tool-call-item)}
                          {:type     "response.completed"
                           :response (cond-> {:model (:model response)
+                                             :status (or (:wire-stop-reason response) "completed")
                                              :usage (merge {:input_tokens  (:prompt_eval_count response)
                                                             :output_tokens (:eval_count response)}
                                                            (:usage response))}
@@ -372,20 +407,33 @@
                                     (content-chunks (get-in response [:message :content])))
                                 [{:type     "response.completed"
                                   :response (cond-> {:model (:model response)
+                                                     :status (or (:wire-stop-reason response) "completed")
                                                      :usage (merge {:input_tokens  (:prompt_eval_count response)
                                                                     :output_tokens (:eval_count response)}
                                                                    (:usage response))}
                                               (:response-id response) (assoc :id (:response-id response))
                                               (:reasoning response) (assoc :reasoning (:reasoning response)))}]))]
           (reduce-provider-events events on-chunk process-event initial))
-        (let [events (concat (map (fn [chunk]
-                                    {:model   (:model response)
-                                     :choices [{:delta {:content chunk}}]})
-                                  (content-chunks (get-in response [:message :content])))
-                             [{:usage   {:prompt_tokens     (:prompt_eval_count response)
-                                         :completion_tokens (:eval_count response)}
-                               :choices [{:delta {}}]}])]
-          (reduce-provider-events events on-chunk process-event initial))))))
+        (if (str/ends-with? url "/messages")
+          (let [events (concat (map (fn [chunk]
+                                      {:type "content_block_delta" :delta {:text chunk}})
+                                    (content-chunks (get-in response [:message :content])))
+                               [{:type "message_start"
+                                 :message {:model (:model response) :usage (:usage (messages-json response))}}
+                                {:type "message_delta"
+                                 :stop_reason (or (:wire-stop-reason response) "end_turn")
+                                 :usage {:output_tokens (:eval_count response)}}])]
+            (reduce-provider-events events on-chunk process-event initial))
+          (let [events (concat (map (fn [chunk]
+                                      {:model   (:model response)
+                                       :choices [{:delta {:content chunk}}]})
+                                    (content-chunks (get-in response [:message :content])))
+                               [{:usage   (merge {:prompt_tokens (:prompt_eval_count response)
+                                                 :completion_tokens (:eval_count response)}
+                                                (:usage response))
+                                 :choices [{:delta {}
+                                            :finish_reason (or (:wire-stop-reason response) "stop")}]}])]
+            (reduce-provider-events events on-chunk process-event initial)))))))
 
 ;; endregion ^^^^^ Response Building ^^^^^
 
@@ -401,6 +449,68 @@
 (defn- stream-supports-tool-calls? [cfg]
   (boolean-option (:stream-supports-tool-calls cfg) true))
 
+(defn- normalized-stop-reason [provider-name wire tool-calls]
+  (cond
+    (seq tool-calls) :tool-use
+    (str/includes? provider-name "anthropic")
+    (case wire
+      "end_turn" :end-turn
+      "max_tokens" :max-tokens
+      "refusal" :refused
+      :other)
+    (str/includes? provider-name "chatgpt")
+    (case wire
+      "completed" :end-turn
+      "incomplete:max_output_tokens" :max-tokens
+      "incomplete:content_filter" :refused
+      :other)
+    :else
+    (case wire
+      "stop" :end-turn
+      "length" :max-tokens
+      "content_filter" :refused
+      :other)))
+
+(defn- normalize-response [response provider-name]
+  (if (:error response)
+    (api/normalize-error response)
+    (let [wire-tool-calls (get-in response [:message :tool_calls])
+          tool-calls      (mapv (fn [tool-call]
+                                  (let [arguments (get-in tool-call [:function :arguments])]
+                                    (merge {:id   (or (:id tool-call) (str (java.util.UUID/randomUUID)))
+                                            :name (get-in tool-call [:function :name])}
+                                           (if (string? arguments)
+                                             (try
+                                               {:arguments (json/parse-string arguments true)}
+                                               (catch Exception e
+                                                 {:arguments {} :arguments-error (.getMessage e)}))
+                                             {:arguments (or arguments {})}))))
+                                (or wire-tool-calls []))
+          usage           (:usage response)
+          cache-read      (or (:cache_read_input_tokens usage)
+                              (get-in usage [:input_tokens_details :cached_tokens])
+                              (get-in usage [:prompt_tokens_details :cached_tokens]))
+          cache-write     (:cache_creation_input_tokens usage)
+          reasoning-tokens (get-in usage [:output_tokens_details :reasoning_tokens])
+          anthropic?      (str/includes? provider-name "anthropic")
+          raw-prompt      (or (:input_tokens usage) (:prompt_tokens usage) (:prompt_eval_count response) 0)
+          prompt-tokens   (if anthropic?
+                            (+ raw-prompt (or cache-read 0) (or cache-write 0))
+                            raw-prompt)
+          wire-stop       (or (:wire-stop-reason response) (:done_reason response)
+                              (if anthropic? (:stop_reason response) "stop"))]
+      (cond-> {:content     (or (get-in response [:message :content]) "")
+               :model       (:model response)
+               :tool-calls  tool-calls
+               :stop-reason (normalized-stop-reason provider-name wire-stop tool-calls)
+               :usage       (cond-> {:prompt-tokens prompt-tokens
+                                     :output-tokens (or (:output_tokens usage) (:eval_count response) 0)}
+                              (some? cache-read) (assoc :cache-read-tokens cache-read)
+                              (some? cache-write) (assoc :cache-write-tokens cache-write)
+                              (some? reasoning-tokens) (assoc :reasoning-tokens reasoning-tokens))}
+        (:reasoning response) (assoc :reasoning (:reasoning response))
+        (:response-id response) (assoc :response-id (:response-id response))))))
+
 (defn chat
   "Synchronous chat. Returns a response map instantly."
   [request provider-name cfg]
@@ -409,16 +519,24 @@
   (let [session-key  (:session-key cfg)
         delayed?     @delay-enabled*
         delay-error  (when delayed? (maybe-delay! session-key))
-        window-error (context-window-error request cfg)]
+        window-error (when-not (compaction-request? request)
+                       (context-window-error request cfg))]
     (or delay-error
         window-error
+        (when (compaction-request? request)
+          (let [scripted (when (seq @queue) (dequeue!))]
+            (normalize-response (scripted-response (or scripted {:type "text" :content "Compacted conversation."})
+                                                   (:model request))
+                                provider-name)))
         (let [model    (:model request)
               scripted (dequeue!)]
           (if scripted
             (or (when (:wait scripted)
                   (maybe-wait! session-key))
-                (scripted-response scripted model))
-            (echo-response (:messages request) model))))))
+                (if (::raw-response (meta scripted))
+                  scripted
+                  (normalize-response (scripted-response scripted model) provider-name)))
+            (normalize-response (echo-response (:messages request) model) provider-name))))))
 
 (defn chat-stream
   "Streaming chat. Calls on-chunk with synthetic chunks, returns final."
@@ -427,25 +545,20 @@
     (if (or (:error response) (:unavailable? response))
       response
       (let [supports-tool-calls? (stream-supports-tool-calls? cfg)
-            content              (get-in response [:message :content])
+            content              (:content response)
             words                (cond
                                    (vector? content) content
-                                   (seq content)     (str/split content #"(?<=\s)")
-                                   :else             [""])]
-        ;; Emit word-by-word chunks
-        (when-let [summary (or (get-in response [:reasoning :summary])
-                               (:summary (:reasoning response)))]
-          (on-chunk {:reasoning summary :done false}))
-        (doseq [w words]
-          (on-chunk {:message {:role "assistant" :content w} :done false}))
-        ;; Final chunk
-        (let [final-content (if (vector? content) (apply str content) content)
-              final         (cond-> (-> response
-                                        (assoc-in [:message :content] final-content)
-                                        (assoc :done true))
-                              (not supports-tool-calls?) (update :message dissoc :tool_calls))]
-          (on-chunk final)
-          final)))))
+                                   (string? content) (str/split content #"(?<=\s)")
+                                   :else             nil)]
+        (if-not words
+          response
+          (do
+            (when-let [summary (get-in response [:reasoning :summary])]
+              (on-chunk {:reasoning-delta summary}))
+            (doseq [word words]
+              (on-chunk {:text-delta word}))
+            (cond-> (assoc response :content (if (vector? content) (apply str content) content))
+              (not supports-tool-calls?) (assoc :tool-calls []))))))))
 
 (defn followup-messages
   "Build the next iteration's :messages vector for the Grover test provider.
@@ -454,8 +567,12 @@
   (followup/raw-tool-call-followup-messages
     request
     {:role       "assistant"
-     :content    (get-in response [:message :content])
-     :tool_calls (get-in response [:message :tool_calls])}
+     :content    (:content response)
+     :tool_calls (mapv (fn [tool-call]
+                         {:id       (:id tool-call)
+                          :type     "function"
+                          :function {:name (:name tool-call) :arguments (:arguments tool-call)}})
+                       tool-calls)}
     tool-calls
     tool-results))
 

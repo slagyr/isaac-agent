@@ -10,17 +10,28 @@
     [isaac.llm.http :as llm-http]
     [isaac.llm.prompt.builder :as prompt]))
 
+(defn- parse-arguments [arguments]
+  (if (string? arguments)
+    (try
+      {:arguments (json/parse-string arguments true)}
+      (catch Exception e
+        {:arguments {} :arguments-error (.getMessage e)}))
+    {:arguments (or arguments {})}))
+
 (defn- extract-tool-calls [tool-calls]
-  (when (seq tool-calls)
-    (mapv (fn [tc]
-            {:type      "toolCall"
-             :id        (:id tc)
-             :name      (get-in tc [:function :name])
-             :arguments (let [args (get-in tc [:function :arguments])]
-                          (if (string? args)
-                            (json/parse-string args true)
-                            args))})
-          tool-calls)))
+  (mapv (fn [tc]
+          (merge {:id   (or (:id tc) (str (java.util.UUID/randomUUID)))
+                  :name (get-in tc [:function :name])}
+                 (parse-arguments (get-in tc [:function :arguments]))))
+        (or tool-calls [])))
+
+(defn- stop-reason [wire tool-calls]
+  (cond
+    (seq tool-calls) :tool-use
+    (= "stop" wire) :end-turn
+    (= "length" wire) :max-tokens
+    (= "content_filter" wire) :refused
+    :else :other))
 
 (defn process-sse-event
   "Accumulate an OpenAI Chat Completions SSE event into the running state."
@@ -29,7 +40,9 @@
     (cond-> accumulated
       (:content delta) (update :content str (:content delta))
       (:model data)    (assoc :model (:model data))
-      (:usage data)    (assoc :usage (:usage data)))))
+      (:usage data)    (assoc :usage (:usage data))
+      (get-in data [:choices 0 :finish_reason])
+      (assoc :finish-reason (get-in data [:choices 0 :finish_reason])))))
 
 (defn- chat-with-completions-api [config base-url headers request]
   (let [url     (str base-url "/chat/completions")
@@ -38,20 +51,16 @@
                   (dissoc request :effort))
         resp    (llm-http/post-json! url headers request (shared/llm-http-opts config))]
     (if (:error resp)
-      resp
+      (api/normalize-error resp)
       (let [choice     (first (:choices resp))
             msg        (:message choice)
-            tool-calls (extract-tool-calls (:tool_calls msg))
-            usage      (shared/parse-usage (:usage resp))]
-        {:message    (cond-> {:role "assistant" :content (or (:content msg) "")}
-                             (seq tool-calls) (assoc :tool_calls (mapv (fn [tc]
-                                                                          {:function {:name      (:name tc)
-                                                                                      :arguments (:arguments tc)}})
-                                                                        tool-calls)))
-         :model      (:model resp)
-         :tool-calls tool-calls
-         :usage      usage
-         :_headers   headers}))))
+            tool-calls (extract-tool-calls (:tool_calls msg))]
+        {:content     (or (:content msg) "")
+         :model       (:model resp)
+         :tool-calls  tool-calls
+         :stop-reason (stop-reason (:finish_reason choice) tool-calls)
+         :usage       (shared/parse-usage (:usage resp))
+         :_headers    headers}))))
 
 (defn- chat-stream-with-completions-api [config base-url headers request on-chunk]
   (let [url     (str base-url "/chat/completions")
@@ -60,13 +69,19 @@
                   (dissoc request :effort))
         body    (assoc request :stream true)
         initial {:role "assistant" :content "" :model nil :usage {}}
-        result  (llm-http/post-sse! url headers body on-chunk process-sse-event initial (shared/llm-http-opts config))]
+        result  (llm-http/post-sse! url headers body
+                                    (fn [chunk]
+                                      (when-let [text (get-in chunk [:choices 0 :delta :content])]
+                                        (on-chunk {:text-delta text})))
+                                    process-sse-event initial (shared/llm-http-opts config))]
     (if (:error result)
-      result
-      {:message  {:role "assistant" :content (:content result)}
-       :model    (:model result)
-       :usage    (shared/parse-usage (:usage result))
-       :_headers headers})))
+      (api/normalize-error result)
+      {:content     (:content result)
+       :model       (:model result)
+       :tool-calls  []
+       :stop-reason (stop-reason (:finish-reason result) [])
+       :usage       (shared/parse-usage (:usage result))
+       :_headers    headers})))
 
 (defn chat
   "Send a non-streaming Chat Completions request."

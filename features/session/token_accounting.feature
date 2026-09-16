@@ -87,7 +87,7 @@ Feature: Token accounting — one unit, one source
     Given the isaac EDN file "config/models/local.edn" exists with:
       | path           | value      |
       | model          | test-model |
-      | provider       | grover     |
+      | provider       | grover:anthropic |
       | context-window | 1000       |
     And the isaac EDN file "config/crew/main.edn" exists with:
       | path  | value            |

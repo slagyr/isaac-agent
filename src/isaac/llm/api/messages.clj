@@ -85,7 +85,7 @@
                       vec
                       apply-cache-breakpoints)]
     (cond-> {:model      model
-              :max_tokens max-tokens
+              :max-tokens max-tokens
               :system     (build-system system-text)
               :messages   messages}
       (seq tools) (assoc :tools (build-tools tools)))))
@@ -102,7 +102,8 @@
     (update accumulated :content str (get-in data [:delta :text]))
 
     "message_delta"
-    (update accumulated :usage merge (:usage data))
+    (cond-> (update accumulated :usage merge (:usage data))
+      (:stop_reason data) (assoc :stop-reason-wire (:stop_reason data)))
 
     "message_start"
     (assoc accumulated
@@ -126,16 +127,26 @@
   (->> content-blocks
        (filter #(= "tool_use" (:type %)))
        (mapv (fn [block]
-               {:type      "toolCall"
-                :id        (:id block)
+               {:id        (or (:id block) (str (java.util.UUID/randomUUID)))
                 :name      (:name block)
-                :arguments (:input block)}))))
+                :arguments (or (:input block) {})}))))
 
 (defn- parse-usage [usage]
-  {:input-tokens  (or (:input_tokens usage) 0)
-   :output-tokens (or (:output_tokens usage) 0)
-   :cache-read    (or (:cache_read_input_tokens usage) 0)
-   :cache-write   (or (:cache_creation_input_tokens usage) 0)})
+  (let [cache-read  (or (:cache_read_input_tokens usage) 0)
+        cache-write (or (:cache_creation_input_tokens usage) 0)]
+    {:prompt-tokens      (+ (or (:input_tokens usage) 0) cache-read cache-write)
+     :output-tokens      (or (:output_tokens usage) 0)
+     :cache-read-tokens  cache-read
+     :cache-write-tokens cache-write}))
+
+(defn- stop-reason [wire]
+  (case wire
+    "end_turn" :end-turn
+    "stop_sequence" :end-turn
+    "tool_use" :tool-use
+    "max_tokens" :max-tokens
+    "refusal" :refused
+    :other))
 
 ;; endregion ^^^^^ Response Parsing ^^^^^
 
@@ -143,7 +154,8 @@
 
 (defn- apply-effort-to-body [request]
   (let [effort (:effort request)
-        body   (dissoc request :effort)]
+        body   (cond-> (dissoc request :effort :max-tokens)
+                 (:max-tokens request) (assoc :max_tokens (:max-tokens request)))]
     (if-let [level (effort/effort->adaptive-level effort)]
       (assoc body
         :thinking      {:type "adaptive"}
@@ -173,21 +185,15 @@
             body    (apply-effort-to-body request)
             resp    (llm-http/post-json! url headers body (http-opts cfg))]
         (if (:error resp)
-          resp
+          (api/normalize-error resp)
           (let [content (:content resp)
-                text    (extract-text content)
-                tools   (extract-tool-calls content)
-                usage   (parse-usage (:usage resp))]
-            {:message     (cond-> {:role "assistant" :content text}
-                                  (seq tools) (assoc :tool_calls (mapv (fn [tc]
-                                                                         {:function {:name      (:name tc)
-                                                                                     :arguments (:arguments tc)}})
-                                                                       tools)))
+                tools   (extract-tool-calls content)]
+            {:content     (extract-text content)
              :model       (:model resp)
              :tool-calls  tools
-             :usage       usage
-             :_headers    headers
-             :stop_reason (:stop_reason resp)}))))))
+             :stop-reason (stop-reason (:stop_reason resp))
+             :usage       (parse-usage (:usage resp))
+             :_headers    headers}))))))
 
 (defn chat-stream
   "Send a streaming Messages API request via SSE."
@@ -199,14 +205,21 @@
       (let [headers (auth-headers provider-name cfg)
             body    (-> request apply-effort-to-body (assoc :stream true))
             initial  {:role "assistant" :content "" :usage {}}
-            result   (llm-http/post-sse! url headers body on-chunk process-sse-event initial (http-opts cfg))]
+            result   (llm-http/post-sse! url headers body
+                                         (fn [chunk]
+                                           (when-let [text (get-in chunk [:delta :text])]
+                                             (on-chunk {:text-delta text}))
+                                           (when-let [thinking (get-in chunk [:delta :thinking])]
+                                             (on-chunk {:reasoning-delta thinking})))
+                                         process-sse-event initial (http-opts cfg))]
         (if (:error result)
-          result
-          (let [usage (parse-usage (:usage result))]
-            {:message  {:role "assistant" :content (:content result)}
-             :model    (:model result)
-             :usage    usage
-             :_headers headers}))))))
+          (api/normalize-error result)
+          {:content     (:content result)
+           :model       (:model result)
+           :tool-calls  []
+           :stop-reason (stop-reason (:stop-reason-wire result))
+           :usage       (parse-usage (:usage result))
+           :_headers    headers})))))
 
 (defn followup-messages
   "Build the next iteration's :messages vector for the Anthropic Messages API.

@@ -66,9 +66,9 @@
                                                          :stop_reason "end_turn"
                                                          :usage      {:input_tokens 10 :output_tokens 5}}))]
         (let [result (sut/chat {:model "claude-sonnet-4-6" :messages []} "anthropic" (api-key-config))]
-          (should= "Hello!" (get-in result [:message :content]))
+          (should= "Hello!" (:content result))
           (should= "claude-sonnet-4-6" (:model result))
-          (should= 10 (:input-tokens (:usage result)))
+          (should= 10 (:prompt-tokens (:usage result)))
           (should= 5 (:output-tokens (:usage result))))))
 
     (it "extracts tool_use blocks as tool-calls"
@@ -109,8 +109,8 @@
                                                                    :cache_read_input_tokens 3
                                                                    :cache_creation_input_tokens 2}}))]
         (let [result (sut/chat {:model "test" :messages []} "anthropic" (api-key-config))]
-          (should= 3 (:cache-read (:usage result)))
-          (should= 2 (:cache-write (:usage result))))))
+          (should= 3 (:cache-read-tokens (:usage result)))
+          (should= 2 (:cache-write-tokens (:usage result))))))
 
     (it "returns auth-failed on 401"
       (with-redefs [http/post (fn [_ _] {:status 401 :body (json/generate-string {:error {:message "invalid"}})})]
@@ -200,9 +200,9 @@
           (let [result (sut/chat-stream {:model "claude-sonnet-4-6" :messages []}
                          (fn [c] (swap! chunks conj c))
                          "anthropic" (api-key-config))]
-            (should= "Hello world" (get-in result [:message :content]))
+            (should= "Hello world" (:content result))
             (should= "claude-sonnet-4-6" (:model result))
-            (should= 4 (count @chunks))))))
+            (should= 2 (count @chunks))))))
 
     (it "returns error on auth failure"
       (with-redefs [llm-http/post-sse! (fn [_ _ _ _ _ _ & _] {:error :auth-failed :status 401})]
@@ -264,6 +264,13 @@
           (should-not-throw (schema/conform! api/error-response result))))))
 
   (describe "adaptive effort"
+
+    (it "translates provider-neutral max tokens at the HTTP boundary"
+      (let [captured (atom nil)]
+        (with-redefs [llm-http/post-json! (fn [_ _ body & _] (reset! captured body) {})]
+          (sut/chat {:model "claude" :max-tokens 16000 :messages []} "anthropic" (api-key-config)))
+        (should= 16000 (:max_tokens @captured))
+        (should-not (contains? @captured :max-tokens))))
 
     (it "maps effort 10 to adaptive thinking with max effort level"
       (let [captured (atom nil)]

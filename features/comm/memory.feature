@@ -22,7 +22,10 @@ Feature: Memory Comm
       | turn-end   |               |
 
   Scenario: Streaming chunks are recorded into the memory-channel turn result
-    Given the following model responses are queued:
+    Given the provider "grover" is configured with:
+      | key                   | value |
+      | stream-non-tool-turns | true  |
+    And the following model responses are queued:
       | type | content                           | model |
       | text | ["chunkA" "chunkB" "chunkC"]     | echo  |
     When the user sends "Tell me a story" on session "memory-chat" via memory comm

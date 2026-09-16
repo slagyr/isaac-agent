@@ -35,6 +35,7 @@
         (when (= :status (:command result))
           (bridge/format-status (:data result)))
         (:content result)
+        (get-in result [:response :content])
         (get-in result [:response :message :content])
         (fcli/current-output)
         "")))

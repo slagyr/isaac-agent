@@ -11,6 +11,12 @@
     [isaac.llm.prompt.builder :as prompt]
     [isaac.logger :as log]))
 
+(defn- parse-arguments [arguments]
+  (try
+    {:arguments (if (str/blank? arguments) {} (json/parse-string arguments true))}
+    (catch Exception e
+      {:arguments {} :arguments-error (.getMessage e)})))
+
 (defn- ->responses-output [content]
   (cond
     (string? content) content
@@ -57,11 +63,11 @@
 
 (defn- ->responses-request
   ([request] (->responses-request request nil))
-  ([{:keys [model messages system tools stateful previous_response_id previous-response-id]} provider-cfg]
+  ([{:keys [model messages system tools stateful previous-response-id]} provider-cfg]
    (let [store?       (truthy-stateful? (if (nil? stateful)
                                           (get provider-cfg :stateful)
                                           stateful))
-         prev-id      (or previous_response_id previous-response-id)
+         prev-id      previous-response-id
          chained?     (and store? (not (str/blank? (str prev-id))))
          all-messages (cond->> messages
                          system (into [{:role "system" :content system}]))
@@ -132,12 +138,9 @@
             (fn [tool-calls]
               (mapv (fn [tool-call]
                       (if (= (:id tool-call) (:item_id data))
-                        (let [raw-args (:raw-args tool-call)]
-                          (-> tool-call
-                              (assoc :arguments (if (str/blank? raw-args)
-                                                  {}
-                                                  (json/parse-string raw-args true)))
-                              (dissoc :raw-args)))
+                        (-> tool-call
+                            (merge (parse-arguments (:raw-args tool-call)))
+                            (dissoc :raw-args))
                         tool-call))
                     tool-calls)))
 
@@ -171,14 +174,14 @@
                                       (fn [chunk]
                                         (cond
                                           (= "response.output_text.delta" (:type chunk))
-                                          (on-delta {:delta {:text (:delta chunk)}})
+                                          (on-delta {:text-delta (:delta chunk)})
                                           (= "response.reasoning_summary_text.delta" (:type chunk))
-                                          (on-delta {:reasoning (:delta chunk)})))
+                                          (on-delta {:reasoning-delta (:delta chunk)})))
                                       process-responses-sse-event initial (shared/llm-http-opts config)))
         result  (shared/with-oauth-refresh-retry provider-name config send!)]
     (cond
       (:error result)
-      result
+      (api/normalize-error result)
 
       (incomplete-responses-stream? result)
       {:error :llm-error
@@ -194,18 +197,23 @@
                    :summary           (get-in response [:reasoning :summary])
                    :reasoning-tokens  (get-in response [:usage :output_tokens_details :reasoning_tokens])
                    :cached-tokens     (get-in response [:usage :input_tokens_details :cached_tokens]))
-        (cond-> {:message    (cond-> {:role "assistant" :content (:content result)}
-                                      (seq tool-calls) (assoc :tool_calls (mapv (fn [tc]
-                                                                                   {:id       (:id tc)
-                                                                                    :type     "function"
-                                                                                    :function {:name      (:name tc)
-                                                                                               :arguments (:arguments tc)}})
-                                                                               tool-calls)))
-                 :model      (:model result)
-                 :response   response
-                 :tool-calls tool-calls
-                 :usage      (shared/parse-usage (:usage result))
-                 :_headers   (shared/auth-headers provider-name config)}
+        (cond-> {:content       (:content result)
+                 :model         (:model result)
+                 :provider-data response
+                 :tool-calls    tool-calls
+                 :stop-reason   (cond
+                                  (seq tool-calls) :tool-use
+                                  (= "completed" (:status response)) :end-turn
+                                  (= "incomplete:max_output_tokens" (:status response)) :max-tokens
+                                  (= "incomplete:content_filter" (:status response)) :refused
+                                  (= "incomplete:max_output_tokens" (:wire-stop-reason response)) :max-tokens
+                                  (= "incomplete:content_filter" (:wire-stop-reason response)) :refused
+                                  (= "max_output_tokens" (get-in response [:incomplete_details :reason])) :max-tokens
+                                  (= "content_filter" (get-in response [:incomplete_details :reason])) :refused
+                                  (= "cancelled" (:status response)) :cancelled
+                                  :else :other)
+                 :usage         (shared/parse-usage (:usage result))
+                 :_headers      (shared/auth-headers provider-name config)}
           response-id (assoc :response-id response-id))))))
 
 (defn chat

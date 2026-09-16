@@ -292,63 +292,66 @@
 (defn post-ndjson-stream!
   "POST and process newline-delimited JSON stream (Ollama-style).
    Calls on-chunk for each parsed line. Returns the final chunk."
-  [url headers body on-chunk & [{:keys [session-key timeout retry-after-ms]
+  [url headers body on-chunk & [{:keys [session-key simulate-provider timeout retry-after-ms]
                                  :or   {timeout 120000} :as opts}]]
-  (let [last-activity-ms (atom (now-ms))
-        bytes-received   (atom 0)
-        close!*          (atom nil)
-        stalled?         (atom false)
-        idle-ms          (resolve-idle-timeout-ms opts default-stream-idle-timeout-ms)
-        activity         {:idle-timeout-ms  idle-ms
-                          :last-activity-ms last-activity-ms
-                          :bytes-received   bytes-received
-                          :started-ms       (now-ms)
-                          :retry-after-ms   (or retry-after-ms idle-ms)
-                          :stalled?         stalled?
-                          :close!           #(when-let [c @close!*] (c))}
-        touch!           (fn [chunk]
-                           (reset! last-activity-ms (now-ms))
-                           (swap! bytes-received + (count (pr-str chunk)))
-                           (on-chunk chunk))]
-    (cancellable-call session-key
-                      #(try
-                         (let [resp (http/post url {:body    (json/generate-string body)
-                                                    :headers headers
-                                                    :timeout timeout
-                                                    :as      :stream
-                                                    :throw   false})]
-                           (if (>= (:status resp) 400)
-                             {:error    (if (= 401 (:status resp)) :auth-failed :api-error)
-                              :status   (:status resp)
-                              :body     (try (json/parse-string (slurp (:body resp)) true)
-                                             (catch Exception _ nil))
-                              :_headers headers}
-                             (let [body-stream (:body resp)
-                                   close!      (register-cancel-close! session-key body-stream)]
-                               (reset! close!* close!)
-                               (with-open [rdr (io/reader body-stream)]
-                                 (let [result (loop [last-chunk nil]
-                                                (if-let [line (.readLine rdr)]
-                                                  (if (str/blank? line)
-                                                    (recur last-chunk)
-                                                    (let [chunk (json/parse-string line true)]
-                                                      (touch! chunk)
-                                                      (recur chunk)))
-                                                  last-chunk))]
-                                   (close!)
-                                   (or (cancelled-result session-key)
-                                       result))))))
-                         (catch ConnectException _
-                           {:error :connection-refused :message (str "Could not connect to " url)})
-                         (catch IllegalArgumentException _
-                           {:error :connection-refused :message (str "Could not connect to " url)})
-                         (catch Exception e
-                           (cond
-                             (cancelled-result session-key)
-                             (cancelled-result session-key)
-
-                             @stalled?
-                             (stalled-result activity)
-
-                             :else {:error :unknown :message (.getMessage e)})))
-                      activity)))
+  (if (simulated-provider? {:simulate-provider simulate-provider})
+    (let [response (grover/post-json! simulate-provider url headers body)]
+      (if (:error response)
+        response
+        (let [content (get-in response [:message :content])]
+          (doseq [chunk (if (vector? content) content [content])]
+            (on-chunk {:message {:content chunk} :done false}))
+          response)))
+    (let [last-activity-ms (atom (now-ms))
+          bytes-received   (atom 0)
+          close!*          (atom nil)
+          stalled?         (atom false)
+          idle-ms          (resolve-idle-timeout-ms opts default-stream-idle-timeout-ms)
+          activity         {:idle-timeout-ms  idle-ms
+                            :last-activity-ms last-activity-ms
+                            :bytes-received   bytes-received
+                            :started-ms       (now-ms)
+                            :retry-after-ms   (or retry-after-ms idle-ms)
+                            :stalled?         stalled?
+                            :close!           #(when-let [c @close!*] (c))}
+          touch!           (fn [chunk]
+                             (reset! last-activity-ms (now-ms))
+                             (swap! bytes-received + (count (pr-str chunk)))
+                             (on-chunk chunk))]
+      (cancellable-call session-key
+                        #(try
+                           (let [resp (http/post url {:body    (json/generate-string body)
+                                                      :headers headers
+                                                      :timeout timeout
+                                                      :as      :stream
+                                                      :throw   false})]
+                             (if (>= (:status resp) 400)
+                               {:error    (if (= 401 (:status resp)) :auth-failed :api-error)
+                                :status   (:status resp)
+                                :body     (try (json/parse-string (slurp (:body resp)) true)
+                                               (catch Exception _ nil))
+                                :_headers headers}
+                               (let [body-stream (:body resp)
+                                     close!      (register-cancel-close! session-key body-stream)]
+                                 (reset! close!* close!)
+                                 (with-open [rdr (io/reader body-stream)]
+                                   (let [result (loop [last-chunk nil]
+                                                  (if-let [line (.readLine rdr)]
+                                                    (if (str/blank? line)
+                                                      (recur last-chunk)
+                                                      (let [chunk (json/parse-string line true)]
+                                                        (touch! chunk)
+                                                        (recur chunk)))
+                                                    last-chunk))]
+                                     (close!)
+                                     (or (cancelled-result session-key) result))))))
+                           (catch ConnectException _
+                             {:error :connection-refused :message (str "Could not connect to " url)})
+                           (catch IllegalArgumentException _
+                             {:error :connection-refused :message (str "Could not connect to " url)})
+                           (catch Exception e
+                             (cond
+                               (cancelled-result session-key) (cancelled-result session-key)
+                               @stalled? (stalled-result activity)
+                               :else {:error :unknown :message (.getMessage e)})))
+                        activity))))

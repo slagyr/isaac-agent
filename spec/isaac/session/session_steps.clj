@@ -469,12 +469,15 @@
      "reason"
      "message"
      "usage.input_tokens"
+     "usage.prompt_tokens"
      "usage.output_tokens"
      "usage.cache_read_input_tokens"
      "usage.cache_creation_input_tokens"
-    "usage.output_tokens_details.reasoning_tokens"
-    "usage.input_tokens_details.cached_tokens"
-    "reasoning.effort"
+     "usage.output_tokens_details.reasoning_tokens"
+     "usage.input_tokens_details.cached_tokens"
+     "usage.prompt_tokens_details.cached_tokens"
+     "usage.completion_tokens"
+     "reasoning.effort"
     "reasoning.summary"})
 
 (defn- header-row? [row]
@@ -488,9 +491,12 @@
          cache-read        (some-> (get m "usage.cache_read_input_tokens") not-empty parse-long)
          cache-write       (some-> (get m "usage.cache_creation_input_tokens") not-empty parse-long)
          input-tokens      (some-> (get m "usage.input_tokens") not-empty parse-long)
-         output-tokens     (some-> (get m "usage.output_tokens") not-empty parse-long)
+         prompt-tokens     (some-> (get m "usage.prompt_tokens") not-empty parse-long)
+         output-tokens     (some-> (or (get m "usage.output_tokens")
+                                       (get m "usage.completion_tokens")) not-empty parse-long)
          reasoning-tokens  (some-> (get m "usage.output_tokens_details.reasoning_tokens") not-empty parse-long)
-         cached-tokens     (some-> (get m "usage.input_tokens_details.cached_tokens") not-empty parse-long)
+         input-cached      (some-> (get m "usage.input_tokens_details.cached_tokens") not-empty parse-long)
+         prompt-cached     (some-> (get m "usage.prompt_tokens_details.cached_tokens") not-empty parse-long)
          reasoning-effort  (some-> (get m "reasoning.effort") not-empty)
          reasoning-summary (some-> (get m "reasoning.summary") not-empty)
          wait?             (= "true" (some-> (get m "wait") not-empty str/lower-case))
@@ -535,20 +541,26 @@
 
       (and (not (str/blank? tool-name))
            (not (str/blank? arguments)))
-      (assoc :arguments (json/parse-string arguments true))
+      (assoc :arguments (try
+                          (json/parse-string arguments true)
+                          (catch Exception _ arguments)))
 
       (and (get m "tool_calls") (not (str/blank? (get m "tool_calls"))))
       (assoc :tool_calls (json/parse-string (get m "tool_calls") true))
 
-      (or input-tokens output-tokens)
-      (assoc :usage {:input_tokens  (or input-tokens 0)
-                     :output_tokens (or output-tokens 0)})
+      (or input-tokens prompt-tokens output-tokens)
+      (assoc :usage (cond-> {:output_tokens (or output-tokens 0)}
+                      input-tokens (assoc :input_tokens input-tokens)
+                      prompt-tokens (assoc :prompt_tokens prompt-tokens)))
 
       reasoning-tokens
       (assoc-in [:usage :output_tokens_details :reasoning_tokens] reasoning-tokens)
 
-      cached-tokens
-      (assoc-in [:usage :input_tokens_details :cached_tokens] cached-tokens)
+      input-cached
+      (assoc-in [:usage :input_tokens_details :cached_tokens] input-cached)
+
+      prompt-cached
+      (assoc-in [:usage :prompt_tokens_details :cached_tokens] prompt-cached)
 
       cache-read
       (assoc-in [:usage :cache_read_input_tokens] cache-read)
@@ -593,7 +605,8 @@
                                (filter #(#{"text-chunk" "chatter"} (:event %)))
                                (map :text)
                                (clojure.string/join))
-        full-output       (str output event-text)]
+        response-content  (or (get-in result [:response :content]) (:content result))
+        full-output       (str output (or response-content event-text))]
     (g/assoc! :dispatch-result result)
     (g/assoc! :llm-result result)
     (g/assoc! :llm-request request)
@@ -768,8 +781,21 @@
 
 (defn responses-queued [table]
   (grover/reset-queue!)
-  (let [responses (queued-responses table)]
-    (grover/enqueue! responses)))
+  (let [responses (queued-responses table)
+        pending   (g/get :pending-grover-responses)]
+    (grover/enqueue! (into (vec pending) responses))
+    (g/dissoc! :pending-grover-responses)))
+
+(defn grover-raw-response [content]
+  (grover/reset-queue!)
+  (grover/set-raw-response! (edn/read-string content)))
+
+(defn grover-wire-stop-reason [reason]
+  (grover/set-wire-stop-reason! reason))
+
+(defn grover-raw-tool-call [tool-name arguments]
+  (g/assoc! :pending-grover-responses
+            [{:type "tool_call" :tool_call tool-name :arguments arguments}]))
 
 (defn cycle-limit-is [n]
   (g/assoc! :cycle-limit-loops n))
@@ -1470,11 +1496,14 @@
     (cond-> entry
       type (assoc :type type)
 
-      (and denormalize-tool-call? (seq calls))
+      (seq calls)
       (assoc :name (:name (first calls)))
 
       (and include-compaction-message? (= "compaction" (:type entry)))
       (assoc :message {:content (:summary entry)})
+
+      (and denormalize-tool-result? (= "toolResult" (get-in entry [:message :role])))
+      (update :message dissoc :role)
 
       (= "toolResult" (get-in entry [:message :role]))
       (update-in [:message :content]
@@ -1609,7 +1638,7 @@
                       (vec (remove #(= "session" (:type %)) transcript)))
          transcript   (mapv #(transcript-match-entry % include-compaction-message? denormalize-tool-call? denormalize-tool-result?)
                             transcript)
-          result     (if explicit-idx?
+         result       (if explicit-idx?
                        (match/match-entries table transcript)
                        (transcript-match-result table transcript))]
      (g/should= [] (:failures result))))
@@ -1794,6 +1823,16 @@
         result  (match/match-object table request)]
     (g/should= [] (:failures result))))
 
+(defn last-provider-response-matches [table]
+  (await-turn!)
+  (let [response (or (:provider-response (g/get :llm-result))
+                     (last (remove :error (drive-dispatch/results)))
+                     (:response (g/get :llm-result))
+                     (drive-dispatch/last-result)
+                     (g/get :llm-result))
+        result   (match/match-object table response)]
+    (g/should= [] (:failures result))))
+
 (defn llm-request-n-matches [n table]
   (await-turn!)
   (let [idx     (dec (long (if (string? n) (parse-long n) n)))
@@ -1889,7 +1928,11 @@
                              :nonce      (:nonce session)
                              :soul       (:soul ctx)
                              :transcript transcript})
-            result        (match/match-entries table (:messages built-request))]
+            messages      (:messages built-request)
+            relevant      (if-let [start (first (keep-indexed #(when (= "assistant" (:role %2)) %1) messages))]
+                            (subvec (vec messages) start)
+                            messages)
+            result        (match/match-entries table relevant)]
         (g/should= [] (:failures result))))))
 
 ;; region ----- Turn markers (isaac-7li9) -----
@@ -1980,6 +2023,16 @@
    tool_call / error), 'content' or 'tool_call' + 'arguments', 'model'.
    For streaming, enqueue multiple rows; they come out as distinct
    chunks.")
+
+(defgiven "grover returns this raw response:" isaac.session.session-steps/grover-raw-response)
+
+(defgiven "grover's next reply stops with wire reason {reason:string}"
+  isaac.session.session-steps/grover-wire-stop-reason)
+
+(defgiven "grover's next reply calls {tool:string} with raw arguments:"
+  isaac.session.session-steps/grover-raw-tool-call)
+
+(defthen "the last provider response matches:" isaac.session.session-steps/last-provider-response-matches)
 
 (defgiven "the tool loop max is {n:int}" isaac.session.session-steps/cycle-limit-is)
 

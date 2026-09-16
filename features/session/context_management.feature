@@ -200,7 +200,7 @@ Feature: Context Management
       | text | hello   | echo  | 30                 | 5                   |
     When the user sends "hi" on session "usage-persist"
     Then session "usage-persist" has transcript matching:
-      | type    | message.role | message.usage.input-tokens | message.usage.output-tokens |
+      | type    | message.role | message.usage.prompt-tokens | message.usage.output-tokens |
       | message | assistant    | 30                         | 5                           |
 
   Scenario: Assistant response persists reasoning on transcript entry
@@ -215,7 +215,7 @@ Feature: Context Management
     When the user sends "think" on session "reasoning-persist"
     Then session "reasoning-persist" has transcript matching:
       | type    | message.role | message.reasoning.effort | message.reasoning.summary |
-      | message | assistant    | high                     | Thought about it          |
+      | message | assistant    | 7                        | Thought about it          |
 
   # --- Tool Result Truncation ---
 

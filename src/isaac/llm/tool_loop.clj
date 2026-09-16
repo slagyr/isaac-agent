@@ -12,32 +12,18 @@
 (def default-max-parallel-tools 4)
 
 (defn- response-tool-calls [response]
-  (or (:tool-calls response)
-      (when-let [raw (get-in response [:message :tool_calls])]
-        (mapv (fn [tc]
-                {:id        (or (:id tc) (str (java.util.UUID/randomUUID)))
-                 :name      (or (:name tc) (get-in tc [:function :name]))
-                 :arguments (or (:arguments tc) (get-in tc [:function :arguments]))
-                 :raw       tc})
-              raw))))
+  (:tool-calls response))
 
-(defn- response-tokens [response]
-  (let [usage (merge (or (get-in response [:response :usage]) {})
-                     (or (:usage response) {}))]
-    {:input-tokens  (or (:input-tokens usage) (:input_tokens usage) (:prompt_eval_count response) 0)
-     :output-tokens (or (:output-tokens usage) (:output_tokens usage) (:eval_count response) 0)
-     :cache-read    (or (:cache-read usage)
-                        (:cached-tokens usage)
-                        (get-in usage [:input_tokens_details :cached_tokens])
-                        0)
-     :cache-write   (or (:cache-write usage)
-                        (:cache_creation_input_tokens usage)
-                        0)}))
+(defn- response-usage [response]
+  (merge {:prompt-tokens 0 :output-tokens 0}
+         (:usage response)))
 
-(defn- response-id [response]
-  (or (:response-id response)
-      (get-in response [:response :id])
-      (:id response)))
+(defn- add-usage [turn-usage request-usage]
+  (-> (merge-with + turn-usage request-usage)
+      (update :requests inc)))
+
+(defn- empty-turn-usage []
+  {:requests 0 :prompt-tokens 0 :output-tokens 0})
 
 (defn- previous-response-not-found? [response]
   (and (:error response)
@@ -49,8 +35,8 @@
 
 (defn- with-chain [req previous-id]
   (if previous-id
-    (assoc req :previous_response_id previous-id)
-    (dissoc req :previous_response_id)))
+    (assoc req :previous-response-id previous-id)
+    (dissoc req :previous-response-id)))
 
 (defn- prepare-tool-execution [tc tool-fn prepare-tool-call]
   (let [prepared (if prepare-tool-call
@@ -125,16 +111,16 @@
                                                max-parallel-tools default-max-parallel-tools
                                                on-cycle           nil
                                                prepare-tool-call  nil}}]
-  (loop [req          (dissoc request :previous_response_id)
+  (loop [req          (dissoc request :previous-response-id)
          all-tools    []
-         token-counts {:input-tokens 0 :output-tokens 0 :cache-read 0 :cache-write 0}
+         turn-usage   (empty-turn-usage)
          loops        0
          chain-id     nil
          full-context request]
     (if (cancelled?)
       {:response     nil
        :tool-calls   all-tools
-       :token-counts token-counts
+       :usage        turn-usage
        :cancelled?   true}
       (let [cycle-n  (inc loops)
             call-req (with-chain req chain-id)
@@ -147,20 +133,20 @@
                                     (:provider call-req)
                                     (get-in call-req [:provider])
                                     "chatgpt")
-                      :previous_response_id chain-id
+                      :previous-response-id chain-id
                       :status (:status response))
-            (recur (dissoc full-context :previous_response_id)
+            (recur (dissoc full-context :previous-response-id)
                    all-tools
-                   token-counts
+                   turn-usage
                    loops
                    nil
                    full-context))
           (if (or (:error response) (:unavailable? response))
             response
             (let [tool-calls   (response-tool-calls response)
-                  new-tokens   (merge-with + token-counts (response-tokens response))
+                  new-usage    (add-usage turn-usage (response-usage response))
                   budget-left? (< loops max-loops)
-                  next-chain   (or (response-id response) chain-id)]
+                  next-chain   (or (:response-id response) chain-id)]
               (if (and (seq tool-calls) budget-left?)
                 (do
                   (when on-cycle (on-cycle :end cycle-n response))
@@ -173,7 +159,7 @@
                     (if cancelled?
                       {:response     nil
                        :tool-calls   (into all-tools tool-calls)
-                       :token-counts new-tokens
+                       :usage        new-usage
                        :cancelled?   true}
                       (let [new-messages (followup-fn req response tool-calls results)
                             next-req     (after-tools (assoc req :messages new-messages))]
@@ -181,7 +167,7 @@
                           next-req
                           (recur next-req
                                  (into all-tools tool-calls)
-                                 new-tokens
+                                 new-usage
                                  (inc loops)
                                  next-chain
                                  (assoc full-context :messages (:messages next-req))))))))
@@ -189,7 +175,7 @@
                   (when on-cycle (on-cycle :end cycle-n response))
                   {:response      response
                    :tool-calls    all-tools
-                   :token-counts  new-tokens
+                   :usage         new-usage
                    :loop-request? (boolean (and (seq tool-calls) (not budget-left?)))})))))))))
 
 (defn run
@@ -215,7 +201,7 @@
     Returns on success:
       {:response       last LLM response
        :tool-calls     [executed-tool-call-maps]
-       :token-counts   accumulated usage
+       :usage          accumulated usage
        :loop-request?  true when the budget was exhausted with tools still pending}
 
     Returns on error: the error response from chat-fn."

@@ -22,7 +22,7 @@
                                                          :prompt_eval_count 10
                                                          :eval_count 5}))]
         (let [result (sut/chat {:model "qwen3-coder:30b" :messages [{:role "user" :content "Hi"}]} "ollama" {})]
-          (should= "Hello!" (get-in result [:message :content]))
+          (should= "Hello!" (:content result))
           (should= "qwen3-coder:30b" (:model result)))))
 
     (it "returns connection-refused on ConnectException"
@@ -50,23 +50,20 @@
                           {:id "tc2" :name "write" :arguments {:path "y"}
                            :raw  {:function {:name "write" :arguments {:path "y"}}}}]
             tool-results ["file contents" "wrote ok"]
-            response     {:message {:role       "assistant"
-                                    :content    ""
-                                    :tool_calls [{:function {:name "read" :arguments {:path "x"}}}
-                                                 {:function {:name "write" :arguments {:path "y"}}}]}}
+            response     {:content ""}
             request      {:messages [{:role "user" :content "go"}]}
             messages     (sut/followup-messages request response tool-calls tool-results)]
         (should= 4 (count messages))
         (should= {:role "user" :content "go"} (first messages))
         (should= "assistant" (:role (nth messages 1)))
-        (should= [{:function {:name "read" :arguments {:path "x"}}}
-                  {:function {:name "write" :arguments {:path "y"}}}]
+        (should= [{:id "tc1" :type "function" :function {:name "read" :arguments {:path "x"}}}
+                  {:id "tc2" :type "function" :function {:name "write" :arguments {:path "y"}}}]
                  (:tool_calls (nth messages 1)))
         (should= {:role "tool" :content "file contents"} (nth messages 2))
         (should= {:role "tool" :content "wrote ok"} (nth messages 3))))
 
     (it "uses empty string when response has no assistant content"
-      (let [response {:message {:role "assistant" :tool_calls []}}
+      (let [response {:content ""}
             request  {:messages []}
             messages (sut/followup-messages request response
                                             [{:id "tc1" :name "x" :arguments {}}]
@@ -86,7 +83,7 @@
           (let [result (sut/chat-stream {:model "test" :messages []}
                          (fn [c] (swap! chunks conj c))
                          "ollama" {})]
-            (should= true (:done result))
+            (should= "!" (:content result))
             (should= 2 (count @chunks))))))
 
     (it "returns error on connection failure"

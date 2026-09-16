@@ -14,7 +14,7 @@ Feature: Per-turn usage on assistant entries
       | text | Hello   | echo  | 100                | 25                  |
     When the user sends "hi" on session "usage-turn"
     Then session "usage-turn" has transcript matching:
-      | #index | type    | message.role | message.usage.input-tokens | message.usage.output-tokens | message.usage.total-tokens |
+      | #index | type    | message.role | message.usage.prompt-tokens | message.usage.output-tokens | message.usage.total-tokens |
       | -1     | message | assistant    | 100                        | 25                          | 125                        |
 
   Scenario: Normalizes cache-read from cached tokens
@@ -23,7 +23,7 @@ Feature: Per-turn usage on assistant entries
       | text | Hello   | echo  | 100                | 25                  | 7                                        |
     When the user sends "hi" on session "usage-turn"
     Then session "usage-turn" has transcript matching:
-      | #index | type    | message.role | message.usage.cache-read |
+      | #index | type    | message.role | message.usage.cache-read-tokens |
       | -1     | message | assistant    | 7                        |
 
   Scenario: Normalizes cache-write from cache creation tokens
@@ -32,7 +32,7 @@ Feature: Per-turn usage on assistant entries
       | text | Hello   | echo  | 100                | 25                  | 3                                 |
     When the user sends "hi" on session "usage-turn"
     Then session "usage-turn" has transcript matching:
-      | #index | type    | message.role | message.usage.cache-write |
+      | #index | type    | message.role | message.usage.cache-write-tokens |
       | -1     | message | assistant    | 3                         |
 
   Scenario: Preserves reasoning tokens on the normalized usage block
@@ -50,8 +50,8 @@ Feature: Per-turn usage on assistant entries
       | text | Hello   | echo  |
     When the user sends "hi" on session "usage-turn"
     Then session "usage-turn" has transcript matching:
-      | #index | type    | message.role | message.usage.input-tokens | message.usage.output-tokens | message.usage.total-tokens | message.usage.cache-read | message.usage.cache-write |
-      | -1     | message | assistant    | 25                         | 12                          | 37                        | 0                        | 0                         |
+      | #index | type    | message.role | message.usage.prompt-tokens | message.usage.output-tokens | message.usage.total-tokens |
+      | -1     | message | assistant    | 25                         | 12                          | 37                        |
 
   Scenario: Uses accumulated tool-loop token counts for the final assistant entry
     Given the built-in tools are registered
@@ -62,5 +62,5 @@ Feature: Per-turn usage on assistant entries
       | text      | Done    |           |           | echo  | 4                  | 1                   | 2                                        | 3                                 |
     When the user sends "hi" on session "usage-turn"
     Then session "usage-turn" has transcript matching:
-      | #index | type    | message.role | message.content | message.usage.input-tokens | message.usage.output-tokens | message.usage.total-tokens | message.usage.cache-read | message.usage.cache-write |
+      | #index | type    | message.role | message.content | message.usage.prompt-tokens | message.usage.output-tokens | message.usage.total-tokens | message.usage.cache-read-tokens | message.usage.cache-write-tokens |
       | -1     | message | assistant    | Done            | 14                         | 6                          | 20                        | 9                        | 14                        |

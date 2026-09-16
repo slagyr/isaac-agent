@@ -105,7 +105,7 @@ Feature: Context Compaction Logging
     And the memory comm has events matching:
       | event    | kind               | error      | consecutive-failures |
       | bulletin | compaction/start   |            |                      |
-      | bulletin | compaction/failure | :llm-error | 1                    |
+      | bulletin | compaction/failure | :context-overflow | 1                    |
     And session "failure-chat" has 3 transcript entries
 
   # Note: :session/compaction-stopped (warn) is emitted when max-compaction-attempts (3) is
@@ -278,7 +278,7 @@ Feature: Context Compaction Logging
     Then the turn result is unavailable with retry-after-ms 300000 and reason blocked
     And the memory comm has events matching:
       | event    | kind               | error      | consecutive-failures |
-      | bulletin | compaction/failure | :llm-error | 3                    |
+      | bulletin | compaction/failure | :context-overflow | 3                    |
     And session "giving-up" matches:
       | key                             | value              |
       | compaction.consecutive-failures | 3                  |

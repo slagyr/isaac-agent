@@ -21,9 +21,9 @@
       (let [p (sut/build {:model "claude-sonnet-4-6" :soul "You are Isaac." :transcript sample-transcript})]
         (should= "claude-sonnet-4-6" (:model p))))
 
-    (it "includes max_tokens"
+    (it "includes provider-neutral max tokens"
       (let [p (sut/build {:model "claude-sonnet-4-6" :soul "You are Isaac." :transcript sample-transcript})]
-        (should= 16000 (:max_tokens p))))
+        (should= 16000 (:max-tokens p))))
 
     (it "puts soul in system as content block with cache_control"
       (let [p (sut/build {:model "claude-sonnet-4-6" :soul "You are Isaac." :transcript sample-transcript})]

@@ -1,5 +1,6 @@
 (ns isaac.drive.dispatch
   (:require
+    [c3kit.apron.schema :as schema]
     [isaac.attention :as attention]
     [isaac.config.loader :as loader]
     [isaac.drive.provider-wall :as provider-wall]
@@ -11,21 +12,41 @@
 (def built-in-providers registry/built-in-providers)
 
 (defonce ^:private last-request* (atom nil))
+(defonce ^:private last-result* (atom nil))
+(defonce ^:private results* (atom []))
 
 (defn last-request []
   @last-request*)
 
+(defn last-result []
+  @last-result*)
+
+(defn results []
+  @results*)
+
 (defn clear-last-request! []
-  (reset! last-request* nil))
+  (reset! last-request* nil)
+  (reset! last-result* nil)
+  (reset! results* []))
 
 (defn- response-preview [result]
-  (let [content    (or (get-in result [:message :content])
-                       (get-in result [:response :message :content]))
-        tool-calls (or (get-in result [:message :tool_calls])
-                       (get-in result [:response :message :tool_calls]))]
-    (cond-> {}
-      (string? content) (assoc :content-chars (count content))
-      tool-calls (assoc :tool-calls-count (count tool-calls)))))
+  (cond-> {}
+    (string? (:content result)) (assoc :content-chars (count (:content result)))
+    (:tool-calls result) (assoc :tool-calls-count (count (:tool-calls result)))))
+
+(defn- contract-error [provider result]
+  (let [validated (if (:error result)
+                    (api/validate-error result)
+                    (api/validate-response result))]
+    (when (schema/error? validated)
+      (let [messages (schema/message-map validated)]
+        (log/error :chat/provider-contract-violated :provider provider :errors messages)
+        {:error :provider-contract :message (pr-str messages)}))))
+
+(defn- validate-provider-result [provider result]
+  (if (:unavailable? result)
+    result
+    (or (contract-error provider result) result)))
 
 (defn- broken-provider-error? [result]
   (contains? #{:api-error :llm-error} (:error result)))
@@ -55,6 +76,8 @@
        :message  (result-message result)})))
 
 (defn- log-dispatch-result [p provider request result error-event response-event]
+  (reset! last-result* result)
+  (swap! results* conj result)
   (if (:error result)
     (do
       (log/error error-event :provider provider :error (:error result) :status (:status result))
@@ -67,13 +90,14 @@
   (let [name (api/display-name p)]
     (reset! last-request* request)
     (log/debug :chat/request :provider name :model (:model request))
-    (log-dispatch-result p name request (api/chat p request) :chat/error :chat/response)))
+    (log-dispatch-result p name request (validate-provider-result name (api/chat p request))
+                         :chat/error :chat/response)))
 
 (defn dispatch-chat-stream [p request on-chunk]
   (let [name (api/display-name p)]
     (reset! last-request* request)
     (log/debug :chat/stream-request :provider name :model (:model request))
-    (log-dispatch-result p name request (api/chat-stream p request on-chunk)
+    (log-dispatch-result p name request (validate-provider-result name (api/chat-stream p request on-chunk))
                          :chat/stream-error :chat/stream-response)))
 
 (defn dispatch-chat-with-tools
@@ -84,7 +108,7 @@
     (reset! last-request* request)
     (log/debug :chat/request-with-tools :provider name :model (:model request))
     (log-dispatch-result p name request
-                         (tool-loop/run #(api/chat p %)
+                         (tool-loop/run #(validate-provider-result name (api/chat p %))
                                         #(api/followup-messages p %1 %2 %3 %4)
                                         request
                                         tool-fn)

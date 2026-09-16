@@ -57,68 +57,27 @@
 
 ;; region ----- Token Accounting -----
 
-(defn- usage-input-tokens [usage]
-  (or (:input-tokens usage)
-      (:input_tokens usage)))
+(defn- request-usage [result]
+  (or (get-in result [:response :usage]) (:usage result)))
 
-(defn- usage-output-tokens [usage]
-  (or (:output-tokens usage)
-      (:output_tokens usage)))
-
-(defn- usage-cache-read [usage]
-  (or (:cache-read usage)
-      (:cache_read_input_tokens usage)
-      (:cached-tokens usage)
-      (get-in usage [:input_tokens_details :cached_tokens])))
-
-(defn- usage-cache-write [usage]
-  (or (:cache-write usage)
-      (:cache_creation_input_tokens usage)))
-
-(defn- usage-reasoning-tokens [usage]
-  (get-in usage [:output_tokens_details :reasoning_tokens]))
-
-(defn- response-usage [result]
-  (merge (or (get-in result [:response :response :usage])
-             (get-in result [:response :usage])
-             {})
-         (or (:usage result) {})))
-
-(defn- usage->tokens [usage resp]
-  {:input-tokens  (or (usage-input-tokens usage) (:prompt_eval_count resp) 0)
-   :output-tokens (or (usage-output-tokens usage) (:eval_count resp) 0)
-   :cache-read    (usage-cache-read usage)
-   :cache-write   (usage-cache-write usage)})
-
-(defn- response-tokens [result]
-  (let [resp  (:response result)
-        usage (response-usage result)]
-    (usage->tokens usage resp)))
-
-(defn- provider-prompt-tokens [{:keys [input-tokens cache-read cache-write]}]
-  (+ (or input-tokens 0)
-     (or cache-read 0)
-     (or cache-write 0)))
+(defn- turn-usage [result]
+  (or (:usage result) {:requests 0 :prompt-tokens 0 :output-tokens 0}))
 
 (defn extract-tokens [result]
-  (let [resp  (:response result)
-        usage (or (:token-counts result) (response-usage result))]
-    (usage->tokens usage resp)))
+  (let [usage (turn-usage result)]
+    {:input-tokens  (:prompt-tokens usage 0)
+     :output-tokens (:output-tokens usage 0)
+     :cache-read    (:cache-read-tokens usage)
+     :cache-write   (:cache-write-tokens usage)}))
 
 (defn normalize-usage [result]
-  (let [tokens           (extract-tokens result)
-        raw-usage        (response-usage result)
-        input-tokens     (:input-tokens tokens 0)
-        output-tokens    (:output-tokens tokens 0)
-        cache-read       (or (:cache-read tokens) 0)
-        cache-write      (or (:cache-write tokens) 0)
-        reasoning-tokens (usage-reasoning-tokens raw-usage)]
-    (cond-> {:input-tokens  input-tokens
-             :output-tokens output-tokens
-             :total-tokens  (+ input-tokens output-tokens)
-             :cache-read    cache-read
-             :cache-write   cache-write}
-            reasoning-tokens (assoc :reasoning-tokens reasoning-tokens))))
+  (let [usage (turn-usage result)]
+    (cond-> {:prompt-tokens (:prompt-tokens usage 0)
+             :output-tokens (:output-tokens usage 0)
+             :total-tokens (+ (:prompt-tokens usage 0) (:output-tokens usage 0))}
+      (some? (:reasoning-tokens usage)) (assoc :reasoning-tokens (:reasoning-tokens usage))
+      (some? (:cache-read-tokens usage)) (assoc :cache-read-tokens (:cache-read-tokens usage))
+      (some? (:cache-write-tokens usage)) (assoc :cache-write-tokens (:cache-write-tokens usage)))))
 
 ;; endregion ^^^^^ Token Accounting ^^^^^
 
@@ -264,7 +223,7 @@
 
 (defn- normalized-provider-prompt-tokens [ctx session-key result]
   (let [context-window (get-in ctx [:charge :context-window])
-        raw-prompt     (provider-prompt-tokens (response-tokens result))]
+        raw-prompt     (or (:prompt-tokens (request-usage result)) 0)]
     (if (and (pos? (or context-window 0)) (> raw-prompt context-window))
       (do
         (log/warn :session/stamp-implausible
@@ -280,8 +239,9 @@
                 :stateful)))
 
 (defn- replayable-output-tokens [ctx result]
-  (let [output    (or (:output-tokens (response-tokens result)) 0)
-        reasoning (usage-reasoning-tokens (response-usage result))]
+  (let [usage     (request-usage result)
+        output    (or (:output-tokens usage) 0)
+        reasoning (:reasoning-tokens usage)]
     (if (and reasoning (not (provider-stateful? ctx)))
       (max 0 (- output reasoning))
       output)))
@@ -305,16 +265,14 @@
 (defn- store-response! [ctx session-key result {:keys [model provider]}]
   (let [sess              (session-policy ctx)
         turn-tokens       (extract-tokens result)
-        final-tokens      (response-tokens result)
         usage             (normalize-usage result)
         resolved-model    (response-model result model)
-        reasoning         (or (get-in result [:response :reasoning])
-                              (get-in result [:response :response :reasoning]))
-        stop-reason       (or (get-in result [:response :stop_reason])
-                              (get-in result [:response :done_reason]))
+        reasoning         (some-> (get-in result [:response :reasoning])
+                                  (assoc :effort (get-in ctx [:charge :effort])))
+        stop-reason       (get-in result [:response :stop-reason])
         session-entry     (or (policy/get-session sess session-key) {})
         turn-input-tokens (:input-tokens turn-tokens 0)
-        prompt-tokens     (normalized-provider-prompt-tokens ctx session-key {:response {:usage final-tokens}})
+        prompt-tokens     (normalized-provider-prompt-tokens ctx session-key result)
         output-tokens     (:output-tokens turn-tokens 0)
         cache-read        (:cache-read turn-tokens)
         cache-write       (:cache-write turn-tokens)]
@@ -324,8 +282,7 @@
                :tokens (select-keys turn-tokens [:input-tokens :output-tokens]))
     (append-message! ctx session-key
                      (cond-> {:role     "assistant"
-                              :content  (or (:content result)
-                                            (get-in result [:response :message :content]))
+                              :content  (get-in result [:response :content])
                               :model    resolved-model
                               :provider provider}
                              usage (assoc :usage usage)
@@ -360,49 +317,24 @@
 ;; region ----- Streaming -----
 
 (defn- chunk-content [chunk]
-  (let [content (or (get-in chunk [:message :content])
-                    (get-in chunk [:delta :text])
-                    (get-in chunk [:choices 0 :delta :content]))]
-    (cond
-      (string? content) content
-      (vector? content) (apply str content)
-      (nil? content) nil
-      :else (str content))))
-
-(defn- chunk-piece [full-content chunk]
-  (when-let [content (chunk-content chunk)]
-    (if (and (:done chunk)
-             (seq full-content)
-             (str/starts-with? content full-content))
-      (subs content (count full-content))
-      content)))
-
-(defn- meaningful-final-chunk? [chunk]
-  (or (get-in chunk [:message :content])
-      (get-in chunk [:delta :text])
-      (seq (:tool-calls chunk))))
+  (:text-delta chunk))
 
 (defn- prompt-too-long? [result]
   (provider-wall/prompt-too-long? result))
 
 (defn- chunk-reasoning [chunk]
-  (or (when (string? (:reasoning chunk)) (:reasoning chunk))
-      (get-in chunk [:reasoning :summary])
-      (get-in chunk [:delta :reasoning])))
+  (:reasoning-delta chunk))
 
 (defn stream-response! [p request on-chunk]
   (let [full-content (atom "")
-        final-resp   (atom nil)
         result       (dispatch/dispatch-chat-stream p request
                                                     (fn [chunk]
                                                       (when-let [reasoning (chunk-reasoning chunk)]
                                                         (on-chunk {:reasoning reasoning}))
-                                                      (when-let [piece (chunk-piece @full-content chunk)]
+                                                      (when-let [piece (chunk-content chunk)]
                                                         (when (seq piece)
                                                           (swap! full-content str piece)
-                                                          (on-chunk piece)))
-                                                      (when (:done chunk)
-                                                        (reset! final-resp chunk))))]
+                                                          (on-chunk piece)))))]
     (cond
       (:error result)
       result
@@ -411,18 +343,12 @@
       result
 
       :else
-      (let [content  (or (not-empty @full-content) (get-in result [:message :content]) "")
-            inner    (if (meaningful-final-chunk? @final-resp) @final-resp result)
-            inner    (cond-> inner
-                       (seq (get-in result [:message :tool_calls]))
-                       (assoc-in [:message :tool_calls] (get-in result [:message :tool_calls]))
-                       (seq (:tool-calls result))
-                       (assoc :tool-calls (:tool-calls result)))]
-        {:content content :response inner}))))
+      (let [content (or (not-empty @full-content) (:content result) "")]
+        {:content content :response (assoc result :content content)}))))
 
 
 (defn- emit-response-content! [channel-impl session-key cycle response]
-  (let [content (get-in response [:message :content])
+  (let [content (:content response)
         chunks  (cond
                   (vector? content) (mapv str content)
                   (string? content) [content]
@@ -445,19 +371,10 @@
   (boolean (or (get provider-config :stream-non-tool-turns)
                (get provider-config :streamNonToolTurns))))
 
-(defn- unwrap-stream-result
-  "Prefer the outer dispatch result when it carries tool_calls; otherwise the
-   inner :response. Streaming adapters sometimes stash tool_calls only on the
-   outer map."
-  [result]
-  (cond
-    (:error result) result
-    (prompt-too-long? result) result
-    (or (seq (get-in result [:message :tool_calls]))
-        (seq (:tool-calls result)))
-    result
-    (:response result) (:response result)
-    :else result))
+(defn- unwrap-stream-result [result]
+  (if (and (not (:error result)) (:response result))
+    (:response result)
+    result))
 
 (defn- chat-fn-for
   "Pick the LLM-call hook the tool-loop should use this turn.
@@ -490,11 +407,10 @@
                   (if (or (:error result) (prompt-too-long? result))
                     result
                     (do
-                      (when-let [summary (or (get-in result [:reasoning :summary])
-                                             (get-in result [:response :reasoning :summary]))]
+                      (when-let [summary (get-in result [:reasoning :summary])]
                         (comm/on-reckoning channel-impl session-key (cycle-now) summary))
                       (let [joined (emit-response-content! channel-impl session-key (cycle-now) result)]
-                        (assoc-in result [:message :content] joined)))))))))
+                        (assoc result :content joined)))))))))
 
 (defn- parse-long-or-raw [raw]
   (cond
@@ -576,22 +492,16 @@
 (def ^:private wrap-up-nudge default-wrap-up-prompt)
 
 (defn- loop-summary-request [request response]
-  (let [assistant-msg (or (:message response)
-                          {:role    "assistant"
-                           :content (or (:content response) "")})]
+  (let [assistant-msg {:role "assistant" :content (or (:content response) "")}]
     (-> request
         (assoc :messages (conj (vec (:messages request))
                                assistant-msg
                                {:role "user" :content loop-exhausted-summary-instruction}))
         (assoc :tools []))))
 
-(defn- merge-response-tokens [token-counts response]
-  (let [usage (:usage response)]
-    (merge-with + token-counts
-                {:input-tokens  (or (usage-input-tokens usage) (:prompt_eval_count response) 0)
-                 :output-tokens (or (usage-output-tokens usage) (:eval_count response) 0)
-                 :cache-read    (or (usage-cache-read usage) 0)
-                 :cache-write   (or (usage-cache-write usage) 0)})))
+(defn- merge-response-usage [usage response]
+  (-> (merge-with + usage (:usage response))
+      (update :requests inc)))
 
 (defn- user-message-echo? [content messages]
   (let [trimmed (str/trim (or content ""))]
@@ -611,14 +521,12 @@
              (str/includes? trimmed "You have hit the cycle limit")))))
 
 (defn- final-loop-summary [result chat-fn current-request]
-  (let [content (or (:content result)
-                    (get-in result [:response :message :content])
-                    (get-in result [:response :content]))]
+  (let [content (or (:content result) (get-in result [:response :content]))]
     (if (or (not (:loop-request? result))
             (not (str/blank? content)))
       result
       (let [summary-response (chat-fn (loop-summary-request current-request (:response result)))
-            summary-content  (get-in summary-response [:message :content])]
+            summary-content  (:content summary-response)]
         (if (or (:error summary-response)
                 (str/blank? summary-content)
                 (loop-limit-user-echo? summary-content nil current-request)
@@ -627,16 +535,13 @@
           (-> result
               (assoc :content summary-content)
               (assoc :response summary-response)
-              (assoc :token-counts (merge-response-tokens (:token-counts result) summary-response))))))))
+              (assoc :usage (merge-response-usage (:usage result) summary-response))))))))
 
 (def ^:private empty-terminal-continuation-nudge
   "Your previous response was empty. Please continue and provide your reply.")
 
 (defn- terminal-response-content [result]
-  (or (:content result)
-      (get-in result [:response :message :content])
-      (get-in result [:message :content])
-      (get-in result [:response :content])))
+  (or (:content result) (get-in result [:response :content])))
 
 (defn- canned-loop-exhausted-message
   ([result] (canned-loop-exhausted-message result nil nil))
@@ -650,7 +555,7 @@
        (let [message "I ran several tools but did not reach a conclusion before hitting the tool loop limit. Ask me to continue if you want me to keep digging."]
          (-> result
              (assoc :content message)
-             (assoc-in [:response :message :content] message)))
+             (assoc-in [:response :content] message)))
        result))))
 
 (defn- wrap-up-request
@@ -670,33 +575,19 @@
                                  {:role "user" :content prompt})))
 
 (defn- normalize-tool-calls [raw]
-  (mapv (fn [tc]
-          {:id        (or (:id tc) (str (java.util.UUID/randomUUID)))
-           :name      (or (:name tc) (get-in tc [:function :name]))
-           :arguments (or (:arguments tc) (get-in tc [:function :arguments]))
-           :raw       tc})
-        (or raw [])))
+  (vec (or raw [])))
 
 (defn- pending-tool-calls
   "Tool calls on the last LLM response that have not been executed.
    Do not use the loop's accumulated :tool-calls — those already ran."
   [result]
-  (normalize-tool-calls
-    (or (get-in result [:response :message :tool_calls])
-        (get-in result [:response :tool-calls])
-        (get-in result [:message :tool_calls])
-        (get-in result [:response :response :message :tool_calls]))))
+  (normalize-tool-calls (get-in result [:response :tool-calls])))
 
 (defn- response-tool-calls* [response]
-  (or (seq (normalize-tool-calls (:tool-calls response)))
-      (seq (normalize-tool-calls (get-in response [:message :tool_calls])))
-      []))
+  (or (seq (:tool-calls response)) []))
 
 (defn- with-assistant-message [request response]
-  (let [assistant (or (:message response)
-                      {:role "assistant" :content (or (get-in response [:message :content])
-                                                      (:content response)
-                                                      "")})]
+  (let [assistant {:role "assistant" :content (or (:content response) "")}]
     (assoc request :messages (conj (vec (:messages request)) assistant))))
 
 (defn- empty-wrap-up-failure []
@@ -756,18 +647,14 @@
           wrap-resp    (chat-fn wrap-req)
           wrap-calls   (or (seq (pending-tool-calls wrap-resp))
                            (seq (response-tool-calls* wrap-resp)))
-          wrap-content (or (get-in wrap-resp [:message :content])
-                           (get-in wrap-resp [:response :message :content])
-                           (:content wrap-resp))]
+          wrap-content (:content wrap-resp)]
       (reset! current-request wrap-req)
       (if (seq wrap-calls)
         (let [results  (execute-pending-tools! tool-ctx wrap-calls)
               messages (followup-fn wrap-req wrap-resp wrap-calls results)
               note-req (assoc (assoc wrap-req :messages messages) :tools [])
               note-resp (chat-fn note-req)
-              content   (or (get-in note-resp [:message :content])
-                            (get-in note-resp [:response :message :content])
-                            (:content note-resp))]
+              content   (:content note-resp)]
           (reset! current-request note-req)
           (if (str/blank? content)
             (empty-wrap-up-failure)
@@ -776,7 +663,7 @@
                        :response note-resp
                        :exhaustion :wrapped-up
                        :loop-request? true)
-                (assoc :token-counts (merge-response-tokens (or (:token-counts result) {}) note-resp)))))
+                (assoc :usage (merge-response-usage (:usage result) note-resp)))))
         (if (str/blank? wrap-content)
           (empty-wrap-up-failure)
           (do
@@ -786,16 +673,14 @@
                        :response wrap-resp
                        :exhaustion :wrapped-up
                        :loop-request? true)
-                (assoc :token-counts (merge-response-tokens (or (:token-counts result) {}) wrap-resp)))))))))
+                (assoc :usage (merge-response-usage (:usage result) wrap-resp)))))))))
 
 (defn- empty-terminal-response? [result]
   (and (not (:error result))
        (str/blank? (terminal-response-content result))))
 
 (defn- continuation-nudge-request [request response]
-  (let [assistant-msg (or (:message response)
-                          {:role    "assistant"
-                           :content (or (get-in response [:message :content]) "")})]
+  (let [assistant-msg {:role "assistant" :content (or (:content response) "")}]
     (-> request
         (assoc :messages (conj (vec (:messages request))
                                assistant-msg
@@ -828,8 +713,8 @@
          (guard-empty-terminal-response
            (-> result
                (assoc :response retry-resp)
-               (assoc :content (get-in retry-resp [:message :content]))
-               (assoc :token-counts (merge-response-tokens (:token-counts result) retry-resp)))
+               (assoc :content (:content retry-resp))
+               (assoc :usage (merge-response-usage (:usage result) retry-resp)))
            chat-fn
            nudge-req
            true))))))
@@ -1267,7 +1152,7 @@
         stateful   (get (api/config p) :stateful)]
     (cond-> {:model (:model prompt-out) :messages (:messages prompt-out)}
             (:system prompt-out) (assoc :system (:system prompt-out))
-            (:max_tokens prompt-out) (assoc :max_tokens (:max_tokens prompt-out))
+            (:max-tokens prompt-out) (assoc :max-tokens (:max-tokens prompt-out))
             (:tools prompt-out) (assoc :tools (:tools prompt-out))
             (some? effort) (assoc :effort effort)
             (some? stateful) (assoc :stateful stateful)
@@ -1391,9 +1276,12 @@
                                          true (assoc :progress! progress!))
                             cache      (:window-cache tool-ctx)
                             cycle-n    (or (some-> tool-ctx :cycle* deref :n) 1)
-                            raw-result (if cache
-                                         (tool-registry/execute (:name tc) args allowed-tools module-index caps cache cycle-n)
-                                         (tool-registry/execute (:name tc) args allowed-tools module-index caps))]
+                            raw-result (if-let [parse-error (:arguments-error tc)]
+                                         {:isError true
+                                          :error (str "Invalid arguments for " (:name tc) ": " parse-error)}
+                                         (if cache
+                                           (tool-registry/execute (:name tc) args allowed-tools module-index caps cache cycle-n)
+                                           (tool-registry/execute (:name tc) args allowed-tools module-index caps)))]
                         (when (= :cancelled (:error raw-result))
                           (when (compare-and-set! tool-state :running :cancelled)
                             (comm/on-tool-cancel ch session-key tc))
@@ -1502,12 +1390,9 @@
                                     (comm/on-cycle-start ch session-key cycle))
                                 (when-not (or (:error response-or-req) (:unavailable? response-or-req))
                                   (stamp-provider-prompt! ctx session-key response-or-req)
-                                  (let [text       (or (get-in response-or-req [:message :content]) "")
-                                        tool-calls (or (:tool-calls response-or-req)
-                                                       (get-in response-or-req [:message :tool_calls])
-                                                       [])
-                                        summary    (or (get-in response-or-req [:reasoning :summary])
-                                                       (get-in response-or-req [:response :reasoning :summary]))]
+                                  (let [text       (or (:content response-or-req) "")
+                                        tool-calls (or (:tool-calls response-or-req) [])
+                                        summary    (get-in response-or-req [:reasoning :summary])]
                                     (when (seq (str summary))
                                       (append-reckoning! ctx session-key summary))
                                     (if (seq tool-calls)
@@ -1591,7 +1476,7 @@
                    :session session-key
                    :provider (api/display-name p)
                    :error (:error result)
-                   :assistant-content-chars (count (or (get-in result [:message :content]) ""))
+                   :assistant-content-chars (count (or (get-in result [:response :content]) ""))
                    :tool-calls-count (count (:tool-calls result))
                    :executed-tools-count @tool-count)
         (let [provider-name (api/display-name p)

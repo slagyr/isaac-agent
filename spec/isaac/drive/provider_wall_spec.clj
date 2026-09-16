@@ -34,11 +34,12 @@
                (sut/classify result {} "xai"))))
 
   (it "classifies 429 walls with reason wall"
-    (let [result {:error :api-error :status 429 :retry-after 60}]
+    (let [result {:error :rate-limited :status 429 :retry-after-ms 60000 :message "slow down"}]
       (should= {:unavailable? true
                 :retry-after-ms 60000
                 :reason :wall
-                :provider "chatgpt"}
+                :provider "chatgpt"
+                :provider-response result}
                (sut/classify result {} "chatgpt"))))
 
   (it "uses configured auth retry-after"
@@ -66,8 +67,8 @@
       (should= "chatgpt" (:provider normalized))))
 
   (it "classifies a prompt-too-long 400 as overflow, not weather"
-    (let [result {:error   :api-error
-                  :status  400
+    (let [result {:error :context-overflow
+                  :status 400
                   :message "maximum prompt length is 200 but the request contains 250"}
           classified (sut/classify result {} "chatgpt")]
       (should= {:reason :overflow} classified)
@@ -80,7 +81,7 @@
                                  {} "chatgpt")))
 
   (it "does not rewrite overflow 400s during normalize"
-    (let [result {:error :api-error :status 400 :message "prompt is too long"}]
+    (let [result {:error :context-overflow :status 400 :message "prompt is too long"}]
       (should= result (sut/normalize result {} "chatgpt"))))
 
   )

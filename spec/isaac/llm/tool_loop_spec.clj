@@ -37,7 +37,7 @@
   (it "returns immediately when the first response has no tool-calls"
     (let [request      {:messages []}
           response     {:message {:role "assistant" :content "done"}
-                        :usage   {:input-tokens 5 :output-tokens 2}}
+                        :usage   {:prompt-tokens 5 :output-tokens 2}}
           chat-calls   (atom [])
           followups    (atom [])
           tool-runs    (atom [])
@@ -54,17 +54,17 @@
       (should= [] @tool-runs)
       (should= response (:response result))
       (should= [] (:tool-calls result))
-      (should= {:input-tokens 5 :output-tokens 2 :cache-read 0 :cache-write 0}
-               (:token-counts result))
+      (should= {:requests 1 :prompt-tokens 5 :output-tokens 2}
+               (:usage result))
       (should= false (:loop-request? result))))
 
   (it "executes every tool in a multi-call batch before recursing"
     (let [chat-fn     (queue-chat
                         [{:tool-calls [{:id "tc1" :name "read" :arguments {:path "a"}}
                                         {:id "tc2" :name "read" :arguments {:path "b"}}]
-                          :usage      {:input-tokens 10 :output-tokens 5}}
+                          :usage      {:prompt-tokens 10 :output-tokens 5}}
                          {:message {:role "assistant" :content "done"}
-                          :usage   {:input-tokens 3 :output-tokens 1}}])
+                          :usage   {:prompt-tokens 3 :output-tokens 1}}])
           tool-runs   (atom [])
           tool-fn     (fn [name args]
                         (swap! tool-runs conj {:name name :args args})
@@ -86,9 +86,9 @@
                          [{:tool-calls [{:id "tc1" :name "read" :arguments {:path "a"}}
                                          {:id "tc2" :name "read" :arguments {:path "b"}}
                                          {:id "tc3" :name "read" :arguments {:path "c"}}]
-                           :usage      {:input-tokens 10 :output-tokens 5}}
+                           :usage      {:prompt-tokens 10 :output-tokens 5}}
                           {:message {:role "assistant" :content "done"}
-                           :usage   {:input-tokens 3 :output-tokens 1}}])
+                           :usage   {:prompt-tokens 3 :output-tokens 1}}])
           followup-fn  (recording-followup calls)
           tool-fn      (fn [_ {:keys [path]}]
                          (let [paths (swap! started conj path)]
@@ -124,9 +124,9 @@
           chat-fn     (queue-chat
                         [{:tool-calls [{:id "tc1" :name "read" :arguments {:path "a"}}
                                         {:id "tc2" :name "read" :arguments {:path "b"}}]
-                          :usage      {:input-tokens 10 :output-tokens 5}}
+                          :usage      {:prompt-tokens 10 :output-tokens 5}}
                          {:message {:role "assistant" :content "done"}
-                          :usage   {:input-tokens 3 :output-tokens 1}}])
+                          :usage   {:prompt-tokens 3 :output-tokens 1}}])
           followup-fn (recording-followup calls)
           tool-fn     (fn [_ {:keys [path]}]
                         (swap! order conj [:start path])
@@ -149,9 +149,9 @@
           chat-fn     (queue-chat
                         [{:tool-calls [{:id "tc1" :name "read" :arguments {:path "missing"}}
                                         {:id "tc2" :name "read" :arguments {:path "found"}}]
-                          :usage      {:input-tokens 10 :output-tokens 5}}
+                          :usage      {:prompt-tokens 10 :output-tokens 5}}
                          {:message {:role "assistant" :content "done"}
-                          :usage   {:input-tokens 3 :output-tokens 1}}])
+                          :usage   {:prompt-tokens 3 :output-tokens 1}}])
           followup-fn (recording-followup calls)
           tool-fn     (fn [_ {:keys [path]}]
                         (swap! started conj path)
@@ -172,7 +172,7 @@
           chat-fn      (queue-chat
                          [{:tool-calls [{:id "tc1" :name "read" :arguments {:path "a"}}
                                          {:id "tc2" :name "read" :arguments {:path "b"}}]
-                           :usage      {:input-tokens 10 :output-tokens 5}}])
+                           :usage      {:prompt-tokens 10 :output-tokens 5}}])
           followup-fn  (recording-followup calls)
           tool-fn      (fn [_ {:keys [path]}]
                          (deliver started-one true)
@@ -196,9 +196,9 @@
   (it "executes tools and recurs when the response has tool-calls"
     (let [chat-fn     (queue-chat
                         [{:tool-calls [{:id "tc1" :name "read" :arguments {:path "x"}}]
-                          :usage      {:input-tokens 10 :output-tokens 5}}
+                          :usage      {:prompt-tokens 10 :output-tokens 5}}
                          {:message {:role "assistant" :content "done"}
-                          :usage   {:input-tokens 7 :output-tokens 3}}])
+                          :usage   {:prompt-tokens 7 :output-tokens 3}}])
           tool-runs   (atom [])
           tool-fn     (fn [name args]
                         (swap! tool-runs conj {:name name :args args})
@@ -208,15 +208,15 @@
       (should= 1 (count (:tool-calls result)))
       (should= "read" (:name (first (:tool-calls result))))
       (should= [{:name "read" :args {:path "x"}}] @tool-runs)
-      (should= 17 (:input-tokens (:token-counts result)))
-      (should= 8 (:output-tokens (:token-counts result)))
+      (should= 17 (:prompt-tokens (:usage result)))
+      (should= 8 (:output-tokens (:usage result)))
       (should= false (:loop-request? result))))
 
   (it "passes the followup-fn the prior request, response, tool-calls, and results"
     (let [calls       (atom [])
           chat-fn     (queue-chat
                         [{:tool-calls [{:id "tc1" :name "read" :arguments {:p "x"}}]
-                          :usage      {:input-tokens 1 :output-tokens 1}}
+                          :usage      {:prompt-tokens 1 :output-tokens 1}}
                          {:message {:content "done"} :usage {}}])
           tool-fn     (fn [_ _] "result")
           followup-fn (recording-followup calls)]
@@ -230,10 +230,10 @@
   (it "stops at max-loops with loop-request? true and unrun tail tools"
     (let [chat-fn     (queue-chat
                         [{:tool-calls [{:id "tc1" :name "a" :arguments {}}]
-                          :usage      {:input-tokens 1 :output-tokens 1}}
+                          :usage      {:prompt-tokens 1 :output-tokens 1}}
                          ;; Second response also has tool-calls — but max-loops=1 stops us
                          {:tool-calls [{:id "tc2" :name "b" :arguments {}}]
-                          :usage      {:input-tokens 1 :output-tokens 1}}])
+                          :usage      {:prompt-tokens 1 :output-tokens 1}}])
           tool-runs   (atom [])
           tool-fn     (fn [name _]
                         (swap! tool-runs conj name)
@@ -248,7 +248,7 @@
   (it "stops at max-loops zero before invoking any tools"
     (let [chat-fn     (queue-chat
                         [{:tool-calls [{:id "tc1" :name "a" :arguments {}}]
-                          :usage      {:input-tokens 5 :output-tokens 2}}])
+                          :usage      {:prompt-tokens 5 :output-tokens 2}}])
           tool-runs   (atom [])
           tool-fn     (fn [_ _]
                         (swap! tool-runs conj :ran)
@@ -266,31 +266,42 @@
           result      (sut/run chat-fn followup-fn {:messages []} tool-fn)]
       (should= :connection-refused (:error result))))
 
-  (it "extracts tool-calls from [:message :tool_calls] when not at top-level"
-    ;; Some providers (ollama, grover) put tool_calls inside :message rather than
-    ;; at the top level. The loop should find them either way.
+  (it "reads normalized top-level tool calls"
     (let [chat-fn     (queue-chat
-                        [{:message {:role "assistant" :content ""
-                                    :tool_calls [{:function {:name "read" :arguments {:p "x"}}}]}}
-                         {:message {:role "assistant" :content "done"}}])
+                        [{:tool-calls [{:id "tc1" :name "read" :arguments {:p "x"}}]
+                          :usage {:prompt-tokens 1 :output-tokens 1}}
+                         {:content "done" :tool-calls [] :usage {:prompt-tokens 1 :output-tokens 1}}])
           tool-runs   (atom [])
           tool-fn     (fn [name args]
                         (swap! tool-runs conj {:name name :args args})
                         "ok")
-          followup-fn (recording-followup (atom []))
-          result      (sut/run chat-fn followup-fn {:messages []} tool-fn)]
-      (should= 1 (count @tool-runs))
-      (should= "read" (:name (first @tool-runs)))
-      (should= {:p "x"} (:args (first @tool-runs)))
+          result      (sut/run chat-fn (recording-followup (atom [])) {:messages []} tool-fn)]
+      (should= [{:name "read" :args {:p "x"}}] @tool-runs)
       (should= 1 (count (:tool-calls result)))))
+
+  (it "chains stateful responses with a provider-neutral request key"
+    (let [requests (atom [])
+          chat-fn  (fn [request]
+                     (swap! requests conj request)
+                     (if (= 1 (count @requests))
+                       {:content ""
+                        :response-id "resp-1"
+                        :tool-calls [{:id "tc1" :name "read" :arguments {}}]
+                        :usage {:prompt-tokens 1 :output-tokens 1}}
+                       {:content "done"
+                        :tool-calls []
+                        :usage {:prompt-tokens 1 :output-tokens 1}}))]
+      (sut/run chat-fn (recording-followup (atom [])) {:messages []} (fn [_ _] "ok"))
+      (should= "resp-1" (:previous-response-id (second @requests)))
+      (should-not-be-nil (second @requests))))
 
   (it "stops before the next chat call when cancelled? returns true after a tool run"
     (let [cancelled?* (atom false)
           chat-fn     (queue-chat
                         [{:tool-calls [{:id "tc1" :name "a" :arguments {}}]
-                          :usage      {:input-tokens 5 :output-tokens 2}}
+                          :usage      {:prompt-tokens 5 :output-tokens 2}}
                          {:message {:content "Should not appear"}
-                          :usage   {:input-tokens 3 :output-tokens 1}}])
+                          :usage   {:prompt-tokens 3 :output-tokens 1}}])
           tool-runs   (atom [])
           tool-fn     (fn [_ _]
                         (swap! tool-runs conj :ran)
@@ -314,36 +325,33 @@
   (it "accumulates token counts across iterations"
     (let [chat-fn     (queue-chat
                         [{:tool-calls [{:id "tc1" :name "a" :arguments {}}]
-                          :usage      {:input-tokens 10 :output-tokens 5}}
+                          :usage      {:prompt-tokens 10 :output-tokens 5}}
                          {:tool-calls [{:id "tc2" :name "b" :arguments {}}]
-                          :usage      {:input-tokens 7 :output-tokens 3}}
+                          :usage      {:prompt-tokens 7 :output-tokens 3}}
                          {:message {:content "done"}
-                          :usage   {:input-tokens 4 :output-tokens 1}}])
+                          :usage   {:prompt-tokens 4 :output-tokens 1}}])
           tool-fn     (fn [_ _] "ok")
           followup-fn (recording-followup (atom []))
            result      (sut/run chat-fn followup-fn {:messages []} tool-fn)]
-       (should= 21 (:input-tokens (:token-counts result)))
-       (should= 9 (:output-tokens (:token-counts result)))))
+       (should= 21 (:prompt-tokens (:usage result)))
+       (should= 9 (:output-tokens (:usage result)))))
 
-  (it "accumulates cache counts from raw provider usage aliases"
+  (it "accumulates normalized cache counts"
     (let [chat-fn     (queue-chat
                         [{:tool-calls [{:id "tc1" :name "a" :arguments {}}]
-                          :usage      {:input_tokens                 10
-                                       :output_tokens                5
-                                       :cache_creation_input_tokens 11
-                                       :input_tokens_details         {:cached_tokens 7}}}
-                         {:message {:content "done"}
-                          :usage   {:input_tokens         4
-                                    :output_tokens        1
-                                    :input_tokens_details {:cached_tokens 2}}}])
+                          :usage {:prompt-tokens 10 :output-tokens 5
+                                  :cache-read-tokens 7 :cache-write-tokens 11}}
+                         {:content "done" :tool-calls []
+                          :usage {:prompt-tokens 4 :output-tokens 1 :cache-read-tokens 2}}])
           tool-fn     (fn [_ _] "ok")
           followup-fn (recording-followup (atom []))
           result      (sut/run chat-fn followup-fn {:messages []} tool-fn)]
-      (should= {:input-tokens  14
+      (should= {:requests       2
+                :prompt-tokens  14
                 :output-tokens 6
-                :cache-read    9
-                :cache-write   11}
-               (:token-counts result))))
+                :cache-read-tokens    9
+                :cache-write-tokens   11}
+               (:usage result))))
 
   (it "does not invoke after-tools when the first response has no tool-calls"
     (let [after-calls (atom 0)
@@ -361,9 +369,9 @@
   (it "uses the request returned by after-tools for the next chat call"
     (let [requests (atom [])
           queue    (atom [{:tool-calls [{:id "tc1" :name "read" :arguments {}}]
-                           :usage      {:input-tokens 1 :output-tokens 1}}
+                           :usage      {:prompt-tokens 1 :output-tokens 1}}
                           {:message {:role "assistant" :content "done"}
-                           :usage   {:input-tokens 1 :output-tokens 1}}])
+                           :usage   {:prompt-tokens 1 :output-tokens 1}}])
           chat-fn  (fn [req]
                      (swap! requests conj req)
                      (let [resp (first @queue)]
@@ -383,7 +391,7 @@
   (it "stops the loop without another chat call when after-tools returns unavailable"
     (let [requests (atom [])
           queue    (atom [{:tool-calls [{:id "tc1" :name "read" :arguments {}}]
-                           :usage      {:input-tokens 1 :output-tokens 1}}
+                           :usage      {:prompt-tokens 1 :output-tokens 1}}
                           {:message {:role "assistant" :content "should-not-run"}
                            :usage   {}}])
           chat-fn  (fn [req]
@@ -419,7 +427,7 @@
 
   (it "logs :turn/loop-driver default when the api does not drive the loop"
     (let [response {:message {:role "assistant" :content "done"}
-                    :usage   {:input-tokens 1 :output-tokens 1}}]
+                    :usage   {:prompt-tokens 1 :output-tokens 1}}]
       (log/capture-logs
         (let [result (sut/run (fn [_] response)
                               (recording-followup (atom []))
@@ -439,7 +447,7 @@
                     (tool-fn "exec__run" {:command "echo hi"})
                     {:response     {:message {:role "assistant" :content "driven"}}
                      :tool-calls   [{:name "exec__run"}]
-                     :token-counts {:input-tokens 3 :output-tokens 1 :cache-read 0 :cache-write 0}})]
+                     :usage {:prompt-tokens 3 :output-tokens 1 :cache-read-tokens 0 :cache-write-tokens 0}})]
       (sut/install-provider-driver! driver)
       (log/capture-logs
         (let [tool-runs (atom [])

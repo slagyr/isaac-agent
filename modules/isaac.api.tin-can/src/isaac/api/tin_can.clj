@@ -17,13 +17,14 @@
 (deftype TinCan [name cfg]
   api/Api
   (chat [_ request]
-    {:message {:role    "assistant"
-               :content (str "tin-can heard: " (last-user-content request))}
-     :model   "tin-can"
-     :usage   {:input-tokens 1 :output-tokens 1}})
+    {:content     (str "tin-can heard: " (last-user-content request))
+     :model       "tin-can"
+     :stop-reason :end-turn
+     :tool-calls  []
+     :usage       {:prompt-tokens 1 :output-tokens 1}})
   (chat-stream [this request on-chunk]
     (let [result (api/chat this request)]
-      (on-chunk {:done true :message (:message result)})
+      (on-chunk {:text-delta (:content result)})
       result))
   (followup-messages [_ request _ _ _]
     (:messages request))

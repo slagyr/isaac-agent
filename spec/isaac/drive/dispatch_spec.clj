@@ -144,14 +144,14 @@
           (should (str/includes? (:content (first pending)) "not supported")))))
 
     (it "does not post attention for a prompt-too-long 400"
-      (let [result {:error   :api-error
-                    :status  400
+      (let [result {:error :context-overflow
+                    :status 400
                     :message "maximum prompt length is 200 but the request contains 250"}]
         (sut/dispatch-chat (broken-api result) {:model "snuffy-codex" :session-key "trash-can"})
         (should= 0 (count (queue/list-pending)))))
 
     (it "does not post attention for a 429 wall"
-      (let [result {:error :api-error :status 429 :retry-after 60}]
+      (let [result {:error :rate-limited :status 429 :retry-after-ms 60000 :message "slow down"}]
         (sut/dispatch-chat (broken-api result) {:model "snuffy-codex"})
         (should= 0 (count (queue/list-pending)))))
 

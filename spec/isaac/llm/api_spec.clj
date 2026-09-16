@@ -32,89 +32,58 @@
     (it "returns false on nil"
       (should-not (sut/error? nil))))
 
-  (describe "validate-response"
+  (context "provider-neutral contracts"
 
-    (it "accepts a complete Response"
-      (let [resp {:message    {:role "assistant" :content "hi"}
-                  :model      "claude-sonnet-4-6"
-                  :tool-calls []
-                  :usage      {:input-tokens 10 :output-tokens 5 :cache-read 0 :cache-write 0}}]
-        (should= resp (sut/validate-response resp))))
+    (it "validates a response without dropping adapter metadata"
+      (let [response {:content     "hi"
+                      :tool-calls  []
+                      :stop-reason :end-turn
+                      :model       "claude-sonnet-4-6"
+                      :usage       {:prompt-tokens 10 :output-tokens 5}
+                      :harbor-log  ["close-hauled"]}]
+        (should-not (schema/error? (sut/validate-response response)))
+        (should= ["close-hauled"] (:harbor-log response))))
 
-    (it "accepts a Response with only :message and :model"
-      (let [resp {:message {:role "assistant" :content "hi"}
-                  :model   "x"}]
-        (should= resp (sut/validate-response resp))))
+    (it "reports every missing or invalid response field"
+      (let [result (sut/validate-response {:content 42
+                                           :tool-calls []
+                                           :model "echo"
+                                           :usage {:output-tokens 3}})]
+        (should= {:content "must be a string"
+                  :stop-reason "is invalid"
+                  :usage {:prompt-tokens "is required"}}
+                 (schema/message-map result))))
 
-    (it "accepts a Response carrying tool-calls"
-      (let [resp {:message    {:role "assistant" :content ""
-                               :tool_calls [{:function {:name "read" :arguments "{}"}}]}
-                  :model      "gpt-5.4"
-                  :tool-calls [{:id "tc1" :name "read" :arguments {}
-                                :raw {:function {:name "read" :arguments "{}"}}}]
-                  :usage      {:input-tokens 11 :output-tokens 4}}]
-        (should= resp (sut/validate-response resp))))
+    (it "accepts malformed tool arguments as a normalized tool call"
+      (let [tool-call {:id "tc1" :name "read" :arguments {} :arguments-error "Unexpected end of input"}]
+        (should= tool-call (schema/validate! sut/tool-call tool-call))))
 
-    (it "rejects a non-int :input-tokens"
-      (should-throw
-        (sut/validate-response {:message {:role "assistant" :content "hi"}
-                                :usage   {:input-tokens "ten"}}))))
+    (it "requires complete request usage"
+      (should= {:prompt-tokens "is required"}
+               (schema/validate-message-map sut/usage {:output-tokens 5})))
 
-  (describe "tool-call schema"
+    (it "validates normalized errors with optional usage"
+      (let [error {:error :rate-limited
+                   :message "slow down"
+                   :status 429
+                   :retry-after-ms 60000
+                   :usage {:prompt-tokens 10 :output-tokens 0}}]
+        (should-not (schema/error? (sut/validate-error error)))))
 
-    (it "accepts a normalized tool-call"
-      (let [tc {:id "tc1" :name "read" :arguments {:path "x"}}]
-        (should= tc (schema/conform! sut/tool-call tc))))
+    (it "rejects provider-specific error kinds"
+      (should= {:error "is invalid"}
+               (schema/validate-message-map sut/error {:error :overloaded :message "busy"})))
 
-    (it "accepts a tool-call carrying its raw provider payload"
-      (let [tc {:id "tc1" :name "read" :arguments {:path "x"}
-                :raw {:function {:name "read" :arguments "{\"path\":\"x\"}"}}}]
-        (should= tc (schema/conform! sut/tool-call tc))))
-
-    (it "coerces a numeric :name to a string"
-      (let [coerced (schema/conform! sut/tool-call {:id "tc1" :name 42 :arguments {}})]
-        (should= "42" (:name coerced)))))
-
-  (describe "usage schema"
-
-    (it "accepts the four token fields"
-      (let [u {:input-tokens 10 :output-tokens 5 :cache-read 2 :cache-write 1}]
-        (should= u (schema/conform! sut/usage u))))
-
-    (it "accepts a partial usage map"
-      (let [u {:input-tokens 10 :output-tokens 5}]
-        (should= u (schema/conform! sut/usage u))))
-
-    (it "rejects a non-int :output-tokens"
-      (should-throw (schema/conform! sut/usage {:input-tokens 10 :output-tokens "five"}))))
-
-  (describe "assistant-message schema"
-
-    (it "accepts a plain text reply"
-      (let [m {:role "assistant" :content "hi"}]
-        (should= m (schema/conform! sut/assistant-message m))))
-
-    (it "accepts a tool-using assistant message"
-      (let [m {:role       "assistant"
-               :content    ""
-               :tool_calls [{:id "tc1" :type "function"
-                             :function {:name "read" :arguments "{\"path\":\"x\"}"}}]}]
-        (should= m (schema/conform! sut/assistant-message m)))))
-
-  (describe "error-response schema"
-
-    (it "accepts a connection-refused error"
-      (let [e {:error :connection-refused :message "fail"}]
-        (should= e (schema/conform! sut/error-response e))))
-
-    (it "accepts an HTTP error with status and body"
-      (let [e {:error :auth-failed :message "bad key" :status 401
-               :body  {:error {:type "authentication_error" :message "Invalid API key"}}}]
-        (should= e (schema/conform! sut/error-response e))))
-
-    (it "coerces a string :error to a keyword"
-      (let [coerced (schema/conform! sut/error-response {:error "auth-failed"})]
-        (should= :auth-failed (:error coerced)))))
+    (it "validates turn usage and loop results"
+      (let [response {:content "done" :tool-calls [] :stop-reason :end-turn :model "echo"
+                      :usage {:prompt-tokens 25 :output-tokens 12}}
+            result   {:response response
+                      :tool-calls []
+                      :usage {:requests 1 :prompt-tokens 25 :output-tokens 12}
+                      :cancelled? false
+                      :loop-request? false}]
+        (should= result (schema/validate! sut/loop-result result))))
+    )
 
   (describe "registry"
 

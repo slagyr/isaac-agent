@@ -31,6 +31,32 @@
     (:stream-idle-timeout-ms cfg) (assoc :stream-idle-timeout-ms (:stream-idle-timeout-ms cfg))
     (:retry-after-ms cfg)         (assoc :retry-after-ms (:retry-after-ms cfg))))
 
+(defn- parse-tool-calls [tool-calls]
+  (mapv (fn [tool-call]
+          {:id        (or (:id tool-call) (str (java.util.UUID/randomUUID)))
+           :name      (get-in tool-call [:function :name])
+           :arguments (or (get-in tool-call [:function :arguments]) {})})
+        (or tool-calls [])))
+
+(defn- stop-reason [wire tool-calls]
+  (cond
+    (seq tool-calls) :tool-use
+    (= "stop" wire) :end-turn
+    (= "length" wire) :max-tokens
+    :else :other))
+
+(defn- normalize-response [response]
+  (if (:error response)
+    (api/normalize-error response)
+    (let [tool-calls (parse-tool-calls (get-in response [:message :tool_calls]))]
+      {:content     (let [content (get-in response [:message :content])]
+                       (if (vector? content) (apply str content) (or content "")))
+       :model       (:model response)
+       :tool-calls  tool-calls
+       :stop-reason (stop-reason (or (:wire-stop-reason response) (:done_reason response)) tool-calls)
+       :usage       {:prompt-tokens (or (:prompt_eval_count response) 0)
+                     :output-tokens (or (:eval_count response) 0)}})))
+
 (defn chat
   "Send a chat request to Ollama. Returns the parsed response or error map."
   [request provider-name cfg]
@@ -38,7 +64,7 @@
         think (effort->think (:effort request) (:think-mode cfg))
         body  (cond-> (-> request (dissoc :effort) (assoc :stream false))
                 (some? think) (assoc :think think))]
-    (llm-http/post-json! url default-headers body (http-opts cfg))))
+    (normalize-response (llm-http/post-json! url default-headers body (http-opts cfg)))))
 
 (defn chat-stream
   "Send a streaming chat request to Ollama. Calls on-chunk for each chunk.
@@ -48,7 +74,15 @@
         think (effort->think (:effort request) (:think-mode cfg))
         body  (cond-> (-> request (dissoc :effort) (assoc :stream true))
                 (some? think) (assoc :think think))]
-    (llm-http/post-ndjson-stream! url default-headers body on-chunk (http-opts cfg))))
+    (normalize-response
+      (llm-http/post-ndjson-stream! url default-headers body
+                                    (fn [chunk]
+                                      (when-let [text (get-in chunk [:message :content])]
+                                        (on-chunk {:text-delta text}))
+                                      (when-let [reasoning (or (:thinking chunk)
+                                                               (get-in chunk [:message :thinking]))]
+                                        (on-chunk {:reasoning-delta reasoning})))
+                                    (http-opts cfg)))))
 
 ;; endregion ^^^^^ Public API ^^^^^
 
@@ -61,8 +95,12 @@
   (followup/raw-tool-call-followup-messages
     request
     {:role       "assistant"
-     :content    (or (get-in response [:message :content]) "")
-     :tool_calls (get-in response [:message :tool_calls])}
+     :content    (:content response)
+     :tool_calls (mapv (fn [tool-call]
+                         {:id       (:id tool-call)
+                          :type     "function"
+                          :function {:name (:name tool-call) :arguments (:arguments tool-call)}})
+                       tool-calls)}
     tool-calls
     tool-results))
 

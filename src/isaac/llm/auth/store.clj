@@ -3,6 +3,7 @@
     [cheshire.core :as json]
     [clojure.string :as str]
     [isaac.drive.provider-wall :as provider-wall]
+    [isaac.llm.api.protocol :as api]
     [isaac.fs :as fs]
     [isaac.llm.auth.device-code :as device-code]))
 
@@ -76,7 +77,7 @@
    :message (str "Missing OAuth login for " provider-name ". Run `isaac auth login --provider " provider-name "` first.")})
 
 (defn- refresh-provider-wall [provider-name response]
-  (or (provider-wall/classify response nil provider-name)
+  (or (provider-wall/classify (api/normalize-error response) nil provider-name)
       {:unavailable?   true
        :retry-after-ms provider-wall/default-provider-retry-after-ms
        :message        (or (:message response)

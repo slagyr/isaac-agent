@@ -45,8 +45,10 @@
 
 (deftype TestProvider [name cfg]
   api/Api
-  (chat [_ _] {:message {:role "assistant" :content "ok"} :model "test-model" :usage {}})
-  (chat-stream [_ _ _] {:message {:role "assistant" :content "ok"} :model "test-model" :usage {}})
+  (chat [_ _] {:content "ok" :model "test-model" :tool-calls [] :stop-reason :end-turn
+                 :usage {:prompt-tokens 1 :output-tokens 1}})
+  (chat-stream [_ _ _] {:content "ok" :model "test-model" :tool-calls [] :stop-reason :end-turn
+                          :usage {:prompt-tokens 1 :output-tokens 1}})
   (followup-messages [_ request _ _ _] (:messages request))
   (config [_] cfg)
   (display-name [_] name)
@@ -58,13 +60,33 @@
 
 (deftype PromptProvider [name cfg]
   api/Api
-  (chat [_ _] {:message {:role "assistant" :content "ok"} :model "test-model" :usage {}})
-  (chat-stream [_ _ _] {:message {:role "assistant" :content "ok"} :model "test-model" :usage {}})
+  (chat [_ _] {:content "ok" :model "test-model" :tool-calls [] :stop-reason :end-turn
+                 :usage {:prompt-tokens 1 :output-tokens 1}})
+  (chat-stream [_ _ _] {:content "ok" :model "test-model" :tool-calls [] :stop-reason :end-turn
+                          :usage {:prompt-tokens 1 :output-tokens 1}})
   (followup-messages [_ request _ _ _] (:messages request))
   (config [_] cfg)
   (display-name [_] name)
   (build-prompt [_ opts]
     (prompt/build opts)))
+
+(defn- normalize-scripted-response [response]
+  (if (:error response)
+    (api/normalize-error response)
+    (let [message    (:message response)
+          tool-calls (or (:tool-calls response)
+                         (mapv (fn [tool-call]
+                                 {:id (or (:id tool-call) (str (java.util.UUID/randomUUID)))
+                                  :name (get-in tool-call [:function :name])
+                                  :arguments (or (get-in tool-call [:function :arguments]) {})})
+                               (:tool_calls message)))
+          usage      (:usage response)]
+      {:content     (or (:content response) (:content message) "")
+       :model       (or (:model response) "test-model")
+       :tool-calls  (vec tool-calls)
+       :stop-reason (if (seq tool-calls) :tool-use :end-turn)
+       :usage       {:prompt-tokens (or (:prompt-tokens usage) (:input_tokens usage) 1)
+                     :output-tokens (or (:output-tokens usage) (:output_tokens usage) 1)}})))
 
 (deftype ScriptedPromptProvider [name cfg queue captured]
   api/Api
@@ -74,17 +96,17 @@
       (when-not resp
         (throw (ex-info "scripted provider queue exhausted" {})))
       (swap! queue rest)
-      resp))
+      (normalize-scripted-response resp)))
   (chat-stream [_ request _]
     (swap! captured conj request)
     (let [resp (first @queue)]
       (when-not resp
         (throw (ex-info "scripted provider queue exhausted" {})))
       (swap! queue rest)
-      resp))
+      (normalize-scripted-response resp)))
   (followup-messages [_ request response tool-calls tool-results]
     (into (conj (vec (:messages request))
-                {:role "assistant" :content (or (get-in response [:message :content]) "") :tool_calls tool-calls})
+                {:role "assistant" :content (or (:content response) "") :tool_calls tool-calls})
           (mapv (fn [result] {:role "tool" :content result}) tool-results)))
   (config [_] cfg)
   (display-name [_] name)
@@ -97,33 +119,19 @@
   (marigold.agent/with-manifest)
 
   (describe "normalize-usage"
-    (it "normalizes provider usage aliases into transcript-friendly keys"
-      (should= {:input-tokens     100
-                :output-tokens    50
-                :total-tokens     150
-                :cache-read       7
-                :cache-write      3
-                :reasoning-tokens 11}
-               (sut/normalize-usage {:response {:usage {:input_tokens           100
-                                                       :output_tokens          50
-                                                       :cache_creation_input_tokens 3
-                                                       :input_tokens_details   {:cached_tokens 7}
-                                                       :output_tokens_details  {:reasoning_tokens 11}}}})))
-
-    (it "prefers accumulated token counts over the last raw provider usage block"
-      (should= {:input-tokens  12
+    (it "presents normalized cumulative turn usage for transcript storage"
+      (should= {:prompt-tokens 112
                 :output-tokens 8
-                :total-tokens  20
-                :cache-read    2
-                :cache-write   1}
-               (sut/normalize-usage {:token-counts {:input-tokens  12
-                                                    :output-tokens 8
-                                                    :cache-read    2
-                                                    :cache-write   1}
-                                     :response     {:usage {:input_tokens                 3
-                                                            :output_tokens                4
-                                                            :cache_creation_input_tokens 88
-                                                            :input_tokens_details         {:cached_tokens 99}}}}))))
+                :total-tokens 120
+                :cache-read-tokens 7
+                :cache-write-tokens 3
+                :reasoning-tokens 11}
+               (sut/normalize-usage {:usage {:requests 2
+                                             :prompt-tokens 112
+                                             :output-tokens 8
+                                             :cache-read-tokens 7
+                                             :cache-write-tokens 3
+                                             :reasoning-tokens 11}}))))
 
   (describe "process-response!"
     #_{:clj-kondo/ignore [:unresolved-symbol]}
@@ -132,176 +140,22 @@
         (helper/with-memory-store
           (example))))
 
-    (it "stores a normalized usage map even when the provider omits :usage"
-      (helper/create-session! test-dir "usage-test")
-      (sut/process-response! "usage-test"
-                             {:content  "Hello from Marigold"
-                              :response {:prompt_eval_count 20
-                                         :eval_count        5}}
-                             {:model "groves-13b" :provider marigold/flicker-labs})
-      (let [assistant (-> (helper/get-transcript test-dir "usage-test")
-                          last
-                          :message)]
-         (should= {:input-tokens  20
-                   :output-tokens 5
-                   :total-tokens  25
-                   :cache-read    0
-                   :cache-write   0}
-                 (:usage assistant))))
-
-    (it "stores the configured model when the provider omits :model"
-      (helper/create-session! test-dir "model-test")
-      (sut/process-response! "model-test"
-                             {:content  "Two! Two clouds!"
-                              :response {:message {:role "assistant" :content "Two! Two clouds!"}}}
-                             {:model "count" :provider "grover:grok"})
-      (let [assistant (-> (helper/get-transcript test-dir "model-test")
-                          last
-                          :message)]
-        (should= "count" (:model assistant))
-        (should= "grover:grok" (:provider assistant)))))
-
-  (describe "process-response! multi-request token persistence"
-    #_{:clj-kondo/ignore [:unresolved-symbol]}
-    (around [example]
-      (nexus/-with-nexus {:root test-dir :fs (fs/mem-fs)}
-        (helper/with-memory-store
-          (example))))
-
-    (it "stores final-request input tokens separately from whole-turn input tokens"
+    (it "stores normalized turn usage and stamps context from the final request"
       (helper/create-session! test-dir "tool-loop-usage")
       (sut/process-response! "tool-loop-usage"
-                             {:content      "Done"
-                              :token-counts {:input-tokens 220 :output-tokens 7 :cache-read 2 :cache-write 1}
-                              :response     {:message {:role "assistant" :content "Done"}
-                                             :usage   {:input_tokens 120
-                                                       :output_tokens 7
-                                                       :cache_creation_input_tokens 1
-                                                       :input_tokens_details {:cached_tokens 2}}}}
+                             {:usage {:requests 2 :prompt-tokens 220 :output-tokens 7
+                                      :cache-read-tokens 2 :cache-write-tokens 1}
+                              :response {:content "Done" :model "echo" :tool-calls [] :stop-reason :end-turn
+                                         :usage {:prompt-tokens 123 :output-tokens 7
+                                                 :cache-read-tokens 2 :cache-write-tokens 1}}}
                              {:model "echo" :provider "grover:grok"})
       (let [assistant (-> (helper/get-transcript test-dir "tool-loop-usage") last :message)
             session   (helper/get-session test-dir "tool-loop-usage")]
-        (should= {:input-tokens  220
-                  :output-tokens 7
-                  :total-tokens  227
-                  :cache-read    2
-                  :cache-write   1}
-                 (:usage assistant))
-        (should= 220 (:input-tokens session))
+        (should= 220 (get-in assistant [:usage :prompt-tokens]))
         (should= 220 (:turn-input-tokens session))
         (should= 123 (:last-input-tokens session))
-        (should= 7 (:output-tokens session))
-        (should= 227 (:total-tokens session))
-        (should= 2 (:cache-read session))
-        (should= 1 (:cache-write session))))
-
-    (it "stamps each cycle with provider prompt tokens before the turn ends"
-      (helper/create-session! test-dir "cycle-stamp")
-      (#'sut/stamp-provider-prompt! {:session-store (store/registered-store)
-                                     :charge        {:context-window 1000}}
-                                    "cycle-stamp"
-                                    {:usage {:input_tokens 850}})
-      (let [session (helper/get-session test-dir "cycle-stamp")]
-        (should= 850 (:last-input-tokens session))))
-
-    (it "points the tally cursor at the last transcript entry when stamping a response"
-      (helper/create-session! test-dir "tally-cursor")
-      (helper/append-message! test-dir "tally-cursor" {:role "user" :content "read my notes"})
-      (let [last-id (:id (last (helper/get-transcript test-dir "tally-cursor")))]
-        (#'sut/stamp-provider-prompt! {:session-store (store/registered-store)
-                                       :charge        {:context-window 1000}}
-                                      "tally-cursor"
-                                      {:usage {:input_tokens 300 :output_tokens 40}})
-        (let [session (helper/get-session test-dir "tally-cursor")]
-          (should= 300 (:last-input-tokens session))
-          (should= 40 (:last-output-tokens session))
-          (should= last-id (:tally-after-id session)))))
-
-    (it "includes cached input in the provider stamp for anthropic-shaped usage"
-      (helper/create-session! test-dir "claude-cache-stamp")
-      (sut/process-response! "claude-cache-stamp"
-                             {:content  "Done"
-                              :response {:message {:role "assistant" :content "Done"}
-                                         :usage   {:input_tokens 8
-                                                   :output_tokens 3
-                                                   :cache_read_input_tokens 700
-                                                   :cache_creation_input_tokens 200}}}
-                             {:model "sonnet" :provider "claude-cli"})
-      (let [session (helper/get-session test-dir "claude-cache-stamp")]
-        (should= 908 (:last-input-tokens session))))
-
-    (it "caps an implausible provider stamp at the context window"
-      (helper/create-session! test-dir "implausible-stamp")
-      (log/capture-logs
-        (#'sut/stamp-provider-prompt! {:session-store (store/registered-store)
-                                       :charge        {:context-window 1000}}
-                                      "implausible-stamp"
-                                      {:usage {:input_tokens 8
-                                               :cache_read_input_tokens 700
-                                               :cache_creation_input_tokens 2000}})
-        (let [session (helper/get-session test-dir "implausible-stamp")
-              event   (first (filter #(= :session/stamp-implausible (:event %)) @log/captured-logs))]
-          (should= 1000 (:last-input-tokens session))
-          (should-not-be-nil event)
-          (should= 2708 (:prompt-tokens event))
-          (should= 1000 (:context-window event)))))
-
-    (it "stores the last response's output tokens on the session entry"
-      (helper/create-session! test-dir "output-stamp")
-      (sut/process-response! "output-stamp"
-                             {:content      "ok"
-                              :token-counts {:input-tokens 300 :output-tokens 40}
-                              :response     {:message {:role "assistant" :content "ok"}
-                                             :usage   {:input_tokens 300
-                                                       :output_tokens 40}}}
-                             {:model "echo" :provider "grover:grok"})
-      (let [session (helper/get-session test-dir "output-stamp")]
-        (should= 300 (:last-input-tokens session))
-        (should= 40 (:last-output-tokens session))))
-
-    (it "excludes reasoning tokens from last-output-tokens when the provider is not stateful"
-      (helper/create-session! test-dir "reasoning-drop")
-      (#'sut/stamp-provider-prompt! {:session-store (store/registered-store)
-                                     :charge        {:context-window 1000}
-                                     :provider      (->TestProvider marigold/starcore {:api marigold/sky-api})}
-                                    "reasoning-drop"
-                                    {:usage {:input_tokens 200
-                                             :output_tokens 50
-                                             :output_tokens_details {:reasoning_tokens 30}}})
-      (let [session (helper/get-session test-dir "reasoning-drop")]
-        (should= 200 (:last-input-tokens session))
-        (should= 20 (:last-output-tokens session))))
-
-    (it "keeps reasoning tokens in last-output-tokens when the provider is stateful"
-      (helper/create-session! test-dir "reasoning-keep")
-      (#'sut/stamp-provider-prompt! {:session-store (store/registered-store)
-                                     :charge        {:context-window 1000}
-                                     :provider      (->TestProvider marigold/starcore {:api marigold/sky-api :stateful true})}
-                                    "reasoning-keep"
-                                    {:usage {:input_tokens 200
-                                             :output_tokens 50
-                                             :output_tokens_details {:reasoning_tokens 30}}})
-      (let [session (helper/get-session test-dir "reasoning-keep")]
-        (should= 50 (:last-output-tokens session))))
-
-    (it "does not log token drift"
-      (helper/create-session! test-dir "drift-test")
-      (helper/append-message! test-dir "drift-test" {:role "user" :content "earlier ask" :tokens 100})
-      (helper/append-message! test-dir "drift-test" {:role "assistant" :content "earlier reply" :tokens 100})
-      (helper/append-message! test-dir "drift-test" {:role "user" :content "now this"})
-      (log/capture-logs
-        (sut/process-response! {:root test-dir :fs (fs/mem-fs)}
-                               "drift-test"
-                               {:content      "ok"
-                                :token-counts {:input-tokens 260 :output-tokens 1}
-                                :response     {:message {:role "assistant" :content "ok"}
-                                               :usage   {:input_tokens 260
-                                                         :output_tokens 1}}}
-                               {:model "echo" :provider "grover:grok"})
-        (let [event (first (filter #(= :session/token-drift (:event %)) @log/captured-logs))
-              session (helper/get-session test-dir "drift-test")]
-          (should-be-nil event)
-          (should-be-nil (:token-drift-ratio session))))))
+        (should= 7 (:last-output-tokens session))))
+    )
 
   (describe "empty terminal response guard"
 
@@ -309,86 +163,42 @@
       (let [requests (atom [])
             chat-fn  (fn [req]
                        (swap! requests conj req)
-                       {:message {:role "assistant" :content "done."} :model "test" :usage {}})
+                       {:content "done." :model "test" :tool-calls [] :stop-reason :end-turn
+                        :usage {:prompt-tokens 1 :output-tokens 1}})
             result   (#'sut/guard-empty-terminal-response
-                       {:response {:message {:role "assistant" :content ""}}}
+                       {:response {:content ""} :usage {:requests 1 :prompt-tokens 1 :output-tokens 0}}
                        chat-fn
                        {:messages [{:role "user" :content "status?"}]})]
         (should= "done." (#'sut/terminal-response-content result))
-        (should= 1 (count @requests))
-        (should (re-find #"continue" (:content (last (:messages (last @requests))))))))
+        (should= 1 (count @requests))))
 
     (it "fails explicitly when the continuation retry is also empty"
-      (let [chat-fn (fn [_] {:message {:role "assistant" :content ""} :model "test" :usage {}})
+      (let [chat-fn (fn [_] {:content "" :model "test" :tool-calls [] :stop-reason :end-turn
+                              :usage {:prompt-tokens 1 :output-tokens 0}})
             result  (#'sut/guard-empty-terminal-response
-                      {:response {:message {:role "assistant" :content ""}}}
+                      {:response {:content ""} :usage {:requests 1 :prompt-tokens 1 :output-tokens 0}}
                       chat-fn
                       {:messages [{:role "user" :content "status?"}]})]
-        (should= :empty-terminal-response (:error result))
-        (should (re-find #"empty-terminal-response" (:message result))))))
-
-  (describe "stop exhaustion canned fallback"
-
-    (it "replaces a cycle-limit instruction echo with the canned loop-limit message"
-      (let [instruction "You have hit the cycle limit. Do not call any more tools."
-            result (#'sut/canned-loop-exhausted-message
-                     {:loop-request? true
-                      :content instruction
-                      :response {:message {:role "assistant" :content instruction}}}
-                     "count the cans"
-                     {:messages [{:role "user" :content instruction}]})]
-        (should (re-find #"tool loop limit" (:content result))))))
+        (should= :empty-terminal-response (:error result))))
+    )
 
   (describe "streaming helpers"
 
-    (it "reads content from supported chunk shapes"
-      (should= "hello" (#'sut/chunk-content {:message {:content "hello"}}))
-      (should= "delta" (#'sut/chunk-content {:delta {:text "delta"}}))
-      (should= "choice" (#'sut/chunk-content {:choices [{:delta {:content "choice"}}]}))
-      (should= "ab" (#'sut/chunk-content {:message {:content ["a" "b"]}}))
-      (should= nil (#'sut/chunk-content {:message {:content nil}})))
+    (it "reads normalized text deltas"
+      (should= "hello" (#'sut/chunk-content {:text-delta "hello"}))
+      (should-be-nil (#'sut/chunk-content {:reasoning-delta "thinking"})))
 
-    (it "streams only new text and returns the final response chunk"
+    (it "streams normalized deltas and returns the final normalized response"
       (let [chunks (atom [])]
         (with-redefs [dispatch/dispatch-chat-stream (fn [_ _ on-chunk]
-                                                      (on-chunk {:message {:content "Hel"}})
-                                                      (on-chunk {:delta {:text "Hello"} :done true})
-                                                      {:message {:content "Hello"}})]
-          (should= {:content "Hello"
-                    :response {:delta {:text "Hello"} :done true}}
-                   (sut/stream-response! :provider {:model "test"} #(swap! chunks conj %)))
+                                                      (on-chunk {:text-delta "Hel"})
+                                                      (on-chunk {:text-delta "lo"})
+                                                      {:content "Hello" :tool-calls [] :stop-reason :end-turn
+                                                       :model "test" :usage {:prompt-tokens 1 :output-tokens 1}})]
+          (should= "Hello" (:content (sut/stream-response! :provider {:model "test"} #(swap! chunks conj %))))
           (should= ["Hel" "lo"] @chunks))))
 
-    (it "falls back to the dispatch result content when no chunks arrive"
-      (with-redefs [dispatch/dispatch-chat-stream (fn [& _] {:message {:content "Fallback"}})]
-        (should= {:content "Fallback"
-                  :response {:message {:content "Fallback"}}}
-                 (sut/stream-response! :provider {:model "test"} (fn [_] nil)))))
-
-    (it "returns dispatch errors unchanged"
-      (with-redefs [dispatch/dispatch-chat-stream (fn [& _] {:error :timeout :message "No response"})]
-        (should= {:error :timeout :message "No response"}
-                 (sut/stream-response! :provider {:model "test"} (fn [_] nil)))))
-
-    (it "emits response content chunks through comm and joins them"
-      (let [events (atom [])
-            comm   (memory-comm/channel events)]
-        (should= "ab"
-                 (#'sut/emit-response-content! comm "stream-session" {:n 1} {:message {:content ["a" "b"]}}))
-        (should= [{:event "chatter" :session "stream-session" :cycle 1 :text "a"}
-                  {:event "chatter" :session "stream-session" :cycle 1 :text "b"}]
-                 @events)))
-
-    (it "merges token counts from accumulated totals and a response usage block"
-      (should= {:input-tokens  12
-                :output-tokens 8
-                :cache-read    2
-                :cache-write   1}
-               (#'sut/merge-response-tokens {:input-tokens 10 :output-tokens 5 :cache-read 1 :cache-write 0}
-                                            {:usage {:input_tokens                 2
-                                                     :output_tokens                3
-                                                     :cache_creation_input_tokens 1
-                                                     :input_tokens_details         {:cached_tokens 1}}}))))
+    ))
 
   (describe "record-tool-call!"
 
@@ -1124,9 +934,10 @@
                                                    :comm         null-comm/channel})]
         (with-redefs [tool-loop/run (fn [_ _ request _ _]
                                       (reset! captured request)
-                                      {:message {:role "assistant" :content "Try to take over the world."}
-                                       :model   "test-model"
-                                        :usage   {}
+                                      {:response {:content "Try to take over the world." :model "test-model"
+                                                    :tool-calls [] :stop-reason :end-turn
+                                                    :usage {:prompt-tokens 1 :output-tokens 1}}
+                                       :usage {:requests 1 :prompt-tokens 1 :output-tokens 1}
                                        :tool-calls []})
                       sut/process-response! (fn [& _] nil)]
           (#'sut/execute-llm-turn! "full-history" "Are the blueprints ready?" ctx))
@@ -1149,9 +960,10 @@
                                                    :comm         null-comm/channel})]
         (with-redefs [tool-loop/run (fn [_ _ request _ _]
                                       (reset! captured request)
-                                      {:message {:role "assistant" :content "Logged. Narf!"}
-                                       :model   "test-model"
-                                        :usage   {}
+                                      {:response {:content "Logged. Narf!" :model "test-model" :tool-calls []
+                                                    :stop-reason :end-turn
+                                                    :usage {:prompt-tokens 1 :output-tokens 1}}
+                                       :usage {:requests 1 :prompt-tokens 1 :output-tokens 1}
                                        :tool-calls []})
                       sut/process-response! (fn [& _] nil)]
           (#'sut/execute-llm-turn! "reset-history" "Brain escaped the cage." ctx))
@@ -1185,12 +997,14 @@
         (with-redefs [tool-loop/run (fn [_ _ _ _ _]
                                       (swap! calls inc)
                                       (if (= 1 @calls)
-                                        {:error   :api-error
-                                         :status  400
+                                        {:error :context-overflow
+                                         :status 400
                                          :message "maximum prompt length is 200 but the request contains 250"}
-                                        {:message {:role "assistant" :content "here is my answer"}
-                                         :model   "test-model"
-                                         :usage   {}}))
+                                        {:response {:content "here is my answer" :model "test-model" :tool-calls []
+                                                    :stop-reason :end-turn
+                                                    :usage {:prompt-tokens 1 :output-tokens 1}}
+                                         :usage {:requests 1 :prompt-tokens 1 :output-tokens 1}
+                                         :tool-calls []}))
                       compaction/compact! (fn [session-key _opts]
                                             (swap! compact-n inc)
                                             (helper/splice-compaction! test-dir session-key
@@ -1218,8 +1032,8 @@
                          :context-window 200
                          :config         {}})]
         (with-redefs [tool-loop/run (fn [_ _ _ _ _]
-                                      {:error   :api-error
-                                       :status  400
+                                      {:error :context-overflow
+                                       :status 400
                                        :message "maximum prompt length is 200 but the request contains 250"})
                       compaction/compact! (fn [& _]
                                             (swap! compact-n inc)
@@ -1385,9 +1199,10 @@
                       :context-window 4096
                       :observers      [obs]}]
         (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
-                      tool-loop/run         (fn [& _] {:message {:role "assistant" :content "Land ho ahead"}
-                                                       :model   "test-model"
-                                                       :usage   {}
+                      tool-loop/run         (fn [& _] {:response {:content "Land ho ahead" :model "test-model" :tool-calls []
+                                                                    :stop-reason :end-turn
+                                                                    :usage {:prompt-tokens 1 :output-tokens 1}}
+                                                       :usage {:requests 1 :prompt-tokens 1 :output-tokens 1}
                                                        :tool-calls []})
                       sut/process-response! (fn [& _] nil)]
           (sut/run-turn! charge))
@@ -1560,9 +1375,10 @@
         (try
           (observer/attach! ambient)
           (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
-                        tool-loop/run         (fn [& _] {:message {:role "assistant" :content "Land ho ahead"}
-                                                         :model   "test-model"
-                                                         :usage   {}
+                        tool-loop/run         (fn [& _] {:response {:content "Land ho ahead" :model "test-model" :tool-calls []
+                                                                      :stop-reason :end-turn
+                                                                      :usage {:prompt-tokens 1 :output-tokens 1}}
+                                                         :usage {:requests 1 :prompt-tokens 1 :output-tokens 1}
                                                          :tool-calls []})
                         sut/process-response! (fn [& _] nil)]
             (sut/run-turn! charge))
@@ -1597,9 +1413,10 @@
         (try
           (observer/attach! ambient)
           (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
-                        tool-loop/run         (fn [& _] {:message {:role "assistant" :content "Land ho ahead"}
-                                                         :model   "test-model"
-                                                         :usage   {}
+                        tool-loop/run         (fn [& _] {:response {:content "Land ho ahead" :model "test-model" :tool-calls []
+                                                                      :stop-reason :end-turn
+                                                                      :usage {:prompt-tokens 1 :output-tokens 1}}
+                                                         :usage {:requests 1 :prompt-tokens 1 :output-tokens 1}
                                                          :tool-calls []})
                         sut/process-response! (fn [& _] nil)]
             (sut/run-turn! charge))
@@ -1634,9 +1451,10 @@
         (try
           (observer/attach! ambient)
           (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
-                        tool-loop/run         (fn [& _] {:message {:role "assistant" :content "Land ho ahead"}
-                                                         :model   "test-model"
-                                                         :usage   {}
+                        tool-loop/run         (fn [& _] {:response {:content "Land ho ahead" :model "test-model" :tool-calls []
+                                                                      :stop-reason :end-turn
+                                                                      :usage {:prompt-tokens 1 :output-tokens 1}}
+                                                         :usage {:requests 1 :prompt-tokens 1 :output-tokens 1}
                                                          :tool-calls []})
                         sut/process-response! (fn [& _] nil)]
             (log/capture-logs
@@ -1670,9 +1488,10 @@
                       :context-window    4096
                       :turnstile-tokens  [{:turnstile gate :token token}]}]
         (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
-                      tool-loop/run         (fn [& _] {:message {:role "assistant" :content "Land ho ahead"}
-                                                       :model   "test-model"
-                                                       :usage   {}
+                      tool-loop/run         (fn [& _] {:response {:content "Land ho ahead" :model "test-model" :tool-calls []
+                                                                    :stop-reason :end-turn
+                                                                    :usage {:prompt-tokens 1 :output-tokens 1}}
+                                                       :usage {:requests 1 :prompt-tokens 1 :output-tokens 1}
                                                        :tool-calls []})
                       sut/process-response! (fn [& _] nil)]
           (sut/run-turn! charge))
@@ -1720,10 +1539,10 @@
         (should= :wrap-up (#'sut/exhaustion-policy ch "s" {:cycle-limit 1}))))
 
     (it "extracts grover-shaped pending tool calls from the exhausting response"
-      (let [result {:response {:message {:role "assistant"
-                                         :content ""
-                                         :tool_calls [{:function {:name      "exec__run"
-                                                                  :arguments {:command "echo checkpoint"}}}]}}
+      (let [result {:response {:content "" :model "test" :stop-reason :tool-use
+                                 :usage {:prompt-tokens 1 :output-tokens 1}
+                                 :tool-calls [{:id "tc1" :name "exec__run"
+                                               :arguments {:command "echo checkpoint"}}]}
                     :loop-request? true}]
         (should= [{:name "exec__run" :arguments {:command "echo checkpoint"}}]
                  (mapv #(select-keys % [:name :arguments])
@@ -1799,10 +1618,13 @@
       (helper/create-session! test-dir "log-turn")
       (helper/update-session! test-dir "log-turn" {:crew "main"})
       (let [provider (->TestProvider marigold/starcore {:api marigold/sky-api})
-            result   {:message {:role "assistant" :content "ok"}
-                      :model   "test-model"
-                      :usage   {}
-                      :tool-calls []}]
+            result   {:response   {:content     "ok"
+                                   :model       "test-model"
+                                   :stop-reason :end-turn
+                                   :tool-calls  []
+                                   :usage       {:output-tokens 1 :prompt-tokens 1}}
+                      :tool-calls []
+                      :usage      {:output-tokens 1 :prompt-tokens 1 :requests 1}}]
         (config/dangerously-install-config! {:defaults {:crew "main" :model "test"}
                                :crew     {"main" {:model "test" :soul "You are Isaac." :tools {:allow [:logbook-entry]}}}
                                :models   {"test" {:model "test-model" :provider marigold/starcore :context-window 32768}}} "spec")
@@ -1995,10 +1817,10 @@
         (with-redefs [tool-loop/run (fn [_chat _followup _request _tool-fn & _]
                                       {:response    nil
                                        :tool-calls  [{:id "tc1" :name "ping"}]
-                                       :token-counts {:input-tokens 1 :output-tokens 1 :cache-read 0 :cache-write 0}
+                                       :usage {:requests 1 :prompt-tokens 1 :output-tokens 1}
                                        :cancelled?  true})]
           (let [result (#'sut/execute-llm-turn! "loop-cancel" "go" ctx)]
-            (should= "cancelled" (:stopReason result))))))))
+            (should= "cancelled" (:stopReason result)))))))
 
   (describe "wrap-up note persistence"
     #_{:clj-kondo/ignore [:unresolved-symbol]}

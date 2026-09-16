@@ -19,7 +19,7 @@
       (let [resp (sut/chat {:model    "echo"
                             :messages [{:role "user" :content "Hello Grover"}]}
                            "grover" {})]
-        (should= "Hello Grover" (get-in resp [:message :content]))))
+        (should= "Hello Grover" (:content resp))))
 
     (it "records every chat request in order and forgets them on reset"
       (sut/chat {:model "echo" :messages [{:role "user" :content "first"}]} "grover" {})
@@ -37,13 +37,13 @@
                                        {:role "assistant" :content "Reply"}
                                        {:role "user" :content "Second"}]}
                            "grover" {})]
-        (should= "Second" (get-in resp [:message :content]))))
+        (should= "Second" (:content resp))))
 
     (it "returns '...' when no user messages"
       (let [resp (sut/chat {:model    "echo"
                             :messages [{:role "system" :content "You are helpful"}]}
                            "grover" {})]
-        (should= "..." (get-in resp [:message :content]))))
+        (should= "..." (:content resp))))
 
     (it "returns the model from the request"
       (let [resp (sut/chat {:model    "test-model"
@@ -76,15 +76,14 @@
       (let [resp (sut/chat {:model    "echo"
                             :messages [{:role "user" :content "Hi"}]}
                            "grover" {})]
-        (should= 25 (:prompt_eval_count resp))
-        (should= 12 (:eval_count resp))))
+        (should= 25 (get-in resp [:usage :prompt-tokens]))
+        (should= 12 (get-in resp [:usage :output-tokens]))))
 
     (it "marks response as done"
       (let [resp (sut/chat {:model    "echo"
                             :messages [{:role "user" :content "Hi"}]}
                            "grover" {})]
-        (should (:done resp))
-        (should= "stop" (:done_reason resp)))))
+        (should= :end-turn (:stop-reason resp)))))
 
   ;; endregion ^^^^^ Echo Mode ^^^^^
 
@@ -97,12 +96,12 @@
       (let [resp (sut/chat {:model    "echo"
                             :messages [{:role "user" :content "Ignored"}]}
                            "grover" {})]
-        (should= "Scripted answer" (get-in resp [:message :content]))))
+        (should= "Scripted answer" (:content resp))))
 
     (it "consumes queue in order"
       (sut/enqueue! [{:content "First"} {:content "Second"}])
-      (should= "First" (get-in (sut/chat {:model "echo" :messages []} "grover" {}) [:message :content]))
-      (should= "Second" (get-in (sut/chat {:model "echo" :messages []} "grover" {}) [:message :content])))
+      (should= "First" (:content (sut/chat {:model "echo" :messages []} "grover" {})))
+      (should= "Second" (:content (sut/chat {:model "echo" :messages []} "grover" {}))))
 
     (it "falls back to echo when queue is empty"
       (sut/enqueue! [{:content "Only one"}])
@@ -110,7 +109,7 @@
       (let [resp (sut/chat {:model    "echo"
                             :messages [{:role "user" :content "Echo me"}]}
                            "grover" {})]
-        (should= "Echo me" (get-in resp [:message :content]))))
+        (should= "Echo me" (:content resp))))
 
     (it "throws exception for exception type"
       (sut/enqueue! [{:type "exception" :content "something broke"}])
@@ -120,18 +119,18 @@
     (it "returns scripted tool call"
       (sut/enqueue! [{:tool_call "read_file" :arguments {:path "README"}}])
       (let [resp (sut/chat {:model "echo" :messages [{:role "user" :content "Read it"}]} "grover" {})]
-        (should= "read_file" (get-in resp [:message :tool_calls 0 :function :name]))
-        (should= {:path "README"} (get-in resp [:message :tool_calls 0 :function :arguments]))
-        (should= "" (get-in resp [:message :content]))))
+        (should= "read_file" (get-in resp [:tool-calls 0 :name]))
+        (should= {:path "README"} (get-in resp [:tool-calls 0 :arguments]))
+        (should= "" (:content resp))))
 
     (it "returns multiple scripted tool calls in one response"
       (sut/enqueue! [{:type "tool_calls"
                       :tool_calls [{:function {:name "read" :arguments {:filePath "a"}}}
                                    {:function {:name "read" :arguments {:filePath "b"}}}]}])
       (let [resp (sut/chat {:model "echo" :messages [{:role "user" :content "go"}]} "grover" {})]
-        (should= 2 (count (get-in resp [:message :tool_calls])))
-        (should= "read" (get-in resp [:message :tool_calls 0 :function :name]))
-        (should= "read" (get-in resp [:message :tool_calls 1 :function :name]))))
+        (should= 2 (count (:tool-calls resp)))
+        (should= "read" (get-in resp [:tool-calls 0 :name]))
+        (should= "read" (get-in resp [:tool-calls 1 :name]))))
 
     (it "waits for release when a scripted response is marked wait"
       (sut/enqueue! [{:type "text" :content "Scripted answer" :wait true}])
@@ -140,7 +139,7 @@
                                        {:session-key "wait-session"}))]
         (helper/await-condition #(sut/waiting? "wait-session"))
         (sut/release-wait! "wait-session")
-        (should= "Scripted answer" (get-in @response [:message :content]))))
+        (should= "Scripted answer" (:content @response))))
 
     (it "reset releases every waiting response before forgetting its gates"
       (sut/enqueue! [{:type "text" :content "Old answer" :wait true}
@@ -155,7 +154,7 @@
                                       (sut/waiting? "older-session")))
         (sut/reset-queue!)
         (should= #{"Old answer" "Older answer"}
-                 (set (map #(get-in (deref % 1000 ::timeout) [:message :content])
+                 (set (map #(:content (deref % 1000 ::timeout))
                            [first-response second-response])))
         (should-not (sut/waiting? "old-session"))
         (should-not (sut/waiting? "older-session")))))
@@ -173,7 +172,7 @@
                      (fn [c] (swap! chunks conj c))
                      "grover" {})]
         (should (> (count @chunks) 1))
-        (should= "Hello world" (get-in resp [:message :content]))))
+        (should= "Hello world" (:content resp))))
 
     (it "final chunk has done true"
       (let [chunks (atom [])
@@ -181,7 +180,7 @@
                      {:model "echo" :messages [{:role "user" :content "Hi"}]}
                      (fn [c] (swap! chunks conj c))
                      "grover" {})]
-        (should (:done (last @chunks)))))
+        (should-not (contains? (last @chunks) :done))))
 
     (it "streams scripted chunk vectors and returns concatenated final content"
       (sut/enqueue! [{:content ["Once " "upon " "a " "time..."]}])
@@ -190,10 +189,10 @@
                          {:model "echo" :messages [{:role "user" :content "Ignored"}]}
                          (fn [c] (swap! chunks conj c))
                          "grover" {})
-            chunk-texts (mapv #(get-in % [:message :content]) (butlast @chunks))]
+            chunk-texts (mapv :text-delta @chunks)]
         (should= ["Once " "upon " "a " "time..."] chunk-texts)
-        (should= "Once upon a time..." (get-in resp [:message :content]))
-        (should (:done (last @chunks)))))
+        (should= "Once upon a time..." (:content resp))
+        (should-not (contains? (last @chunks) :done))))
 
     (it "strips tool calls from streamed final chunk when disabled"
       (sut/enqueue! [{:tool_call "exec" :arguments {:command "echo hi"}}])
@@ -223,7 +222,7 @@
                      (fn [c] (swap! chunks conj c))
                      "grover" {})]
         (should= [] @chunks)
-        (should= :api-error (:error resp))
+        (should= :context-overflow (:error resp))
         (should= 400 (:status resp))
         (should= "maximum prompt length is 200 but the request contains 250" (:message resp))))
 
@@ -247,14 +246,14 @@
 
     (it "appends assistant tool_calls and role=tool replies"
       (let [response     {:message {:content    ""
-                                    :tool_calls [{:function {:name "read" :arguments {}}}]}}
+                                    :tool_calls [{:id "tc1" :type "function" :function {:name "read" :arguments {}}}]}}
             request      {:messages [{:role "user" :content "Go"}]}
             tool-calls   [{:id "tc1" :name "read" :arguments {}}]
             tool-results ["file contents"]
             messages     (sut/followup-messages request response tool-calls tool-results)]
         (should= 3 (count messages))
         (should= "assistant" (:role (nth messages 1)))
-        (should= [{:function {:name "read" :arguments {}}}]
+        (should= [{:id "tc1" :type "function" :function {:name "read" :arguments {}}}]
                  (:tool_calls (nth messages 1)))
         (should= {:role "tool" :content "file contents"} (nth messages 2)))))
 

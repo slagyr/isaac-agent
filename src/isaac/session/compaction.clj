@@ -379,8 +379,8 @@
       (get-in response [:response :error])))
 
 (defn- response-content [response]
-  (or (get-in response [:response :message :content])
-      (get-in response [:message :content])))
+  (or (get-in response [:response :content])
+      (:content response)))
 
 (defn- chunk-budget [context-window]
   ;; Chunk against the full compaction request size, not raw message token sums.

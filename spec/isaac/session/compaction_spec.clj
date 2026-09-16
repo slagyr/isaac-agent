@@ -214,7 +214,7 @@
                (#'sut/tool-call-content {:message {:content [{:type "toolCall" :id "tc-2" :name "fs__grep" :arguments {:pattern "lettuce"}}]}})))
 
     (it "returns nil for non-tool-call content"
-      (should-be-nil (#'sut/tool-call-content {:message {:content "plain text"}}))))
+      (should-be-nil (#'sut/tool-call-content {:content "plain text"}))))
 
   (describe "compact!"
 
@@ -233,7 +233,7 @@
             chat-called (atom nil)
             mock-chat  (fn [request _tool-fn]
                          (reset! chat-called request)
-                         {:message {:content "Summary of conversation"}})
+                         {:content "Summary of conversation"})
             result   (sut/compact! key-str
                        {:model          "test-model"
                         :soul           "You are helpful."
@@ -258,7 +258,7 @@
             chat-called (atom nil)
             mock-chat   (fn [request _tool-fn]
                           (reset! chat-called request)
-                          {:message {:content "Summary"}})]
+                          {:content "Summary"})]
         (with-redefs [session-ctx/resolve-behavior
                       (fn [_key _opts]
                         {:compaction {:async? false :strategy :rubberband :head 0.3 :threshold 0.8
@@ -279,7 +279,7 @@
             chat-called (atom nil)
             mock-chat   (fn [request _tool-fn]
                           (reset! chat-called request)
-                          {:message {:content "Summary"}})]
+                          {:content "Summary"})]
         (with-redefs [session-ctx/resolve-behavior
                       (fn [_key _opts]
                         {:compaction {:async? false :strategy :rubberband :head 0.3 :threshold 0.8
@@ -305,7 +305,7 @@
             chat-called (atom nil)
             mock-chat   (fn [request _tool-fn]
                           (reset! chat-called request)
-                          {:message {:content "Summary"}})]
+                          {:content "Summary"})]
         (sut/compact! key-str
                       {:model          "test-model"
                        :soul           "You keep the accounts."
@@ -327,7 +327,7 @@
             chat-called (atom nil)
             mock-chat   (fn [request _tool-fn]
                           (reset! chat-called request)
-                          {:message {:content "Summary"}})]
+                          {:content "Summary"})]
         (store/open-session! isolated key-str {:crew "purser"})
         (store/append-message! isolated key-str {:role "user" :content "Hello"})
         (store/append-message! isolated key-str {:role "assistant" :content "Hi"})
@@ -349,7 +349,7 @@
             _msg2    (storage/append-message! test-root key-str
                        {:role "assistant" :content "Hi there!"})
             mock-chat (fn [_request _tool-fn]
-                        {:response {:message {:content "Summary of conversation"}}
+                        {:response {:content "Summary of conversation"}
                          :tool-calls []
                          :token-counts {:input-tokens 1 :output-tokens 1}})
             result   (sut/compact! key-str
@@ -366,7 +366,7 @@
             _msg1    (storage/append-message! test-root key-str {:role "user" :content "Hello"})
             _msg2    (storage/append-message! test-root key-str {:role "assistant" :content "Hi"})
             mock-chat (fn [_request _tool-fn]
-                        {:message {:content ""}})
+                        {:content ""})
             result   (sut/compact! key-str
                        {:model          "test-model"
                         :soul           "You are helpful."
@@ -383,7 +383,7 @@
             chat-called (atom nil)
             mock-chat   (fn [request _tool-fn]
                           (reset! chat-called request)
-                          {:message {:content "Summary of conversation"}})]
+                          {:content "Summary of conversation"})]
         (sut/compact! key-str
                       {:model          "test-model"
                        :soul           "You are helpful."
@@ -402,7 +402,7 @@
             chat-called (atom nil)
             mock-chat   (fn [request _tool-fn]
                           (reset! chat-called request)
-                          {:message {:content "Discussion about tea preferences."}})]
+                          {:content "Discussion about tea preferences."})]
         (sut/compact! key-str
                       {:model          "test-model"
                        :soul           "You are helpful."
@@ -421,7 +421,7 @@
             _msg1     (storage/append-message! test-root key-str {:role "user" :content "Old question"})
             _msg2     (storage/append-message! test-root key-str {:role "assistant" :content "Old answer"})
             _msg3     (storage/append-message! test-root key-str {:role "user" :content "Fix the widget, then run the specs."})
-            mock-chat (fn [_request _tool-fn] {:message {:content "I began fixing the widget."}})
+            mock-chat (fn [_request _tool-fn] {:content "I began fixing the widget."})
             result    (sut/compact! key-str {:model "test-model" :soul "You are helpful." :context-window 10000 :chat-fn mock-chat})
             stored    (->> (storage/get-transcript test-root key-str) (filter #(= "compaction" (:type %))) last)]
         (should= "Fix the widget, then run the specs." (:turnRequest result))
@@ -448,7 +448,7 @@
             captured  (atom nil)
             mock-chat (fn [request _tool-fn]
                         (reset! captured request)
-                        {:message {:content "Summary"}})]
+                        {:content "Summary"})]
         (sut/compact! key-str
                       {:model          "test-model"
                        :soul           "You are helpful."
@@ -466,7 +466,7 @@
             tool-called   (atom nil)
             mock-chat     (fn [_request tool-fn]
                             (reset! tool-called (tool-fn "memory__write" {"content" "note"}))
-                            {:message {:content "Summary"}})]
+                            {:content "Summary"})]
         (with-redefs [tool-registry/execute (fn [name args allowed-tools]
                                               (should= "memory__write" name)
                                               (should= explicit-dir (get args "state_dir"))
@@ -490,7 +490,7 @@
             captured  (atom nil)
             mock-chat (fn [request _tool-fn]
                         (reset! captured request)
-                        {:message {:content "Summary"}})]
+                        {:content "Summary"})]
         (sut/compact! key-str
                       {:model          "test-model"
                        :api            (llm-provider/make-provider "chatgpt" {:api "responses"})
@@ -520,7 +520,7 @@
             captured  (atom nil)
             mock-chat (fn [request _tool-fn]
                         (reset! captured request)
-                        {:message {:content "Summary"}})]
+                        {:content "Summary"})]
         (sut/compact! key-str
                       {:model          "test-model"
                        :api            (llm-provider/make-provider "chatgpt" {:api "responses"})
@@ -547,7 +547,7 @@
             captured  (atom nil)
             mock-chat (fn [request _tool-fn]
                         (reset! captured request)
-                        {:message {:content "Summary"}})]
+                        {:content "Summary"})]
         (sut/compact! key-str
                       {:model          "test-model"
                        :api            (llm-provider/make-provider "chatgpt" {:api "responses"})
@@ -577,7 +577,7 @@
             captured    (atom nil)
             mock-chat   (fn [request _tool-fn]
                           (reset! captured request)
-                          {:message {:content "Summary"}})]
+                          {:content "Summary"})]
         (sut/compact! key-str
                       {:model          "test-model"
                        :api            (llm-provider/make-provider "chatgpt" {:api "responses"})
@@ -595,7 +595,7 @@
             _msg     (storage/append-message! test-root key-str
                        {:role "user" :content "Some message content"})
             mock-chat (fn [_request _tool-fn]
-                        {:message {:content "Summary"}})
+                        {:content "Summary"})
             result    (sut/compact! key-str
                           {:model          "test-model"
                            :soul           "You are helpful."
@@ -613,11 +613,11 @@
             mock-chat  (fn [request _tool-fn]
                          (let [body (-> request :messages second :content)]
                            (cond
-                             (re-find #"block A" body) {:message {:content "A1"}}
-                             (re-find #"reply A" body) {:message {:content "A2"}}
-                             (re-find #"block B" body) {:message {:content "B1"}}
-                             (re-find #"reply B" body) {:message {:content "B2"}}
-                             :else                     {:message {:content "AB"}})))]
+                             (re-find #"block A" body) {:content "A1"}
+                             (re-find #"reply A" body) {:content "A2"}
+                             (re-find #"block B" body) {:content "B1"}
+                             (re-find #"reply B" body) {:content "B2"}
+                             :else                     {:content "AB"})))]
         (log/capture-logs
           (with-redefs [api/estimate-tokens (fn [prompt]
                                                  (let [body (-> prompt :messages second :content)]
@@ -659,7 +659,7 @@
              captured    (atom nil)
              mock-chat   (fn [request _tool-fn]
                            (reset! captured request)
-                           {:message {:content "Summary of first exchange"}})
+                           {:content "Summary of first exchange"})
              result      (sut/compact! key-str
                                        {:model          "test-model"
                                         :soul           "You are helpful."
@@ -687,7 +687,7 @@
             first-kept-msg (storage/append-message! test-root key-str {:role "assistant" :content "I found 3 errors." :tokens 40})
             kept-msg     (storage/append-message! test-root key-str {:role "user" :content "What next?" :tokens 50})
             mock-chat    (fn [_request _tool-fn]
-                           {:message {:content "Summary of earlier work"}})
+                           {:content "Summary of earlier work"})
             _result      (sut/compact! key-str
                                        {:model          "test-model"
                                         :soul           "You are helpful."
@@ -723,7 +723,7 @@
             captured     (atom nil)
             mock-chat    (fn [request _tool-fn]
                            (reset! captured request)
-                           {:message {:content "Summary from second compact"}})]
+                           {:content "Summary from second compact"})]
         (sut/compact! key-str
                       {:model          "test-model"
                        :soul           "You are helpful."
@@ -762,7 +762,7 @@
             _msg2     (storage/append-message! test-root key-str {:role "assistant" :content "Sure"})
             _tokens   (storage/update-tokens! test-root key-str {:input-tokens 120 :output-tokens 30})
             mock-chat (fn [_request _tool-fn]
-                        {:message {:content "Summary"}})]
+                        {:content "Summary"})]
         (sut/compact! key-str
                       {:model          "test-model"
                        :soul           "You are helpful."
@@ -790,16 +790,16 @@
                             (let [body (-> request :messages second :content)]
                               (cond
                                 (and (re-find #"block A" body) (re-find #"reply A" body))
-                                {:message {:content "A"}}
+                                {:content "A"}
 
                                 (and (re-find #"block B" body) (re-find #"reply B" body))
-                                {:message {:content "B"}}
+                                {:content "B"}
 
                                 (re-find #"latest question" body)
-                                {:message {:content "Q"}}
+                                {:content "Q"}
 
                                 :else
-                                {:message {:content "ABQ"}}))))]
+                                {:content "ABQ"}))))]
         (log/capture-logs
           (with-redefs [api/estimate-tokens
                         (fn [req]
@@ -834,19 +834,19 @@
                             (let [body (-> request :messages second :content)]
                               (cond
                                 (re-find #"block A" body)
-                                {:message {:content "A1"}}
+                                {:content "A1"}
 
                                 (re-find #"reply A" body)
-                                {:message {:content "A2"}}
+                                {:content "A2"}
 
                                 (re-find #"block B" body)
-                                {:message {:content "B1"}}
+                                {:content "B1"}
 
                                 (re-find #"reply B" body)
-                                {:message {:content "B2"}}
+                                {:content "B2"}
 
                                 :else
-                                {:message {:content "AB"}}))))]
+                                {:content "AB"}))))]
         (log/capture-logs
           (with-redefs [api/estimate-tokens (fn [prompt]
                                                  (let [body (-> prompt :messages second :content)]
@@ -881,13 +881,13 @@
                          (let [body (-> request :messages second :content)]
                            (cond
                              (and (re-find #"block A" body) (re-find #"reply A" body) (not (re-find #"block B" body)))
-                             {:message {:content "summary of A"}}
+                             {:content "summary of A"}
 
                              (and (re-find #"block B" body) (re-find #"reply B" body))
-                             {:message {:content "summary of B"}}
+                             {:content "summary of B"}
 
                              :else
-                             {:message {:content "summary of summaries"}})))]
+                             {:content "summary of summaries"})))]
         (log/capture-logs
           (with-redefs [api/estimate-tokens (fn [prompt]
                                                  (let [messages (:messages prompt)
@@ -922,7 +922,7 @@
             _msg2    (storage/append-message! test-root key-str
                        {:role "assistant" :content "We discussed sinks and the tool loop."})
             mock-chat (fn [_request _tool-fn]
-                        {:message {:content "Summary so far"}})
+                        {:content "Summary so far"})
             result    (sut/compact! key-str
                                     {:model          "test-model"
                                      :soul           "You are helpful."
@@ -939,7 +939,7 @@
             _msg2     (storage/append-message! test-root key-str
                         {:role "assistant" :content "It summarizes old messages"})
             mock-chat (fn [_request _tool-fn]
-                        {:message {:content "Summary of prior chat"}})
+                        {:content "Summary of prior chat"})
             result    (sut/compact! key-str
                         {:model          "test-model"
                          :soul           "You are helpful."
@@ -962,7 +962,7 @@
             _msg4     (storage/append-message! test-root key-str
                         {:role "assistant" :content huge})
             mock-chat (fn [_request _tool-fn]
-                        {:message {:content "Summary from first compact"}})
+                        {:content "Summary from first compact"})
             result    (log/capture-logs
                         (sut/compact! key-str
                           {:model          "test-model"
@@ -987,7 +987,7 @@
             calls     (atom [])
             mock-chat (fn [request _tool-fn]
                         (swap! calls conj request)
-                        {:message {:content (str "Summary " (count @calls))}})]
+                        {:content (str "Summary " (count @calls))})]
         (with-redefs [session-ctx/resolve-behavior
                       (fn [_key _opts]
                         {:compaction {:async? false :strategy :rubberband :head 0.3 :threshold 0.8
@@ -1011,7 +1011,7 @@
             calls     (atom [])
             mock-chat (fn [request _tool-fn]
                         (swap! calls conj request)
-                        {:message {:content "Summary"}})]
+                        {:content "Summary"})]
         (with-redefs [session-ctx/resolve-behavior
                       (fn [_key _opts]
                         {:compaction {:async? false :strategy :rubberband :head 0.3 :threshold 0.8
@@ -1037,7 +1037,7 @@
                         (let [n (count (swap! calls conj request))]
                           (if (= 1 n)
                             {:error :stream-stalled :message "closed"}
-                            {:message {:content (str "Summary " n)}})))]
+                            {:content (str "Summary " n)})))]
         (log/capture-logs
           (let [result (sut/compact! key-str
                                      {:model          "test-model"

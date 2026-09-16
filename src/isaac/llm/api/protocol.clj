@@ -13,8 +13,7 @@
 (defprotocol Api
   (chat
     [this request]
-    "One-shot LLM call. Returns a normalized response map with
-     :message, :model, :usage, optional :tool-calls.")
+    "One-shot LLM call. Returns a provider-neutral response or error map.")
 
   (chat-stream
     [this request on-chunk]
@@ -43,100 +42,131 @@
     [this opts]
     "Build a prompt request map for this api from turn opts.
      opts keys: :boot-files :model :soul :transcript :tools :context-window.
-     Returns a map with :model :messages and optionally :system :max_tokens :tools.")
+     Returns a map with :model :messages and optionally :system :max-tokens :tools.")
 
   (format-tools
     [this tools]
     "Format tool definitions into this api's wire shape. Returns nil for empty/nil input."))
 
-;; --- Response Schema ---
-;;
-;; Every Api's chat and chat-stream returns one of two shapes:
-;;
-;;   Success: a Response map (see below)
-;;   Failure: an Error map ({:error keyword :message? string :status? int})
-;;
-;; Callers (tool-loop, dispatch logging, turn.clj) check `(:error response)`
-;; first to disambiguate. A Response carries the parsed assistant message,
-;; the model that produced it, normalized usage, and (when present) the
-;; tool calls the model wants Isaac to run.
-
-(def tool-call
-  {:name        :tool-call
-   :type        :map
-   :description "Normalized tool call, provider-agnostic. The :raw field
-                 preserves provider-specific wire payload when present
-                 (e.g., Ollama's :function map) for round-tripping."
-   :schema      {:id        {:type :string :description "Stable id; UUID-ish for providers without one"}
-                 :name      {:type :string :description "Tool name to invoke"}
-                 :arguments {:type :ignore :description "Parsed args (map). Coerced to map by the provider."}
-                 :raw       {:type :ignore :description "Optional pass-through of the original wire payload"}}})
+;; --- Provider-neutral response contract ---
 
 (def usage
-  {:name        :usage
-   :type        :map
-   :description "Normalized token accounting"
-   :schema      {:input-tokens  {:type :int :description "Prompt-side token count"}
-                 :output-tokens {:type :int :description "Completion-side token count"}
-                 :cache-read     {:type :int :description "Tokens served from prompt cache (Anthropic)"}
-                 :cache-write    {:type :int :description "Tokens written to prompt cache (Anthropic)"}}})
+  {:name :usage :type :map
+   :description "Token accounting for one request. The adapter owns the arithmetic."
+   :schema {:prompt-tokens      {:type :long :validations [schema/required]}
+            :output-tokens      {:type :long :validations [schema/required]}
+            :reasoning-tokens   {:type :long}
+            :cache-read-tokens  {:type :long}
+            :cache-write-tokens {:type :long}}})
 
-(def assistant-message
-  {:name        :assistant-message
-   :type        :map
-   :description "The assistant's reply, in a wire shape close to OpenAI's.
+(def tool-call
+  {:name :tool-call :type :map
+   :schema {:id              {:type :string :validations [schema/required]}
+            :name            {:type :string :validations [schema/required]}
+            :arguments       {:type :map :validations [schema/required]}
+            :arguments-error {:type :string}}})
 
-                 NOTE on snake_case: :tool_calls is intentionally NOT kebab-cased.
-                 It carries the provider's native wire format (OpenAI's tool_calls
-                 array, Anthropic's tool_use blocks adapted, etc.) so it can be
-                 round-tripped into the next request body unchanged. The outer
-                 Response :tool-calls (kebab-case) is the normalized form for
-                 iteration; this :tool_calls is for wire faithfulness."
-   :schema      {:role       {:type :string :description "Always \"assistant\" for chat returns"}
-                 :content    {:type :ignore :description "String, or empty when the turn is purely tool-using"}
-                 :tool_calls {:type :ignore :description "Optional. Provider-native wire shape (kept for followup-messages)."}}})
+(def stop-reasons #{:end-turn :tool-use :max-tokens :cancelled :refused :other})
+
+(def reasoning
+  {:name :reasoning :type :map
+   :schema {:summary {:type :string :validations [schema/required]}}})
 
 (def response
-   {:name        :api-response
-   :type        :map
-   :description "Successful return shape from Api/chat and Api/chat-stream.
-                 Errors are returned as a separate {:error _ :message? _} map.
+  {:name :api-response :type :map
+   :schema {:content       {:type :string
+                             :validations [{:validate some? :message "is required"}]}
+            :tool-calls    {:type :seq :spec tool-call :validations [schema/required]}
+            :stop-reason   {:type :keyword :validations [schema/required] :validate stop-reasons}
+            :model         {:type :string :validations [schema/required]}
+            :usage         (assoc usage :validations [schema/required])
+            :reasoning     reasoning
+            :response-id   {:type :string}
+            :provider-data {:type :ignore}
+            :_headers      {:type :ignore}}})
 
-                 NOTE on the leading underscore: :_headers follows the Clojure
-                 convention of marking diagnostic / non-canonical fields. It
-                 carries the raw HTTP response headers when present, useful
-                 for rate-limit debugging and incident triage. Production code
-                 should not branch on it; it's there for the human reading logs."
-   :schema      {:message    assistant-message
-                 :model      {:type :string :description "Model id the provider chose to record on this response"}
-                 :tool-calls {:type :seq :spec tool-call
-                              :description "Normalized tool calls, empty/absent when none"}
-                 :usage      usage
-                 :_headers   {:type :ignore :description "Optional raw response headers, for diagnostics only"}}})
+(def error-kinds
+  #{:auth-missing :auth-failed :refresh-failed :connection-refused :timeout :stream-stalled
+    :cancelled :context-overflow :rate-limited :api-error :llm-error :provider-contract
+    :unknown-provider :unknown})
 
-(def error-response
-   {:name        :api-error
-   :type        :map
-   :description "Failure return shape. :error is a keyword (:auth-missing,
-                 :auth-failed, :connection-refused, :llm-error, :unknown,
-                 :timeout, etc.). Callers branch on (:error response)."
-   :schema      {:error   {:type :keyword :description "Error category"}
-                 :message {:type :string  :description "Human-readable detail"}
-                 :status  {:type :int     :description "HTTP status when applicable"}
-                 :body    {:type :ignore  :description "Optional raw error body from the provider"}}})
+(def error
+  {:name :api-error :type :map
+   :schema {:error          {:type :keyword :validations [schema/required] :validate error-kinds}
+            :message        {:type :string :validations [schema/required]}
+            :status         {:type :long}
+            :retry-after-ms {:type :long}
+            :usage          usage
+            :body           {:type :ignore}}})
 
-(defn error?
-  "True when `response` is an Api error rather than a successful Response."
-  [response]
-  (some? (:error response)))
+(def error-response error)
 
-(defn validate-response
-  "Validate an Api response against the response schema. Returns the
-   value unchanged on success, or throws with a structured error. Use in
-   debug or test paths — production code branches on `error?` and reads
-   fields directly without coercion."
-  [value]
-  (schema/conform! response value))
+(def stream-chunk
+  {:name :stream-chunk :type :map
+   :schema {:text-delta {:type :string} :reasoning-delta {:type :string}}})
+
+(def turn-usage
+  {:name :turn-usage :type :map
+   :schema {:requests           {:type :long :validations [schema/required]}
+            :prompt-tokens      {:type :long :validations [schema/required]}
+            :output-tokens      {:type :long :validations [schema/required]}
+            :reasoning-tokens   {:type :long}
+            :cache-read-tokens  {:type :long}
+            :cache-write-tokens {:type :long}}})
+
+(def loop-result
+  {:name :loop-result :type :map
+   :schema {:response      response
+            :tool-calls    {:type :seq :spec tool-call :validations [schema/required]}
+            :usage         turn-usage
+            :cancelled?    {:type :boolean}
+            :loop-request? {:type :boolean}}})
+
+(def unavailable
+  {:name :unavailable :type :map
+   :schema {:unavailable?   {:type :boolean :validations [schema/required]}
+            :retry-after-ms {:type :long :validations [schema/required]}
+            :reason         {:type :keyword :validations [schema/required]}
+            :provider       {:type :string}}})
+
+(defn error? [value]
+  (some? (:error value)))
+
+(defn validate-response [value]
+  (schema/validate response value))
+
+(defn validate-error [value]
+  (schema/validate error value))
+
+(defn error-message [value]
+  (or (:message value)
+      (let [body-error (get-in value [:body :error])]
+        (cond
+          (map? body-error) (or (:message body-error) (pr-str body-error))
+          (string? body-error) body-error
+          (:body value) (pr-str (:body value))))
+      (when-let [kind (:error value)] (name kind))
+      "provider error"))
+
+(defn normalize-error [value]
+  (let [status  (:status value)
+        message (error-message value)
+        lower   (str/lower-case message)
+        kind    (cond
+                  (= 429 status) :rate-limited
+                  (and (contains? #{400 413} status)
+                       (or (str/includes? lower "context")
+                           (str/includes? lower "maximum prompt length")
+                           (str/includes? lower "prompt is too long"))) :context-overflow
+                  :else (:error value))
+        retry   (or (:retry-after-ms value)
+                    (some-> (or (:retry-after value)
+                                (get-in value [:body :retry_after])
+                                (get-in value [:body :retry-after]))
+                            long
+                            (* 1000)))]
+    (cond-> (assoc value :error (or kind :unknown) :message message)
+      retry (assoc :retry-after-ms retry))))
 
 (declare ->api)
 

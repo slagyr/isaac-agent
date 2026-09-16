@@ -36,8 +36,7 @@
           (map? body) (pr-str body)))))
 
 (defn- wall-response? [result]
-  (or (= 429 (:status result))
-      (wall-message? (response-message result))))
+  (= :rate-limited (:error result)))
 
 (defn- auth-response? [result]
   (or (= :auth-failed (:error result))
@@ -56,21 +55,8 @@
              (str/includes? lower "context length exceeded")
              (str/includes? lower "request contains")))))
 
-(defn prompt-too-long?
-  "True when a 400 / :api-error / :llm-error is a context-window overflow,
-   not a broken provider. Shared by dispatch (skip attention) and turn
-   (compact-and-retry)."
-  [result]
-  (boolean
-    (some (fn [err]
-            (and err
-                 (or (= 400 (:status err))
-                     (= :api-error (:error err))
-                     (= :llm-error (:error err)))
-                 (overflow-message? (or (:message err)
-                                        (when (or (:error err) (:status err))
-                                          (response-message err))))))
-          [result (:response result)])))
+(defn prompt-too-long? [result]
+  (= :context-overflow (:error result)))
 
 (defn- retry-after-secs [value]
   (cond
@@ -79,12 +65,7 @@
     :else (some-> (not-empty (str/trim (str value))) parse-long)))
 
 (defn- retry-after-ms [result default-ms]
-  (let [secs (retry-after-secs (or (:retry-after result)
-                                   (get-in result [:body :retry_after])
-                                   (get-in result [:body :retry-after])))]
-    (if (and secs (pos? secs))
-      (* secs 1000)
-      default-ms)))
+  (or (:retry-after-ms result) default-ms))
 
 (defn- classify-wall
   [result cfg provider]
@@ -94,10 +75,11 @@
                 :provider provider
                 :status (:status result)
                 :retry-after-ms retry-ms)
-      {:unavailable? true
-       :retry-after-ms retry-ms
-       :reason       :wall
-       :provider     provider})))
+      {:unavailable?      true
+       :retry-after-ms    retry-ms
+       :reason            :wall
+       :provider          provider
+       :provider-response result})))
 
 (defn- classify-auth
   [result cfg provider]
