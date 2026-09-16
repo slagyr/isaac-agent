@@ -29,3 +29,17 @@ Feature: Cycle timing — every step between a tool batch and the next request i
       | :session/token-estimate  | :before |
       | :session/token-estimate  | :check  |
       | :session/token-estimate  | :after  |
+
+  @wip
+  Scenario: the prompt build reports its own elapsed time (isaac-3uy9)
+    Given the following sessions exist:
+      | name   |
+      | tiller |
+    And the following model responses are queued:
+      | type      | tool_call | arguments              | content | model |
+      | tool_call | exec__run | {"command": "echo hi"} |         | echo  |
+      | text      |           |                        | done    | echo  |
+    When the user sends "run it" on session "tiller"
+    Then the log has entries matching:
+      | event               | build-ms | messages-count |
+      | :turn/request-built | #*       | #*             |
