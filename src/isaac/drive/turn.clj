@@ -1343,6 +1343,7 @@
                             (empty? allowed-tools) :no-allowed-tools
                             (empty? tools) :no-registered-tools
                             :else nil)
+          build-start-ns  (System/nanoTime)
           request         (build-chat-request p {:boot-files      boot-files
                                                  :crew            crew
                                                  :effort          effort
@@ -1356,11 +1357,13 @@
                                                  :soul            soul
                                                  :transcript      transcript
                                                  :tools           tools})
+          build-ms        (elapsed-ms build-start-ns)
           _               (log/debug :turn/request-built
                                      :session session-key
                                      :provider (api/display-name p)
                                      :model (:model request)
                                      :effort (:effort request)
+                                     :build-ms build-ms
                                      :messages-count (count (:messages request))
                                      :allowed-tools-count (count allowed-tools)
                                      :selected-tools-count (count tools)

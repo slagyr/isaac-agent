@@ -125,7 +125,7 @@
                                              :tools                        tools
                                               :include-tool-batching-hint? false})
         build-ms      (/ (- (System/nanoTime) build-ns) 1000000.0)
-        estimate      (:tokenEstimate prompt)
+        estimate      (prompt-builder/estimate-tokens prompt)
         elapsed-ms    (/ (- (System/nanoTime) start-ns) 1000000.0)]
     (log/debug :session/token-estimate
                :caller caller
@@ -155,13 +155,13 @@
              :tokens-before       (reduce + 0 (map :tokens compacted))})
           (recur (dec idx) (+ head-size (:tokens (nth entries idx)))))))))
 
-(declare effective-history-entries compactables)
+(declare effective-history-entries compactable-descriptors)
 
 (defn plan-compaction
   "Stamped compaction plan for the live history. Does not stringify the prompt."
   [transcript session-entry context-window]
   (let [history      (effective-history-entries (or transcript []))
-        compactables (compactables history context-window)
+        compactables (compactable-descriptors history)
         strategy     (resolve-config session-entry context-window)
         target       (compaction-target compactables strategy context-window)]
     (assoc target
@@ -248,6 +248,51 @@
                       " with id " (:id tool-call)
                       " and arguments " (pr-str (:arguments tool-call))
                       ". The tool result was: " (transcript/truncate-tool-result result-text context-window))})))
+
+(defn- text-content? [content]
+  (or (and (string? content) (not (str/blank? content)))
+      (and (vector? content)
+           (every? map? content)
+           (some #(and (= "text" (:type %))
+                       (string? (:text %))
+                       (not (str/blank? (:text %))))
+                 content))))
+
+(defn- representable-content? [content]
+  (or (string? content)
+      (and (vector? content) (every? map? content))))
+
+(defn- compactable-entry? [entry]
+  (or (= "compaction" (:type entry))
+      (and (= "message" (:type entry))
+           (contains? #{"user" "assistant" "toolResult"} (get-in entry [:message :role]))
+           (text-content? (get-in entry [:message :content])))))
+
+(defn- compactable-descriptors [history-entries]
+  (loop [remaining history-entries
+         result    []]
+    (if-let [entry (first remaining)]
+      (if-let [tool-call (tool-call-content entry)]
+        (let [next-entry (second remaining)]
+          (if (and (= "message" (:type next-entry))
+                   (= "toolResult" (get-in next-entry [:message :role]))
+                   (= (:id tool-call) (tool-result-id next-entry))
+                   (representable-content? (get-in next-entry [:message :content])))
+            (recur (nnext remaining)
+                   (conj result {:id     (:id entry)
+                                 :ids    [(:id entry) (:id next-entry)]
+                                 :entry  entry
+                                 :tokens (+ (or (:tokens entry) 0)
+                                            (or (:tokens next-entry) 0))}))
+            (recur (rest remaining) result)))
+        (if (compactable-entry? entry)
+          (recur (rest remaining)
+                 (conj result {:id     (:id entry)
+                               :ids    [(:id entry)]
+                               :entry  entry
+                               :tokens (or (:tokens entry) 0)}))
+          (recur (rest remaining) result)))
+      (vec result))))
 
 (declare message-token-count)
 

@@ -79,16 +79,3 @@ Feature: Prompt Building
       | messages[1].content | #"(?s)\[Compacted history; not a new request\].*User told a knock-knock joke about caching\." |
       | messages[2].role    | user                                         |
       | messages[2].content | Tell me another                              |
-
-  # --- Token Awareness ---
-
-  Scenario: Prompt reports token estimate
-    Given the following sessions exist:
-      | name          |
-      | prompt-tokens |
-    And session "prompt-tokens" has transcript:
-      | type    | message.role | message.content |
-      | message | user         | Hello           |
-    Then the prompt "Continue" on session "prompt-tokens" matches:
-      | key           | value    |
-      | tokenEstimate | #"\d+"   |

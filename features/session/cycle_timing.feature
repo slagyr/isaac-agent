@@ -30,7 +30,6 @@ Feature: Cycle timing — every step between a tool batch and the next request i
       | :session/token-estimate  | :check  |
       | :session/token-estimate  | :after  |
 
-  @wip
   Scenario: the prompt build reports its own elapsed time (isaac-3uy9)
     Given the following sessions exist:
       | name   |

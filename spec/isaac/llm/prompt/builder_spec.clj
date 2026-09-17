@@ -235,15 +235,10 @@
             p             (sut/build {:model "test" :soul "Test." :transcript large-tool-tr :context-window 100})]
         (should-contain "characters truncated" (get-in p [:messages 3 :content]))))
 
-    (it "includes token estimate"
-      (let [p (sut/build {:model "test" :soul "Test." :transcript sample-transcript})]
-        (should (pos? (:tokenEstimate p)))))
-
-    (it "counts tool-result content in the token estimate"
-      (let [dump (apply str (repeat 80 "HUGE-LEMON-PAYLOAD "))
-            tr   (assoc-in tool-transcript [3 :message :content] dump)
-            p    (sut/build {:model "echo" :soul "You are helpful." :transcript tr})]
-        (should (>= (:tokenEstimate p) 320)))))
+    (it "does not estimate tokens while building the prompt"
+      (with-redefs [sut/estimate-tokens (fn [_] (throw (ex-info "estimated" {})))]
+        (let [p (sut/build {:model "test" :soul "Test." :transcript sample-transcript})]
+          (should-not (contains? p :tokenEstimate))))))
 
   (context "compaction"
 

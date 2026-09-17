@@ -137,7 +137,47 @@
                                        {:type "message" :id "a" :message {:role "assistant" :content "dump output, stamped far above its text length"} :tokens 750}]
                                       {}
                                       32768)]
-        (should= 754 (:tokens-before plan)))))
+        (should= 754 (:tokens-before plan))))
+
+    (it "plans rubberband compaction without rendering messages"
+      (let [transcript [{:type "message" :id "u1" :message {:role "user" :content "inspect it"} :tokens 40}
+                        {:type "message" :id "tc1" :message {:role "assistant"
+                                                             :content [{:type "toolCall" :id "call-1"
+                                                                        :name "fs__read"
+                                                                        :arguments {:file_path "large.txt"}}]} :tokens 5}
+                        {:type "message" :id "tr1" :message {:role "toolResult" :toolCallId "call-1"
+                                                             :content "a very large result"} :tokens 15}
+                        {:type "message" :id "a1" :message {:role "assistant" :content "done"} :tokens 50}]]
+        (with-redefs-fn {#'sut/->compact-message (fn [& _] (throw (ex-info "rendered" {})))
+                         #'sut/tool-pair-message (fn [& _] (throw (ex-info "rendered" {})))}
+          #(should= {:compact-count        3
+                     :first-kept-entry-id  nil
+                     :tokens-before        110
+                     :compactable-count    3
+                     :history-entry-count  4
+                     :strategy             :rubberband}
+                    (sut/plan-compaction transcript {} 100)))))
+
+    (it "plans slinky compaction without rendering messages"
+      (let [transcript [{:type "message" :id "u1" :message {:role "user" :content "inspect it"} :tokens 40}
+                        {:type "message" :id "tc1" :message {:role "assistant"
+                                                             :content [{:type "toolCall" :id "call-1"
+                                                                        :name "fs__read"
+                                                                        :arguments {:file_path "large.txt"}}]} :tokens 5}
+                        {:type "message" :id "tr1" :message {:role "toolResult" :toolCallId "call-1"
+                                                             :content "a very large result"} :tokens 15}
+                        {:type "message" :id "a1" :message {:role "assistant" :content "done"} :tokens 50}]]
+        (with-redefs-fn {#'sut/->compact-message (fn [& _] (throw (ex-info "rendered" {})))
+                         #'sut/tool-pair-message (fn [& _] (throw (ex-info "rendered" {})))}
+          #(should= {:compact-count        2
+                     :first-kept-entry-id  "a1"
+                     :tokens-before        60
+                     :compactable-count    3
+                     :history-entry-count  4
+                     :strategy             :slinky}
+                    (sut/plan-compaction transcript
+                                         {:compaction {:strategy :slinky :threshold 0.8 :head 0.4}}
+                                         100))))))
 
   (describe "partial-splice?"
     (it "is true for a chunked splice"

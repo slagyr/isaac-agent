@@ -435,10 +435,9 @@
      :filter-fn      - message filter function (default filter-messages)"
   [{:keys [boot-files crew guidance model nonce origin rules-text session-name skill-menu-text soul transcript tools context-window filter-fn include-tool-batching-hint?]}]
   (let [include-hint? (if (nil? include-tool-batching-hint?) true include-tool-batching-hint?)
-        messages (build-messages soul boot-files rules-text skill-menu-text session-name crew nonce guidance origin transcript context-window (or filter-fn filter-messages) include-hint?)
-        prompt   (cond-> {:model    model
-                          :messages messages}
-                    (seq tools) (assoc :tools (mapv llm-api/wrapped-function-tool tools)))]
-    (assoc prompt :tokenEstimate (estimate-tokens prompt))))
+        messages (build-messages soul boot-files rules-text skill-menu-text session-name crew nonce guidance origin transcript context-window (or filter-fn filter-messages) include-hint?)]
+    (cond-> {:model    model
+             :messages messages}
+      (seq tools) (assoc :tools (mapv llm-api/wrapped-function-tool tools)))))
 
 ;; endregion ^^^^^ Prompt Composition ^^^^^

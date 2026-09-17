@@ -1656,6 +1656,7 @@
               (should= "log-turn" (:session request-entry))
               (should= marigold/starcore (:provider request-entry))
               (should= "test-model" (:model request-entry))
+              (should (number? (:build-ms request-entry)))
               (should= 1 (:selected-tools-count request-entry))
               (should= ["logbook-entry"] (:selected-tools request-entry))
               (should-not-be-nil response-entry)
