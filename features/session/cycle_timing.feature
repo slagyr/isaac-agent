@@ -42,3 +42,23 @@ Feature: Cycle timing — every step between a tool batch and the next request i
     Then the log has entries matching:
       | event               | build-ms | messages-count |
       | :turn/request-built | #*       | #*             |
+
+  @wip
+  Scenario: the compaction check reports where its own time went (isaac-h8o9)
+    The check costs ~715ms on zanebot and does not scale with transcript size
+    (208 vs 537 entries land in the same band; 6 vs 1005 entries differ by 1.1%).
+    :gauge is a token tally, not a measure of work, so the check records the
+    entry count and byte size it actually walked, plus a breakdown of its own
+    steps — the point is to name the step that holds the fixed cost instead of
+    guessing at it again.
+    Given the following sessions exist:
+      | name    |
+      | capstan |
+    And the following model responses are queued:
+      | type      | tool_call | arguments              | content | model |
+      | tool_call | exec__run | {"command": "echo hi"} |         | echo  |
+      | text      |           |                        | done    | echo  |
+    When the user sends "run it" on session "capstan"
+    Then the log has entries matching:
+      | event                     | entry-count | transcript-bytes | entry-ms | transcript-ms | gauge-ms | plan-ms | elapsed-ms |
+      | :session/compaction-check | #*          | #*               | #*       | #*            | #*       | #*      | #*         |

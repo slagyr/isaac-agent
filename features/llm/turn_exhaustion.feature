@@ -1,6 +1,10 @@
 Feature: Exhausted turns — every turn says how it ended, and the Comm decides what exhaustion means (isaac-ntt6)
   A turn's result carries :ended-by on every path: :reply | :cycle-limit |
-  :cancelled | :error | :context-exhausted. It is logged as :turn/ended and
+  :cancelled | :error | :context-exhausted | :provider-unavailable. Provider
+  unavailability is its own ending, never context exhaustion: the two have
+  opposite remedies — wait or fix credentials, versus compact or start a
+  fresh session — so :context-exhausted is reserved for a result whose
+  :reason actually says so. It is logged as :turn/ended and
   handed to comms on turn end. When the cycle budget runs out with tools
   still pending, the loop asks the Comm's on-exhausted hook what to do:
   :stop (default — today's summary cycle without tools, for attended
@@ -48,6 +52,53 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
     And the log has entries matching:
       | level | event       | session | ended-by   |
       | :info | :turn/ended | cancel  | :cancelled |
+
+  @wip
+  Scenario: a provider wall ends with :provider-unavailable, not :context-exhausted (isaac-zveu)
+    Field 2026-09-17: yopp's claude-code provider returned HTTP 429 "You've hit
+    your session limit · resets 6:40pm (UTC)" and the turn reported context
+    exhaustion, sending the operator to compact a session that had plenty of
+    room. A wall is unavailability, not a full context.
+    Given the following sessions exist:
+      | name  |
+      | shoal |
+    And the following model responses are queued:
+      | type       | status | retry-after | model |
+      | http-error | 429    | 60          | echo  |
+    When the user sends "knock knock" on session "shoal" via memory comm
+    Then the memory comm has events matching:
+      | event    | result.ended-by       |
+      | turn-end | :provider-unavailable |
+    And the log has entries matching:
+      | level | event       | session | ended-by              |
+      | :info | :turn/ended | shoal   | :provider-unavailable |
+
+  @wip
+  Scenario: a hard context overflow still ends with :context-exhausted (isaac-zveu)
+    The other half of the split: a result whose :reason genuinely says
+    context-exhausted keeps that ending (isaac-bs5b classifies a hard prompt
+    overflow this way).
+    Given the isaac EDN file "config/models/snuffy.edn" exists with:
+      | path           | value          |
+      | model          | snuffy-codex   |
+      | provider       | grover:chatgpt |
+      | context-window | 128000         |
+    And the isaac EDN file "config/crew/oscar.edn" exists with:
+      | path  | value  |
+      | model | snuffy |
+    And the following sessions exist:
+      | name      | crew  |
+      | trash-can | oscar |
+    And the following model responses are queued:
+      | model        | type       | status | message                                                     |
+      | snuffy-codex | http-error | 400    | maximum prompt length is 128000 but request contains 130000 |
+    When the user sends "knock knock" on session "trash-can" via memory comm
+    Then the memory comm has events matching:
+      | event    | result.ended-by    |
+      | turn-end | :context-exhausted |
+    And the log has entries matching:
+      | level | event       | session   | ended-by           |
+      | :info | :turn/ended | trash-can | :context-exhausted |
 
   Scenario: the default policy at the cycle limit is the summary reply, marked :cycle-limit
     Given the isaac EDN file "config/crew/oscar.edn" exists with:
