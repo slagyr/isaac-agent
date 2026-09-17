@@ -890,8 +890,10 @@
                                                       :splice-ready        splice-ready})
       future*)))
 
-(defn- compaction-estimate-opts [_session-key {:keys [provider allowed-tools module-index] :as opts}]
-  (assoc opts :tools (when provider (active-tools provider allowed-tools module-index))))
+(defn- compaction-tools-opts [{:keys [provider allowed-tools module-index] :as opts}]
+  (if (contains? opts :tools)
+    opts
+    (assoc opts :tools (when provider (active-tools provider allowed-tools module-index)))))
 
 (defn- session-transcript [session-key opts]
   (when-let [sess (session-policy opts)]
@@ -903,15 +905,14 @@
     (compaction/context-gauge entry tx (:input opts))))
 
 (defn- run-compaction-check! [session-key {:keys [context-window model provider] :as opts} attempt allow-async?]
-  (let [check-ns      (System/nanoTime)
-        estimate-opts (compaction-estimate-opts session-key opts)
-        entry         (session-entry estimate-opts session-key)
-        tx            (session-transcript session-key estimate-opts)
-        gauge         (compaction/context-gauge entry tx (:input estimate-opts))
-        plan          (compaction/plan-compaction tx entry context-window)
-        config        (or (:compaction estimate-opts)
-                          (compaction/resolve-config entry context-window))
-        prov-name     (when provider (api/display-name provider))]
+  (let [check-ns  (System/nanoTime)
+        entry     (session-entry opts session-key)
+        tx        (session-transcript session-key opts)
+        gauge     (compaction/context-gauge entry tx (:input opts))
+        plan      (compaction/plan-compaction tx entry context-window)
+        config    (or (:compaction opts)
+                      (compaction/resolve-config entry context-window))
+        prov-name (when provider (api/display-name provider))]
     (log/debug :session/compaction-analysis
                :session session-key
                :provider prov-name
@@ -929,7 +930,7 @@
                :context-window context-window
                :elapsed-ms (elapsed-ms check-ns))
     (cond
-      (= :reset (:context-mode estimate-opts))
+      (= :reset (:context-mode opts))
       (log/info :session/compaction-skipped
                 :session session-key
                 :provider prov-name
@@ -940,8 +941,8 @@
 
       (compaction/should-compact? gauge (assoc entry :compaction config) context-window)
       (if (and allow-async? (:async? config))
-        (start-async-compaction! session-key estimate-opts)
-        (perform-compaction! session-key attempt gauge estimate-opts)))))
+        (start-async-compaction! session-key opts)
+        (perform-compaction! session-key attempt gauge (compaction-tools-opts opts))))))
 
 
 (defn- context-window-guard-line-tokens [context-window]
