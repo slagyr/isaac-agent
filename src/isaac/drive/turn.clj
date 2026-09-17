@@ -25,6 +25,7 @@
     [isaac.tool.registry :as tool-registry]
     [isaac.turnstile :as turnstile])
   (:import (clojure.lang ExceptionInfo)
+           (java.nio.charset StandardCharsets)
            (java.time Instant)))
 
 ;; region ----- Error Formatting -----
@@ -904,15 +905,34 @@
         tx    (session-transcript session-key opts)]
     (compaction/context-gauge entry tx (:input opts))))
 
+(defn- transcript-bytes [tx]
+  (binding [*print-namespace-maps* false]
+    (reduce + (map #(+ (alength (.getBytes (pr-str %) StandardCharsets/UTF_8)) 1) tx))))
+
 (defn- run-compaction-check! [session-key {:keys [context-window model provider] :as opts} attempt allow-async?]
-  (let [check-ns  (System/nanoTime)
-        entry     (session-entry opts session-key)
-        tx        (session-transcript session-key opts)
-        gauge     (compaction/context-gauge entry tx (:input opts))
-        plan      (compaction/plan-compaction tx entry context-window)
-        config    (or (:compaction opts)
-                      (compaction/resolve-config entry context-window))
-        prov-name (when provider (api/display-name provider))]
+  (let [check-ns       (System/nanoTime)
+        entry-start-ns (System/nanoTime)
+        entry          (session-entry opts session-key)
+        entry-ms       (elapsed-ms entry-start-ns)
+        tx-start-ns    (System/nanoTime)
+        tx             (session-transcript session-key opts)
+        transcript-ms  (elapsed-ms tx-start-ns)
+        gauge-start-ns (System/nanoTime)
+        gauge          (compaction/context-gauge entry tx (:input opts))
+        gauge-ms       (elapsed-ms gauge-start-ns)
+        plan-start-ns  (System/nanoTime)
+        plan           (compaction/plan-compaction tx entry context-window)
+        plan-ms        (elapsed-ms plan-start-ns)
+        config-start-ns (System/nanoTime)
+        config          (or (:compaction opts)
+                            (compaction/resolve-config entry context-window))
+        config-ms       (elapsed-ms config-start-ns)
+        provider-start-ns (System/nanoTime)
+        prov-name        (when provider (api/display-name provider))
+        provider-ms      (elapsed-ms provider-start-ns)
+        size-start-ns    (System/nanoTime)
+        transcript-bytes (transcript-bytes tx)
+        size-ms          (elapsed-ms size-start-ns)]
     (log/debug :session/compaction-analysis
                :session session-key
                :provider prov-name
@@ -925,6 +945,15 @@
                :session session-key
                :provider prov-name
                :model model
+               :entry-count (count tx)
+               :transcript-bytes transcript-bytes
+               :size-ms size-ms
+               :entry-ms entry-ms
+               :transcript-ms transcript-ms
+               :gauge-ms gauge-ms
+               :plan-ms plan-ms
+               :config-ms config-ms
+               :provider-ms provider-ms
                :total-tokens gauge
                :gauge gauge
                :context-window context-window

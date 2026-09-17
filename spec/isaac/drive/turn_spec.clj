@@ -513,6 +513,39 @@
                         (sut/await-async-compaction! "stuck-session"))
           (should= true (sut/async-compaction-in-flight? "stuck-session"))))))
 
+  (describe "run-compaction-check!"
+    #_{:clj-kondo/ignore [:unresolved-symbol]}
+    (around [example]
+      (nexus/-with-nexus {:root test-dir :fs (fs/mem-fs)}
+        (helper/with-memory-store
+          (example))))
+
+    (it "reports the transcript size and time spent in each check step"
+      (let [provider      (->TestProvider marigold/starcore {:api marigold/sky-api})
+            session-key   "timed-check"
+            session-store (store/registered-store)]
+        (helper/create-session! test-dir session-key)
+        (helper/append-message! test-dir session-key {:role "user" :content "Measure twice — naïve bytes."})
+        (helper/append-message! test-dir session-key {:role "assistant" :content "Compact once."})
+        (log/capture-logs
+          (#'sut/run-compaction-check! session-key {:compaction     {:threshold 0.8}
+                                                    :context-window 10000
+                                                    :model          "test-model"
+                                                    :provider       provider
+                                                    :session-store  session-store}
+                                             1
+                                             false)
+          (let [entry      (first (filter #(= :session/compaction-check (:event %)) @log/captured-logs))
+                transcript (helper/get-transcript test-dir session-key)
+                bytes      (binding [*print-namespace-maps* false]
+                             (reduce + (map #(+ (alength (.getBytes (pr-str %) "UTF-8")) 1) transcript)))]
+            (should= (count transcript) (:entry-count entry))
+            (should= bytes (:transcript-bytes entry))
+            (doseq [field [:entry-ms :transcript-ms :gauge-ms :plan-ms :config-ms :provider-ms :size-ms
+                           :elapsed-ms]]
+              (should (number? (get entry field))))))))
+    )
+
   (describe "perform-compaction!"
     #_{:clj-kondo/ignore [:unresolved-symbol]}
     (around [example]

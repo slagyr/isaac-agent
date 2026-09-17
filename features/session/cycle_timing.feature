@@ -43,7 +43,6 @@ Feature: Cycle timing — every step between a tool batch and the next request i
       | event               | build-ms | messages-count |
       | :turn/request-built | #*       | #*             |
 
-  @wip
   Scenario: the compaction check reports where its own time went (isaac-h8o9)
     The check costs ~715ms on zanebot and does not scale with transcript size
     (208 vs 537 entries land in the same band; 6 vs 1005 entries differ by 1.1%).
