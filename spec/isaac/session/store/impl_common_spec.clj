@@ -83,6 +83,34 @@
         (should= "cordelia" (get-in idx ["lantern-room" :crew]))
         (should= :chronicle (get-in idx ["lantern-room" :session-policy])))))
 
+  (it "does not scan session directories when the indexed session is on disk"
+    ;; Every get-session/get-transcript/persist goes through locate-session;
+    ;; a scan reads+parses every session.edn on the host (456 on zanebot,
+    ;; ~700ms) — it is the miss path, never the hit path.
+    (let [fs* (fs*)]
+      (sut/mkdirs*! fs* (sut/session-dir test-dir "cordelia" "lantern-room"))
+      (sut/atomic-spit! fs* (sut/session-edn-path test-dir "cordelia" "lantern-room")
+                        (sut/write-edn {:id "lantern-room" :crew "cordelia" :session-policy :episodes}))
+      (sut/write-index! fs* test-dir
+                        {"lantern-room" {:crew "cordelia" :session-policy :episodes}})
+      (with-redefs [sut/scan-session-dirs (fn [& _] (throw (ex-info "scanned on an index hit" {})))]
+        (should= (sut/session-dir test-dir "cordelia" "lantern-room")
+                 (:dir (sut/locate-session test-dir "lantern-room" fs*))))))
+
+  (it "repairs a stale index row when the session lives under another crew"
+    (let [fs* (fs*)]
+      (sut/mkdirs*! fs* (sut/session-dir test-dir "cordelia" "lantern-room"))
+      (sut/atomic-spit! fs* (sut/session-edn-path test-dir "cordelia" "lantern-room")
+                        (sut/write-edn {:id "lantern-room" :crew "cordelia" :session-policy :chronicle}))
+      (sut/write-index! fs* test-dir
+                        {"lantern-room" {:crew "main" :session-policy :chronicle}})
+      (let [loc (sut/locate-session test-dir "lantern-room" fs*)]
+        (should= "cordelia" (:crew loc))
+        (should= (sut/session-dir test-dir "cordelia" "lantern-room") (:dir loc)))
+      (should= "cordelia" (get-in (sut/read-index fs* test-dir) ["lantern-room" :crew]))
+      (with-redefs [sut/scan-session-dirs (fn [& _] (throw (ex-info "scanned after repair" {})))]
+        (should= "cordelia" (:crew (sut/locate-session test-dir "lantern-room" fs*))))))
+
   (it "refuses a create when the id already belongs to another crew"
     (let [fs* (fs*)]
       (sut/write-index! fs* test-dir

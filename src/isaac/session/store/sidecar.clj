@@ -55,11 +55,10 @@
   (read-sidecar-store root fs))
 
 (defn- update-sidecar-entry! [root identifier updater fs]
-  (let [store (read-session-store root fs)]
-    (when-let [id (c/resolve-entry-id store identifier)]
-      (let [entry (c/conform-session! (updater (get store id)))]
-        (write-sidecar! root entry fs)
-        entry))))
+  (when-let [current (c/read-session-entry-for with-session-defaults root identifier fs)]
+    (let [entry (c/conform-session! (updater current))]
+      (write-sidecar! root entry fs)
+      entry)))
 
 ;; endregion ^^^^^ Storage ^^^^^
 
@@ -77,7 +76,7 @@
                       root identifier opts fs)))
 
 (defn- get-session [root identifier fs]
-  (c/get-session read-session-store root identifier fs))
+  (c/read-session-entry-for with-session-defaults root identifier fs))
 
 (defn- get-transcript [root identifier fs]
   (c/get-transcript get-session root identifier fs))

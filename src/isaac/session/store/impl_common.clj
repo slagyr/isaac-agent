@@ -373,20 +373,26 @@
 
 (defn locate-session
   "Resolve a session id via the index, falling back to a directory scan that
-   repairs the index. Returns {:crew :session-policy :dir :id ...} or nil."
+   repairs the index. Returns {:crew :session-policy :dir :id ...} or nil.
+
+   The index row is a hint verified against disk on every call (its dir must
+   hold a session.edn); only a miss or a stale row pays for the scan, which
+   reads every session.edn under the root. A scan that finds the session
+   somewhere the index did not say rewrites the row, so the miss is paid once."
   [root session-id fs]
   (let [id          (str session-id)
         indexed     (get (read-index fs root) id)
         indexed-loc (when indexed
                       (when-let [crew (:crew indexed)]
                         (assoc indexed :id id :crew crew :dir (session-dir root crew id))))
-        scanned     (get (scan-session-dirs fs root) id)
-        found       (if (and indexed-loc
-                             (exists?* fs (str (:dir indexed-loc) "/session.edn")))
+        confirmed?  (and indexed-loc
+                         (exists?* fs (str (:dir indexed-loc) "/session.edn")))
+        found       (if confirmed?
                       indexed-loc
-                      (or scanned indexed-loc))]
+                      (or (get (scan-session-dirs fs root) id) indexed-loc))]
     (when found
-      (when-not indexed
+      (when (or (not indexed)
+                (not= (:crew found) (:crew indexed)))
         (upsert-index-row! fs root id (select-keys found [:crew :session-policy :updated-at :id])))
       found)))
 
@@ -692,6 +698,20 @@
          crew (or crew (:crew loc))
          path (session-edn-for root session-id crew fs)]
      (read-session-entry-at with-session-defaults-fn root session-id path fs))))
+
+(defn read-session-entry-for
+  "Single-session read for the sidecar store: resolve `identifier` to its
+   location and read only that session.edn. nil when no such session exists;
+   throws :session/unreadable when it exists but cannot be read (never a
+   skeleton). Replaces reading every session on the host to answer for one."
+  [with-session-defaults-fn root identifier fs]
+  (when identifier
+    (let [id   (session-id identifier)
+          loc  (resolve-session-loc root id fs)
+          path (when loc (session-edn-for root id (:crew loc) fs))]
+      (if (and path (exists?* fs path))
+        (second (read-session-entry-at with-session-defaults-fn root id path fs))
+        (do (assert-migrated! root id fs) nil)))))
 
 (defn read-sidecar-store [with-session-defaults-fn root fs]
   (let [scanned (scan-session-dirs fs root)
