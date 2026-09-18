@@ -17,7 +17,7 @@
   (it "registers the session store, resumes on start, and suspends on stop"
     (let [calls         (atom [])
           session-store ::store
-          config        {:server {:suspend-timeout-ms 4321}}
+          config        {:bridge {:suspend-timeout-ms 4321}}
           instance      (component-factory/create :agent-lifecycle
                                                   {:config config
                                                    :root   "/isaac"})]

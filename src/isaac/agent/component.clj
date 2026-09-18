@@ -42,7 +42,7 @@
   (stop [this]
     (when-let [registered @session-store]
       (suspend/suspend! {:session-store registered
-                         :timeout-ms    (or (get-in config [:server :suspend-timeout-ms])
+                         :timeout-ms    (or (get-in config [:bridge :suspend-timeout-ms])
                                             default-suspend-timeout-ms)})
       (reset! session-store nil))
     this))

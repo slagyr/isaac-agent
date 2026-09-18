@@ -203,7 +203,16 @@
   :model {:factory isaac.slash.builtin/model-command},
   :status {:factory isaac.slash.builtin/status-command}},
  :isaac.config/schema
- {:providers
+ {:bridge
+  {:schema
+   {:name :bridge,
+    :type :map,
+    :description "Turn bridge configuration",
+    :schema
+    {:suspend-timeout-ms
+     {:type :int,
+      :description "Milliseconds to wait while suspending active turns"}}}},
+  :providers
   {:entity-dir "providers",
    :merge-root-entity? true,
    :schema
