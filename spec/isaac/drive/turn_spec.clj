@@ -28,6 +28,20 @@
 
 (def test-dir marigold/home)
 
+(describe "turn ending classification"
+  (it "reports provider unavailability separately from context exhaustion"
+    (should= :provider-unavailable
+             (:ended-by (#'sut/finalize-turn-result {:unavailable? true}))))
+
+  (it "keeps genuine context exhaustion"
+    (should= :context-exhausted
+             (:ended-by (#'sut/finalize-turn-result {:unavailable? true :reason :context-exhausted}))))
+
+  (it "keeps errors ahead of provider unavailability"
+    (should= :error
+             (:ended-by (#'sut/finalize-turn-result {:unavailable? true :error :provider-error}))))
+  )
+
 (defn- event
   ([events kind]
    (first (filter #(= kind (:event %)) @events)))
@@ -1051,6 +1065,28 @@
             (should= 2 @calls)
             (should-be-nil (:error result))
             (should-not (:unavailable? result))))))
+
+    (it "returns context exhaustion when the compact-and-retry still overflows"
+      (helper/create-session! test-dir "overflow-exhausted")
+      (let [calls (atom 0)
+            ctx   (base-execution-ctx
+                    (->TestProvider marigold/starcore {:api marigold/sky-api})
+                    {:model          "test-model"
+                     :soul           "You are Isaac."
+                     :crew           "main"
+                     :comm           null-comm/channel
+                     :context-window 200
+                     :config         {}})]
+        (with-redefs [tool-loop/run (fn [& _]
+                                      (swap! calls inc)
+                                      {:error :context-overflow
+                                       :status 400
+                                       :message "maximum prompt length is 200 but the request contains 250"})
+                      compaction/compact! (fn [_session-key _opts] {:summary "summary of A"})]
+          (let [result (#'sut/execute-llm-turn! "overflow-exhausted" "go" ctx)]
+            (should= 2 @calls)
+            (should= true (:unavailable? result))
+            (should= :context-exhausted (:reason result))))))
 
     (it "returns blocked weather when overflow happens on a blocked conversation"
       (helper/create-session! test-dir "overflow-blocked")

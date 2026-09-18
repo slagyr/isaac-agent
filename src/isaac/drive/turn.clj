@@ -443,7 +443,7 @@
                 tool-loop/default-max-parallel-tools)]
     (parse-long-or-raw raw)))
 
-(def ended-by-values #{:reply :cycle-limit :cancelled :error :context-exhausted})
+(def ended-by-values #{:reply :cycle-limit :cancelled :error :context-exhausted :provider-unavailable})
 
 (defn- classify-ended-by [result]
   (cond
@@ -454,8 +454,8 @@
         (= "cancelled" (:stopReason result))) :cancelled
     (= :empty-terminal-response (:error result)) :error
     (:error result) :error
-    (or (:unavailable? result)
-        (= :context-exhausted (:reason result))) :context-exhausted
+    (= :context-exhausted (:reason result)) :context-exhausted
+    (:unavailable? result) :provider-unavailable
     (:loop-request? result) :cycle-limit
     :else :reply))
 
@@ -1486,6 +1486,11 @@
                            (nil? retry) first-result
                            (:unavailable? retry) retry
                            :else (run-loop retry))
+            loop-result  (if (and retry (prompt-too-long? loop-result))
+                           (context-exhausted-result config session-key
+                                                     (session-gauge session-key (mid-turn-compaction-opts ctx))
+                                                     (:context-window charge))
+                           loop-result)
             result       (if (:unavailable? loop-result)
                            loop-result
                            (let [normalized (provider-wall/normalize loop-result config (api/display-name p))

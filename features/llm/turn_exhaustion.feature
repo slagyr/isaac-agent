@@ -53,7 +53,6 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
       | level | event       | session | ended-by   |
       | :info | :turn/ended | cancel  | :cancelled |
 
-  @wip
   Scenario: a provider wall ends with :provider-unavailable, not :context-exhausted (isaac-zveu)
     Field 2026-09-17: yopp's claude-code provider returned HTTP 429 "You've hit
     your session limit · resets 6:40pm (UTC)" and the turn reported context
@@ -73,7 +72,6 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
       | level | event       | session | ended-by              |
       | :info | :turn/ended | shoal   | :provider-unavailable |
 
-  @wip
   Scenario: a hard context overflow still ends with :context-exhausted (isaac-zveu)
     The other half of the split: a result whose :reason genuinely says
     context-exhausted keeps that ending (isaac-bs5b classifies a hard prompt
@@ -91,6 +89,8 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
       | trash-can | oscar |
     And the following model responses are queued:
       | model        | type       | status | message                                                     |
+      | snuffy-codex | http-error | 400    | maximum prompt length is 128000 but request contains 130000 |
+      | snuffy-codex | http-error | 400    | maximum prompt length is 128000 but request contains 130000 |
       | snuffy-codex | http-error | 400    | maximum prompt length is 128000 but request contains 130000 |
     When the user sends "knock knock" on session "trash-can" via memory comm
     Then the memory comm has events matching:
