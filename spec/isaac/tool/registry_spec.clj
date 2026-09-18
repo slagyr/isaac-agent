@@ -15,6 +15,23 @@
    :parameters  {:type "object" :properties {}}
    :handler     (fn [_] {:result (str "api-key=" (:api-key cfg))})})
 
+(def provider-calls* (atom []))
+
+(defn lens-provider
+  "A :isaac.agent/tool-providers contributor: registers the lens namespace on demand."
+  [ns-str _module-index]
+  (swap! provider-calls* conj ns-str)
+  (when (= "lens" ns-str)
+    (sut/register! {:name "lens__catalog" :description "Catalog" :parameters {} :handler (fn [_] {:result "catalogued"})})
+    (sut/register! {:name "lens__read" :description "Read" :parameters {} :handler (fn [_] {:result "read"})})
+    ["lens__catalog" "lens__read"]))
+
+(defn boom-provider [_ns-str _module-index]
+  (throw (ex-info "boom" {})))
+
+(def provider-index
+  {:isaac.tool.mcp {:manifest {:isaac.agent/tool-providers {:mcp {:ensure! 'isaac.tool.registry-spec/lens-provider}}}}})
+
 (defn- with-tool-registry [f]
   (nexus/-with-nexus {:tool-registry (atom {})}
     (f)))
@@ -298,6 +315,64 @@
         (should= ["fs__read" "fs__write"] (sort (mapv :name defs))))))
 
   ;; endregion ^^^^^ Tool Definitions for Prompts ^^^^^
+
+  ;; region ----- Tool Providers -----
+
+  (describe "tool providers (:isaac.agent/tool-providers berth)"
+
+    (helper/with-captured-logs)
+
+    (before (reset! provider-calls* []))
+
+    (it "execute asks a provider for an allowed tool nobody registered"
+      (let [result (sut/execute "lens__catalog" {} #{:lens/catalog} provider-index)]
+        (should= "catalogued" (:result result))
+        (should= ["lens"] @provider-calls*)))
+
+    (it "tool-definitions asks a provider for an exact allow token"
+      (let [defs (sut/tool-definitions #{:lens/catalog} provider-index)]
+        (should= ["lens__catalog"] (mapv :name defs))
+        (should= ["lens"] @provider-calls*)))
+
+    (it "tool-definitions asks a provider for a namespace glob"
+      (let [defs (sut/tool-definitions #{:lens/*} provider-index)]
+        (should= ["lens__catalog" "lens__read"] (sort (mapv :name defs)))
+        (should= ["lens"] @provider-calls*)))
+
+    (it "a provider that declines leaves the namespace unknown"
+      (should= [] (sut/tool-definitions #{:skybeam/*} provider-index))
+      (should= ["skybeam"] @provider-calls*)
+      (let [result (sut/execute "skybeam__catalog" {} #{:skybeam/*} provider-index)]
+        (should (:isError result))
+        (should (re-find #"unknown tool" (:error result)))))
+
+    (it "does not ask providers for a glob whose namespace already has a tool"
+      (sut/register! {:name "lens__catalog" :description "Mine" :parameters {} :handler identity})
+      (let [defs (sut/tool-definitions #{:lens/*} provider-index)]
+        (should= ["lens__catalog"] (mapv :name defs))
+        (should= [] @provider-calls*)))
+
+    (it "does not ask providers for unqualified tokens"
+      (sut/register! {:name "read" :description "Read" :parameters {} :handler identity})
+      (should= ["read"] (mapv :name (sut/tool-definitions #{"read"} provider-index)))
+      (should= [] @provider-calls*))
+
+    (it "ensure-policy-tools! asks providers for globs and exact tokens"
+      (sut/ensure-policy-tools! provider-index [:lens/* :skybeam/catalog "read"])
+      (should= ["lens" "skybeam"] @provider-calls*)
+      (should (sut/lookup "lens__catalog")))
+
+    (it "ensure-policy-tools! is a no-op without a module index"
+      (sut/ensure-policy-tools! nil [:lens/*])
+      (should= [] @provider-calls*)
+      (should-be-nil (sut/lookup "lens__catalog")))
+
+    (it "a provider that throws is logged and skipped"
+      (let [index {:isaac.tool.boom {:manifest {:isaac.agent/tool-providers {:boom {:ensure! 'isaac.tool.registry-spec/boom-provider}}}}}]
+        (should= [] (sut/tool-definitions #{:lens/*} index))
+        (should (some #(= :tool/provider-failed (:event %)) @log/captured-logs)))))
+
+  ;; endregion ^^^^^ Tool Providers ^^^^^
 
   ;; region ----- Logging -----
 

@@ -28,6 +28,14 @@
 
 (def test-dir marigold/home)
 
+(defn lens-provider
+  "Tool-provider fixture: registers the lens namespace on demand."
+  [ns-str _module-index]
+  (when (= "lens" ns-str)
+    (tool-registry/register! {:name "lens__catalog" :description "Catalog" :parameters {} :handler (fn [_] {:result "ok"})})
+    (tool-registry/register! {:name "lens__read" :description "Read" :parameters {} :handler (fn [_] {:result "ok"})})
+    ["lens__catalog" "lens__read"]))
+
 (describe "turn ending classification"
   (it "reports provider unavailability separately from context exhaustion"
     (should= :provider-unavailable
@@ -315,6 +323,19 @@
           (should= 0 @tool-count)
           (should= ["tool-call" "tool-cancel"] (mapv :event @events))))))
 
+
+  (describe "allowed tools consult tool providers (isaac-vadd)"
+
+    (it "a ns/* allow makes the provider's tools candidates for the cascade"
+      (nexus/-with-nexus {:tool-registry (atom {})}
+        (let [crew-members {"main" {:tools {:allow [:lens/*]}}}
+              config       {:module-index {:isaac.tool.lens {:manifest {:isaac.agent/tool-providers {:lens {:ensure! 'isaac.drive.turn-spec/lens-provider}}}}}}]
+          (should= #{"lens__catalog" "lens__read"}
+                   (#'sut/allowed-tool-names crew-members "main" config)))))
+
+    (it "a glob allow without a module index offers nothing"
+      (nexus/-with-nexus {:tool-registry (atom {})}
+        (should= #{} (#'sut/allowed-tool-names {"main" {:tools {:allow [:lens/*]}}} "main" {})))))
 
   (describe "mid-loop transcript flush"
     #_{:clj-kondo/ignore [:unresolved-symbol]}

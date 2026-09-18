@@ -51,7 +51,7 @@
 (defn lookup [name]
   (get @(registry-atom) name))
 
-(defn- activate-missing-tool! [module-index name]
+(defn- activate-tool-module! [module-index name]
   ;; Phase 6 (isaac-w7o5): tool installation is a berth-side concern.
   ;; After activating the providing module (for its bootstrap + non-tool
   ;; extensions), call the berth's per-entry factory directly so the
@@ -66,6 +66,59 @@
         (when entry
           (register-tool-entry! [berth-key entry])))
       (lookup name))))
+
+(defn- tool-providers
+  "[[provider-id ensure-sym] ...] contributed to the :isaac.agent/tool-providers
+   berth across `module-index`."
+  [module-index]
+  (for [[_ entry] module-index
+        [provider-id {:keys [ensure!]}] (get-in entry [:manifest :isaac.agent/tool-providers])
+        :when ensure!]
+    [provider-id ensure!]))
+
+(defn- token-namespace [token]
+  (some-> (names/config-token token) namespace))
+
+(defn- namespace-registered? [ns-str]
+  (some #(= ns-str (token-namespace %)) (keys @(registry-atom))))
+
+(defn- ensure-namespace!
+  "Ask each tool provider to register the tools it owns under `ns-str`
+   (isaac-vadd: dynamic namespaces such as config-declared MCP servers).
+   A provider returns the wire names it registered, or nil to decline.
+   Returns the first provider's names, or nil when every provider declines."
+  [module-index ns-str]
+  (some (fn [[provider-id sym]]
+          (try
+            (when-let [ensure! (some-> sym requiring-resolve var-get)]
+              (seq (ensure! ns-str module-index)))
+            (catch Throwable e
+              (log/error :tool/provider-failed :provider provider-id :ns ns-str :error (.getMessage e))
+              nil)))
+        (tool-providers module-index)))
+
+(defn- activate-missing-tool! [module-index name]
+  (or (activate-tool-module! module-index name)
+      (when-let [ns-str (token-namespace name)]
+        (when (ensure-namespace! module-index ns-str)
+          (lookup name)))))
+
+(defn ensure-policy-tools!
+  "Make every tool a policy names available before it is matched
+   (isaac-vadd). A ns/* glob asks the tool providers for its namespace
+   when nothing is registered there; an exact token activates its
+   :isaac.agent/tools module or asks the providers. No-op without a
+   module index."
+  [module-index tokens]
+  (when module-index
+    (doseq [token tokens]
+      (if (names/glob-token? token)
+        (when-let [ns-str (token-namespace token)]
+          (when-not (namespace-registered? ns-str)
+            (ensure-namespace! module-index ns-str)))
+        (let [wire (or (names/wire-name token) (str token))]
+          (when-not (lookup wire)
+            (activate-missing-tool! module-index wire)))))))
 
 (defn all-tools
   "With no args, returns every registered tool.
@@ -282,10 +335,7 @@
   ([allowed-tools]
    (mapv #(dissoc % :handler) (all-tools allowed-tools)))
   ([allowed-tools module-index]
-   (doseq [token allowed-tools]
-     (let [wire (or (names/wire-name token) (str token))]
-       (when-not (or (names/glob-token? token) (lookup wire))
-         (activate-missing-tool! module-index wire))))
+   (ensure-policy-tools! module-index allowed-tools)
    (mapv #(dissoc % :handler) (all-tools allowed-tools))))
 
 ;; endregion ^^^^^ Prompt Definitions ^^^^^

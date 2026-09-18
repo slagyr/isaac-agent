@@ -14,6 +14,17 @@
                   :schema
                   {:factory
                    {:type :symbol, :validations [:present?]}}}}},
+               :tool-providers
+               {:description
+                "Dynamic tool providers — asked to register tools for an allowed namespace nobody registered (e.g. MCP servers declared in config). Entry: {:ensure! sym}, (ensure! ns-str module-index) => registered wire names or nil.",
+                :schema
+                {:type :map,
+                 :key-spec {:type :keyword},
+                 :value-spec
+                 {:type :map,
+                  :schema
+                  {:ensure!
+                   {:type :symbol, :validations [:present?]}}}}},
                :llm-api
                {:description
                 "LLM API factories — adapters per provider API (messages, chat-completions, ollama, ...).",

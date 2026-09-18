@@ -1150,6 +1150,9 @@
   [crew-members crew-id config]
   (let [global-tools (:tools config)
         crew-tools   (get-in crew-members [crew-id :tools])
+        _            (tool-registry/ensure-policy-tools! (:module-index config)
+                                                         (concat (names/policy-list (:allow global-tools))
+                                                                 (names/policy-list (:allow crew-tools))))
         registered   (map :name (tool-registry/all-tools))
         declared     (concat (declared-wire-names global-tools)
                              (declared-wire-names crew-tools))
