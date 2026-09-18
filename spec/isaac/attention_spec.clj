@@ -63,6 +63,16 @@
         (should (str/includes? content "trash-can"))
         (should (str/includes? content "not supported"))))
 
+    (it "clips a giant provider dump so the notice stays short"
+      (sut/maybe-notify-provider-broken!
+        notify-cfg
+        (broken {:message (apply str (repeat 8000 "x"))})
+        0)
+      (let [content (:content (first (queue/list-pending)))]
+        (should (< (count content) 1100))
+        (should (str/includes? content "chatgpt"))
+        (should (str/includes? content "truncated"))))
+
     (it "posts once per provider within an hour and logs the suppressed count"
       (log/capture-logs
         (sut/maybe-notify-provider-broken! notify-cfg (broken {}) 0)

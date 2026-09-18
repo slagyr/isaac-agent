@@ -17,15 +17,25 @@
   (reset! last-session-notified* {})
   (reset! last-provider-notified* {}))
 
+(def ^:private content-cap 1000)
+
+(defn- clip-content [content]
+  (let [s (str content)
+        n (count s)]
+    (if (<= n content-cap)
+      s
+      (str (subs s 0 content-cap) "… truncated " (- n content-cap) " bytes"))))
+
 (defn- notify-coords [cfg]
   (get-in cfg [:attention :notify]))
 
 (defn- enqueue-attention! [cfg content]
-  (if-let [{:keys [comm target]} (notify-coords cfg)]
-    (queue/enqueue! {:comm    (if (string? comm) (keyword comm) comm)
-                     :target  target
-                     :content content})
-    (log/warn :attention/unconfigured :content content)))
+  (let [content (clip-content content)]
+    (if-let [{:keys [comm target]} (notify-coords cfg)]
+      (queue/enqueue! {:comm    (if (string? comm) (keyword comm) comm)
+                       :target  target
+                       :content content})
+      (log/warn :attention/unconfigured :content content))))
 
 (defn- clock-ms [override]
   (or override
