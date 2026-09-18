@@ -44,6 +44,8 @@
     [isaac.session.store.memory :as memory-store]
     [isaac.session.store.impl-common :as session-impl-common]
     [isaac.session.transcript :as transcript]
+    [isaac.cli.host :as host]
+    [isaac.cli.registry :as cli-registry]
     [isaac.module.loader :as module-loader]
     [isaac.nexus :as nexus]
     [isaac.tool.memory :as memory]
@@ -883,6 +885,45 @@
 (defn sessions-exist [table]
   (doseq [row (:rows table)]
     (create-session-from-row! (zipmap (:headers table) row))))
+
+(defn- parse-embedded-argv [argv]
+  (->> (re-seq #"\"([^\"]*)\"|(\S+)" (str argv))
+       (map (fn [[_ quoted bare]] (or quoted bare)))
+       vec))
+
+(defn- ensure-embedded-cli-commands!
+  "Grover setup installs the live runtime without main/run, so CLI berths
+   are not in the registry. A hosted server registers them at boot; do that
+   once here without re-installing config."
+  []
+  (when-not (cli-registry/get-command "sessions")
+    (module-loader/process-manifest-berths! (module-loader/builtin-index))))
+
+(defn- capture-embedded! [thunk]
+  (let [out (java.io.StringWriter.)
+        err (java.io.StringWriter.)]
+    (binding [*out* out *err* err]
+      (let [code (or (thunk) 0)]
+        (g/assoc! :output (str out))
+        (g/assoc! :stderr (str err))
+        (g/assoc! :exit-code (long code))
+        code))))
+
+(defn command-run-embedded [argv]
+  (let [argv (parse-embedded-argv argv)
+        root (or (g/get :runtime-root-dir) (g/get :root))]
+    (ensure-embedded-cli-commands!)
+    (capture-embedded!
+      (fn []
+        (host/run-embedded {:argv argv :root root})))))
+
+(defn command-run-embedded-with-cwd [argv cwd]
+  (let [argv (parse-embedded-argv argv)
+        root (or (g/get :runtime-root-dir) (g/get :root))]
+    (ensure-embedded-cli-commands!)
+    (capture-embedded!
+      (fn []
+        (host/run-embedded {:argv argv :root root :cwd cwd})))))
 
 (defn session-exists-quoted [session-name]
   (g/should-not-be-nil (with-feature-fs #(get-session session-name))))
@@ -2196,6 +2237,16 @@
 (defthen "the session count is {int}" isaac.session.session-steps/session-count-is)
 
 (defthen "the following sessions match:" isaac.session.session-steps/sessions-match)
+
+(defwhen #"the command is run embedded with argv \"([^\"]+)\" and cwd \"([^\"]+)\""
+  isaac.session.session-steps/command-run-embedded-with-cwd
+  "Embedded dispatch with an explicit host cwd.")
+
+(defwhen #"the command is run embedded with argv \"([^\"]+)\""
+  isaac.session.session-steps/command-run-embedded
+  "Dispatches argv through host/run-embedded against the live Grover runtime.
+   Does not re-install config; a second cold isaac is run with would hide
+   finally-nil teardown.")
 
 (defthen #"the session file is \"([^\"]+)\"" isaac.session.session-steps/session-file-is-quoted)
 

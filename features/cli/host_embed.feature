@@ -1,4 +1,3 @@
-@wip
 Feature: Agent CLI is safe to embed
   Agent commands run inside the server process must not tear down the
   live runtime. Cold `isaac` process teardown is allowed; embed is not.

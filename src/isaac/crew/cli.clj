@@ -4,6 +4,7 @@
     [clojure.string :as str]
     [clojure.tools.cli :as tools-cli]
     [isaac.cli.registry :as cli]
+    [isaac.cli.host :as host]
     [isaac.cli.common :as cli-common]
     [isaac.cli.table :as table]
     [isaac.config.loader :as loader]
@@ -55,7 +56,12 @@
         root      (derive-root opts)
         cfg       (if crew
                     (cli-common/build-cfg crew models)
-                    (loader/load-config! root (fs/instance) "crew cli"))
+                    (let [loaded* (atom nil)]
+                      (host/ensure-runtime!
+                        {:install!
+                         (fn []
+                           (reset! loaded* (loader/load-config! root (fs/instance) "crew cli")))})
+                      (or @loaded* (loader/snapshot "crew cli") {})))
         cfg       (loader/normalize-config cfg)
         crew-map  (:crew cfg)]
     (map (fn [[crew-id crew-member]]

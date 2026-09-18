@@ -7,6 +7,7 @@
     [isaac.bridge.core :as bridge]
     [isaac.charge :as charge]
     [isaac.cli.api :as cli-api]
+    [isaac.cli.host :as host]
     [isaac.cli.registry :as cli]
     [isaac.comm.protocol :as comm]
     [isaac.comm.render :as render]
@@ -159,7 +160,7 @@
 (defn- policy-default-target [opts override cfg session-store]
   (let [crew-id (episode-crew-id opts override cfg)
         sess    (prompt-policy opts override cfg session-store)
-        cwd     (System/getProperty "user.dir")
+        cwd     (host/cwd)
         default (when sess (policy/default-session sess crew-id {:cwd cwd :origin {:kind :cli}}))]
     (if default
       {:session-key default
@@ -198,7 +199,7 @@
 (defn- ensure-session! [target override opts cfg session-store]
   (let [crew-id (episode-crew-id opts override cfg)
         sess    (prompt-policy opts override cfg session-store)
-        cwd     (System/getProperty "user.dir")]
+        cwd     (host/cwd)]
     (cond
       (:session-key target)
       (do
@@ -248,7 +249,7 @@
       (:error ts-check) (do (print-error! (:message ts-check)) 1)
       :else
       (do
-        (builtin/register-all!)
+        (host/ensure-runtime! {:install! builtin/register-all!})
         (let [result (bridge/dispatch!
                        (assoc (charge/build (cond-> {:session-key    session-key
                                                      :input          (:message opts)
@@ -305,9 +306,15 @@
         (do (doseq [error validation-errors] (print-error! error)) 1)
         (if (= false (ensure-local-config! opts))
           1
-          (let [root          (root-of opts)
-                cfg           (install-config! opts)
-                _             (runtime/install! {:config cfg})
+          (let [root     (root-of opts)
+                loaded*  (atom nil)
+                _        (host/ensure-runtime!
+                           {:install!
+                            (fn []
+                              (let [cfg (install-config! opts)]
+                                (reset! loaded* cfg)
+                                (runtime/install! {:config cfg})))})
+                cfg           (or @loaded* (loader/snapshot "prompt-cli") (install-config! opts))
                 session-store (store/registered-store)
                 override      (frequencies-cli/build-override opts)
                 target        (resolve-target opts override cfg session-store)]

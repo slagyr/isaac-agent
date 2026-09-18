@@ -8,6 +8,7 @@
     [isaac.bridge.status :as bridge]
     [isaac.cli.api :as cli-api]
     [isaac.cli.common :as cli-common]
+    [isaac.cli.host :as host]
     [isaac.cli.registry :as cli]
     [isaac.cli.table :as table]
     [isaac.config.api :as config]
@@ -237,13 +238,20 @@
   (root/default-root opts))
 
 (defn- install-cli!
-  "Load config, resolve the state dir, and install it into the nexus (snapshot +
-   session store + tree). Returns {:config :root :store}."
+  "Ensure the process runtime (once) and return {:config :root :store}.
+   Embedded hosts skip re-install and keep the live snapshot."
   [opts]
-  (let [root  (resolve-root opts)
-        loaded-cfg (loader/load-config! root (fs/instance) "session cli command")]
-    (runtime/install! {:config loaded-cfg})
-    {:config loaded-cfg :root root :store (store/registered-store)}))
+  (let [root (resolve-root opts)
+        loaded* (atom nil)]
+    (host/ensure-runtime!
+      {:install!
+       (fn []
+         (let [loaded-cfg (loader/load-config! root (fs/instance) "session cli command")]
+           (reset! loaded* loaded-cfg)
+           (runtime/install! {:config loaded-cfg})))})
+    {:config (or @loaded* (loader/snapshot "session cli command") {})
+     :root   root
+     :store  (store/registered-store)}))
 
 (defn- run-show [opts session-id]
   (if (str/blank? session-id)
@@ -256,25 +264,22 @@
           (do
             (print-session-data (session->payload session) opts)
             0)
-          (try
-            (let [ctx     (assoc (session-ctx/resolve-behavior session-id {})
-                                 :boot-files (session-ctx/read-boot-files (:cwd session))
-                                 :root root)
-                  ;; CLI never boots modules. Register the crew allow-list
-                  ;; builtins first — session-allowed-tools only sees tools
-                  ;; already in the registry, so an empty registry used to
-                  ;; report Tools 0 (isaac-wczf / isaac-zcb9).
-                  allow   (get-in ctx [:crew-cfg :tools :allow])
-                  _       (when (seq allow)
-                            (builtin/register-all! allow))
-                  allowed (bridge/session-allowed-tools ctx)
-                  _       (when (seq allowed)
-                            (tool-registry/tool-definitions allowed (:module-index config)))
-                  status  (bridge/status-data session-id (assoc ctx :allowed-tools allowed))]
-              (println (bridge/format-status status))
-              0)
-            (finally
-              (config/dangerously-install-config! nil "clear ambient config after CLI command"))))))))
+          (let [ctx     (assoc (session-ctx/resolve-behavior session-id {})
+                               :boot-files (session-ctx/read-boot-files (:cwd session))
+                               :root root)
+                ;; CLI never boots modules. Register the crew allow-list
+                ;; builtins first — session-allowed-tools only sees tools
+                ;; already in the registry, so an empty registry used to
+                ;; report Tools 0 (isaac-wczf / isaac-zcb9).
+                allow   (get-in ctx [:crew-cfg :tools :allow])
+                _       (host/ensure-runtime!
+                          {:install! (fn [] (when (seq allow) (builtin/register-all! allow)))})
+                allowed (bridge/session-allowed-tools ctx)
+                _       (when (seq allowed)
+                          (tool-registry/tool-definitions allowed (:module-index config)))
+                status  (bridge/status-data session-id (assoc ctx :allowed-tools allowed))]
+            (println (bridge/format-status status))
+            0))))))
 
 (defn- run-delete [opts session-id]
   (if (str/blank? session-id)
@@ -426,32 +431,29 @@
               (print-mutation-error! "missing value")
 
               :else
-              (try
-                (let [nav-result (case operation
-                                     :set   (nav/set-value session-schema/Session session path-str
-                                                           (when-not (:member path-result)
-                                                             (parse-set-value (:spec path-result) raw-value)))
-                                     :unset (nav/unset-value session-schema/Session session path-str))]
-                    (if-not (:ok? nav-result)
-                      (print-mutation-error! (path-error nav-result))
-                      (let [top-key       (keyword (first (str/split path-str #"\.")))
-                            updated-value (get-in (:config nav-result) [top-key])
-                            current-value (get-in session [top-key])]
-                        (if (= current-value updated-value)
-                          0
-                          (let [conformed (binding [session-schema/*config* loaded-cfg]
-                                            (session-schema/conform-read (:config nav-result)))]
-                            (if (schema/error? conformed)
-                              (print-mutation-error!
-                                (set-value-guidance path-str
-                                                    (:spec path-result)
-                                                    (path-message path-str conformed updated-value)))
-                              (do
-                                (store/update-session! session-store session-id {top-key       updated-value
-                                                                                 :updated-at (str (memory/now))})
-                                0)))))))
-                  (finally
-                    (config/dangerously-install-config! nil "clear ambient config after CLI command"))))))))))
+              (let [nav-result (case operation
+                                 :set   (nav/set-value session-schema/Session session path-str
+                                                       (when-not (:member path-result)
+                                                         (parse-set-value (:spec path-result) raw-value)))
+                                 :unset (nav/unset-value session-schema/Session session path-str))]
+                (if-not (:ok? nav-result)
+                  (print-mutation-error! (path-error nav-result))
+                  (let [top-key       (keyword (first (str/split path-str #"\.")))
+                        updated-value (get-in (:config nav-result) [top-key])
+                        current-value (get-in session [top-key])]
+                    (if (= current-value updated-value)
+                      0
+                      (let [conformed (binding [session-schema/*config* loaded-cfg]
+                                        (session-schema/conform-read (:config nav-result)))]
+                        (if (schema/error? conformed)
+                          (print-mutation-error!
+                            (set-value-guidance path-str
+                                                (:spec path-result)
+                                                (path-message path-str conformed updated-value)))
+                          (do
+                            (store/update-session! session-store session-id {top-key       updated-value
+                                                                             :updated-at (str (memory/now))})
+                            0))))))))))))))
 
 ;; region ----- Command -----
 

@@ -3,8 +3,7 @@
     [gherclj.core :as g]
     [isaac.config.api :as config]
     [isaac.config.cli.common :as config-cli]
-    [isaac.foundation.cli-steps :as cli-steps]
-    [isaac.startup.config-cache :as config-cache]))
+    [isaac.foundation.cli-steps :as cli-steps]))
 
 (def ^:private load-resolved config/load-resolved)
 
@@ -19,6 +18,5 @@
 (cli-steps/register-isaac-run-wrapper!
   (fn [thunk]
     (with-redefs-fn {#'config/load-resolved          capture-load-result
-                     #'config-cli/threaded-config    (constantly nil)
-                     #'config-cache/read-pre-sub     (constantly nil)}
+                     #'config-cli/threaded-config    (constantly nil)}
       thunk)))

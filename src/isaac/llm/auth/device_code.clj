@@ -237,6 +237,8 @@
         body       (poll-body descriptor device-id user-code)
         oidc?      (= :oidc-device-code (oauth-flow descriptor))]
     (loop [elapsed 0 sleep-ms interval-ms]
+      (when ((requiring-resolve 'isaac.cli.host/cancelled?))
+        (throw (ex-info "cancelled" {:error :cancelled})))
       (sleep! sleep-ms)
       (let [raw    (post-device-code-poll! descriptor url body)
             result (if oidc? (classify-oidc-poll-result raw) raw)]

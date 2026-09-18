@@ -5,6 +5,7 @@
     [clojure.string :as str]
     [clojure.tools.cli :as tools-cli]
     [isaac.cli.registry :as cli]
+    [isaac.cli.host :as host]
     [isaac.cli.table :as table]
     [isaac.config.root :as root]
     [isaac.turn.queue :as queue]))
@@ -42,6 +43,7 @@
                  :color?  false}))
 
 (defn- with-queue-root [opts f]
+  (host/ensure-runtime! {})
   (binding [queue/*root* (derive-root opts)]
     (f)))
 

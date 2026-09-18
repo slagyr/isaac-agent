@@ -97,23 +97,28 @@
  {:auth
   {:usage "auth <subcommand> [options]",
    :summary "Manage authentication credentials",
-   :namespace isaac.llm.auth.cli},
+   :namespace isaac.llm.auth.cli
+   :hosted true},
   :crew
   {:usage "crew [subcommand] [options]",
    :summary "Manage configured crew members",
-   :namespace isaac.crew.cli},
+   :namespace isaac.crew.cli
+   :hosted true},
   :prompt
   {:usage "prompt -m <message> [options]",
    :summary "Run a single prompt turn and exit",
-   :namespace isaac.bridge.prompt-cli},
+   :namespace isaac.bridge.prompt-cli
+   :hosted true},
   :turns
   {:usage "turns [subcommand] [options]",
    :summary "Inspect and evict held turn requests",
-   :namespace isaac.turn.cli},
+   :namespace isaac.turn.cli
+   :hosted true},
   :sessions
   {:usage "sessions [subcommand] [options]",
    :summary "Manage stored conversation sessions",
-   :namespace isaac.session.cli}},
+   :namespace isaac.session.cli
+   :hosted true}},
  :isaac.agent/llm-api
  {:messages {:factory isaac.llm.api.messages/make},
   :grover {:factory isaac.llm.api.grover/make},

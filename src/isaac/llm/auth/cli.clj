@@ -2,6 +2,7 @@
 (ns isaac.llm.auth.cli
   (:require
     [isaac.cli.api :as cli-api]
+    [isaac.cli.host :as host]
     [clojure.string :as str]
     [clojure.tools.cli :as tools-cli]
     [isaac.config.loader :as loader]
@@ -15,25 +16,31 @@
 (defn- known-providers [] #{"anthropic" "ollama" "openai" "chatgpt" "grok"})
 
 (defn- load-auth-config [reason]
-  (loader/load-config! (root/current-root) (fs/instance) reason))
+  (let [loaded* (atom nil)]
+    (host/ensure-runtime!
+      {:install!
+       (fn []
+         (reset! loaded* (loader/load-config! (root/current-root) (fs/instance) reason)))})
+    (or @loaded* (loader/snapshot reason) {})))
 
 (defn- oauth-provider? [provider-name]
   (contains? #{"chatgpt" "grok"} provider-name))
 
 (defn- login-api-key [provider-name]
-  (print (str "Enter API key for " provider-name ": "))
-  (flush)
-  (if-let [key (read-line)]
-    (if (str/blank? key)
-      (do (println "Error: API key is required")
-          1)
-      (let [sdir (or (:root (load-auth-config "auth cli: key login"))
-                     (root/current-root))]
-        (auth-store/save-api-key! sdir provider-name key (fs/instance))
-        (println (str "Authenticated with " provider-name " via API key"))
-        0))
-    (do (println "Error: No input")
-        1)))
+  (binding [*in* (host/in)]
+    (print (str "Enter API key for " provider-name ": "))
+    (flush)
+    (if-let [key (read-line)]
+      (if (str/blank? key)
+        (do (println "Error: API key is required")
+            1)
+        (let [sdir (or (:root (load-auth-config "auth cli: key login"))
+                       (root/current-root))]
+          (auth-store/save-api-key! sdir provider-name key (fs/instance))
+          (println (str "Authenticated with " provider-name " via API key"))
+          0))
+      (do (println "Error: No input")
+          1))))
 
 (defn- auth-dir []
   (root/current-root))
