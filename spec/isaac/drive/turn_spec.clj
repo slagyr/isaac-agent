@@ -48,6 +48,13 @@
   (it "keeps errors ahead of provider unavailability"
     (should= :error
              (:ended-by (#'sut/finalize-turn-result {:unavailable? true :error :provider-error}))))
+
+  (it "keeps :provider-unavailable when the drive loop weather-suspends a wall"
+    (should= :provider-unavailable
+             (:ended-by (#'sut/finalize-turn-result {:unavailable? true
+                                                     :stopReason    "suspended"
+                                                     :ended-by      :suspended
+                                                     :reason        :wall}))))
   )
 
 (defn- event

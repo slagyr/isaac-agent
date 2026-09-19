@@ -84,4 +84,10 @@
     (let [result {:error :context-overflow :status 400 :message "prompt is too long"}]
       (should= result (sut/normalize result {} "chatgpt"))))
 
+  (it "classifies a 503 as a wall without inventing a retry-after"
+    (let [classified (sut/classify {:error :api-error :status 503 :message "unavailable"} {} "chatgpt")]
+      (should= true (:unavailable? classified))
+      (should= :wall (:reason classified))
+      (should-be-nil (:retry-after-ms classified))))
+
   )

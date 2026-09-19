@@ -331,13 +331,15 @@
                     (if (store/mark-in-flight! session-store* session-key)
                       (do
                         (record-turn-marker! (or sess session-store*) session-key charge)
-                        (try
-                          (turn/run-turn! (assoc charge :session-policy sess))
-                          (finally
-                            (isolate-cleanup! :clear-turn-marker
-                                              #(clear-turn-marker! (or sess session-store*) session-key))
-                            (isolate-cleanup! :clear-in-flight
-                                              #(store/clear-in-flight! session-store* session-key)))))
+                        (let [turn-result (atom nil)]
+                          (try
+                            (reset! turn-result (turn/run-turn! (assoc charge :session-policy sess)))
+                            @turn-result
+                            (finally
+                              (isolate-cleanup! :clear-turn-marker
+                                                #(clear-turn-marker! (or sess session-store*) session-key))
+                              (isolate-cleanup! :clear-in-flight
+                                                #(store/clear-in-flight! session-store* session-key))))))
                       (refuse-dispatch session-key)))
                   (turn/run-turn! (assoc charge :session-policy (request-policy charge)))))))))
       result)))

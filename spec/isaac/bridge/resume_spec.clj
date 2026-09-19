@@ -147,4 +147,25 @@
       (should= 1 (:dropped entry))
       (should= 0 (:requeued entry)))
     (should= nil (store/get-turn-marker (store/registered-store) "firewatch")))
+
+  (it "defers a weather-suspended marker whose retry-at is still in the future"
+    (helper/create-session! test-root "trash-can")
+    (store/record-turn-marker! (store/registered-store) "trash-can"
+                               {:source      :hail
+                                :session-id  "trash-can"
+                                :suspended   true
+                                :reason      :wall
+                                :retry-at    "2026-04-21T10:30:00Z"
+                                :started-at  "2026-04-21T10:00:00Z"
+                                :delivery-id "weather-hail"})
+    (sut/resume-interrupted-turns! {:session-store (store/registered-store)
+                                    :root          test-root
+                                    :cfg           {}
+                                    :now           (Instant/parse "2026-04-21T10:00:00Z")})
+    (let [entry (first (filter #(= :resume/weather-deferred (:event %)) @log/captured-logs))]
+      (should-not-be-nil entry)
+      (should= "trash-can" (:session entry))
+      (should= "2026-04-21T10:30:00Z" (:retry-at entry)))
+    (should-not-be-nil (store/get-turn-marker (store/registered-store) "trash-can"))
+    (should-not (fs/exists? (nexus/get :fs) (str test-root "/hail/deliveries/weather-hail.edn"))))
   )

@@ -25,7 +25,6 @@ Feature: Turns suspend and resume on provider weather (isaac-nqeq, epic isaac-ug
       | name      | crew  |
       | trash-can | oscar |
 
-  @wip
   Scenario: a wall mid-turn suspends the turn instead of ending it
     Given the following model responses are queued:
       | model        | type       | status | retry-after |
@@ -47,7 +46,6 @@ Feature: Turns suspend and resume on provider weather (isaac-nqeq, epic isaac-ug
       | type    | message.role | message.content | #comment                          |
       | message | user         | knock knock     | last entry — nothing fabricated   |
 
-  @wip
   Scenario: the resume sweep leaves a suspended turn alone before retry-at
     Given a suspended turn marker exists for session "trash-can" with:
       | key       | value                |
@@ -61,7 +59,6 @@ Feature: Turns suspend and resume on provider weather (isaac-nqeq, epic isaac-ug
       | event         |
       | :turn/resumed |
 
-  @wip
   Scenario: the resume sweep re-drives a suspended turn after retry-at and it completes
     Given session "trash-can" has transcript:
       | type    | message.role | message.content |
@@ -84,7 +81,6 @@ Feature: Turns suspend and resume on provider weather (isaac-nqeq, epic isaac-ug
       | message | assistant    | Who's there     |
     And no turn marker exists for session "trash-can"
 
-  @wip
   Scenario: a resumed turn continues from the transcript — tool results already persisted are not re-run
     Given the crew "oscar" allows tools: "exec/run"
     And the built-in tools are registered
@@ -108,7 +104,6 @@ Feature: Turns suspend and resume on provider weather (isaac-nqeq, epic isaac-ug
       | type    | message.role | message.content    |
       | message | assistant    | Two files: a and b |
 
-  @wip
   Scenario: walling again on resume backs off and re-suspends — no attempt is consumed
     Given a suspended turn marker exists for session "trash-can" with:
       | key           | value                |
@@ -128,7 +123,6 @@ Feature: Turns suspend and resume on provider weather (isaac-nqeq, epic isaac-ug
       | level | event           | session   | suspend-count |
       | :warn | :turn/suspended | trash-can | 2             |
 
-  @wip
   Scenario: backoff without a provider Retry-After grows from 30 s and caps at 30 min
     Given the following model responses are queued:
       | model        | type       | status |
@@ -150,7 +144,6 @@ Feature: Turns suspend and resume on provider weather (isaac-nqeq, epic isaac-ug
       | key      | value                |
       | retry-at | 2026-04-21T11:30:00Z |
 
-  @wip
   Scenario: an auth failure suspends with reason auth and waits for re-login
     Given the following model responses are queued:
       | model        | type       | status |
@@ -162,7 +155,6 @@ Feature: Turns suspend and resume on provider weather (isaac-nqeq, epic isaac-ug
       | suspended | true  |
       | reason    | :auth |
 
-  @wip
   Scenario: a resumed turn re-resolves the crew's model — moving the crew unblocks its parked turns
     Given session "trash-can" has transcript:
       | type    | message.role | message.content |
@@ -192,7 +184,6 @@ Feature: Turns suspend and resume on provider weather (isaac-nqeq, epic isaac-ug
       | type    | message.role | message.content |
       | message | assistant    | Rerouted        |
 
-  @wip
   Scenario: a charge that pinned a model keeps waiting on that model
     Given session "trash-can" has transcript:
       | type    | message.role | message.content |
@@ -219,7 +210,6 @@ Feature: Turns suspend and resume on provider weather (isaac-nqeq, epic isaac-ug
       | suspended           | true         |
       | suspended-on.model  | snuffy-codex |
 
-  @wip
   Scenario: boot resume honours retry-at for a suspended marker
     Given a suspended turn marker exists for session "trash-can" with:
       | key       | value                |
@@ -233,7 +223,6 @@ Feature: Turns suspend and resume on provider weather (isaac-nqeq, epic isaac-ug
       | level | event                    | session   | retry-at             |
       | :info | :resume/weather-deferred | trash-can | 2026-04-21T10:30:00Z |
 
-  @wip
   Scenario: a turn parked past the attention threshold posts one attention notice and stays parked
     Given config:
       | turn.suspended-attention-ms | 21600000    |
@@ -260,7 +249,6 @@ Feature: Turns suspend and resume on provider weather (isaac-nqeq, epic isaac-ug
     When the resume sweep runs at "2026-04-21T10:31:00Z"
     Then the directory "comm/delivery/pending" has exactly 1 file
 
-  @wip
   Scenario: cancelling a suspended turn deletes its marker — cancel is not suspend
     Given a suspended turn marker exists for session "trash-can" with:
       | key       | value                |

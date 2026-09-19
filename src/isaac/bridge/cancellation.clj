@@ -64,6 +64,11 @@
         (try
           (hook)
           (catch Exception _ nil)))
+      (try
+        (when-let [ss (store/registered-store)]
+          (when (true? (:suspended (store/get-turn-marker ss session-key)))
+            (store/clear-turn-marker! ss session-key)))
+        (catch Exception _ nil))
       (if existing-turn
         (log/info :bridge/cancel-applied :session session-key :hooks (count hooks))
         (log/info :bridge/cancel-noop :session session-key :hooks 0))

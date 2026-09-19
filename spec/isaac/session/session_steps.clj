@@ -16,6 +16,7 @@
     [isaac.foundation.root-steps :as froot]
 
     [isaac.drive.dispatch :as drive-dispatch]
+    [isaac.drive.weather :as weather]
     [isaac.step-tables :as match]
     [isaac.fs :as fs]
     [isaac.drive.turn :as single-turn]
@@ -55,7 +56,7 @@
 
 (helper! isaac.session.session-steps)
 
-(declare -drain-parked-turn! await-turn! loaded-config)
+(declare -drain-parked-turn! await-turn! loaded-config session-store)
 
 (g/before-scenario
   (fn []
@@ -1988,16 +1989,27 @@
       (= "false" (str/lower-case v))    false
       :else                             v)))
 
+(defn- marker-get [marker path]
+  (reduce (fn [current segment]
+            (when (map? current)
+              (or (get current (keyword segment))
+                  (get current segment))))
+          marker
+          (str/split path #"\.")))
+
 (defn turn-marker-matches [session-name table]
   (let [marker (or (with-feature-fs #(store/get-turn-marker (session-store) session-name))
                    (when (and (= session-name (g/get :current-key))
                               (bridge-cancel/cancelled? session-name))
                      {:session-id session-name :cancelled true}))]
     (g/should-not-be-nil marker)
-    (doseq [[k v] (:rows table)]
-      (let [expected (parse-marker-value v)]
+    (doseq [row (:rows table)]
+      (let [row-map  (if (map? row) row (zipmap (:headers table) row))
+            path     (or (get row-map "key") (first row))
+            raw      (or (get row-map "value") (second row))
+            expected (parse-marker-value raw)]
         (when-not (= ::any expected)
-          (g/should= expected (get marker (keyword k))))))))
+          (g/should= expected (marker-get marker path)))))))
 
 (defn no-turn-marker [session-name]
   (await-turn!)
@@ -2386,6 +2398,95 @@
 
 (defthen "the last LLM request has no effort" isaac.session.session-steps/last-llm-request-has-no-effort
   "Awaits the turn, then asserts that the LLM request map has no :effort key.")
+
+(defn user-sends-on-session-at [content key-str iso]
+  (g/assoc! :current-time (java.time.Instant/parse iso))
+  (user-sends-on-session content key-str)
+  (await-turn!))
+
+(defn seed-suspended-marker [session-name table]
+  (with-feature-fs
+    (fn []
+      (let [rows   (map #(zipmap (:headers table) %) (:rows table))
+            parsed (reduce (fn [acc row]
+                             (assoc acc (keyword (get row "key")) (parse-marker-value (get row "value"))))
+                           {} rows)
+            nested (reduce-kv (fn [m k v]
+                                (let [parts (str/split (name k) #"\.")]
+                                  (if (= 1 (count parts))
+                                    (assoc m k v)
+                                    (assoc-in m (map keyword parts) v))))
+                              {} parsed)
+            marker (merge {:session-id    session-name
+                           :source        :cli
+                           :suspended     true
+                           :reason        :wall
+                           :suspend-count 1
+                           :started-at    0
+                           :suspended-at  "2026-04-21T10:00:00Z"}
+                          nested)]
+        (store/record-turn-marker! (session-store) session-name marker)))))
+
+(defn resume-sweep-runs-at [iso]
+  (with-feature-fs
+    (fn []
+      (let [now   (java.time.Instant/parse iso)
+            store (session-store)
+            cfg   (loader/normalize-config (loaded-config))]
+        (g/assoc! :current-time now)
+        (config/dangerously-install-config! cfg "weather sweep")
+        (with-current-time
+          (fn []
+            (weather/sweep-weather! {:session-store store :cfg cfg :now now :trigger :sweep})))))))
+
+(defn isaac-edn-file-changes [path table]
+  (ffs/isaac-edn-file-exists path table)
+  (notify-config-change! path)
+  (when-let [store (try (session-store) (catch Exception _ nil))]
+    (let [cfg (loader/normalize-config (loaded-config))
+          now (or (g/get :current-time) (memory/now))]
+      (config/dangerously-install-config! cfg "weather config-reload")
+      (weather/sweep-weather! {:session-store store :cfg cfg :now now :trigger :config-reload}))))
+
+(defn exec-tool-executed-n-times [n]
+  (let [n (if (string? n) (parse-long n) n)
+        events (or (some-> (g/get :channel-events) deref) [])
+        count  (count (filter #(and (= "tool-call" (:event %))
+                                    (or (= "exec/run" (get-in % [:tool :name]))
+                                        (= "exec__run" (get-in % [:tool :name]))
+                                        (str/includes? (str (get-in % [:tool :name])) "exec")))
+                              events))]
+    (g/should= n count)))
+
+(defn llm-request-includes-tool-result [_session-name text]
+  (await-turn!)
+  (let [request (or (g/get :llm-request) (drive-dispatch/last-request) (grover/last-request))
+        blob    (pr-str request)]
+    (g/should (str/includes? blob text))))
+
+(defwhen #"the user sends \"(.+)\" on session \"([^\"]+)\" at \"([^\"]+)\""
+  isaac.session.session-steps/user-sends-on-session-at
+  "Drives a turn with a pinned clock so suspended-at/retry-at are assertable.")
+
+(defgiven #"a suspended turn marker exists for session \"([^\"]+)\" with:"
+  isaac.session.session-steps/seed-suspended-marker
+  "Writes a :suspended true turn marker with table keys and sane defaults.")
+
+(defwhen #"the resume sweep runs at \"([^\"]+)\""
+  isaac.session.session-steps/resume-sweep-runs-at
+  "Invokes the weather resume sweep once with a fixed clock.")
+
+(defwhen #"the isaac EDN file \"([^\"]+)\" changes to:"
+  isaac.session.session-steps/isaac-edn-file-changes
+  "Rewrites an isaac EDN file then sweeps weather-suspended turns (:config-reload).")
+
+(defthen #"the exec tool is executed (\d+) times"
+  isaac.session.session-steps/exec-tool-executed-n-times
+  "Counts exec tool-call events on the in-memory channel.")
+
+(defthen #"the llm request for session \"([^\"]+)\" includes the tool result \"(.+)\""
+  isaac.session.session-steps/llm-request-includes-tool-result
+  "Inspects the recorded outbound LLM request for a persisted tool result.")
 
 ;; endregion ^^^^^ Routing ^^^^^
 

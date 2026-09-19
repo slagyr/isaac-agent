@@ -36,7 +36,10 @@
           (map? body) (pr-str body)))))
 
 (defn- wall-response? [result]
-  (= :rate-limited (:error result)))
+  (or (= :rate-limited (:error result))
+      (= 429 (:status result))
+      (= 503 (:status result))
+      (wall-message? (response-message result))))
 
 (defn- auth-response? [result]
   (or (= :auth-failed (:error result))
@@ -64,22 +67,29 @@
     (number? value) (long value)
     :else (some-> (not-empty (str/trim (str value))) parse-long)))
 
-(defn- retry-after-ms [result default-ms]
-  (or (:retry-after-ms result) default-ms))
+(defn- retry-after-ms [result]
+  (or (:retry-after-ms result)
+      (when-let [secs (retry-after-secs (or (:retry-after result)
+                                            (get-in result [:body :retry_after])
+                                            (get-in result [:body :retry-after])))]
+        (when (pos? secs)
+          (* secs 1000)))))
 
 (defn- classify-wall
   [result cfg provider]
   (when (wall-response? result)
-    (let [retry-ms (retry-after-ms result (provider-retry-after-ms cfg))]
+    (let [retry-ms (or (retry-after-ms result)
+                       (when (wall-message? (response-message result))
+                         (provider-retry-after-ms cfg)))]
       (log/warn :chat/provider-walled
                 :provider provider
                 :status (:status result)
                 :retry-after-ms retry-ms)
-      {:unavailable?      true
-       :retry-after-ms    retry-ms
-       :reason            :wall
-       :provider          provider
-       :provider-response result})))
+      (cond-> {:unavailable?      true
+               :reason            :wall
+               :provider          provider
+               :provider-response result}
+        retry-ms (assoc :retry-after-ms retry-ms)))))
 
 (defn- classify-auth
   [result cfg provider]

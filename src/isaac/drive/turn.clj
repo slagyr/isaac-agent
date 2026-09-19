@@ -11,6 +11,7 @@
     [isaac.drive.dispatch :as dispatch]
     [isaac.drive.observer :as observer]
     [isaac.drive.provider-wall :as provider-wall]
+    [isaac.drive.weather :as weather]
     [isaac.fs :as fs]
     [isaac.llm.api.protocol :as api]
     [isaac.llm.provider :as llm-provider]
@@ -21,6 +22,7 @@
     [isaac.session.context :as session-ctx]
     [isaac.session.policy :as policy]
     [isaac.session.store.spi :as store]
+    [isaac.tool.memory :as memory]
     [isaac.tool.names :as names]
     [isaac.tool.registry :as tool-registry]
     [isaac.turnstile :as turnstile])
@@ -443,15 +445,22 @@
                 tool-loop/default-max-parallel-tools)]
     (parse-long-or-raw raw)))
 
-(def ended-by-values #{:reply :cycle-limit :cancelled :error :context-exhausted :provider-unavailable})
+(def ended-by-values #{:reply :cycle-limit :cancelled :error :context-exhausted :provider-unavailable :suspended})
 
 (defn- classify-ended-by [result]
   (cond
+    (and (:unavailable? result)
+         (or (= :suspended (:ended-by result))
+             (= "suspended" (:stopReason result)))
+         (not= :context-exhausted (:reason result)))
+    :provider-unavailable
+
     (contains? ended-by-values (:ended-by result)) (:ended-by result)
     (or (= :cancelled (:error result))
         (:cancelled? result)
         (bridge/cancelled-response? result)
         (= "cancelled" (:stopReason result))) :cancelled
+    (= "suspended" (:stopReason result)) :suspended
     (= :empty-terminal-response (:error result)) :error
     (:error result) :error
     (= :context-exhausted (:reason result)) :context-exhausted
@@ -1529,8 +1538,15 @@
                 (bridge/cancelled? session-key))
             (suspend/interrupt-result session-key)
 
-            (:unavailable? result)
-            result
+            (weather/weather-reason result)
+            (let [ss (or (:session-store ctx) (nexus/get-in [:sessions :store]))]
+              (if ss
+                (weather/stamp-weather! ss session-key result
+                                        {:provider provider-name
+                                         :model    model
+                                         :now      (or memory/*now* (memory/now))
+                                         :model-override (:model-override charge)})
+                result))
 
             :else
             (do

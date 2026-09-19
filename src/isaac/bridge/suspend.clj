@@ -41,13 +41,24 @@
                                          :boundary boundary
                                          :interrupted-at (str (java.time.Instant/now)))))))
 
+(defn- weather-parked? [marker]
+  (and (true? (:suspended marker))
+       (some? (:retry-at marker))))
+
 (defn release-turn-marker! [store session-key]
-  (if (session-suspended? session-key)
-    (let [boundary (or (get @suspend-boundaries* session-key) :clean)]
-      (stamp-suspended-marker! store session-key boundary)
-      (swap! suspended-sessions* disj session-key)
-      (swap! suspend-boundaries* dissoc session-key))
-    (policy/clear-turn-marker! (as-policy store) session-key)))
+  (let [sess (as-policy store)]
+    (cond
+      (session-suspended? session-key)
+      (let [boundary (or (get @suspend-boundaries* session-key) :clean)]
+        (stamp-suspended-marker! store session-key boundary)
+        (swap! suspended-sessions* disj session-key)
+        (swap! suspend-boundaries* dissoc session-key))
+
+      (weather-parked? (policy/get-turn-marker sess session-key))
+      nil
+
+      :else
+      (policy/clear-turn-marker! sess session-key))))
 
 (defn suspend!
   [{:keys [timeout-ms session-store]

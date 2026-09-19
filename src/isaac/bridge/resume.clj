@@ -171,6 +171,27 @@
         (store/clear-turn-marker! session-store session-id)
         {:dropped 1})
 
+      (and (true? (:suspended marker))
+           (when-let [retry (:retry-at marker)]
+             (< now-ms (instant->epoch-ms retry))))
+      (do
+        (log/info :resume/weather-deferred
+                  :session session-id
+                  :retry-at (:retry-at marker))
+        {:deferred 1})
+
+      (and (true? (:suspended marker))
+           (:retry-at marker))
+      (do
+        (log/info :turn/resumed
+                  :session session-id
+                  :trigger :boot
+                  :suspended-ms (when-let [at (:suspended-at marker)]
+                                  (- now-ms (instant->epoch-ms at))))
+        (repair-transcript! session-store cfg session-id)
+        (when (dispatch-comm-resume! session-id cfg)
+          {:requeued 1}))
+
       :else
       (do
         (when (crash-orphan? marker)
