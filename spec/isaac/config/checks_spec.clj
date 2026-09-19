@@ -224,7 +224,27 @@
       (require 'isaac.session.policy.chronicle)
       (let [{:keys [errors]} (sut/check-session-policy
                                {:config {:crew {"cordelia" {:session-policy :chronicle}}}})]
-        (should= [] errors))))
+        (should= [] errors)))
+
+    (it "accepts a session policy contributed by a module without registering a factory"
+      (let [{:keys [errors]} (sut/check-session-policy
+                               {:config {:crew {"cordelia" {:session-policy :lantern}}}
+                                :module-index
+                                {:isaac.session.lantern
+                                 {:manifest {:isaac.agent/session-policy {:lantern {}}}}}})]
+        (should= [] errors)))
+
+    (it "rejects an unknown policy and names the module-contributed set"
+      (require 'isaac.session.policy.chronicle)
+      (let [{:keys [errors]} (sut/check-session-policy
+                               {:config {:crew {"cordelia" {:session-policy :ledger}}}
+                                :module-index
+                                {:isaac.session.lantern
+                                 {:manifest {:isaac.agent/session-policy {:lantern {}}}}}})]
+        (should= 1 (count errors))
+        (should= "crew.cordelia.session-policy" (:key (first errors)))
+        (should (re-find #"references undefined session policy \(got \"ledger\"\); known: chronicle, lantern"
+                         (:value (first errors)))))))
 
   (context "check-retired-cycle-limit"
 

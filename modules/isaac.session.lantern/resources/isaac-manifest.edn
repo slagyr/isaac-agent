@@ -1,0 +1,8 @@
+{:id      :isaac.session.lantern
+ :version "0.1.0"
+ :factory isaac.module.protocol/module
+
+ ;; Fixture session-policy contribution. Validation reads the berth key
+ ;; from the module index; the factory is not invoked by config validate.
+ :isaac.agent/session-policy
+ {:lantern {:factory isaac.session.policy.chronicle/create}}}

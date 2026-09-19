@@ -80,13 +80,25 @@
         (when-not (contains? @factories* kw)
           (register-factory! kw f))))))
 
+(defn- contributed-names [module-index]
+  (->> (or module-index {})
+       vals
+       (mapcat #(keys (get-in % [:manifest :isaac.agent/session-policy])))
+       (map keyword)
+       set))
+
 (defn known-policy-names
-  []
-  (ensure-builtins!)
-  (->> (registered-names)
-       (map name)
-       sort
-       vec))
+  "Built-in and runtime-registered names, unioned with every
+   :isaac.agent/session-policy key contributed in `module-index`.
+   Validation must not depend on berth factories having run."
+  ([]
+   (known-policy-names nil))
+  ([module-index]
+   (ensure-builtins!)
+   (->> (into (registered-names) (contributed-names module-index))
+        (map name)
+        sort
+        vec)))
 
 (defn create
   "Instantiate the named policy over `store`. Unknown names throw."

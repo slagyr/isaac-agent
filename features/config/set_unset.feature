@@ -154,3 +154,19 @@ Feature: Config set / unset
       | Set-typed fields take the member in the path         |
       | isaac config set crew\.marvin\.tags\.role/worker     |
     And the exit code is 0
+
+  Scenario: config set on a crew using a module-contributed session policy succeeds
+    Given default Grover setup
+    And config file "isaac.edn" containing:
+      """
+      {:defaults  {:crew :cordelia :model :grover}
+       :crew      {:cordelia {:model grover :session-policy :lantern}}
+       :models    {:grover {:model "echo" :provider :grover}}
+       :providers {:grover {}}
+       :modules   {:isaac.session.lantern {:local/root "modules/isaac.session.lantern"}}}
+      """
+    When isaac is run with "config set crew.cordelia.model echo"
+    Then the exit code is 0
+    When isaac is run with "config get crew.cordelia.model"
+    Then the stdout contains "echo"
+    And the exit code is 0

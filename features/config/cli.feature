@@ -1040,3 +1040,33 @@ Feature: Config Command
     When isaac is run with "config validate --json"
     Then the stdout parses as JSON with a warnings array naming the offending path
     And the exit code is 0
+
+  Scenario: validate accepts a crew on a session policy contributed by an installed module
+    Given config file "isaac.edn" containing:
+      """
+      {:defaults  {:crew :cordelia :model :local}
+       :crew      {:cordelia {:session-policy :lantern}}
+       :models    {:local {:model "llama3.3:1b" :provider :anthropic}}
+       :providers {:anthropic {}}
+       :modules   {:isaac.session.lantern {:local/root "modules/isaac.session.lantern"}}}
+      """
+    When isaac is run with "config validate"
+    Then the stdout contains "OK"
+    And the stderr does not contain "undefined session policy"
+    And the exit code is 0
+
+  Scenario: validate still rejects an unknown session policy and names the module's known set
+    Given config file "isaac.edn" containing:
+      """
+      {:defaults  {:crew :cordelia :model :local}
+       :crew      {:cordelia {:session-policy :ledger}}
+       :models    {:local {:model "llama3.3:1b" :provider :anthropic}}
+       :providers {:anthropic {}}
+       :modules   {:isaac.session.lantern {:local/root "modules/isaac.session.lantern"}}}
+      """
+    When isaac is run with "config validate"
+    Then the stderr matches:
+      | pattern                                                                  |
+      | crew\.cordelia\.session-policy                                          |
+      | references undefined session policy \(got "ledger"\); known: chronicle, lantern |
+    And the exit code is 1

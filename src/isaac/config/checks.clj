@@ -228,10 +228,11 @@
     (if (keyword? value) (name value) (str value))))
 
 (defn check-session-policy
-  "A crew naming a session policy no factory provides is a config error.
-   Absent :session-policy is chronicle (no error)."
-  [{:keys [config]}]
-  (let [known      (session-policy/known-policy-names)
+  "A crew naming a session policy no factory or module provides is a config error.
+   Absent :session-policy is chronicle (no error). Known names are built-ins
+   unioned with :isaac.agent/session-policy keys in the module index."
+  [{:keys [config module-index]}]
+  (let [known      (session-policy/known-policy-names module-index)
         known-set  (set known)
         known-text (str/join ", " known)]
     {:errors (vec
