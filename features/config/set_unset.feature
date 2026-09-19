@@ -79,3 +79,78 @@ Feature: Config set / unset
     When isaac is run with "config get tools.defaults.max-lines"
     Then the stdout contains "500"
     And the exit code is 0
+
+  Scenario: config set refuses a value a schema validator rejects
+    Given default Grover setup
+    And the isaac EDN file "config/crew/joe.edn" exists with:
+      | path  | value  |
+      | model | grover |
+    When isaac is run with "config set crew.joe.tags jackalope"
+    Then the stderr contains "crew.joe.tags"
+    And the stderr contains "must be a set of keywords"
+    And the exit code is 1
+    When isaac is run with "config get crew.joe"
+    Then the stdout does not contain "jackalope"
+    And the exit code is 0
+
+  Scenario: config set still accepts a reference to an entity that is not defined yet
+    Given default Grover setup
+    And the isaac EDN file "config/crew/joe.edn" exists with:
+      | path  | value  |
+      | model | grover |
+    When isaac is run with "config set crew.joe.model not-yet-defined"
+    Then the exit code is 0
+    When isaac is run with "config get crew.joe.model"
+    Then the stdout contains "not-yet-defined"
+    And the exit code is 0
+
+  Scenario: config set confirms what it wrote and where
+    Given default Grover setup
+    And the isaac EDN file "config/crew/joe.edn" exists with:
+      | path  | value  |
+      | model | grover |
+    When isaac is run with "config set crew.joe.model echo"
+    Then the stdout matches:
+      | pattern                                    |
+      | set crew\.joe\.model = :echo.*crew/joe\.edn |
+    And the exit code is 0
+
+  Scenario: config set confirms a set member it added
+    Given default Grover setup
+    And the isaac EDN file "config/crew/joe.edn" exists with:
+      | path  | value  |
+      | model | grover |
+    When isaac is run with "config set crew.joe.tags.wip"
+    Then the stdout matches:
+      | pattern                                       |
+      | set crew\.joe\.tags \+= :wip.*crew/joe\.edn   |
+    And the exit code is 0
+
+  Scenario: config unset confirms what it removed
+    Given default Grover setup
+    And the isaac EDN file "config/crew/joe.edn" exists with:
+      | path  | value  |
+      | model | grover |
+    When isaac is run with "config unset crew.joe.model"
+    Then the stdout matches:
+      | pattern                                |
+      | unset crew\.joe\.model.*crew/joe\.edn  |
+    And the exit code is 0
+
+  Scenario: config set --edn prints only the structured record
+    Given default Grover setup
+    And the isaac EDN file "config/crew/joe.edn" exists with:
+      | path  | value  |
+      | model | grover |
+    When isaac is run with "config set crew.joe.model echo --edn"
+    Then the stdout does not contain "set crew.joe.model"
+    And the exit code is 0
+
+  Scenario: config set --help documents the set-member path form
+    Given default Grover setup
+    When isaac is run with "config set --help"
+    Then the stdout matches:
+      | pattern                                              |
+      | Set-typed fields take the member in the path         |
+      | isaac config set crew\.marvin\.tags\.role/worker     |
+    And the exit code is 0
