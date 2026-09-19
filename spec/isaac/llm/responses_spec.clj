@@ -337,7 +337,64 @@
                                              {:role "tool" :tool_call_id "fc_1" :content "ok"}]})]
         (should= false (:store result))
         (should-not (contains? result :previous_response_id))
-        (should= "user" (:role (first (:input result)))))))
+        (should= "user" (:role (first (:input result))))))
+
+    (it "when chained, omits historical tool results and keeps only the batch after the last assistant"
+      (let [result (@#'sut/->responses-request
+                     {:model                "snuffy-codex"
+                      :stateful             true
+                      :previous-response-id "resp-2"
+                      :messages             [{:role "user" :content "old"}
+                                             {:role       "assistant"
+                                              :content    ""
+                                              :tool_calls [{:id       "fc_old"
+                                                            :type     "function"
+                                                            :function {:name "exec" :arguments "{}"}}]}
+                                             {:role "tool" :tool_call_id "fc_old" :content "old-result"}
+                                             {:role       "assistant"
+                                              :content    ""
+                                              :tool_calls [{:id       "fc_new"
+                                                            :type     "function"
+                                                            :function {:name "exec" :arguments "{}"}}]}
+                                             {:role "tool" :tool_call_id "fc_new" :content "new-result"}]})]
+        (should= "resp-2" (:previous_response_id result))
+        (should= [{:type "function_call_output" :call_id "fc_new" :output "new-result"}]
+                 (:input result))))
+
+    (it "when chained, a multi-call batch includes every output of that batch in call order"
+      (let [result (@#'sut/->responses-request
+                     {:model                "snuffy-codex"
+                      :stateful             true
+                      :previous-response-id "resp-1"
+                      :messages             [{:role "user" :content "open both lids"}
+                                             {:role "tool" :tool_call_id "fc_hist" :content "stale"}
+                                             {:role       "assistant"
+                                              :content    ""
+                                              :tool_calls [{:id "fc_a" :type "function"
+                                                            :function {:name "exec" :arguments "{\"command\":\"a\"}"}}
+                                                           {:id "fc_b" :type "function"
+                                                            :function {:name "exec" :arguments "{\"command\":\"b\"}"}}]}
+                                             {:role "tool" :tool_call_id "fc_a" :content "alpha"}
+                                             {:role "tool" :tool_call_id "fc_b" :content "bravo"}]})]
+        (should= [{:type "function_call_output" :call_id "fc_a" :output "alpha"}
+                  {:type "function_call_output" :call_id "fc_b" :output "bravo"}]
+                 (:input result))))
+
+    (it "when chained, cycle 3 carries only cycle 2's outputs"
+      (let [result (@#'sut/->responses-request
+                     {:model                "snuffy-codex"
+                      :stateful             true
+                      :previous-response-id "resp-2"
+                      :messages             [{:role "user" :content "count"}
+                                             {:role "tool" :tool_call_id "fc_1" :content "cycle-1"}
+                                             {:role       "assistant"
+                                              :content    ""
+                                              :tool_calls [{:id "fc_2" :type "function"
+                                                            :function {:name "exec" :arguments "{}"}}]}
+                                             {:role "tool" :tool_call_id "fc_2" :content "cycle-2"}]})]
+        (should= [{:type "function_call_output" :call_id "fc_2" :output "cycle-2"}]
+                 (:input result))))
+    )
 
   (describe "effort wire translation"
 

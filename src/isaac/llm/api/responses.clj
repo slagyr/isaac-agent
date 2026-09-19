@@ -81,6 +81,9 @@
          input        (if chained?
                         (->> all-messages
                              (remove #(= "system" (:role %)))
+                             reverse
+                             (take-while #(not= "assistant" (:role %)))
+                             reverse
                              (filter #(or (= "tool" (:role %))
                                           (= "function_call_output" (:type %))))
                              (mapcat #(let [r (sanitize-responses-message %)]

@@ -130,3 +130,58 @@ Feature: Stateful Responses API chaining (previous_response_id)
       | body.input.0.role | user  |
     And outbound HTTP request 3 has no body.previous_response_id
     # request 3 is turn 2 cycle 1 (fresh chain); requests 1-2 are turn 1
+
+  Scenario: cycle 3 chains from cycle 2 and carries only cycle 2's tool output
+    Given the isaac EDN file "config/models/snuffy.edn" exists with:
+      | path           | value          |
+      | model          | snuffy-codex   |
+      | provider       | grover:chatgpt |
+      | context-window | 128000         |
+      | stateful       | true           |
+    And the isaac EDN file "config/crew/oscar.edn" exists with:
+      | path  | value  |
+      | model | snuffy |
+    And the crew "oscar" allows tools: "exec"
+    And the following sessions exist:
+      | name      | crew  |
+      | trash-can | oscar |
+    And the following model responses are queued:
+      | model        | type      | id     | tool_call | arguments           | content |
+      | snuffy-codex | tool_call | resp-1 | exec      | {"command": "true"} |         |
+      | snuffy-codex | tool_call | resp-2 | exec      | {"command": "true"} |         |
+      | snuffy-codex | text      | resp-3 |           |                     | done    |
+    When the user sends "count the cans" on session "trash-can"
+    Then outbound HTTP request 3 matches:
+      | key                       | value                |
+      | body.previous_response_id | resp-2               |
+      | body.input.#count         | 1                    |
+      | body.input.0.type         | function_call_output |
+
+  Scenario: a later turn's chained cycle does not resend tool results from earlier turns
+    Given the isaac EDN file "config/models/snuffy.edn" exists with:
+      | path           | value          |
+      | model          | snuffy-codex   |
+      | provider       | grover:chatgpt |
+      | context-window | 128000         |
+      | stateful       | true           |
+    And the isaac EDN file "config/crew/oscar.edn" exists with:
+      | path  | value  |
+      | model | snuffy |
+    And the crew "oscar" allows tools: "exec"
+    And the following sessions exist:
+      | name      | crew  |
+      | trash-can | oscar |
+    And the following model responses are queued:
+      | model        | type      | id     | tool_call | arguments           | content |
+      | snuffy-codex | tool_call | resp-1 | exec      | {"command": "true"} |         |
+      | snuffy-codex | text      | resp-2 |           |                     | done    |
+      | snuffy-codex | tool_call | resp-3 | exec      | {"command": "true"} |         |
+      | snuffy-codex | text      | resp-4 |           |                     | done    |
+    When the user sends "count the cans" on session "trash-can"
+    And the user sends "count them again" on session "trash-can"
+    Then outbound HTTP request 3 has no body.previous_response_id
+    And outbound HTTP request 4 matches:
+      | key                       | value                |
+      | body.previous_response_id | resp-3               |
+      | body.input.#count         | 1                    |
+      | body.input.0.type         | function_call_output |
