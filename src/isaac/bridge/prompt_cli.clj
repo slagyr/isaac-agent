@@ -225,7 +225,10 @@
                                 :crew          crew-id}
                                identity
                                (session-frequencies/behavioral-override override))
-            session-key (:session-key target)]
+            ;; The agent names the session when the caller and the policy both
+            ;; have none; a policy only ever takes the id it is handed.
+            session-key (or (:session-key target)
+                            (when sess (store/mint-name (loader/root))))]
         (if (and sess session-key)
           (do
             (policy/open-session! sess session-key create-opts)

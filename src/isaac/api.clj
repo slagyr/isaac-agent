@@ -49,7 +49,9 @@
 (defn create-session!
   "Create (or reopen) a session record through the crew's session policy
    (chronicle when opts name no crew or the crew sets none).
-   identifier may be a session name string or an existing session map.
+   identifier may be a session name string or an existing session map; a nil
+   identifier is named here, by the configured naming strategy, before the
+   policy sees it.
    opts may include :crew, :origin, :chatType, :channel, :cwd.
    Returns the session map."
   ([identifier]
@@ -57,9 +59,13 @@
   ([identifier opts]
    (let [store        (or (:session-store opts) (session-store/registered-store))
          session-opts (dissoc opts :root :session-store)]
-     (policy/open-session! (crew-policy (:crew opts) store) identifier session-opts)))
+     (policy/open-session! (crew-policy (:crew opts) store)
+                           (or identifier (session-store/mint-name))
+                           session-opts)))
   ([root identifier opts]
-   (policy/open-session! (crew-policy (:crew opts) (session-store/create root)) identifier opts)))
+   (policy/open-session! (crew-policy (:crew opts) (session-store/create root))
+                         (or identifier (session-store/mint-name root))
+                         opts)))
 
 (defn get-session
   "Return the session map for identifier, or nil if not found.

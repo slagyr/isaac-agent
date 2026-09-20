@@ -6,6 +6,7 @@
     [isaac.comm.registry :as registry]
     [isaac.reconfigurable :as reconfigurable]
     [isaac.fs :as fs]
+    [isaac.naming :as naming]
     [isaac.session.store.spi :as store]
     [isaac.session.store.sidecar :as sidecar-store]
     [isaac.session.store.memory :as memory]
@@ -90,6 +91,26 @@
       (nexus/-with-nexus {:root "/tmp/api-spec" :sessions {:store session-store} :fs (fs/mem-fs)}
         (sut/create-session! "api-session" {:crew "main"})
         (should= "main" (:crew (store/get-session session-store "api-session"))))))
+
+  (it "create-session! names an unnamed session from the naming strategy before the policy sees it"
+    (let [session-store (memory/create-store "/tmp/api-spec")
+          strategy      (reify naming/NameStrategy (generate [_] "quiet-otter"))]
+      (nexus/-with-nexus {:root "/tmp/api-spec"
+                          :sessions {:store session-store :naming-strategy strategy}
+                          :fs (fs/mem-fs)}
+        (let [entry (sut/create-session! nil {:crew "main"})]
+          (should= "quiet-otter" (:id entry))
+          (should= "main" (:crew (store/get-session session-store "quiet-otter")))))))
+
+  (it "create-session! hands the policy the name the caller supplied"
+    (let [session-store (memory/create-store "/tmp/api-spec")
+          strategy      (reify naming/NameStrategy (generate [_] "quiet-otter"))]
+      (nexus/-with-nexus {:root "/tmp/api-spec"
+                          :sessions {:store session-store :naming-strategy strategy}
+                          :fs (fs/mem-fs)}
+        (let [entry (sut/create-session! "friday-debug" {:crew "main"})]
+          (should= "friday-debug" (:id entry))
+          (should-not (store/get-session session-store "quiet-otter"))))))
 
   (it "dispatch! forwards the installed runtime to bridge dispatch"
     (let [captured (atom nil)]

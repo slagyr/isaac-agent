@@ -177,6 +177,14 @@
         (nexus/register! [:sessions :naming-strategy] strat)
         strat)))
 
+(defn mint-name
+  "A fresh session name from the configured naming strategy. The agent owns
+   session naming: every path that opens a session without a caller-supplied
+   identifier mints here, so a policy is only ever handed a name it was given."
+  ([] (mint-name (nexus/get :root)))
+  ([root]
+   (naming/generate (ensure-naming-strategy! root (or (nexus/get :fs) (fs/instance))))))
+
 (defn register-store!
   "Registers store in the system under [:sessions :store], preserving other :sessions values."
   [store]

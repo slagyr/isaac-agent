@@ -135,6 +135,34 @@ Feature: Session policy berth — chronicle and episodes are per-crew policies o
       | append-message!     | lantern-room |
       | clear-turn-marker!  | lantern-room |
 
+  Scenario: a start the policy has no default for is named by the agent, not the policy
+    The agent owns session naming. When the caller gives no id and the policy
+    answers no default, the agent mints one from the configured naming strategy
+    and hands it to the policy — a policy never invents a session id.
+    Given a recording session policy "logbook" is registered
+    And config:
+      | sessions.naming-strategy | sequential |
+    And the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path          | value            |
+      | model         | echo             |
+      | soul          | You are Cordelia |
+      | session-policy | logbook          |
+    And the following model responses are queued:
+      | type | content | model |
+      | text | Lit     | echo  |
+    When isaac is run with "prompt --crew cordelia -m 'Light the lamp'"
+    Then the exit code is 0
+    And the logbook policy recorded calls matching:
+      | method              | crew     | session-id |
+      | default-session     | cordelia |            |
+      | open-session!       | cordelia | session-1  |
+      | record-turn-marker! |          | session-1  |
+      | append-message!     |          | session-1  |
+    And session "session-1" has transcript matching:
+      | type    | message.role | message.content |
+      | message | user         | Light the lamp  |
+      | message | assistant    | Lit             |
+
   Scenario: a conversation start without a session id asks the policy for one
     Chronicle answers the crew's existing session; episodes answers a fresh
     id (isaac-6yg0's acp scenario stays the proof of that side). Frequencies
