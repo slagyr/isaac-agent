@@ -66,23 +66,51 @@
                 (some? think) (assoc :think think))]
     (normalize-response (llm-http/post-json! url default-headers body (http-opts cfg)))))
 
+(defn- fold-chunk
+  "Accumulate one NDJSON chunk into the response being built. Ollama spreads a
+   reply across chunks: text arrives as deltas, a tool call arrives whole in a
+   chunk of its own, and the counts land on the last one. Keeping only the last
+   chunk — which is what the reader returns — drops every tool call the model
+   made (isaac-ncrz)."
+  [acc chunk]
+  (cond-> acc
+    (seq (get-in chunk [:message :content]))
+    (update-in [:message :content] str (get-in chunk [:message :content]))
+
+    (seq (get-in chunk [:message :tool_calls]))
+    (update-in [:message :tool_calls] (fnil into []) (get-in chunk [:message :tool_calls]))
+
+    (seq (get-in chunk [:message :thinking]))
+    (update-in [:message :thinking] str (get-in chunk [:message :thinking]))
+
+    ;; the closing chunk carries the model, stop reason and token counts
+    (:done chunk)
+    (merge (dissoc chunk :message))))
+
 (defn chat-stream
   "Send a streaming chat request to Ollama. Calls on-chunk for each chunk.
-   Returns the final response or error map."
+   Returns the whole response, folded from every chunk, or an error map."
   [request on-chunk provider-name cfg]
-  (let [url   (str (or (:base-url cfg) "http://localhost:11434") "/api/chat")
-        think (effort->think (:effort request) (:think-mode cfg))
-        body  (cond-> (-> request (dissoc :effort) (assoc :stream true))
-                (some? think) (assoc :think think))]
+  (let [url    (str (or (:base-url cfg) "http://localhost:11434") "/api/chat")
+        think  (effort->think (:effort request) (:think-mode cfg))
+        body   (cond-> (-> request (dissoc :effort) (assoc :stream true))
+                 (some? think) (assoc :think think))
+        folded (atom {:message {:content ""}})
+        final  (llm-http/post-ndjson-stream!
+                 url default-headers body
+                 (fn [chunk]
+                   (swap! folded fold-chunk chunk)
+                   (when-let [text (get-in chunk [:message :content])]
+                     (on-chunk {:text-delta text}))
+                   (when-let [reasoning (or (:thinking chunk)
+                                            (get-in chunk [:message :thinking]))]
+                     (on-chunk {:reasoning-delta reasoning})))
+                 (http-opts cfg))]
     (normalize-response
-      (llm-http/post-ndjson-stream! url default-headers body
-                                    (fn [chunk]
-                                      (when-let [text (get-in chunk [:message :content])]
-                                        (on-chunk {:text-delta text}))
-                                      (when-let [reasoning (or (:thinking chunk)
-                                                               (get-in chunk [:message :thinking]))]
-                                        (on-chunk {:reasoning-delta reasoning})))
-                                    (http-opts cfg)))))
+      (if (:error final)
+        final
+        (merge @folded (select-keys final [:model :done_reason :wire-stop-reason
+                                           :prompt_eval_count :eval_count]))))))
 
 ;; endregion ^^^^^ Public API ^^^^^
 

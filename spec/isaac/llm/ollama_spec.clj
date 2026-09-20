@@ -72,7 +72,9 @@
 
   (describe "chat-stream"
 
-    (it "streams chunks via ndjson"
+    (it "folds every chunk's text, not just the last one"
+      ;; This spec used to assert (:content result) was "!" — the last chunk
+      ;; alone — which pinned the bug it should have caught (isaac-ncrz).
       (let [chunks (atom [])]
         (with-redefs [llm-http/post-ndjson-stream! (fn [_ _ _ on-chunk & _]
                                                      (let [events [{:message {:content "Hi"} :done false}
@@ -83,8 +85,47 @@
           (let [result (sut/chat-stream {:model "test" :messages []}
                          (fn [c] (swap! chunks conj c))
                          "ollama" {})]
-            (should= "!" (:content result))
-            (should= 2 (count @chunks))))))
+            (should= "Hi!" (:content result))
+            (should= 2 (count @chunks))
+            (should= 10 (get-in result [:usage :prompt-tokens]))
+            (should= 5 (get-in result [:usage :output-tokens]))))))
+
+    (it "keeps a tool call that arrives before the closing chunk"
+      ;; Ollama puts the whole tool call in a chunk of its own with done=false;
+      ;; the closing chunk carries no tool_calls at all. Keeping only the last
+      ;; chunk lost every tool call and the turn ended empty (isaac-ncrz).
+      (with-redefs [llm-http/post-ndjson-stream!
+                    (fn [_ _ _ on-chunk & _]
+                      (let [events [{:message {:role "assistant" :content ""
+                                               :tool_calls [{:id "call_1"
+                                                             :function {:index 0
+                                                                        :name "count_lines"
+                                                                        :arguments {:path "/etc/hosts"}}}]}
+                                     :done false}
+                                    {:message {:role "assistant" :content ""}
+                                     :done true :done_reason "stop"
+                                     :prompt_eval_count 293 :eval_count 23}]]
+                        (doseq [e events] (on-chunk e))
+                        (last events)))]
+        (let [result (sut/chat-stream {:model "test" :messages []} identity "ollama" {})]
+          (should= 1 (count (:tool-calls result)))
+          (should= "count_lines" (:name (first (:tool-calls result))))
+          (should= {:path "/etc/hosts"} (:arguments (first (:tool-calls result))))
+          (should= "call_1" (:id (first (:tool-calls result))))
+          (should= :tool-use (:stop-reason result))
+          (should= 293 (get-in result [:usage :prompt-tokens])))))
+
+    (it "keeps several tool calls spread across chunks"
+      (with-redefs [llm-http/post-ndjson-stream!
+                    (fn [_ _ _ on-chunk & _]
+                      (let [events [{:message {:tool_calls [{:id "a" :function {:name "read" :arguments {}}}]} :done false}
+                                    {:message {:tool_calls [{:id "b" :function {:name "write" :arguments {}}}]} :done false}
+                                    {:message {:content ""} :done true :done_reason "stop"
+                                     :prompt_eval_count 1 :eval_count 1}]]
+                        (doseq [e events] (on-chunk e))
+                        (last events)))]
+        (let [result (sut/chat-stream {:model "test" :messages []} identity "ollama" {})]
+          (should= ["read" "write"] (mapv :name (:tool-calls result))))))
 
     (it "returns error on connection failure"
       (with-redefs [llm-http/post-ndjson-stream! (fn [_ _ _ _ & _] {:error :connection-refused})]
