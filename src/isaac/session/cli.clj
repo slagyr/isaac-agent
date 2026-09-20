@@ -17,6 +17,7 @@
     [isaac.config.root :as root]
     [isaac.fs :as fs]
     [isaac.nexus :as nexus]
+    [isaac.session.compaction :as compaction]
     [isaac.session.context :as session-ctx]
     [isaac.session.schema :as session-schema]
     [isaac.session.migrate :as migrate]
@@ -149,15 +150,37 @@
       (or (fs/size (fs/instance) path) 0)
       0)))
 
+(def ^:private drifted-tally-bytes
+  "A transcript bigger than this whose tally reads zero is not empty, it is
+   drifted; the row pays for one read to tell the truth (isaac-166j)."
+  (* 256 1024))
+
+(defn- row-tokens
+  "What to report as used. Normally the last provider prompt count. When that
+   has drifted to zero under a transcript of real size, fall back to what the
+   transcript itself carries, the way the compaction gauge now does — a full
+   session must never be listed as empty."
+  [entry bytes]
+  (let [tally (or (:last-input-tokens entry) 0)]
+    (if (and (zero? tally) (>= (or bytes 0) drifted-tally-bytes))
+      (or (try
+            (let [root (root/current-root)
+                  id   (:id entry)]
+              (compaction/transcript-floor (store-common/read-transcript-raw root id (fs/instance))))
+            (catch Exception _ nil))
+          tally)
+      tally)))
+
 (defn- session->row [entry context-window session-store]
-  (let [tokens (or (:last-input-tokens entry) 0)
+  (let [bytes  (transcript-size-bytes entry)
+        tokens (row-tokens entry bytes)
         pct    (if (pos? context-window)
                    (int (Math/round (* 100.0 (/ tokens context-window)))) 0)
         session-name (or (:key entry) (:id entry))
         policy       (or (:session-policy entry) :chronicle)]
     {:name   (str session-name (when (store/in-flight? session-store (:id entry)) " ✈️"))
      :age    (if-let [ms (age-ms (:updated-at entry))] (format-age ms) "-")
-     :size   (transcript-size-bytes entry)
+     :size   bytes
      :used   tokens
      :window context-window
      :pct    pct

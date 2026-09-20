@@ -124,6 +124,48 @@
                                       {:type "compaction" :id "c1" :tokens 7}
                                       {:type "message" :id "a1" :tokens 8}])))
 
+    (context "output the cursor left behind (isaac-166j)"
+
+      (it "counts every assistant reply since the cursor but the one last-output covers"
+        ;; A tool loop writes many assistant entries per stamp. Only the first is
+        ;; covered by :last-output-tokens; the rest were counted nowhere, which is
+        ;; how isaac-work-2 on zanebot read as a fraction of its real size.
+        (should= (+ 300 40 5 7000 9)
+                 (sut/context-gauge {:last-input-tokens  300
+                                     :last-output-tokens 40
+                                     :tally-after-id     "u1"}
+                                    [{:id "u1" :type "message" :message {:role "user"} :tokens 10}
+                                     {:id "a1" :type "message" :message {:role "assistant"} :tokens 40}
+                                     {:id "t1" :type "message" :message {:role "toolResult"} :tokens 5}
+                                     {:id "a2" :type "message" :message {:role "assistant"} :tokens 7000}
+                                     {:id "t2" :type "message" :message {:role "toolResult"} :tokens 9}])))
+
+      (it "a session whose cursor never moved is over its threshold, not under it"
+        ;; isaac-work-2's shape: the cursor sits on the compaction summary, the
+        ;; provider never re-stamped a prompt count, and 500k of replies followed.
+        (let [transcript [{:id "c1" :type "compaction" :tokens 0}
+                          {:id "a1" :type "message" :message {:role "assistant"} :tokens 4000}
+                          {:id "t1" :type "message" :message {:role "toolResult"} :tokens 1000}
+                          {:id "a2" :type "message" :message {:role "assistant"} :tokens 520000}]
+              entry      {:last-input-tokens 0 :last-output-tokens 0 :tally-after-id "c1"}]
+          (should= 521000 (sut/context-gauge entry transcript))
+          (should (sut/should-compact? (sut/context-gauge entry transcript) entry 200000))))
+
+      (it "leaves a healthy session's reading alone"
+        ;; Cursor at the tail, nothing appended since: the provider's own count,
+        ;; which includes the system prompt and tool definitions, still rules.
+        (should= 340 (sut/context-gauge {:last-input-tokens  300
+                                         :last-output-tokens 40
+                                         :tally-after-id     "t1"}
+                                        [{:id "u1" :type "message" :message {:role "user"} :tokens 10}
+                                         {:id "t1" :type "message" :message {:role "toolResult"} :tokens 5}])))
+
+      (it "transcript-floor is every history entry, assistant output included"
+        (should= 50010 (sut/transcript-floor
+                         [{:id "s" :type "session"}
+                          {:id "u1" :type "message" :message {:role "user"} :tokens 10}
+                          {:id "a1" :type "message" :message {:role "assistant"} :tokens 50000}]))))
+
     (it "adds pending input that is not yet on the transcript"
       (should= 341 (sut/context-gauge {:last-input-tokens  300
                                        :last-output-tokens 40

@@ -41,6 +41,17 @@
          rest)
     []))
 
+(defn- countable-after
+  "Entries since the tally cursor whose tokens are not already counted
+   elsewhere. :last-output-tokens holds the output of the response that moved
+   the cursor — that is the FIRST assistant entry after it, and only that one.
+   Every later assistant entry is history the next request carries and nothing
+   else counts, so dropping them all is how a session's own replies stop being
+   counted the moment the cursor goes stale (isaac-166j)."
+  [entries]
+  (let [[before from-first] (split-with (complement assistant-output?) entries)]
+    (concat before (rest from-first))))
+
 (defn- stamped-sum [entries]
   (reduce + 0 (map #(or (:tokens %) 0) entries)))
 
@@ -50,10 +61,26 @@
       0
       (long (Math/ceil (/ (double (count s)) 4.0))))))
 
+(defn transcript-floor
+  "What the active transcript demonstrably holds: every history entry's stamped
+   :tokens, assistant output included, because all of it rides in the next
+   request. The running tally can drift below this — a splice re-baselines to
+   the kept tail, a provider that reports no prompt tokens never re-stamps, a
+   refused request reports zeros — and when it does, this is the honest number.
+   The CLI listing uses it so a full session is never shown as empty
+   (isaac-166j)."
+  [transcript]
+  (stamped-sum (tally-history-entries transcript)))
+
 (defn context-gauge
   "Running tally: last prompt tokens + last output tokens + stamped :tokens of
    entries appended since that response (not the assistant output itself), plus
-   pending user input that is not yet on the transcript."
+   pending user input that is not yet on the transcript.
+
+   Assistant output since the cursor counts: only the reply that moved the
+   cursor is already covered by :last-output-tokens. A session that cannot be
+   answered must never read as empty, because this gauge is what decides
+   whether it is compacted at all."
   ([session-entry]
    (context-gauge session-entry nil nil))
   ([session-entry transcript]
@@ -63,7 +90,7 @@
          last-out (or (:last-output-tokens session-entry) 0)
          after-id (:tally-after-id session-entry)
          delta    (if after-id
-                    (stamped-sum (remove assistant-output? (entries-after transcript after-id)))
+                    (stamped-sum (countable-after (entries-after transcript after-id)))
                     (if (pos? last-in)
                       0
                       (stamped-sum (tally-history-entries transcript))))]

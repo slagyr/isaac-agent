@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Context gauge counts the assistant output the tally cursor left behind: only the first reply after the cursor is covered by `:last-output-tokens`, so a tool loop's later replies are no longer counted nowhere. A response reporting zero prompt tokens (a refusal, or a provider that does not count) no longer overwrites `:last-input-tokens` with zero. `sessions list` falls back to the transcript's own stamped sum when the tally reads zero under a transcript of real size, so a full session is never listed as empty (isaac-166j).
 - Provider response contract: `:reasoning :summary` is optional. A provider that streams thinking with no summarizable text (claude-cli) no longer fails the turn as `:provider-contract`, so a completed turn stops logging `:chat/provider-contract-violated` at `:error` and the episodes seal stops failing with `:provider-error` (isaac-ddls).
 - Repin isaac-foundation (and spec / test-support / marigold.*) to foundation main `0b120cc` so the pin is reachable after bean-branch squash (isaac-lsz2).
 - Compaction summaries run at `:compaction {:effort 2}` (configurable), chunk whenever history exceeds `:max-request-tokens` (default 32k) regardless of the model window, and retry a transport-class drop (`:stream-stalled` / `"closed"`) once at half size before counting a consecutive failure. Logs `:session/compaction-chunk-retry` (isaac-jgng).

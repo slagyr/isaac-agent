@@ -184,6 +184,20 @@
         (should= 220 (:turn-input-tokens session))
         (should= 123 (:last-input-tokens session))
         (should= 7 (:last-output-tokens session))))
+
+    (it "a response that reports no prompt tokens leaves the tally where it was (isaac-166j)"
+      ;; A refused request — "prompt is too long" — reports zero usage because no
+      ;; inference happened. Writing those zeros through is how a full session comes
+      ;; to read as empty, and an empty-reading session is never compacted.
+      (helper/create-session! test-dir "refused")
+      (helper/update-session! test-dir "refused" {:last-input-tokens 180000 :last-output-tokens 900})
+      (sut/process-response! "refused"
+                             {:usage {:requests 1 :prompt-tokens 0 :output-tokens 0}
+                              :response {:content "" :model "echo" :tool-calls [] :stop-reason :end-turn
+                                         :usage {:prompt-tokens 0 :output-tokens 0}}}
+                             {:model "echo" :provider "grover:grok"})
+      (let [session (helper/get-session test-dir "refused")]
+        (should= 180000 (:last-input-tokens session))))
     )
 
   (describe "empty terminal response guard"

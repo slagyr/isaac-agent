@@ -294,7 +294,13 @@
     (policy/update-session! sess session-key
                            (cond-> {:input-tokens       (+ (or (:input-tokens session-entry) 0) turn-input-tokens)
                                     :turn-input-tokens  turn-input-tokens
-                                    :last-input-tokens  prompt-tokens
+                                    ;; A response that reports no prompt tokens — a refusal, or a
+                                    ;; provider that does not count — must not overwrite the tally
+                                    ;; with zero: that is how a full session comes to read as empty
+                                    ;; (isaac-166j).
+                                    :last-input-tokens  (if (pos? prompt-tokens)
+                                                          prompt-tokens
+                                                          (or (:last-input-tokens session-entry) 0))
                                     :last-output-tokens (replayable-output-tokens ctx result)
                                     :output-tokens      (+ (or (:output-tokens session-entry) 0) output-tokens)
                                     :total-tokens       (+ (+ (or (:input-tokens session-entry) 0) turn-input-tokens)
