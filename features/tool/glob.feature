@@ -86,3 +86,45 @@ Feature: Built-in glob tool
       | truncated |
       | 5         |
     And the tool result does not contain "c.clj"
+
+  @wip
+  Scenario: glob skips heavy directories by default
+    Given the following files exist:
+      | name                          |
+      | src/core.clj                  |
+      | node_modules/pkg/index.clj    |
+      | .git/hooks/sample.clj         |
+      | .gitlibs/libs/dep/src/dep.clj |
+    When the tool "fs__glob" is called with:
+      | pattern | **/*.clj |
+    Then the tool result is not an error
+    And the tool result lines match:
+      | text         |
+      | src/core.clj |
+    And the tool result does not contain "node_modules"
+    And the tool result does not contain ".gitlibs"
+
+  @wip
+  Scenario: glob searches a heavy directory when the pattern names it
+    Given the following files exist:
+      | name                       |
+      | node_modules/pkg/index.clj |
+    When the tool "fs__glob" is called with:
+      | pattern | node_modules/**/*.clj |
+    Then the tool result is not an error
+    And the tool result lines match:
+      | text                       |
+      | node_modules/pkg/index.clj |
+
+  @wip
+  Scenario: glob stops at the scan budget and says how far it got
+    Given the glob scan budget is 2 entries
+    And the following files exist:
+      | name       |
+      | a/one.clj  |
+      | b/two.clj  |
+      | c/three.clj |
+    When the tool "fs__glob" is called with:
+      | pattern | **/*.clj |
+    Then the tool result is not an error
+    And the tool result contains "scan budget"
