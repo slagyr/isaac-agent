@@ -313,6 +313,9 @@
     (g/update! :tool-default-bindings #(assoc (or % {}) var n))
     (throw (ex-info "unknown tool default" {:tool tool-name :key key}))))
 
+(defn glob-scan-budget-is [n]
+  (g/update! :tool-default-bindings #(assoc (or % {}) #'glob/*scan-entry-budget* n)))
+
 (defn url-responds-with [url table]
   (doseq [[path value] (map (juxt first second) (kv-rows table))]
     (merge-url-stub (unquote-string url)
@@ -603,6 +606,10 @@
 (defgiven "the exec timeout is set to {n:int} milliseconds" isaac.tool.tools-steps/exec-timeout)
 
 (defgiven "the default {string} {word} is {n:int}" isaac.tool.tools-steps/default-tool-value-is)
+
+(defgiven "the glob scan budget is {n:int} entries" isaac.tool.tools-steps/glob-scan-budget-is
+  "Binds isaac.tool.glob/*scan-entry-budget* for tool calls in this scenario,
+   so a scan can be driven past its entry budget with a handful of files.")
 
 (defgiven "the URL {string} responds with:" isaac.tool.tools-steps/url-responds-with
   "Registers an HTTP stub for the URL. Table rows configure the stubbed

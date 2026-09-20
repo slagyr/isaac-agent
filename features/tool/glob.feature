@@ -87,7 +87,6 @@ Feature: Built-in glob tool
       | 5         |
     And the tool result does not contain "c.clj"
 
-  @wip
   Scenario: glob skips heavy directories by default
     Given the following files exist:
       | name                          |
@@ -104,7 +103,6 @@ Feature: Built-in glob tool
     And the tool result does not contain "node_modules"
     And the tool result does not contain ".gitlibs"
 
-  @wip
   Scenario: glob searches a heavy directory when the pattern names it
     Given the following files exist:
       | name                       |
@@ -116,7 +114,6 @@ Feature: Built-in glob tool
       | text                       |
       | node_modules/pkg/index.clj |
 
-  @wip
   Scenario: glob stops at the scan budget and says how far it got
     Given the glob scan budget is 2 entries
     And the following files exist:

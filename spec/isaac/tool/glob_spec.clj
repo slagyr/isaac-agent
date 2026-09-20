@@ -65,6 +65,52 @@
         (should-be-nil (:isError result))
         (should= "e.clj\nd.clj\nc.clj\nResults truncated. 5 total matches." (:result result)))))
 
+  (it "skips heavy directories by default"
+    (support/write-file! "src/core.clj" "")
+    (support/write-file! "node_modules/pkg/index.clj" "")
+    (support/write-file! ".git/hooks/sample.clj" "")
+    (support/write-file! ".gitlibs/libs/dep/src/dep.clj" "")
+    (let [result (sut/glob-tool {"pattern" "**/*.clj"})]
+      (should-be-nil (:isError result))
+      (should= "src/core.clj" (:result result))))
+
+  (it "searches a heavy directory when the pattern names it"
+    (support/write-file! "node_modules/pkg/index.clj" "")
+    (let [result (sut/glob-tool {"pattern" "node_modules/**/*.clj"})]
+      (should-be-nil (:isError result))
+      (should= "node_modules/pkg/index.clj" (:result result))))
+
+  (it "searches a heavy directory when the search path names it"
+    (support/write-file! "node_modules/pkg/index.clj" "")
+    (let [result (sut/glob-tool {"pattern" "**/*.clj"
+                                 "path"    (str support/test-dir "/node_modules")})]
+      (should-be-nil (:isError result))
+      (should= "pkg/index.clj" (:result result))))
+
+  (it "stops at the scan entry budget and says how far it got"
+    (support/write-file! "a/one.clj" "")
+    (support/write-file! "b/two.clj" "")
+    (support/write-file! "c/three.clj" "")
+    (binding [sut/*scan-entry-budget* 2]
+      (let [result (sut/glob-tool {"pattern" "**/*.clj"})]
+        (should-be-nil (:isError result))
+        (should-contain "scan budget" (:result result))
+        (should-contain "2 entries" (:result result)))))
+
+  (it "stops at the wall-clock budget"
+    (support/write-file! "a/one.clj" "")
+    (binding [sut/*scan-millis-budget* 0]
+      (let [result (sut/glob-tool {"pattern" "**/*.clj"})]
+        (should-be-nil (:isError result))
+        (should-contain "scan budget" (:result result)))))
+
+  (it "scans the whole tree when it fits inside the budgets"
+    (support/write-file! "a/one.clj" "")
+    (support/write-file! "b/two.clj" "")
+    (let [result (sut/glob-tool {"pattern" "**/*.clj"})]
+      (should-be-nil (:isError result))
+      (should-not-contain "scan budget" (:result result))))
+
   (it "defaults the search path to the session cwd"
     (let [cwd         (str support/test-dir "/workspace")
           session-key session-key]
