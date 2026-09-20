@@ -224,7 +224,15 @@
 (defn- response-model [result model]
   (or (get-in result [:response :model]) model))
 
-(defn- normalized-provider-prompt-tokens [ctx session-key result]
+(defn- normalized-provider-prompt-tokens
+  "A prompt larger than the window cannot be a prompt that was just answered.
+   It means the adapter handed us the wrong quantity — a turn total, or a
+   stateful chain's running sum (isaac-dgod). Clamping it to the window
+   produced a number that was wrong but plausible-looking, which is worse than
+   one that is obviously wrong: work-2 and work-3 read 295% and 253% and were
+   still dispatched to. Report nothing instead, so callers keep the last value
+   they trusted, and let the warn stand as an adapter alarm."
+  [ctx session-key result]
   (let [context-window (get-in ctx [:charge :context-window])
         raw-prompt     (or (:prompt-tokens (request-usage result)) 0)]
     (if (and (pos? (or context-window 0)) (> raw-prompt context-window))
@@ -233,7 +241,7 @@
                   :session session-key
                   :prompt-tokens raw-prompt
                   :context-window context-window)
-        context-window)
+        0)
       raw-prompt)))
 
 (defn- provider-stateful? [ctx]
@@ -255,14 +263,16 @@
 
 (defn- stamp-provider-prompt! [ctx session-key result]
   (let [sess          (session-policy ctx)
-        prompt-tokens (normalized-provider-prompt-tokens ctx session-key result)
-        output-tokens (replayable-output-tokens ctx result)
-        cursor        (last-transcript-id ctx session-key)]
+        prompt-tokens (normalized-provider-prompt-tokens ctx session-key result)]
     (when (pos? prompt-tokens)
-      (policy/update-session! sess session-key
-                              (cond-> {:last-input-tokens  prompt-tokens
-                                       :last-output-tokens output-tokens}
-                                cursor (assoc :tally-after-id cursor))))
+      ;; Read the transcript only when there is something to stamp: this runs
+      ;; once per cycle, and the read is the whole transcript (isaac-8cur).
+      (let [output-tokens (replayable-output-tokens ctx result)
+            cursor        (last-transcript-id ctx session-key)]
+        (policy/update-session! sess session-key
+                                (cond-> {:last-input-tokens  prompt-tokens
+                                         :last-output-tokens output-tokens}
+                                  cursor (assoc :tally-after-id cursor)))))
     prompt-tokens))
 
 (defn- store-response! [ctx session-key result {:keys [model provider]}]

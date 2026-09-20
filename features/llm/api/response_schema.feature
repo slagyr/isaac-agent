@@ -362,3 +362,39 @@ Feature: The provider response schema (isaac-g71i)
     And session "reasoning-persist" has transcript matching:
       | type    | message.role | message.reasoning.summary | message.reasoning.effort |
       | message | assistant    | Checked the rigging       | 7                        |
+
+  Scenario: a prompt size larger than the window leaves the gauge alone instead of clamping to the window (isaac-dgod)
+    A prompt bigger than the window is not a prompt that was just answered — it
+    is the adapter handing over the wrong quantity: a turn total, or a stateful
+    chain's running sum. Clamping it to the window wrote a number that was wrong
+    but plausible-looking. Field: orchestration-verify stamped 12,031,158 of a
+    278,528 window (chatgpt, cache-read 11,174,912); isaac-work-2 read 295% and
+    was still dispatched to. The last trusted value stands, and the warn is the
+    adapter alarm.
+    Given default Grover setup
+    And the isaac EDN file "config/models/tinfoil.edn" exists with:
+      | path           | value            |
+      | model          | tinfoil-sonnet   |
+      | provider       | grover:anthropic |
+      | context-window | 400000           |
+    And the isaac EDN file "config/crew/bert.edn" exists with:
+      | path  | value   |
+      | model | tinfoil |
+    And the following sessions exist:
+      | name      | crew |
+      | paperclip | bert |
+    And the following model responses are queued:
+      | model          | type | content   | usage.input_tokens | usage.cache_read_input_tokens | usage.output_tokens |
+      | tinfoil-sonnet | text | Go away.  | 1000               | 0                             | 40                  |
+      | tinfoil-sonnet | text | Still no. | 900000             | 0                             | 40                  |
+    When the user sends "knock knock" on session "paperclip"
+    Then the following sessions match:
+      | name      | last-input-tokens |
+      | paperclip | 1000              |
+    When the user sends "knock again" on session "paperclip"
+    Then the following sessions match:
+      | name      | last-input-tokens |
+      | paperclip | 1000              |
+    And the log has entries matching:
+      | event                      | prompt-tokens | context-window |
+      | :session/stamp-implausible | 900000        | 400000         |
