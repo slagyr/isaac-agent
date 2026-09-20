@@ -54,6 +54,26 @@
                   :usage {:prompt-tokens "is required"}}
                  (schema/message-map result))))
 
+    (it "accepts a reasoning block whose summary is absent or blank"
+      (let [response {:content     "hi"
+                      :tool-calls  []
+                      :stop-reason :end-turn
+                      :model       "claude-sonnet-4-6"
+                      :usage       {:prompt-tokens 10 :output-tokens 5}}]
+        (should-not (schema/error? (sut/validate-response (assoc response :reasoning {}))))
+        (should-not (schema/error? (sut/validate-response (assoc response :reasoning {:summary ""}))))
+        (should-not (schema/error? (sut/validate-response (assoc response :reasoning {:summary "\n"}))))
+        (should-not (schema/error? (sut/validate-response (assoc response :reasoning {:summary "weighed it"}))))))
+
+    (it "still rejects a reasoning summary that is not a string"
+      (let [result (sut/validate-response {:content     "hi"
+                                           :tool-calls  []
+                                           :stop-reason :end-turn
+                                           :model       "claude-sonnet-4-6"
+                                           :usage       {:prompt-tokens 10 :output-tokens 5}
+                                           :reasoning   {:summary 42}})]
+        (should= {:reasoning {:summary "must be a string"}} (schema/message-map result))))
+
     (it "accepts malformed tool arguments as a normalized tool call"
       (let [tool-call {:id "tc1" :name "read" :arguments {} :arguments-error "Unexpected end of input"}]
         (should= tool-call (schema/validate! sut/tool-call tool-call))))

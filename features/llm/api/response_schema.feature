@@ -90,6 +90,28 @@ Feature: The provider response schema (isaac-g71i)
       | #index | type    | message.role | message.content |
       | -1     | message | assistant    | Sails trimmed.  |
 
+  Scenario: a reasoning block with no summary rides along and the turn stays clean (isaac-ddls)
+    Given default Grover setup
+    And the following sessions exist:
+      | name    |
+      | on-deck |
+    And grover returns this raw response:
+      """
+      {:content     "Sails trimmed."
+       :tool-calls  []
+       :stop-reason :end-turn
+       :model       "echo"
+       :usage       {:prompt-tokens 100 :output-tokens 25}
+       :reasoning   {:summary ""}}
+      """
+    When the user sends "trim the sails" on session "on-deck"
+    Then session "on-deck" has transcript matching:
+      | #index | type    | message.role | message.content |
+      | -1     | message | assistant    | Sails trimmed.  |
+    And the log has no entries matching:
+      | event                            |
+      | :chat/provider-contract-violated |
+
   Scenario: OpenAI-style usage stamps the context size without adding cached tokens
     Given default Grover setup
     And the isaac EDN file "config/models/snuffy.edn" exists with:

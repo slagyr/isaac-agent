@@ -68,9 +68,13 @@
 
 (def stop-reasons #{:end-turn :tool-use :max-tokens :cancelled :refused :other})
 
+;; :summary is optional. Providers that stream thinking (claude-cli, Anthropic
+;; extended thinking) can emit a reasoning block whose deltas carry no
+;; summarizable text; a blank summary is metadata, never a failed turn
+;; (isaac-ddls).
 (def reasoning
   {:name :reasoning :type :map
-   :schema {:summary {:type :string :validations [schema/required]}}})
+   :schema {:summary {:type :string}}})
 
 (def response
   {:name :api-response :type :map
