@@ -8,7 +8,9 @@ Feature: Resume repair and comm staleness
   :interrupted-at, fallback :started-at) resumes with an interruption note;
   outside the window it is dropped and the transcript untouched — nobody
   wants a surprise reply to a conversation they abandoned. Hail and cron
-  markers never go stale: they are work orders.
+  markers never go stale: they are work orders. The repaired turn itself is
+  handed to the turn queue and runs there (isaac-yxch), so these scenarios
+  tick the queue to see it finish.
 
   Background:
     Given default Grover setup
@@ -33,6 +35,7 @@ Feature: Resume repair and comm staleness
       | type | content    | model |
       | text | Continuing | echo  |
     When interrupted turns are resumed at "2026-04-21T10:00:00Z"
+    And the turn queue ticks at "2026-04-21T10:00:05Z"
     Then session "logbook" has transcript matching:
       | type    | message.content | #comment                    |
       | message | Begin the entry |                             |
@@ -130,6 +133,7 @@ Feature: Resume repair and comm staleness
       | type | content    | model |
       | text | Continuing | echo  |
     When interrupted turns are resumed at "2026-04-21T10:00:00Z"
+    And the turn queue ticks at "2026-04-21T10:00:05Z"
     Then the logbook policy recorded calls matching:
       | method             | session-id |
       | repair-transcript! | ledger     |

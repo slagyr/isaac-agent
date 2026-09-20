@@ -2,12 +2,14 @@
   (:require
     [isaac.bridge.resume :as sut]
     [isaac.config.api :as config]
+    [isaac.drive.turn :as drive-turn]
     [isaac.fs :as fs]
     [isaac.logger :as log]
     [isaac.nexus :as nexus]
     [isaac.session.spec-helper :as helper]
     [isaac.session.store.spi :as store]
     [isaac.spec-helper :as foundation-helper]
+    [isaac.turn.queue :as queue]
     [speclj.core :refer :all])
   (:import
     (java.time Instant)))
@@ -36,6 +38,69 @@
       (should= 0 (:markers entry))
       (should= 0 (:requeued entry))
       (should= 0 (:dropped entry))))
+
+  (it "enqueues an interrupted comm turn on the turn queue instead of driving it on the scan thread"
+    (helper/create-session! test-root "logbook")
+    (store/record-turn-marker! (store/registered-store) "logbook"
+                               {:source     :comm
+                                :session-id "logbook"
+                                :started-at "2026-04-21T09:59:30Z"})
+    (let [driven (atom [])]
+      (with-redefs [drive-turn/run-turn! #(swap! driven conj %)]
+        (sut/resume-interrupted-turns! {:session-store (store/registered-store)
+                                        :root          test-root
+                                        :cfg           {}
+                                        :now           (Instant/parse "2026-04-21T10:00:00Z")}))
+      (should= [] @driven))
+    (let [record (first (binding [queue/*root* test-root] (queue/list-held)))]
+      (should-not-be-nil record)
+      (should= "logbook" (:session record))
+      (should-contain "interrupted" (:input record))
+      (should= :resume (get-in record [:origin :kind]))
+      (should= :comm (get-in record [:origin :source])))
+    (let [entry (first (filter #(= :resume/scan-complete (:event %)) @log/captured-logs))]
+      (should= 1 (:requeued entry))
+      (should= 0 (:dropped entry)))
+    (should= nil (store/get-turn-marker (store/registered-store) "logbook")))
+
+  (it "enqueues a weather-suspended turn whose retry-at has passed and clears its marker"
+    (helper/create-session! test-root "trash-can")
+    (store/record-turn-marker! (store/registered-store) "trash-can"
+                               {:source       :comm
+                                :session-id   "trash-can"
+                                :suspended    true
+                                :reason       :wall
+                                :suspended-at "2026-04-21T09:50:00Z"
+                                :retry-at     "2026-04-21T09:59:00Z"
+                                :started-at   "2026-04-21T09:59:30Z"})
+    (sut/resume-interrupted-turns! {:session-store (store/registered-store)
+                                    :root          test-root
+                                    :cfg           {}
+                                    :now           (Instant/parse "2026-04-21T10:00:00Z")})
+    (let [record (first (binding [queue/*root* test-root] (queue/list-held)))]
+      (should-not-be-nil record)
+      (should= "trash-can" (:session record)))
+    (should= nil (store/get-turn-marker (store/registered-store) "trash-can")))
+
+  (it "drops a marker whose turn cannot be enqueued, with a warning"
+    (helper/create-session! test-root "logbook")
+    (store/record-turn-marker! (store/registered-store) "logbook"
+                               {:source     :comm
+                                :session-id "logbook"
+                                :started-at "2026-04-21T09:59:30Z"})
+    (with-redefs [queue/enqueue! (fn [_] (throw (ex-info "store unavailable" {})))]
+      (sut/resume-interrupted-turns! {:session-store (store/registered-store)
+                                      :root          test-root
+                                      :cfg           {}
+                                      :now           (Instant/parse "2026-04-21T10:00:00Z")}))
+    (let [entry (first (filter #(= :resume/enqueue-failed (:event %)) @log/captured-logs))]
+      (should-not-be-nil entry)
+      (should= :warn (:level entry))
+      (should= "logbook" (:session entry)))
+    (let [entry (first (filter #(= :resume/scan-complete (:event %)) @log/captured-logs))]
+      (should= 0 (:requeued entry))
+      (should= 1 (:dropped entry)))
+    (should= nil (store/get-turn-marker (store/registered-store) "logbook")))
 
   (it "logs scan-complete with requeued hail count for a suspended hail marker"
     (helper/create-session! test-root "isaac-verify")

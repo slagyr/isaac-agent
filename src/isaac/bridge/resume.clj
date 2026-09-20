@@ -2,16 +2,14 @@
   (:require
     [clojure.pprint :as pprint]
     [clojure.set :as set]
-    [isaac.charge :as charge]
-    [isaac.comm.null :as null-comm]
-    [isaac.drive.turn :as turn]
     [isaac.config.loader :as loader]
     [isaac.fs :as fs]
     [isaac.logger :as log]
     [isaac.nexus :as nexus]
     [isaac.session.policy :as policy]
     [isaac.session.store.impl-common :as store-common]
-    [isaac.session.store.spi :as store])
+    [isaac.session.store.spi :as store]
+    [isaac.turn.queue :as queue])
   (:import
     (java.time Instant)))
 
@@ -130,13 +128,29 @@
     (write-delivery! root delivery)
     true))
 
-(defn- dispatch-comm-resume! [session-id cfg]
-  (turn/run-turn!
-    (charge/build {:config      cfg
-                   :session-key session-id
-                   :input       resume-note
-                   :comm        null-comm/channel}))
-  true)
+(defn- enqueue-resume-turn!
+  "Parks the resumed turn in the normal turn queue (isaac-yxch). Resume is
+   recovery work, not boot work: the scan hands the turn over and returns, so
+   starting the components never waits on a turn that may legitimately run for
+   minutes. The queue worker drives it and logs its own outcome."
+  [{:keys [session-store root cfg]} session-id marker]
+  (try
+    ;; The note is persisted here, the way a parked CLI turn persists its user
+    ;; message at submit time: the queue worker drives a :from-queue? charge and
+    ;; never re-appends the input.
+    (policy/append-message! (session-policy session-store cfg session-id) session-id
+                            {:role "user" :content resume-note})
+    (binding [queue/*root* root]
+      (queue/enqueue! {:session session-id
+                       :input   resume-note
+                       :origin  {:kind :resume :source (:source marker)}
+                       :root    root}))
+    true
+    (catch Throwable t
+      (log/warn :resume/enqueue-failed
+                :session session-id
+                :error (.getMessage t))
+      false)))
 
 (defn- cancelled-dir [root]
   (str root "/hail/cancelled"))
@@ -151,8 +165,13 @@
       (fs/move fs* temp path)
       true)))
 
+(defn- clear-marker! [session-store root session-id]
+  (store/clear-turn-marker! session-store session-id)
+  (when root
+    (store-common/clear-turn-marker!* root session-id (filesystem))))
+
 (defn- resume-marker!
-  [{:keys [session-store root cfg window-ms now-ms]} marker]
+  [{:keys [session-store root cfg window-ms now-ms] :as opts} marker]
   (let [session-id (or (:session-id marker) (get marker "session-id"))
         source     (:source marker)]
     (cond
@@ -160,9 +179,7 @@
       (do
         (when (= :hail source)
           (archive-cancelled-hail! root marker))
-        (store/clear-turn-marker! session-store session-id)
-        (when root
-          (store-common/clear-turn-marker!* root session-id (filesystem)))
+        (clear-marker! session-store root session-id)
         {:dropped 1})
 
       (comm-stale? marker window-ms now-ms)
@@ -189,8 +206,12 @@
                   :suspended-ms (when-let [at (:suspended-at marker)]
                                   (- now-ms (instant->epoch-ms at))))
         (repair-transcript! session-store cfg session-id)
-        (when (dispatch-comm-resume! session-id cfg)
-          {:requeued 1}))
+        (try
+          (if (enqueue-resume-turn! opts session-id marker)
+            {:requeued 1}
+            {:dropped 1})
+          (finally
+            (clear-marker! session-store root session-id))))
 
       :else
       (do
@@ -204,14 +225,13 @@
               {:requeued 1})
 
             (#{:comm :cron :cli} source)
-            (when (dispatch-comm-resume! session-id cfg)
-              {:requeued 1})
+            (if (enqueue-resume-turn! opts session-id marker)
+              {:requeued 1}
+              {:dropped 1})
 
             :else nil)
           (finally
-            (store/clear-turn-marker! session-store session-id)
-            (when root
-              (store-common/clear-turn-marker!* root session-id (filesystem)))))))))
+            (clear-marker! session-store root session-id)))))))
 
 (defn resume-interrupted-turns!
   [{:keys [session-store root now cfg resume-window-ms]

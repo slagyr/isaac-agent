@@ -165,12 +165,17 @@
       {:charge c})))
 
 (defn- marker-source [charge]
-  (let [kind (:kind (:origin charge))]
+  (let [origin (:origin charge)
+        kind   (:kind origin)]
     (cond
-      (= :hail kind) :hail
-      (= :cron kind) :cron
-      (:comm charge) :comm
-      :else          :cli)))
+      (= :hail kind)   :hail
+      (= :cron kind)   :cron
+      (:comm charge)   :comm
+      ;; A resumed turn (isaac-yxch) runs off the turn queue with no comm
+      ;; attached; its origin carries the source of the marker it came from so
+      ;; staleness keeps applying to what was once a comm turn.
+      (:source origin) (:source origin)
+      :else            :cli)))
 
 (defn- turn-marker
   "The durable resume ROUTING for an in-flight turn (isaac-7li9): source, the hail
