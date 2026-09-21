@@ -122,7 +122,7 @@
         (example))))
 
   (it "resolves locked and cascade fields for an existing session"
-    (config/dangerously-install-config! {:defaults  {:crew crew-name :model "spark" :effort 5 :history-retention :prune}
+    (config/dangerously-install-config! {:defaults  {:frequencies {:crew crew-name} :crew {:model "spark"} :provider {:effort 5 :history-retention :prune}}
                            :crew      {crew-name {:model "spark" :soul crew-soul :context-mode :reset :compaction {:threshold 0.7}}}
                            :models    {"spark" {:model "echo" :provider "grover" :context-window 1000 :effort 6 :compaction {:threshold 0.6}}}
                            :providers {"grover" {:api "grover" :effort 7 :compaction {:threshold 0.5}}}} "spec")
@@ -138,7 +138,7 @@
     (config/dangerously-install-config! nil "spec"))
 
   (it "honors an explicit session-level model override over the crew model"
-    (config/dangerously-install-config! {:defaults  {:crew crew-name}
+    (config/dangerously-install-config! {:defaults  {:frequencies {:crew crew-name}}
                                          :crew      {crew-name {:model "alpha" :soul crew-soul}
                                                      "flipper" {:model "alpha" :soul "flip"}}
                                          :models    {"alpha" {:model "alpha-1" :provider "grover"}
@@ -156,7 +156,7 @@
     (config/dangerously-install-config! nil "spec"))
 
   (it "creates a session with resolved locked defaults and explicit overrides"
-    (config/dangerously-install-config! {:defaults  {:crew crew-name :model "spark" :history-retention :prune}
+    (config/dangerously-install-config! {:defaults  {:frequencies {:crew crew-name} :crew {:model "spark"} :provider {:history-retention :prune}}
                            :crew      {crew-name {:model "spark" :soul crew-soul}}
                            :models    {"spark" {:model "echo" :provider "grover" :context-window 1000}}
                            :providers {"grover" {:api "grover"}}} "spec")
@@ -174,7 +174,7 @@
 
 
   (it "creates a session in an explicit session store"
-    (config/dangerously-install-config! {:defaults  {:crew crew-name :model "spark" :history-retention :prune}
+    (config/dangerously-install-config! {:defaults  {:frequencies {:crew crew-name} :crew {:model "spark"} :provider {:history-retention :prune}}
                            :crew      {crew-name {:model "spark" :soul crew-soul}}
                            :models    {"spark" {:model "echo" :provider "grover" :context-window 1000}}
                            :providers {"grover" {:api "grover"}}} "spec")
@@ -189,7 +189,7 @@
     (config/dangerously-install-config! nil "spec"))
 
   (it "creates sessions with stable distinct nonces"
-    (config/dangerously-install-config! {:defaults  {:crew crew-name :model "spark" :history-retention :prune}
+    (config/dangerously-install-config! {:defaults  {:frequencies {:crew crew-name} :crew {:model "spark"} :provider {:history-retention :prune}}
                            :crew      {crew-name {:model "spark" :soul crew-soul}}
                            :models    {"spark" {:model "echo" :provider "grover" :context-window 1000}}
                            :providers {"grover" {:api "grover"}}} "spec")
@@ -204,7 +204,7 @@
     (config/dangerously-install-config! nil "spec"))
 
   (it "resolves default compaction when crew and session omit compaction policy"
-    (config/dangerously-install-config! {:defaults  {:crew crew-name :model "spark"}
+    (config/dangerously-install-config! {:defaults  {:frequencies {:crew crew-name} :crew {:model "spark"}}
                            :crew      {crew-name {:model "spark" :soul crew-soul}}
                            :models    {"spark" {:model "echo" :provider "grover" :context-window 160}}
                            :providers {"grover" {:api "grover"}}} "spec")
@@ -215,7 +215,7 @@
     (config/dangerously-install-config! nil "spec"))
 
   (it "keeps crew compaction policy when session only tracks consecutive failures"
-    (config/dangerously-install-config! {:defaults  {:crew crew-name :model "spark"}
+    (config/dangerously-install-config! {:defaults  {:frequencies {:crew crew-name} :crew {:model "spark"}}
                            :crew      {crew-name {:model "spark" :soul crew-soul
                                                   :compaction {:strategy :slinky :threshold 0.8 :head 0.4}}}
                            :models    {"spark" {:model "echo" :provider "grover" :context-window 200}}
@@ -228,7 +228,7 @@
     (config/dangerously-install-config! nil "spec"))
 
   (it "uses crew compaction.effort 5 over the code default 2"
-    (config/dangerously-install-config! {:defaults  {:crew crew-name :model "spark"}
+    (config/dangerously-install-config! {:defaults  {:frequencies {:crew crew-name} :crew {:model "spark"}}
                            :crew      {crew-name {:model "spark" :soul crew-soul
                                                   :compaction {:effort 5}}}
                            :models    {"spark" {:model "echo" :provider "grover" :context-window 200}}
@@ -240,7 +240,7 @@
     (config/dangerously-install-config! nil "spec"))
 
   (it "backfills a missing nonce for an existing session"
-    (config/dangerously-install-config! {:defaults  {:crew crew-name :model "spark" :history-retention :prune}
+    (config/dangerously-install-config! {:defaults  {:frequencies {:crew crew-name} :crew {:model "spark"} :provider {:history-retention :prune}}
                            :crew      {crew-name {:model "spark" :soul crew-soul}}
                            :models    {"spark" {:model "echo" :provider "grover" :context-window 1000}}
                            :providers {"grover" {:api "grover"}}} "spec")

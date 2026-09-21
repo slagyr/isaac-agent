@@ -12,6 +12,7 @@
     [isaac.comm.render :as render]
     [isaac.charge :as charge]
     [isaac.comm.protocol :as comm]
+    [isaac.config.defaults :as defaults]
     [isaac.config.loader :as loader]
     [isaac.drive.observer :as observer]
     [isaac.drive.turn :as turn]
@@ -99,7 +100,7 @@
 (defn- ensure-session! [request]
   (let [session-store* (or (:session-store request) (nexus/get-in [:sessions :store]))
         cfg            (or (when (map? (:config request)) (:config request)) (loader/snapshot "turn dispatch entry — falls back to ambient config when charge carries none") {})
-        crew-id        (or (:crew request) (get-in cfg [:defaults :crew]))
+        crew-id        (or (:crew request) (defaults/crew-id cfg))
         crew-cfg       (get (:crew cfg) crew-id)
         session-key    (:session-key request)
         resolved-cwd   (resolve-session-cwd (:cwd request) crew-cfg nil)

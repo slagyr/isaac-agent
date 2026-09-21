@@ -4,6 +4,7 @@
     [clojure.java.io :as io]
     [c3kit.apron.schema :as cs]
     [isaac.comm.registry :as comm-registry]
+    [isaac.config.defaults :as defaults]
     [isaac.config.berths :as berths]
     [isaac.config.schema-base :as schema-base]
     [isaac.config.schema-compose :as schema-compose]
@@ -144,9 +145,9 @@
   (let [known (set (known-model-ids+aliases config))]
     {:errors   (vec (concat
                       (undefined-model-errors "crew" (:crew config) known)
-                      (when-let [defaults-model (get-in config [:defaults :model])]
+                      (when-let [defaults-model (defaults/model-id config)]
                         (when-not (contains? known (->id defaults-model))
-                          [{:key       "defaults.model"
+                          [{:key       "defaults.crew.model"
                             :value     "references undefined model"
                             :bad-value (->id defaults-model)}]))))
      :warnings []}))
@@ -176,7 +177,7 @@
 
 
 (defn- policy-path [prefix field]
-  (if prefix (str prefix "." (name field)) (str "tools." (name field))))
+  (str prefix "." (name field)))
 
 (defn- policy-token-error [path idx token]
   {:key   (str path "[" idx "]")
@@ -213,7 +214,7 @@
   [{:keys [config]}]
   {:errors (vec
              (concat
-               (check-tools-policies nil (:tools config))
+               (check-tools-policies "defaults.crew.tools" (defaults/tools config))
                (mapcat
                  (fn [[crew-id crew]]
                    (check-tools-policies (str "crew." (->id crew-id) ".tools")
@@ -251,11 +252,11 @@
   "The retired :cycle-limit key is a hard error. Name :cycle {:limit ...}."
   [{:keys [config result]}]
   (let [msg            "retired — use :cycle {:limit ...}"
-        raw-defaults   [(get-in result [:root :defaults]) (:defaults config)]
+        raw-defaults   [(get-in result [:root :defaults :crew]) (defaults/crew-template config)]
         raw-crews      [(get-in result [:root :crew])
                         (get-in result [:raw :crew])
                         (:crew config)]
-        default-errors (keep #(cycle-limit-error "defaults" % msg) raw-defaults)
+        default-errors (keep #(cycle-limit-error "defaults.crew" % msg) raw-defaults)
         crew-errors    (mapcat (fn [crews]
                                  (when (map? crews)
                                    (keep (fn [[crew-id crew]]

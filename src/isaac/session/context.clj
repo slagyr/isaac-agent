@@ -4,6 +4,7 @@
     [c3kit.apron.schema :as schema]
     [clojure.string :as str]
     [isaac.config.schema.root :as config-schema]
+    [isaac.config.defaults :as defaults]
     [isaac.config.loader :as loader]
     [isaac.config.resolve :as resolve]
     [isaac.effort :as effort]
@@ -110,7 +111,7 @@
 
 (defn- resolve-behavior* [cfg root session-entry]
   (let [crew-id        (or (:crew session-entry)
-                           (get-in cfg [:defaults :crew]))
+                           (defaults/crew-id cfg))
         model-override (normalize-model-ref (:model session-entry))
         ctx            (resolve/resolve-crew-context cfg crew-id
                                                     (cond-> {:root root}
@@ -118,14 +119,14 @@
         crew-cfg       (:crew-cfg ctx)
         model-ref      (or model-override
                            (:model crew-cfg)
-                           (get-in cfg [:defaults :model]))
+                           (defaults/model-id cfg))
         context-window (or (:context-window session-entry)
                            (:context-window ctx)
                            32768)]
     {:compaction        (resolve-compaction-config cfg session-entry ctx context-window)
      :context-mode      (or (:context-mode session-entry)
                             (:context-mode crew-cfg)
-                            (get-in cfg [:defaults :context-mode])
+                            (defaults/context-mode cfg)
                             default-context-mode)
      :context-window    context-window
      :crew              crew-id
@@ -136,7 +137,7 @@
                                                (or crew-cfg {})
                                                (or (:model-cfg ctx) {})
                                                (or (resolve/resolve-provider cfg (get-in ctx [:model-cfg :provider])) {})
-                                               (or (:defaults cfg) {}))
+                                               (or (defaults/provider-template cfg) {}))
      :history-retention (or (:history-retention session-entry)
                             (resolve/resolve-history-retention cfg crew-id nil))
      :model             (or model-ref
@@ -147,36 +148,31 @@
      :provider-cfg      (or (resolve/resolve-provider cfg (get-in ctx [:model-cfg :provider])) {})
      :soul              (:soul ctx)}))
 
-(defn- compaction-layer-present? [m]
-  (seq (compaction-policy m)))
-
-(defn- higher-compaction-layers? [session-entry ctx provider-cfg]
-  (or (compaction-layer-present? (:compaction session-entry))
-      (compaction-layer-present? (get-in ctx [:crew-cfg :compaction]))
-      (compaction-layer-present? (get-in ctx [:model-cfg :compaction]))
-      (compaction-layer-present? (:compaction provider-cfg))))
-
 (defn resolve-compaction-config
+  "Compaction merges key by key up the layers. Each :defaults section sits
+   directly under the entities of its kind, because a default is a template:
+   code < :defaults :provider < provider < :defaults :model < model <
+   :defaults :crew < crew < session."
   [cfg session-entry ctx context-window]
-  (let [provider-id  (or (get-in ctx [:model-cfg :provider])
-                         (get-in session-entry [:provider]))
-        provider-cfg (if provider-id
-                       (or (resolve/resolve-provider cfg provider-id) {})
-                       {})
+  (let [provider-id   (or (get-in ctx [:model-cfg :provider])
+                          (get-in session-entry [:provider]))
+        provider-cfg  (if provider-id
+                        (or (resolve/resolve-provider cfg provider-id) {})
+                        {})
         code-defaults {:async?    false
                        :strategy  :rubberband
                        :head      (default-head context-window)
                        :threshold (default-threshold context-window)
                        :effort    2}
-        layered      (merge {}
-                            (when-not (higher-compaction-layers? session-entry ctx provider-cfg)
-                              (compaction-policy (get-in cfg [:defaults :compaction])))
-                            (compaction-policy (:compaction provider-cfg))
-                            (compaction-policy (get-in ctx [:model-cfg :compaction]))
-                            (compaction-policy (get-in ctx [:crew-cfg :compaction]))
-                            (compaction-policy (:compaction session-entry)))
-        raw          (merge code-defaults layered)]
-    (schema/coerce! compaction-schema/config-schema raw)))
+        layered       (merge code-defaults
+                             (compaction-policy (defaults/compaction cfg))
+                             (compaction-policy (:compaction provider-cfg))
+                             (compaction-policy (:compaction (defaults/model-template cfg)))
+                             (compaction-policy (get-in ctx [:model-cfg :compaction]))
+                             (compaction-policy (:compaction (defaults/crew-template cfg)))
+                             (compaction-policy (get-in ctx [:crew-cfg :compaction]))
+                             (compaction-policy (:compaction session-entry)))]
+    (schema/coerce! compaction-schema/config-schema layered)))
 
 (defn resolve-behavior
   ([session-key]

@@ -3,6 +3,7 @@
   (:require
     [clojure.string :as str]
     [isaac.bridge.cancellation :as cancellation]
+    [isaac.config.defaults :as defaults]
     [isaac.config.loader :as loader]
     [isaac.config.resolve :as resolve]
     [isaac.llm.provider :as llm-provider]
@@ -92,7 +93,7 @@
   (cond
     (nil? provider) nil
     (string? provider) (let [prov-cfg     (resolve/resolve-provider cfg provider)
-                             enriched-cfg (merge (select-keys (get cfg :defaults {})
+                             enriched-cfg (merge (select-keys (defaults/provider-template cfg)
                                                               [:stream-idle-timeout-ms])
                                                  (or prov-cfg {})
                                                  {:providers    (:providers cfg)
@@ -135,7 +136,7 @@
         ss*             (store/registered-store)
         session-entry   (when (and ss* session-key (satisfies? store/SessionStore ss*))
                           (store/get-session ss* session-key))
-        crew-id         (or crew (:crew session-entry) (get-in config* [:defaults :crew]))
+        crew-id         (or crew (:crew session-entry) (defaults/crew-id config*))
         known-crews     (or (:crew config*) {})
         unknown?        (and crew-id (not (contains? known-crews crew-id)))
         session-context (delay (session-ctx/resolve-behavior session-key

@@ -159,7 +159,7 @@ Feature: Config set / unset
     Given default Grover setup
     And config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :cordelia :model :grover}
+      {:defaults  {:frequencies {:crew :cordelia} :crew {:model :grover}}
        :crew      {:cordelia {:model grover :session-policy :lantern}}
        :models    {:grover {:model "echo" :provider :grover}}
        :providers {:grover {}}

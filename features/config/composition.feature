@@ -143,7 +143,7 @@ Feature: Config Composition
   Scenario: composes providers from isaac.edn and providers/*.edn additively
     Given config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :llama}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :llama}}
        :providers {:ollama {:base-url "http://localhost:11434" :api "ollama"}}}
       """
     And config file "providers/anthropic.edn" containing:
@@ -174,7 +174,7 @@ Feature: Config Composition
   Scenario: duplicate model id across isaac.edn and models/*.edn is a hard error
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :main :model :llama}
+      {:defaults {:frequencies {:crew :main} :crew {:model :llama}}
        :models   {:grover {:model "claude-opus-4-6" :provider :grover :context-window 200000}}}
       """
     And config file "models/grover.edn" containing:
@@ -190,7 +190,7 @@ Feature: Config Composition
   Scenario: defaults.crew must reference an existing crew
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :ghost :model :llama}}
+      {:defaults {:frequencies {:crew :ghost} :crew {:model :llama}}}
       """
     Then the config has validation errors matching:
       | key           | value                     |
@@ -199,7 +199,7 @@ Feature: Config Composition
   Scenario: defaults.model must reference an existing model
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :main :model :nonexistent}}
+      {:defaults {:frequencies {:crew :main} :crew {:model :nonexistent}}}
       """
     Then the config has validation errors matching:
       | key            | value                      |
@@ -208,7 +208,7 @@ Feature: Config Composition
   Scenario: crew.model must reference an existing model
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :main :model :llama}
+      {:defaults {:frequencies {:crew :main} :crew {:model :llama}}
        :crew     {:cordelia {:model :gpt}}}
       """
     Then the config has validation errors matching:
@@ -221,7 +221,7 @@ Feature: Config Composition
     # validator picks the small-set form when ≤5 ids are accepted.
     Given config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :llama}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :llama}}
        :providers {:ollama {:base-url "http://localhost:11434" :api "ollama"}}
        :models    {:grover {:model "claude-opus-4-7" :provider :foo :context-window 200000}}}
       """
@@ -234,7 +234,7 @@ Feature: Config Composition
   Scenario: crew references a model defined in models/<id>.edn
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :main :model :llama}
+      {:defaults {:frequencies {:crew :main} :crew {:model :llama}}
        :crew     {:cordelia {:model :grover}}}
       """
     And config file "models/grover.edn" containing:
@@ -274,7 +274,7 @@ Feature: Config Composition
     Given environment variable "ANTHROPIC_API_KEY" is "sk-test-123"
     And config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :llama}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :llama}}
        :providers {:anthropic {:base-url "https://api.anthropic.com"
                                :api     "anthropic"
                                :api-key  "${ANTHROPIC_API_KEY}"}}}

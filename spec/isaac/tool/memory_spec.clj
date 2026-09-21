@@ -13,7 +13,7 @@
 (def test-crew marigold/captain)
 
 (defn- seed-default-crew! []
-  (config/dangerously-install-config! {:defaults {:crew test-crew}} "spec"))
+  (config/dangerously-install-config! {:defaults {:frequencies {:crew test-crew}}} "spec"))
 
 (describe "Memory tools"
 

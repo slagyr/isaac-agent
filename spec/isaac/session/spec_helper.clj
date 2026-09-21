@@ -34,7 +34,7 @@
    (create-session! root identifier {}))
   ([root identifier opts]
    (let [crew (or (:crew opts)
-                  (get-in (loader/snapshot "session spec helper: fixture crew") [:defaults :crew])
+                  (get-in (loader/snapshot "session spec helper: fixture crew") [:defaults :frequencies :crew])
                   "main")]
      (store/open-session! (session-store root) identifier (assoc opts :crew crew)))))
 

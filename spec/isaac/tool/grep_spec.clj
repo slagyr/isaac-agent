@@ -117,7 +117,7 @@
 
     (it "resolves '.' to session cwd"
       (let [captured (atom nil)]
-        (helper/with-config {:defaults {} :tools {:directories {:allow [:cwd]}} :crew {} :models {} :providers {}}
+        (helper/with-config {:defaults {:crew {:tools {:directories {:allow [:cwd]}}}} :crew {} :models {} :providers {}}
           (with-redefs [sut/available? (constantly true)
                         sut/-run-rg   (fn [cmd] (reset! captured cmd) {:exit 1 :out "" :err ""})]
             (sut/grep-tool {"pattern" "needle" "path" "." "session_key" @session-key})))
@@ -125,7 +125,7 @@
 
     (it "resolves an empty path to session cwd"
       (let [captured (atom nil)]
-        (helper/with-config {:defaults {} :tools {:directories {:allow [:cwd]}} :crew {} :models {} :providers {}}
+        (helper/with-config {:defaults {:crew {:tools {:directories {:allow [:cwd]}}}} :crew {} :models {} :providers {}}
           (with-redefs [sut/available? (constantly true)
                         sut/-run-rg   (fn [cmd] (reset! captured cmd) {:exit 1 :out "" :err ""})]
             (sut/grep-tool {"pattern" "needle" "path" "" "session_key" @session-key})))
@@ -137,6 +137,6 @@
         (.mkdirs (io/file subdir))
         (with-redefs [sut/available? (constantly true)
                       sut/-run-rg   (fn [cmd] (reset! captured cmd) {:exit 1 :out "" :err ""})]
-          (helper/with-config {:defaults {} :tools {:directories {:allow [:cwd]}} :crew {} :models {} :providers {}}
+          (helper/with-config {:defaults {:crew {:tools {:directories {:allow [:cwd]}}}} :crew {} :models {} :providers {}}
             (sut/grep-tool {"pattern" "needle" "path" "src" "session_key" @session-key})))
         (should= subdir (last @captured))))))

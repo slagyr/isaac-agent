@@ -8,7 +8,7 @@ Feature: Global and crew directory allow/deny
     Given an Isaac root at "isaac-state"
     And config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :echo}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :echo}}
        :providers {:grover {:base-url "http://test" :api "grover"}}
        :models    {:echo {:model "echo" :provider :grover :context-window 32768}}}
       """
@@ -34,7 +34,7 @@ Feature: Global and crew directory allow/deny
   Scenario: Global cwd grant allows the session workdir and not outside it
     Given config file "isaac.edn" containing:
       """
-      {:defaults    {:crew :main :model :echo}
+      {:defaults    {:frequencies {:crew :main} :crew {:model :echo}}
        :providers   {:grover {:base-url "http://test" :api "grover"}}
        :models      {:echo {:model "echo" :provider :grover :context-window 32768}}
        :tools       {:directories {:allow [:cwd]}}}
@@ -63,7 +63,7 @@ Feature: Global and crew directory allow/deny
   Scenario: :role is not a directory grant
     Given config file "isaac.edn" containing:
       """
-      {:defaults    {:crew :main :model :echo}
+      {:defaults    {:frequencies {:crew :main} :crew {:model :echo}}
        :providers   {:grover {:base-url "http://test" :api "grover"}}
        :models      {:echo {:model "echo" :provider :grover :context-window 32768}}
        :tools       {:directories {:allow [:role]}}}
@@ -88,7 +88,7 @@ Feature: Global and crew directory allow/deny
   Scenario: Global quarters grant allows the crew area and not cwd
     Given config file "isaac.edn" containing:
       """
-      {:defaults    {:crew :main :model :echo}
+      {:defaults    {:frequencies {:crew :main} :crew {:model :echo}}
        :providers   {:grover {:base-url "http://test" :api "grover"}}
        :models      {:echo {:model "echo" :provider :grover :context-window 32768}}
        :tools       {:directories {:allow [:quarters]}}}
@@ -116,7 +116,7 @@ Feature: Global and crew directory allow/deny
   Scenario: Crew extra absolute path overlays and inherited cwd still works
     Given config file "isaac.edn" containing:
       """
-      {:defaults    {:crew :main :model :echo}
+      {:defaults    {:frequencies {:crew :main} :crew {:model :echo}}
        :providers   {:grover {:base-url "http://test" :api "grover"}}
        :models      {:echo {:model "echo" :provider :grover :context-window 32768}}
        :tools       {:directories {:allow [:cwd]}}}
@@ -145,7 +145,7 @@ Feature: Global and crew directory allow/deny
   Scenario: A more specific global deny under a crew-allowed parent still denies
     Given config file "isaac.edn" containing:
       """
-      {:defaults    {:crew :main :model :echo}
+      {:defaults    {:frequencies {:crew :main} :crew {:model :echo}}
        :providers   {:grover {:base-url "http://test" :api "grover"}}
        :models      {:echo {:model "echo" :provider :grover :context-window 32768}}
        :tools       {:directories {:deny ["/work/project/secret"]}}}
@@ -174,7 +174,7 @@ Feature: Global and crew directory allow/deny
   Scenario: Crew allow of the denied child prefix re-opens it
     Given config file "isaac.edn" containing:
       """
-      {:defaults    {:crew :main :model :echo}
+      {:defaults    {:frequencies {:crew :main} :crew {:model :echo}}
        :providers   {:grover {:base-url "http://test" :api "grover"}}
        :models      {:echo {:model "echo" :provider :grover :context-window 32768}}
        :tools       {:directories {:deny ["/work/project/secret"]}}}
@@ -199,7 +199,7 @@ Feature: Global and crew directory allow/deny
   Scenario: Crew deny of a subpath; sibling under the root still works
     Given config file "isaac.edn" containing:
       """
-      {:defaults    {:crew :main :model :echo}
+      {:defaults    {:frequencies {:crew :main} :crew {:model :echo}}
        :providers   {:grover {:base-url "http://test" :api "grover"}}
        :models      {:echo {:model "echo" :provider :grover :context-window 32768}}
        :tools       {:directories {:allow ["/work/project"]}}}

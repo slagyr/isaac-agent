@@ -147,8 +147,7 @@
 
     (it "resolves '.' to session cwd"
       (spit (str @cwd "/dot.clj") "(ns dot)")
-      (let [result (helper/with-config {:defaults {}
-                                        :tools {:directories {:allow [:cwd]}}
+      (let [result (helper/with-config {:defaults {:crew {:tools {:directories {:allow [:cwd]}}}}
                                         :crew {} :models {} :providers {}}
                      (sut/glob-tool {"pattern" "*.clj" "path" "." "session_key" @session-key}))]
         (should-be-nil (:isError result))
@@ -156,8 +155,7 @@
 
     (it "resolves an empty path to session cwd"
       (spit (str @cwd "/empty.clj") "(ns empty)")
-      (let [result (helper/with-config {:defaults {}
-                                        :tools {:directories {:allow [:cwd]}}
+      (let [result (helper/with-config {:defaults {:crew {:tools {:directories {:allow [:cwd]}}}}
                                         :crew {} :models {} :providers {}}
                      (sut/glob-tool {"pattern" "*.clj" "path" "" "session_key" @session-key}))]
         (should-be-nil (:isError result))
@@ -166,8 +164,7 @@
     (it "resolves a relative path against session cwd"
       (.mkdirs (io/file @cwd "src"))
       (spit (str @cwd "/src/core.clj") "(ns core)")
-      (let [result (helper/with-config {:defaults {}
-                                        :tools {:directories {:allow [:cwd]}}
+      (let [result (helper/with-config {:defaults {:crew {:tools {:directories {:allow [:cwd]}}}}
                                         :crew {} :models {} :providers {}}
                      (sut/glob-tool {"pattern" "*.clj" "path" "src" "session_key" @session-key}))]
         (should-be-nil (:isError result))

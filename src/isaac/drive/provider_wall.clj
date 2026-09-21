@@ -1,6 +1,7 @@
 (ns isaac.drive.provider-wall
   (:require
     [clojure.string :as str]
+    [isaac.config.defaults :as defaults]
     [isaac.logger :as log]))
 
 (def default-provider-retry-after-ms 1800000)
@@ -8,12 +9,12 @@
 
 (defn provider-retry-after-ms
   [cfg]
-  (or (get-in cfg [:defaults :provider-retry-after-ms])
+  (or (defaults/retry-after-ms cfg)
       default-provider-retry-after-ms))
 
 (defn provider-auth-retry-after-ms
   [cfg]
-  (or (get-in cfg [:defaults :provider-auth-retry-ms])
+  (or (defaults/auth-retry-ms cfg)
       default-provider-auth-retry-ms))
 
 (defn- wall-message? [message]

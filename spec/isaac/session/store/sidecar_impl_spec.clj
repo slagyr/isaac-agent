@@ -85,7 +85,7 @@
   #_{:clj-kondo/ignore [:unresolved-symbol]}
   (around [example]
     (nexus/-with-nexus {:fs (fs/mem-fs)}
-      (config/dangerously-install-config! {:defaults {:crew "main"}} "spec")
+      (config/dangerously-install-config! {:defaults {:frequencies {:crew "main"}}} "spec")
       (try
         (example)
         (finally
@@ -184,14 +184,14 @@
         (should= 1 (count (store/list-sessions-by-agent (s) "main")))))
 
     (it "uses sequential names for unnamed sessions when configured"
-      (do (config/dangerously-install-config! {:defaults {:crew "main"} :sessions {:naming-strategy :sequential}} "spec")
+      (do (config/dangerously-install-config! {:defaults {:frequencies {:crew "main"}} :sessions {:naming-strategy :sequential}} "spec")
         (let [first  (sut/create-session! test-dir nil)
               second (sut/create-session! test-dir nil)]
           (should= "session-1" (:name first))
           (should= "session-2" (:name second)))))
 
     (it "persists the sequential counter across unnamed creates"
-      (do (config/dangerously-install-config! {:defaults {:crew "main"} :sessions {:naming-strategy :sequential}} "spec")
+      (do (config/dangerously-install-config! {:defaults {:frequencies {:crew "main"}} :sessions {:naming-strategy :sequential}} "spec")
         (sut/create-session! test-dir nil)
         (should= "1" (str/trim (fs/slurp (nexus/get :fs) (str test-dir "/sessions/.counter"))))
         (let [entry (sut/create-session! test-dir nil)]
@@ -199,7 +199,7 @@
           (should= "2" (str/trim (fs/slurp (nexus/get :fs) (str test-dir "/sessions/.counter")))))))
 
     (it "prefers an explicit name over the configured sequential strategy"
-      (do (config/dangerously-install-config! {:defaults {:crew "main"} :sessions {:naming-strategy :sequential}} "spec")
+      (do (config/dangerously-install-config! {:defaults {:frequencies {:crew "main"}} :sessions {:naming-strategy :sequential}} "spec")
         (let [entry (sut/create-session! test-dir "friday-debug")]
           (should= "friday-debug" (:name entry))
           (should= nil (store/get-session (s) "session-1"))))))

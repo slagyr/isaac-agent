@@ -17,7 +17,7 @@
   (context "install!"
 
     (it "does not commit the snapshot — the caller commits before installing"
-      (sut/install! {:config {:defaults {:crew "main"}}})
+      (sut/install! {:config {:defaults {:frequencies {:crew "main"}}}})
       (should-be-nil (config/snapshot "spec")))
 
     (it "registers a session store when root is known"

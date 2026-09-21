@@ -130,19 +130,19 @@
 
     (it "caps tool output bytes using the configured max-bytes limit"
       (sut/register! {:name "verbose" :handler (fn [_] (apply str (repeat 200 "x")))})
-      (with-redefs [loader/snapshot (fn [_] {:tools {:defaults {:max-lines 1000 :max-bytes 100}}})]
+      (with-redefs [loader/snapshot (fn [_] {:defaults {:tools {:max-lines 1000 :max-bytes 100}}})]
         (let [result (sut/execute "verbose" {})]
           (should (str/includes? (:result result) "bytes truncated; byte cap hit")))))
 
     (it "caps tool output lines using the configured max-lines limit"
       (sut/register! {:name "linesy" :handler (fn [_] (str/join "\n" (repeat 20 "line")))})
-      (with-redefs [loader/snapshot (fn [_] {:tools {:defaults {:max-lines 5 :max-bytes 262144}}})]
+      (with-redefs [loader/snapshot (fn [_] {:defaults {:tools {:max-lines 5 :max-bytes 262144}}})]
         (let [result (sut/execute "linesy" {})]
           (should (str/includes? (:result result) "lines truncated; line cap hit")))))
 
     (it "does not cap error results"
       (sut/register! {:name "fail" :handler (fn [_] {:isError true :error "bad input"})})
-      (with-redefs [loader/snapshot (fn [_] {:tools {:defaults {:max-lines 1 :max-bytes 1}}})]
+      (with-redefs [loader/snapshot (fn [_] {:defaults {:tools {:max-lines 1 :max-bytes 1}}})]
         (let [result (sut/execute "fail" {})]
           (should (:isError result))
           (should= "bad input" (:error result)))))

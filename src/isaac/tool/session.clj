@@ -3,6 +3,7 @@
   (:require
     [cheshire.core :as json]
     [clojure.string :as str]
+    [isaac.config.defaults :as defaults]
     [isaac.config.loader :as loader]
     [isaac.session.store.spi :as store]
     [isaac.tool.fs-bounds :as bounds]))
@@ -22,8 +23,8 @@
                   (assoc cfg :alias alias)))
               models))))
 
-(defn- resolve-model-alias [session crew-cfg defaults]
-  (model-name (or (:model session) (:model crew-cfg) (:model defaults))))
+(defn- resolve-model-alias [session crew-cfg cfg]
+  (model-name (or (:model session) (:model crew-cfg) (defaults/model-id cfg))))
 
 (defn- build-session-state [session model-alias cfg]
   (let [models    (or (:models cfg) {})
@@ -31,7 +32,7 @@
         alias     (or (:alias model-cfg) model-alias)
         provider  (model-name (:provider model-cfg))]
     {:result (json/generate-string
-                {:crew        (or (:crew session) (get-in cfg [:defaults :crew]))
+                {:crew        (or (:crew session) (defaults/crew-id cfg))
                  :model       {:alias    alias
                                :upstream (:model model-cfg)}
                  :provider    (or provider "")
@@ -54,10 +55,9 @@
     (if (nil? session)
       {:isError true :error (str "session not found: " session-key)}
       (let [cfg      (loader/snapshot "session_info tool: model/crew resolution")
-            crew-id  (or (:crew session) (get-in cfg [:defaults :crew]))
-            crew-cfg (or (get-in cfg [:crew crew-id]) {})
-            defaults (:defaults cfg)]
-        (build-session-state session (resolve-model-alias session crew-cfg defaults) cfg)))))
+            crew-id  (or (:crew session) (defaults/crew-id cfg))
+            crew-cfg (or (get-in cfg [:crew crew-id]) {})]
+        (build-session-state session (resolve-model-alias session crew-cfg cfg) cfg)))))
 
 (defn session-model-tool
   "Switch or reset the calling session's model.
@@ -78,11 +78,10 @@
         (if (nil? session)
           {:isError true :error (str "session not found: " session-key)}
           (let [cfg        (loader/snapshot "session_model tool: model/crew resolution")
-                crew-id    (or (:crew session) (get-in cfg [:defaults :crew]))
+                crew-id    (or (:crew session) (defaults/crew-id cfg))
                 crew-cfg   (or (get-in cfg [:crew crew-id]) {})
-                defaults   (:defaults cfg)
                 models     (or (:models cfg) {})
-                crew-alias (model-name (or (:model crew-cfg) (:model defaults)))]
+                crew-alias (model-name (or (:model crew-cfg) (defaults/model-id cfg)))]
             (cond
               (and model (not (contains? models model)))
               {:isError true :error (str "unknown model: " model)}
@@ -98,4 +97,4 @@
                 (build-session-state (assoc session :model crew-alias) crew-alias cfg))
 
               :else
-              (build-session-state session (resolve-model-alias session crew-cfg defaults) cfg))))))))
+              (build-session-state session (resolve-model-alias session crew-cfg cfg) cfg))))))))

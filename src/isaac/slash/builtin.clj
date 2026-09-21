@@ -2,6 +2,7 @@
   (:require
     [clojure.string :as str]
     [isaac.bridge.status :as status]
+    [isaac.config.defaults :as defaults]
     [isaac.config.loader :as loader]
     [isaac.effort :as effort]
      [isaac.fs :as fs]
@@ -51,7 +52,7 @@
 
 (defn handle-crew [session-key input ctx]
   (let [{:keys [args]} (parse-command input)
-        current-crew (or (:crew ctx) (get-in ctx [:config :defaults :crew]))
+        current-crew (or (:crew ctx) (defaults/crew-id (:config ctx)))
         crew-members (or (:crew-members ctx) {})]
     (if (str/blank? args)
       {:type    :command

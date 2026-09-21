@@ -27,7 +27,7 @@
         default-crew  (or (first (keys crew)) "main")
         default-model (or (get-in crew [default-crew :model])
                           (first (keys models')))]
-    {:defaults  {:crew default-crew :model default-model}
+    {:defaults  {:frequencies {:crew default-crew} :crew {:model default-model}}
      :crew      crew
      :models    models'
      :providers providers}))

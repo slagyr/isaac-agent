@@ -7,7 +7,7 @@ Feature: Per-crew filesystem boundaries
     Given an Isaac root at "isaac-state"
     And config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :echo}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :echo}}
        :providers {:grover {:base-url "http://test" :api "grover"}}
        :models    {:echo {:model "echo" :provider :grover :context-window 32768}}
        :tools     {:directories {:allow [:cwd :quarters]}}}
@@ -106,7 +106,7 @@ Feature: Per-crew filesystem boundaries
   Scenario: crew cannot access the session role workspace without a directory grant (isaac-ukg4)
     Given config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :echo}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :echo}}
        :providers {:grover {:base-url "http://test" :api "grover"}}
        :models    {:echo {:model "echo" :provider :grover :context-window 32768}}}
       """

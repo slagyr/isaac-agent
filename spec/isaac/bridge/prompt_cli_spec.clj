@@ -26,7 +26,7 @@
 ;; in the run describe return this; the missing-config test resets the atom
 ;; to a missing-config result.
 (def synthetic-config
-  {:defaults {:crew crew-name}
+  {:defaults {:frequencies {:crew crew-name}}
    :crew   {crew-name {:name crew-name :soul crew-soul :model "grover"}
             "ketch"   {:name "ketch" :soul "You are a pirate." :model "grover2"}}
    :models {"grover"  {:alias "grover"  :model "echo"     :provider "grover" :context-window 32768}

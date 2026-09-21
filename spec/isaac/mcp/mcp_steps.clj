@@ -41,8 +41,8 @@
 
 (defn- snapshot-caps []
   (let [cfg (or (loader/snapshot "mcp turn fixture — tool output caps") {})]
-    {:max-lines (get-in cfg [:tools :defaults :max-lines])
-     :max-bytes (get-in cfg [:tools :defaults :max-bytes])}))
+    {:max-lines (get-in cfg [:defaults :tools :max-lines])
+     :max-bytes (get-in cfg [:defaults :tools :max-bytes])}))
 
 (defn- drive-tool-fn [session-key allowed]
   (fn [name arguments]

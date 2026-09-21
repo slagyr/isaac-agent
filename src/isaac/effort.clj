@@ -22,12 +22,15 @@
     :else     "high"))
 
 (defn resolve-effort
-  "Resolves effort integer from the chain: session > crew > model > provider > defaults > 7.
-   Each map may contain an :effort key. Returns the first non-nil value or 7."
-  [session crew-cfg model-cfg provider-cfg defaults]
+  "Resolves effort integer from the chain: session > crew > model > provider > 7.
+   Each entity map arrives under its :defaults template, so a default ranks with
+   the layer it is written on: :defaults :provider :effort loses to a model's,
+   :defaults :crew :effort beats one. `provider-template` is the last word
+   before 7, for the case where no provider resolves at all."
+  [session crew-cfg model-cfg provider-cfg provider-template]
   (or (:effort session)
       (:effort crew-cfg)
       (:effort model-cfg)
       (:effort provider-cfg)
-      (:effort defaults)
+      (:effort provider-template)
       default-effort))

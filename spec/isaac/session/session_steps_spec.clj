@@ -53,7 +53,7 @@
 
   (it "reuses loaded config until a feature fixture changes it"
     (let [loads* (atom 0)
-          cfg    {:defaults {:crew "main"}
+          cfg    {:defaults {:frequencies {:crew "main"}}
                   :crew     {"main" {}}
                   :models   {}
                   :providers {}}]

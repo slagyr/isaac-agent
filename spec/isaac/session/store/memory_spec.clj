@@ -55,7 +55,7 @@
       #_{:clj-kondo/ignore [:invalid-arity]}
       (let [s     (sut/create-store "/tmp/isaac")
             entry (store/open-session! s "friday-debug"
-                                       {:crew "main" :config {:defaults {:history-retention :prune}}})]
+                                       {:crew "main" :config {:defaults {:provider {:history-retention :prune}}}})]
         (should= :prune (:history-retention entry))))
 
     (it "stamps :session-policy :chronicle by default"

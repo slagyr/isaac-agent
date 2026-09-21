@@ -552,7 +552,7 @@
 
     (it "uses the stored session crew when no override is provided"
       (let [captured (atom nil)
-            cfg      {:defaults  {:crew "main" :model "fast"}
+            cfg      {:defaults  {:frequencies {:crew "main"} :crew {:model "fast"}}
                       :crew      {"main"  {:soul "Main soul"  :model "fast"}
                                   "pinky" {:soul "Pinky soul" :model "smart"}}
                       :models    {"fast"  {:model "anvil-x-mini" :provider marigold/quantum-anvil :context-window 16000}
@@ -569,7 +569,7 @@
 
     (it "lets an explicit crew override win over the stored session crew"
       (let [captured (atom nil)
-            cfg      {:defaults  {:crew "main" :model "fast"}
+            cfg      {:defaults  {:frequencies {:crew "main"} :crew {:model "fast"}}
                       :crew      {"main"  {:soul "Main soul"  :model "fast"}
                                   "pinky" {:soul "Pinky soul" :model "smart"}}
                       :models    {"fast"  {:model "anvil-x-mini" :provider marigold/quantum-anvil :context-window 16000}
@@ -585,7 +585,7 @@
         (should= "Main soul" (:soul @captured))))
 
     (it "includes --crew hint in unknown-crew message for cli origin"
-      (let [cfg {:defaults {:crew "main" :model "fast"}
+      (let [cfg {:defaults {:frequencies {:crew "main"} :crew {:model "fast"}}
                  :crew     {"main" {:soul "Main soul" :model "fast"}}
                  :models   {"fast" {:model "anvil-x-mini" :provider marigold/quantum-anvil :context-window 16000}}
                  :providers {marigold/quantum-anvil {:api marigold/anvil-api}}}]
@@ -599,7 +599,7 @@
           (should (re-find #"pass --crew to override" (:message result))))))
 
     (it "omits all hints in unknown-crew message for webhook origin"
-      (let [cfg {:defaults {:crew "main" :model "fast"}
+      (let [cfg {:defaults {:frequencies {:crew "main"} :crew {:model "fast"}}
                  :crew     {"main" {:soul "Main soul" :model "fast"}}
                  :models   {"fast" {:model "anvil-x-mini" :provider marigold/quantum-anvil :context-window 16000}}
                  :providers {marigold/quantum-anvil {:api marigold/anvil-api}}}]

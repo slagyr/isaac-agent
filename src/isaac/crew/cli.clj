@@ -7,6 +7,7 @@
     [isaac.cli.host :as host]
     [isaac.cli.common :as cli-common]
     [isaac.cli.table :as table]
+    [isaac.config.defaults :as defaults]
     [isaac.config.loader :as loader]
     [isaac.config.root :as root]
     [isaac.crew.store :as store]
@@ -65,7 +66,7 @@
         cfg       (loader/normalize-config cfg)
         crew-map  (:crew cfg)]
     (map (fn [[crew-id crew-member]]
-           (let [model-id   (or (:model crew-member) (get-in cfg [:defaults :model]))
+           (let [model-id   (or (:model crew-member) (defaults/model-id cfg))
                  model-cfg  (get-in cfg [:models model-id])
                  model-name (or (:model model-cfg) model-id "-")
                  provider   (or (:provider model-cfg) "-")]

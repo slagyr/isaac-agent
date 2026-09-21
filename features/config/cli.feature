@@ -48,7 +48,7 @@ Feature: Config Command
     Given environment variable "CONFIG_TEST_API_KEY" is "sk-test-123"
     And config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :llama}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :llama}}
        :crew      {:main {}}
        :models    {:llama {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {:api-key  "${CONFIG_TEST_API_KEY}"
@@ -69,7 +69,7 @@ Feature: Config Command
     Given environment variable "CONFIG_TEST_API_KEY" is "sk-test-123"
     And config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :llama}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :llama}}
        :crew      {:main {}}
        :models    {:llama {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {:api-key "${CONFIG_TEST_API_KEY}"}}}
@@ -87,7 +87,7 @@ Feature: Config Command
     Given environment variable "CONFIG_TEST_API_KEY" is "sk-test-123"
     And config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :llama}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :llama}}
        :crew      {:main {}}
        :models    {:llama {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {:api-key "${CONFIG_TEST_API_KEY}"}}}
@@ -122,7 +122,7 @@ Feature: Config Command
   Scenario: config sources lists contributing files
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :main :model :llama}
+      {:defaults {:frequencies {:crew :main} :crew {:model :llama}}
        :crew     {:main {}}}
       """
     And config file "crew/cordelia.edn" containing:
@@ -146,7 +146,7 @@ Feature: Config Command
   Scenario: validate passes for a well-formed config
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :main :model :llama}
+      {:defaults {:frequencies {:crew :main} :crew {:model :llama}}
        :crew     {:main {:soul "You are Atticus."}}
        :models   {:llama {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {}}}
@@ -158,7 +158,7 @@ Feature: Config Command
   Scenario: validate reports errors with exit code 1
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :ghost :model :llama}}
+      {:defaults {:frequencies {:crew :ghost} :crew {:model :llama}}}
       """
     When isaac is run with "config validate"
     Then the stderr matches:
@@ -188,7 +188,7 @@ Feature: Config Command
   Scenario: validate requires defaults.crew
     Given config file "isaac.edn" containing:
       """
-      {:defaults  {:model :llama}
+      {:defaults  {:crew {:model :llama}}
        :crew      {:yopp {}}
        :models    {:llama {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {}}}
@@ -207,7 +207,7 @@ Feature: Config Command
     # still reports the bad value, source file, and known-set.
     Given config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :local}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :local}}
        :models    {:local {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {}}}
       """
@@ -257,7 +257,7 @@ Feature: Config Command
     # rendering is preserved.
     Given config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :local}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :local}}
        :crew      {:main {}}
        :models    {:local {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {}}
@@ -277,7 +277,7 @@ Feature: Config Command
   Scenario: validate reports warnings but still exits 0
     Given config file "isaac.edn" containing:
       """
-      {:defaults     {:crew :main :model :llama}
+      {:defaults     {:frequencies {:crew :main} :crew {:model :llama}}
        :crew         {:main {}}
        :models       {:llama {:model "llama3.3:1b" :provider :anthropic}}
        :providers    {:anthropic {}}
@@ -294,7 +294,7 @@ Feature: Config Command
   Scenario: validate warns when a crew directory includes the Isaac state root (isaac-dwjy)
     Given config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :scrapper :model :llama}
+      {:defaults  {:frequencies {:crew :scrapper} :crew {:model :llama}}
        :crew      {:scrapper {:tools {:directories {:allow ["/isaac-state"]}}}}
        :models    {:llama {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {}}}
@@ -311,7 +311,7 @@ Feature: Config Command
   Scenario: validate rejects the retired :role directory token
     Given config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :llama}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :llama}}
        :crew      {:main {}}
        :models    {:llama {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {}}
@@ -333,7 +333,7 @@ Feature: Config Command
       """
     And stdin is:
       """
-      {:defaults  {:crew :main :model :llama}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :llama}}
        :crew      {:main {}}
        :models    {:llama {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {}}}
@@ -345,7 +345,7 @@ Feature: Config Command
   Scenario: validate --as overlays stdin at the given config path before validating
     Given config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :llama}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :llama}}
        :crew      {}
        :models    {:llama {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {}}}
@@ -372,7 +372,7 @@ Feature: Config Command
   Scenario: get prints a scalar value by dotted keyword path
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :main :model :llama}
+      {:defaults {:frequencies {:crew :main} :crew {:model :llama}}
        :crew     {:main {}
                    :cordelia {:soul "You are Cordelia."}}
        :models   {:llama {:model "llama3.3:1b" :provider :anthropic}}
@@ -385,7 +385,7 @@ Feature: Config Command
   Scenario: get prints a scalar value by bracket keyword path
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :main :model :llama}
+      {:defaults {:frequencies {:crew :main} :crew {:model :llama}}
        :crew     {:main {}
                    :cordelia {:soul "You are Cordelia."}}
        :models   {:llama {:model "llama3.3:1b" :provider :anthropic}}
@@ -398,7 +398,7 @@ Feature: Config Command
   Scenario: get prints a nested structure as EDN
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :main :model :llama}
+      {:defaults {:frequencies {:crew :main} :crew {:model :llama}}
        :crew     {:main {}
                    :cordelia {:model :llama :soul "You are Cordelia."}}
        :models   {:llama {:model "llama3.3:1b" :provider :anthropic}}
@@ -413,7 +413,7 @@ Feature: Config Command
   Scenario: get exits non-zero for a missing key
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :main :model :llama}
+      {:defaults {:frequencies {:crew :main} :crew {:model :llama}}
        :crew     {:main {}
                    :cordelia {:soul "You are Cordelia."}}
        :models   {:llama {:model "llama3.3:1b" :provider :anthropic}}
@@ -427,7 +427,7 @@ Feature: Config Command
     Given environment variable "CONFIG_TEST_API_KEY" is "sk-test-123"
     And config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :llama}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :llama}}
        :crew      {:main {}}
        :models    {:llama {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {:api-key "${CONFIG_TEST_API_KEY}"}}}
@@ -441,7 +441,7 @@ Feature: Config Command
     Given environment variable "CONFIG_TEST_API_KEY" is "sk-test-123"
     And config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :llama}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :llama}}
        :crew      {:main {}}
        :models    {:llama {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {:api-key "${CONFIG_TEST_API_KEY}"}}}
@@ -459,7 +459,7 @@ Feature: Config Command
     Given environment variable "CONFIG_TEST_API_KEY" is "sk-test-123"
     And config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :llama}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :llama}}
        :crew      {:main {}}
        :models    {:llama {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {:api-key "${CONFIG_TEST_API_KEY}"}}}
@@ -585,7 +585,7 @@ Feature: Config Command
   Scenario: set writes a new crew member to isaac.edn by default
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :main :model :llama}
+      {:defaults {:frequencies {:crew :main} :crew {:model :llama}}
        :crew     {:main {}}
        :models   {:llama {:model "llama3.3:1b" :provider :anthropic}
                   :gpt   {:model "gpt-5.4" :provider :anthropic}}
@@ -604,7 +604,7 @@ Feature: Config Command
   Scenario: set writes to the existing entity file when one already defines the key
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :main :model :llama}
+      {:defaults {:frequencies {:crew :main} :crew {:model :llama}}
        :crew     {:main {}}
        :models   {:llama {:model "llama3.3:1b" :provider :anthropic}
                   :gpt   {:model "gpt-5.4" :provider :anthropic}}
@@ -627,7 +627,7 @@ Feature: Config Command
   Scenario: set writes to isaac.edn when the entity is already defined there
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :main :model :llama}
+      {:defaults {:frequencies {:crew :main} :crew {:model :llama}}
        :crew     {:main   {}
                    :cordelia {:model :llama}}
        :models   {:llama {:model "llama3.3:1b" :provider :anthropic}
@@ -648,7 +648,7 @@ Feature: Config Command
   Scenario: set writes new entities to entity files when prefer-entity-files is true
     Given config file "isaac.edn" containing:
       """
-      {:defaults            {:crew :main :model :llama}
+      {:defaults            {:frequencies {:crew :main} :crew {:model :llama}}
        :prefer-entity-files true
        :crew                {:main {}}
        :models              {:llama {:model "llama3.3:1b" :provider :anthropic}
@@ -742,7 +742,7 @@ Feature: Config Command
   Scenario: set refuses to write a value that fails type validation
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :main :model :llama}
+      {:defaults {:frequencies {:crew :main} :crew {:model :llama}}
        :crew     {:main {}}
        :models   {:llama {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {}}}
@@ -755,7 +755,7 @@ Feature: Config Command
   Scenario: set errors on a path the schema does not recognize
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :main :model :llama}
+      {:defaults {:frequencies {:crew :main} :crew {:model :llama}}
        :crew     {:main {}}
        :models   {:llama {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {}}}
@@ -874,7 +874,7 @@ Feature: Config Command
   Scenario: set writes a whole entity read from stdin
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :main :model :llama}
+      {:defaults {:frequencies {:crew :main} :crew {:model :llama}}
        :crew     {:main {}}
        :models   {:llama {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {}}}
@@ -952,7 +952,7 @@ Feature: Config Command
   Scenario: config keys with no path lists root keys
     Given config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :llama}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :llama}}
        :crew      {:main {}}
        :models    {:llama {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {}}}
@@ -984,7 +984,7 @@ Feature: Config Command
   Scenario: config list with no path lists root keys and sources
     Given config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :llama}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :llama}}
        :crew      {:main {}}
        :models    {:llama {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {}}}
@@ -1031,7 +1031,7 @@ Feature: Config Command
   Scenario: config validate --json emits structured warnings
     Given config file "isaac.edn" containing:
       """
-      {:defaults     {:crew :main :model :llama}
+      {:defaults     {:frequencies {:crew :main} :crew {:model :llama}}
        :crew         {:main {}}
        :models       {:llama {:model "llama3.3:1b" :provider :anthropic}}
        :providers    {:anthropic {}}
@@ -1044,7 +1044,7 @@ Feature: Config Command
   Scenario: validate accepts a crew on a session policy contributed by an installed module
     Given config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :cordelia :model :local}
+      {:defaults  {:frequencies {:crew :cordelia} :crew {:model :local}}
        :crew      {:cordelia {:session-policy :lantern}}
        :models    {:local {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {}}
@@ -1058,7 +1058,7 @@ Feature: Config Command
   Scenario: validate still rejects an unknown session policy and names the module's known set
     Given config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :cordelia :model :local}
+      {:defaults  {:frequencies {:crew :cordelia} :crew {:model :local}}
        :crew      {:cordelia {:session-policy :ledger}}
        :models    {:local {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {}}

@@ -7,6 +7,7 @@
     [isaac.bridge.suspend :as suspend]
     [isaac.comm.null :as null-comm]
     [isaac.comm.protocol :as comm]
+    [isaac.config.defaults :as defaults]
     [isaac.config.loader :as loader]
     [isaac.drive.dispatch :as dispatch]
     [isaac.drive.observer :as observer]
@@ -463,7 +464,7 @@
   2)
 
 (defn- resolve-cycle [{:keys [cycle config crew crew-cfg]}]
-  (let [defaults      (or (get-in config [:defaults :cycle]) {})
+  (let [defaults      (or (defaults/cycle-knobs config) {})
         layered       (merge defaults (crew-cycle config crew crew-cfg) (or cycle {}))
         limit         (or (:limit layered)
                           tool-loop/default-max-loops)
@@ -481,7 +482,7 @@
   (let [raw (or (get-in crew-cfg [:tools :max-parallel])
                 (get-in config [:crew (keyword crew) :tools :max-parallel])
                 (get-in config [:crew crew :tools :max-parallel])
-                (get-in config [:tools :max-parallel])
+                (defaults/max-parallel config)
                 tool-loop/default-max-parallel-tools)]
     (parse-long-or-raw raw)))
 
@@ -1506,8 +1507,8 @@
         cycle-cfg     (resolve-cycle {:cycle cycle :config config :crew crew :crew-cfg crew-cfg})
         cycle-budget  (:limit cycle-cfg)
         max-parallel  (resolve-max-parallel-tools {:config config :crew crew :crew-cfg crew-cfg})
-        caps          {:max-lines (get-in config [:tools :defaults :max-lines])
-                       :max-bytes (get-in config [:tools :defaults :max-bytes])}
+        caps          {:max-lines (:max-lines (defaults/tool-caps config))
+                       :max-bytes (:max-bytes (defaults/tool-caps config))}
         ch            (or comm null-comm/channel)
         p             provider]
     (when-not (:from-queue? charge)

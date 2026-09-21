@@ -58,7 +58,7 @@ Feature: Unknown crew rejects the turn
   Scenario: a session with no crew uses defaults.crew
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew "yopp" :model "grover"}
+      {:defaults {:frequencies {:crew "yopp"} :crew {:model "grover"}}
        :tools    {:directories {:allow [:cwd :quarters]}}}
       """
     And config file "crew/yopp.edn" containing:

@@ -1685,14 +1685,14 @@
       (should= 12 (#'sut/resolve-cycle-limit {:cycle       {:limit 12}
                                               :crew-cfg    {:cycle {:limit 3}}
                                               :crew        "oscar"
-                                              :config      {:defaults {:cycle {:limit 5}}
+                                              :config      {:defaults {:crew {:cycle {:limit 5}}}
                                                             :crew     {"oscar" {:cycle {:limit 3}}}}}))
       (should= 3 (#'sut/resolve-cycle-limit {:crew-cfg {:cycle {:limit 3}}
                                             :crew     "oscar"
-                                            :config   {:defaults {:cycle {:limit 5}}
+                                            :config   {:defaults {:crew {:cycle {:limit 5}}}
                                                        :crew     {"oscar" {:cycle {:limit 8}}}}}))
       (should= 5 (#'sut/resolve-cycle-limit {:crew   "oscar"
-                                            :config {:defaults {:cycle {:limit 5}}}}))
+                                            :config {:defaults {:crew {:cycle {:limit 5}}}}}))
       (should= tool-loop/default-max-loops
                (#'sut/resolve-cycle-limit {:crew "oscar" :config {}})))
 
@@ -1700,7 +1700,7 @@
       (let [cycle (#'sut/resolve-cycle {:cycle    {:checkpoint-every 1}
                                         :crew-cfg {:cycle {:limit 10 :checkpoint-every 5}}
                                         :crew     "oscar"
-                                        :config   {:defaults {:cycle {:limit 100}}}})]
+                                        :config   {:defaults {:crew {:cycle {:limit 100}}}}})]
         (should= 10 (:limit cycle))
         (should= 1 (:checkpoint-every cycle))))
 
@@ -1848,7 +1848,7 @@
                                    :usage       {:output-tokens 1 :prompt-tokens 1}}
                       :tool-calls []
                       :usage      {:output-tokens 1 :prompt-tokens 1 :requests 1}}]
-        (config/dangerously-install-config! {:defaults {:crew "main" :model "test"}
+        (config/dangerously-install-config! {:defaults {:frequencies {:crew "main"} :crew {:model "test"}}
                                :crew     {"main" {:model "test" :soul "You are Isaac." :tools {:allow [:logbook-entry]}}}
                                :models   {"test" {:model "test-model" :provider marigold/starcore :context-window 32768}}} "spec")
         (tool-registry/clear!)

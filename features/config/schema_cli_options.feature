@@ -23,7 +23,7 @@ Feature: isaac config schema CLI shows allowed values for dynamic fields
     Given an empty Isaac root at "/tmp/isaac"
     And the isaac file "isaac.edn" exists with:
       """
-      {:defaults  {:crew :main :model :local}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :local}}
        :crew      {:main {}}
        :models    {:local {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {}}

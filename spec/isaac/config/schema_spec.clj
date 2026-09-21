@@ -37,19 +37,30 @@
   (describe "entity conformance"
 
     (it "defaults conforms keyword ids to strings"
-      (should= {:crew "main" :model test-model-id}
+      (should= {:frequencies {:crew "main"} :crew {:model test-model-id}}
                (lexicon/conform (runtime-spec sut/defaults)
-                                {:crew :main :model (keyword test-model-id)})))
+                                {:frequencies {:crew :main} :crew {:model (keyword test-model-id)}})))
 
     (it "requires a default crew without supplying an implicit identity"
-      (let [crew-spec (get-in sut/defaults [:schema :crew])]
+      (let [crew-spec (get-in sut/defaults [:schema :frequencies :schema :crew])]
         (should (:required? crew-spec))
         (should-not (contains? crew-spec :default))))
 
-    (it "defaults conforms stream-idle-timeout-ms"
-      (should= {:stream-idle-timeout-ms 100}
+    (it "each :defaults section is its entity's schema, never a required one"
+      (should= :int (get-in sut/defaults [:schema :provider :schema :effort :type]))
+      (should= :keyword (get-in sut/defaults [:schema :crew :schema :context-mode :type]))
+      (should-be-nil (get-in sut/defaults [:schema :model :schema :provider :required?])))
+
+    (it "the flat :defaults keys are retired, each naming its new path"
+      (should= [[:retired? "use :defaults :provider :effort"]]
+               (get-in sut/defaults [:schema :effort :validations]))
+      (should= [[:retired? "use :defaults :provider :retry-after-ms"]]
+               (get-in sut/defaults [:schema :provider-retry-after-ms :validations])))
+
+    (it "defaults conforms provider stream-idle-timeout-ms"
+      (should= {:provider {:stream-idle-timeout-ms 100}}
                (lexicon/conform (runtime-spec sut/defaults)
-                                {:stream-idle-timeout-ms 100})))
+                                {:provider {:stream-idle-timeout-ms 100}})))
 
     (it "crew conforms with tools nested"
       (should= {:id    marigold/first-mate
@@ -86,28 +97,33 @@
                (lexicon/conform (runtime-spec sut/crew)
                                 {:session-policy :episodes})))
 
-    (it "root tools.defaults conforms max-lines and max-bytes"
-      (should= {:defaults {:max-lines 500 :max-bytes 131072}}
-               (lexicon/conform (runtime-spec sut/field-tools)
-                                {:defaults {:max-lines 500 :max-bytes 131072}})))
+    (it "defaults.tools conforms max-lines and max-bytes"
+      (should= {:tools {:max-lines 500 :max-bytes 131072}}
+               (lexicon/conform (runtime-spec sut/defaults)
+                                {:tools {:max-lines 500 :max-bytes 131072}})))
 
-    (it "root tools schema declares max-parallel default four"
-      (should= 4 (get-in sut/field-tools [:schema :max-parallel :default])))
+    (it "root tools keys that became crew defaults are retired"
+      (should= [[:retired? "use :defaults :crew :tools :max-parallel"]]
+               (get-in sut/field-tools [:schema :max-parallel :validations]))
+      (should= [[:retired? "use :defaults :tools"]]
+               (get-in sut/field-tools [:schema :defaults :validations]))
+      (should= [[:retired? "use :defaults :crew :tools :allow"]]
+               (get-in sut/field-tools [:schema :allow :validations])))
 
-    (it "root tools config conforms max-parallel"
-      (should= {:max-parallel 2}
-               (lexicon/conform (runtime-spec sut/field-tools)
-                                {:max-parallel 2})))
+    (it "defaults.crew.tools conforms max-parallel"
+      (should= {:crew {:tools {:max-parallel 2}}}
+               (lexicon/conform (runtime-spec sut/defaults)
+                                {:crew {:tools {:max-parallel 2}}})))
 
-    (it "root tools.allow :all conforms as the policy keyword, not a seq"
-      (should= {:allow :all}
-               (lexicon/conform (runtime-spec sut/field-tools)
-                                {:allow :all})))
+    (it "defaults.crew.tools.allow :all conforms as the policy keyword, not a seq"
+      (should= {:crew {:tools {:allow :all}}}
+               (lexicon/conform (runtime-spec sut/defaults)
+                                {:crew {:tools {:allow :all}}})))
 
-    (it "root tools.deny of a namespaced token vector conforms"
-      (should= {:deny [:exec/run]}
-               (lexicon/conform (runtime-spec sut/field-tools)
-                                {:deny [:exec/run]})))
+    (it "defaults.crew.tools.deny of a namespaced token vector conforms"
+      (should= {:crew {:tools {:deny [:exec/run]}}}
+               (lexicon/conform (runtime-spec sut/defaults)
+                                {:crew {:tools {:deny [:exec/run]}}})))
 
     (it "crew tools.allow :all conforms as the policy keyword"
       (let [result (lexicon/conform (runtime-spec sut/crew)
