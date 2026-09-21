@@ -501,8 +501,14 @@
       :other)))
 
 (defn- normalize-response [response provider-name]
-  (if (:error response)
+  (cond
+    (:error response)
     (api/normalize-error response)
+
+    (:unavailable? response)
+    response
+
+    :else
     (let [wire-tool-calls (get-in response [:message :tool_calls])
           tool-calls      (mapv (fn [tool-call]
                                   (let [arguments (get-in tool-call [:function :arguments])]
