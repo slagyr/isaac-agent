@@ -148,13 +148,13 @@ Feature: Config Composition
       """
     And config file "providers/anthropic.edn" containing:
       """
-      {:base-url "https://api.anthropic.com" :api "anthropic" :api-key "${CONFIG_TEST_ANTHROPIC_API_KEY}"}
+      {:base-url "https://api.anthropic.com" :api "anthropic" :api-key "sk-ant-test"}
       """
     Then the loaded config has:
       | key                        | value                  |
       | providers.ollama.base-url   | http://localhost:11434 |
       | providers.anthropic.api    | anthropic              |
-      | providers.anthropic.api-key | ${CONFIG_TEST_ANTHROPIC_API_KEY}   |
+      | providers.anthropic.api-key | sk-ant-test                        |
 
   # ----- Duplicate ids across sources are hard errors -----
 
