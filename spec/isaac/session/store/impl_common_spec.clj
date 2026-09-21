@@ -385,3 +385,48 @@
         (catch clojure.lang.ExceptionInfo e
           (should= :session/unreadable (:reason (ex-data e)))))))
   )
+
+(describe "impl-common request-cancel!*"
+
+  (around [example]
+    (nexus/-with-nexus {:fs (fs/mem-fs)}
+      (example)))
+
+  (defn- make-crew-session! []
+    (let [fs* (fs*)]
+      (sut/mkdirs*! fs* (sut/session-dir test-dir crew-id session-id))
+      (sut/atomic-spit! fs* (sut/session-edn-path test-dir crew-id session-id)
+                        (sut/write-edn {:id session-id :crew crew-id}))))
+
+  (defn- make-flat-session! []
+    (let [fs* (fs*)]
+      (sut/mkdirs*! fs* (sut/session-dir test-dir session-id))
+      (sut/atomic-spit! fs* (sut/session-edn-path test-dir session-id)
+                        (sut/write-edn {:id session-id}))))
+
+  (it "stamps :cancelled on a crew-nested session's marker (isaac-3mtu)"
+    (make-crew-session!)
+    (let [fs*         (fs*)
+          marker-path (sut/turn-marker-path test-dir crew-id session-id)]
+      (sut/record-turn-marker!* test-dir session-id {:source :cli} fs*)
+      (should (sut/exists?* fs* marker-path))
+      (should (sut/request-cancel!* test-dir session-id fs*))
+      (should= true (:cancelled (edn/read-string (fs/slurp fs* marker-path))))
+      (should= session-id (:session-id (edn/read-string (fs/slurp fs* marker-path))))))
+
+  (it "returns nil and writes nothing when the session has no marker"
+    (make-crew-session!)
+    (let [fs* (fs*)]
+      (should-be-nil (sut/request-cancel!* test-dir session-id fs*))
+      (should-not (sut/exists?* fs* (sut/turn-marker-path test-dir crew-id session-id)))
+      (should-not (sut/exists?* fs* (sut/turn-marker-path test-dir session-id)))))
+
+  (it "still stamps a flat-layout session's marker at the legacy location"
+    (make-flat-session!)
+    (let [fs*         (fs*)
+          marker-path (sut/turn-marker-path test-dir session-id)]
+      (sut/atomic-spit! fs* marker-path (sut/write-edn {:source :cli}))
+      (should (sut/request-cancel!* test-dir session-id fs*))
+      (should= true (:cancelled (edn/read-string (fs/slurp fs* marker-path))))))
+
+  )

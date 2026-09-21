@@ -444,7 +444,10 @@
 (defn request-cancel!* [root session-id fs]
   (with-persist-lock session-id
     (fn []
-      (let [path (turn-marker-path root session-id)]
+      ;; Crew-aware resolution, exactly like record/get/clear (isaac-3mtu):
+      ;; live markers live at sessions/<crew>/<id>/turn.edn since isaac-b6w0;
+      ;; the 2-arity path is only the legacy fallback.
+      (let [path (turn-marker-path-for root session-id fs)]
         (when (exists?* fs path)
           (let [marker (edn/read-string (slurp* fs path))]
             (atomic-spit! fs path (write-edn (assoc marker :cancelled true

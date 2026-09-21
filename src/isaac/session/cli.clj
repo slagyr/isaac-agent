@@ -335,9 +335,15 @@
           1)
 
         :else
-        (do
-          (store/request-cancel! session-store session-id)
-          0)))))
+        (if (store/request-cancel! session-store session-id)
+          (do
+            (println (str "cancelled " session-id))
+            0)
+          ;; A no-op write is an error exit, never a silent 0 (isaac-3mtu).
+          (do
+            (binding [*out* *err*]
+              (println (str "cannot cancel idle session '" session-id "': no turn is in progress.")))
+            1))))))
 
 (defn- print-mutation-error! [message]
   (binding [*out* *err*]

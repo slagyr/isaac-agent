@@ -222,6 +222,24 @@
       (should= "ketch" (:crew (helper/get-session "/test/sessions" "skipper")))
       (should-not-be-nil (helper/get-session "/test/sessions" "joe"))))
 
+  (it "cancels a live session, reports it, and exits 0 (isaac-3mtu)"
+    (helper/create-session! "/test/sessions" "engine-room" {:crew "scrapper"})
+    (store/record-turn-marker! (store/registered-store) "engine-room"
+                               {:source :cli :started-at "2026-09-21T18:20:00Z"})
+    (let [out (with-out-str
+                (should= 0
+                         (sut/run-fn {:home "/test" :_raw-args ["cancel" "engine-room"]})))
+          marker (store/get-turn-marker (store/registered-store) "engine-room")]
+      (should-contain "cancelled engine-room" out)
+      (should= true (:cancelled marker))))
+
+  (it "refuses to cancel an idle session with exit 1 instead of a silent no-op"
+    (helper/create-session! "/test/sessions" "engine-room" {:crew "scrapper"})
+    (let [err (binding [*err* (java.io.StringWriter.)]
+                (should= 1 (sut/run-fn {:home "/test" :_raw-args ["cancel" "engine-room"]}))
+                (str *err*))]
+      (should-contain "no turn is in progress" err)))
+
   (it "shows rename usage on --help"
     (let [out (with-out-str
                 (should= 0 (sut/run-fn {:home "/test" :_raw-args ["rename" "--help"]})))]

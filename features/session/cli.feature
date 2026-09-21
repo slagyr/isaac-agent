@@ -375,3 +375,16 @@ Feature: Sessions Command
     And a turn marker exists for session "logbook" with:
       | key       | value |
       | cancelled | true  |
+
+  # isaac-3mtu: cancel wrote the crew-less legacy marker path, so a live
+  # crew-nested session cancelled silently — exit 0, no output, turn kept running.
+  Scenario: sessions cancel stamps a live crew-nested session's marker and reports it
+    Given the following sessions exist:
+      | name        | crew     |
+      | engine-room | scrapper |
+    And a turn marker exists for session "engine-room" referencing delivery "hail-9"
+    When isaac is run with "sessions cancel engine-room"
+    Then the stdout contains "cancelled engine-room"
+    And the exit code is 0
+    And a turn marker exists for session "engine-room" with:
+      | cancelled | true |
