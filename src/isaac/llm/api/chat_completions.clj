@@ -99,7 +99,8 @@
    :parallel_tool_calls :parallel_tool_calls
    :frequency_penalty   :frequency_penalty
    :presence_penalty    :presence_penalty
-   :stream              :stream})
+   :stream              :stream
+   :stream_options      :stream_options})
 
 (defn- wire-body
   "Project the request onto the fields the API actually accepts."
@@ -134,7 +135,13 @@
         request (if-let [level (effort/effort->string (:effort request))]
                   (-> request (assoc :reasoning_effort level) (dissoc :effort))
                   (dissoc request :effort))
-        body    (wire-body (assoc request :stream true))
+        ;; A streamed response carries no usage block unless the request asks
+        ;; for one. Without this, every streamed turn reported zero tokens, the
+        ;; session gauge never moved, and a conversation grew past the window
+        ;; unnoticed — 273 GLM requests, no token ever counted (isaac-f5tn).
+        body    (wire-body (assoc request
+                                  :stream true
+                                  :stream_options {:include_usage true}))
         initial {:role "assistant" :content "" :model nil :usage {}}
         result  (llm-http/post-sse! url headers body
                                     (fn [chunk]

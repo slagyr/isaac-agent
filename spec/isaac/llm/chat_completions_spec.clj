@@ -306,6 +306,32 @@
             (should= 10 (:prompt-tokens (:usage result)))
             (should= 2 (count @chunks))))))
 
+    (it "asks the server to include usage in the stream (isaac-f5tn)"
+      (let [captured-body (atom nil)]
+        (with-redefs [llm-http/post-sse! (fn [_ _ body _ process-event initial & _]
+                                           (reset! captured-body body)
+                                           (process-event {:choices [{:delta {:content "hi"}}]} initial))]
+          (sut/chat-stream {:model "gpt-5" :messages []} identity "openai" test-config)
+          ;; An OpenAI-compatible server sends no usage block in a stream unless
+          ;; the request asks for one. Without this the gauge reads zero forever.
+          (should= {:include_usage true} (:stream_options @captured-body)))))
+
+    (it "counts tokens from a usage-only closing chunk (isaac-f5tn)"
+      ;; When usage is included the server closes the stream with a chunk that
+      ;; has an empty :choices and carries only the numbers.
+      (let [result (stream-events [{:model "glm" :choices [{:delta {:content "hi"}}]}
+                                   {:choices [] :usage {:prompt_tokens 1234 :completion_tokens 56}}])]
+        (should= 1234 (:prompt-tokens (:usage result)))
+        (should= 56 (:output-tokens (:usage result)))))
+
+    (it "reports cached input tokens when the server sends them (isaac-f5tn)"
+      (let [result (stream-events [{:model "glm" :choices [{:delta {:content "hi"}}]}
+                                   {:choices []
+                                    :usage   {:prompt_tokens         1234
+                                              :completion_tokens     56
+                                              :prompt_tokens_details {:cached_tokens 1000}}}])]
+        (should= 1000 (:cache-read-tokens (:usage result)))))
+
     (it "returns a streamed tool call, in the non-streaming path's shape (isaac-zg3t)"
       (let [result (stream-events tool-call-events)]
         (should= 1 (count (:tool-calls result)))
