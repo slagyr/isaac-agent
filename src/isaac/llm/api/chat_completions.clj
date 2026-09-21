@@ -102,6 +102,23 @@
    :stream              :stream
    :stream_options      :stream_options})
 
+(defn- with-parallel-tool-calls
+  "Ask for batched tool calls when the request carries tools.
+
+   The standing turn instruction already tells the model that one call per
+   response is the slow path; this says the same thing in the field the API
+   reads. Grok batches about half its tool responses, GLM-5.3 batched none of
+   253 and made 273 round trips for one bean (isaac-rr7u).
+
+   Only when there are tools: OpenAI rejects parallel_tool_calls on a request
+   with no tools. An explicit value on the request wins, so a model config can
+   turn it off."
+  [request]
+  (cond-> request
+    (and (seq (:tools request))
+         (not (contains? request :parallel_tool_calls)))
+    (assoc :parallel_tool_calls true)))
+
 (defn- wire-body
   "Project the request onto the fields the API actually accepts."
   [request]
@@ -117,7 +134,8 @@
         request (if-let [level (effort/effort->string (:effort request))]
                   (-> request (assoc :reasoning_effort level) (dissoc :effort))
                   (dissoc request :effort))
-        resp    (llm-http/post-json! url headers (wire-body request) (shared/llm-http-opts config))]
+        resp    (llm-http/post-json! url headers (wire-body (with-parallel-tool-calls request))
+                                    (shared/llm-http-opts config))]
     (if (:error resp)
       (api/normalize-error resp)
       (let [choice     (first (:choices resp))
@@ -139,7 +157,7 @@
         ;; for one. Without this, every streamed turn reported zero tokens, the
         ;; session gauge never moved, and a conversation grew past the window
         ;; unnoticed — 273 GLM requests, no token ever counted (isaac-f5tn).
-        body    (wire-body (assoc request
+        body    (wire-body (assoc (with-parallel-tool-calls request)
                                   :stream true
                                   :stream_options {:include_usage true}))
         initial {:role "assistant" :content "" :model nil :usage {}}

@@ -86,6 +86,14 @@
           (should= 256 (:max_tokens @captured))
           (should= "medium" (:reasoning_effort @captured)))))
 
+    (it "asks for batched tool calls on the non-streaming path too (isaac-rr7u)"
+      (let [captured-body (atom nil)]
+        (with-redefs [llm-http/post-json! (fn [_ _ body & _]
+                                            (reset! captured-body body)
+                                            (chat-response "hi"))]
+          (sut/chat {:model "gpt-5" :messages [] :tools [{:name "read"}]} "openai" test-config)
+          (should= true (:parallel_tool_calls @captured-body)))))
+
     (it "parses token usage"
       (with-redefs [http/post (fn [_ _] (chat-response "Hi" :prompt-tokens 42 :completion-tokens 18))]
         (let [result (sut/chat {:model "gpt-5" :messages []} "openai" test-config)]
@@ -305,6 +313,36 @@
             (should= "gpt-5" (:model result))
             (should= 10 (:prompt-tokens (:usage result)))
             (should= 2 (count @chunks))))))
+
+    (it "asks for batched tool calls when the request has tools (isaac-rr7u)"
+      (let [captured-body (atom nil)]
+        (with-redefs [llm-http/post-sse! (fn [_ _ body _ process-event initial & _]
+                                           (reset! captured-body body)
+                                           (process-event {:choices [{:delta {:content "hi"}}]} initial))]
+          (sut/chat-stream {:model "gpt-5" :messages [] :tools [{:name "read"}]}
+                           identity "openai" test-config)
+          (should= true (:parallel_tool_calls @captured-body)))))
+
+    (it "omits parallel_tool_calls when the request has no tools (isaac-rr7u)"
+      ;; OpenAI rejects the field outright on a request that carries no tools.
+      (let [captured-body (atom nil)]
+        (with-redefs [llm-http/post-sse! (fn [_ _ body _ process-event initial & _]
+                                           (reset! captured-body body)
+                                           (process-event {:choices [{:delta {:content "hi"}}]} initial))]
+          (sut/chat-stream {:model "gpt-5" :messages []} identity "openai" test-config)
+          (should-not (contains? @captured-body :parallel_tool_calls)))))
+
+    (it "an explicit parallel_tool_calls on the request wins (isaac-rr7u)"
+      (let [captured-body (atom nil)]
+        (with-redefs [llm-http/post-sse! (fn [_ _ body _ process-event initial & _]
+                                           (reset! captured-body body)
+                                           (process-event {:choices [{:delta {:content "hi"}}]} initial))]
+          (sut/chat-stream {:model                "gpt-5"
+                            :messages             []
+                            :tools                [{:name "read"}]
+                            :parallel_tool_calls  false}
+                           identity "openai" test-config)
+          (should= false (:parallel_tool_calls @captured-body)))))
 
     (it "asks the server to include usage in the stream (isaac-f5tn)"
       (let [captured-body (atom nil)]
