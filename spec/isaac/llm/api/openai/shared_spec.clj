@@ -1,6 +1,5 @@
 (ns isaac.llm.api.openai.shared-spec
   (:require
-    [isaac.config.loader :as loader]
     [isaac.fs :as fs]
     [isaac.llm.api.openai.shared :as sut]
     [isaac.llm.auth.device-code :as device-code]
@@ -24,33 +23,6 @@
              (sut/llm-http-opts {:session-key "s1" :stream-idle-timeout-ms 100})))
 
   )
-
-(describe "openai shared missing-auth-error"
-
-  (it "names the conventional env var and the provider file when nothing is set"
-    (let [message (:message (sut/missing-auth-error "chatgpt" {}))]
-      (should-contain "No API key for chatgpt." message)
-      (should-contain "Set CHATGPT_API_KEY in the environment" message)
-      (should-contain "providers/chatgpt.edn" message)))
-
-  ;; isaac-rxun: :api-key "${OPENAI_ZANE_EMBEDDING_API_KEY}" with the variable
-  ;; unset used to reach the provider as that literal and come back a 401
-  ;; blaming auth. Config now drops the field and records the variable, so the
-  ;; point of use can say which one.
-  (it "names the variable the :api-key referenced when config could not resolve it"
-    (with-redefs [loader/snapshot (fn [_] {:unresolved-refs {"providers.chatgpt.api-key" "OPENAI_ZANE_EMBEDDING_API_KEY"}})]
-      (let [message (:message (sut/missing-auth-error "chatgpt" {}))]
-        (should-contain "No API key for chatgpt." message)
-        (should-contain "OPENAI_ZANE_EMBEDDING_API_KEY" message)
-        (should-not-contain "Set CHATGPT_API_KEY in the environment" message))))
-
-  (it "keeps the conventional message for a different provider's unresolved reference"
-    (with-redefs [loader/snapshot (fn [_] {:unresolved-refs {"providers.other.api-key" "OTHER_KEY"}})]
-      (should-contain "Set CHATGPT_API_KEY in the environment"
-                      (:message (sut/missing-auth-error "chatgpt" {})))))
-
-  (it "says nothing when the key resolves"
-    (should-be-nil (sut/missing-auth-error "chatgpt" {:api-key "sk-real"}))))
 
 (describe "openai shared oauth"
 

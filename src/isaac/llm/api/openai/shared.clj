@@ -117,22 +117,13 @@
                                 :message (str "Missing OAuth login for " provider-name ". Run `isaac auth login --provider " provider-name "` first.")}))
 
     (str/blank? (resolve-api-key provider-name config))
-    (let [env-var   (provider-env-var provider-name)
-          label     (or provider-name "provider")
-          ;; The config field is absent because its ${VAR} could not be
-          ;; resolved (isaac-rxun). Without this the operator gets the generic
-          ;; "set <PROVIDER>_API_KEY" advice while the variable they actually
-          ;; referenced is the one that is missing.
-          reference (when provider-name
-                      (loader/unresolved-ref (str "providers." provider-name ".api-key")))]
+    (let [env-var (provider-env-var provider-name)
+          label   (or provider-name "provider")]
       {:error   :auth-missing
-       :message (if reference
-                  (str "No API key for " label ". :api-key references ${" reference "}, "
-                       "which is not set in this environment.")
-                  (str "No API key for " label "."
-                       (when env-var (str " Set " env-var " in the environment"))
-                       (when provider-name (str " or :api-key in providers/" provider-name ".edn"))
-                       "."))})))
+       :message (str "No API key for " label "."
+                     (when env-var (str " Set " env-var " in the environment"))
+                     (when provider-name (str " or :api-key in providers/" provider-name ".edn"))
+                     ".")})))
 
 (defn provider-base-url [config]
   (or (:base-url config) "http://localhost:11434/v1"))
