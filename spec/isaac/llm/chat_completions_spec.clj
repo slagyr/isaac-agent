@@ -22,6 +22,40 @@
 
 (def test-config {:api-key "sk-test" :base-url "https://api.example.com/v1"})
 
+(defn- stream-events
+  "Drive `events` through the real SSE accumulator, as llm-http would."
+  ([events] (stream-events events identity))
+  ([events on-chunk]
+   (with-redefs [llm-http/post-sse! (fn [_ _ _ chunk-fn process-event initial & _]
+                                      (reduce (fn [acc evt] (chunk-fn evt) (process-event evt acc))
+                                              initial events))]
+     (sut/chat-stream {:model "gpt-5" :messages []} on-chunk "openai" test-config))))
+
+(def tool-call-events
+  "One tool call, arguments split across chunks — the wire shape OpenAI,
+   Fireworks and GLM all use (isaac-zg3t)."
+  [{:model "gpt-5" :choices [{:delta {:tool_calls [{:index    0
+                                                    :id       "call_1"
+                                                    :type     "function"
+                                                    :function {:name "read_file" :arguments "{\"path\":"}}]}}]}
+   {:choices [{:delta {:tool_calls [{:index 0 :function {:arguments "\"README\"}"}}]}}]}
+   {:usage {:prompt_tokens 10 :completion_tokens 5} :choices [{:delta {} :finish_reason "tool_calls"}]}])
+
+(defn- non-streamed-tool-call-response
+  "The same logical response over the non-streaming path."
+  []
+  (with-redefs [http/post (fn [_ _] (mock-response
+                                      {:choices [{:message       {:role       "assistant"
+                                                                  :content    nil
+                                                                  :tool_calls [{:id       "call_1"
+                                                                                :type     "function"
+                                                                                :function {:name      "read_file"
+                                                                                           :arguments "{\"path\":\"README\"}"}}]}
+                                                  :finish_reason "tool_calls"}]
+                                       :model   "gpt-5"
+                                       :usage   {:prompt_tokens 10 :completion_tokens 5}}))]
+    (sut/chat {:model "gpt-5" :messages []} "openai" test-config)))
+
 (describe "OpenAI Completions Provider"
 
   (describe "chat"
@@ -207,7 +241,49 @@
     (it "passes through when no relevant fields"
       (let [acc {:role "assistant" :content "x" :model "m" :usage {}}
             result (sut/process-sse-event {:choices [{:delta {}}]} acc)]
-        (should= acc result))))
+        (should= acc result)))
+
+    (it "accumulates a tool call fragment (isaac-zg3t)"
+      (let [acc    {:role "assistant" :content "" :model nil :usage {}}
+            result (sut/process-sse-event
+                     {:choices [{:delta {:tool_calls [{:index    0
+                                                       :id       "call_1"
+                                                       :type     "function"
+                                                       :function {:name "read_file" :arguments "{\"path\":\"README\"}"}}]}}]}
+                     acc)]
+        (should= [{:index 0 :id "call_1" :type "function"
+                   :function {:name "read_file" :arguments "{\"path\":\"README\"}"}}]
+                 (vec (vals (:tool-call-fragments result))))))
+
+    (it "reassembles arguments split across chunks (isaac-zg3t)"
+      (let [events [{:choices [{:delta {:tool_calls [{:index 0 :id "call_1" :type "function"
+                                                      :function {:name "read_file" :arguments "{\"pa"}}]}}]}
+                    {:choices [{:delta {:tool_calls [{:index 0 :function {:arguments "th\":\"RE"}}]}}]}
+                    {:choices [{:delta {:tool_calls [{:index 0 :function {:arguments "ADME\"}"}}]}}]}]
+            result (reduce (fn [acc evt] (sut/process-sse-event evt acc))
+                           {:role "assistant" :content "" :model nil :usage {}}
+                           events)
+            merged (first (vals (:tool-call-fragments result)))]
+        (should= "call_1" (:id merged))
+        (should= "read_file" (get-in merged [:function :name]))
+        (should= "{\"path\":\"README\"}" (get-in merged [:function :arguments]))))
+
+    (it "keeps two tool calls separate, merged by index (isaac-zg3t)"
+      (let [events [{:choices [{:delta {:tool_calls [{:index 0 :id "call_1" :type "function"
+                                                      :function {:name "read_file" :arguments "{\"path\":"}}
+                                                     {:index 1 :id "call_2" :type "function"
+                                                      :function {:name "write_file" :arguments "{\"path\":"}}]}}]}
+                    {:choices [{:delta {:tool_calls [{:index 1 :function {:arguments "\"b\"}"}}
+                                                     {:index 0 :function {:arguments "\"a\"}"}}]}}]}]
+            result (reduce (fn [acc evt] (sut/process-sse-event evt acc))
+                           {:role "assistant" :content "" :model nil :usage {}}
+                           events)
+            merged (vec (vals (:tool-call-fragments result)))]
+        (should= 2 (count merged))
+        (should= ["call_1" "call_2"] (mapv :id merged))
+        (should= ["read_file" "write_file"] (mapv #(get-in % [:function :name]) merged))
+        (should= ["{\"path\":\"a\"}" "{\"path\":\"b\"}"]
+                 (mapv #(get-in % [:function :arguments]) merged)))))
 
   (describe "chat-stream"
 
@@ -229,6 +305,43 @@
             (should= "gpt-5" (:model result))
             (should= 10 (:prompt-tokens (:usage result)))
             (should= 2 (count @chunks))))))
+
+    (it "returns a streamed tool call, in the non-streaming path's shape (isaac-zg3t)"
+      (let [result (stream-events tool-call-events)]
+        (should= 1 (count (:tool-calls result)))
+        (should= "call_1" (:id (first (:tool-calls result))))
+        (should= "read_file" (:name (first (:tool-calls result))))
+        (should= {:path "README"} (:arguments (first (:tool-calls result))))
+        (should= (:tool-calls (non-streamed-tool-call-response))
+                 (:tool-calls result))))
+
+    (it "stop-reason is :tool-use when a streamed response carries tool calls (isaac-zg3t)"
+      (let [result (stream-events tool-call-events)]
+        (should= :tool-use (:stop-reason result))
+        (should= (:stop-reason (non-streamed-tool-call-response)) (:stop-reason result))))
+
+    (it "keeps two streamed tool calls separate (isaac-zg3t)"
+      (let [events [{:choices [{:delta {:tool_calls [{:index 0 :id "call_1" :type "function"
+                                                      :function {:name "read_file" :arguments "{\"path\":\"a\"}"}}]}}]}
+                    {:choices [{:delta {:tool_calls [{:index 1 :id "call_2" :type "function"
+                                                      :function {:name "write_file" :arguments "{\"path\":\"b\"}"}}]}}]}
+                    {:choices [{:delta {} :finish_reason "tool_calls"}]}]
+            result (stream-events events)]
+        (should= ["call_1" "call_2"] (mapv :id (:tool-calls result)))
+        (should= [{:path "a"} {:path "b"}] (mapv :arguments (:tool-calls result)))))
+
+    (it "surfaces reasoning_content deltas as reasoning chunks (isaac-zg3t)"
+      (let [chunks (atom [])
+            events [{:choices [{:delta {:reasoning_content "I should read"}}]}
+                    {:choices [{:delta {:content "ok"}}]}
+                    {:choices [{:delta {} :finish_reason "stop"}]}]]
+        (stream-events events (fn [c] (swap! chunks conj c)))
+        (should= [{:reasoning-delta "I should read"} {:text-delta "ok"}] @chunks)))
+
+    (it "returns a value conforming to api/response when streaming a tool call (isaac-zg3t)"
+      (let [result (stream-events tool-call-events)]
+        (should-not (api/error? result))
+        (should-not-throw (api/validate-response result))))
 
     (it "returns error on failure"
       (with-redefs [llm-http/post-sse! (fn [& _] {:error :connection-refused})]

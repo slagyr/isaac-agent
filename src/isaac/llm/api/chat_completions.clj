@@ -33,12 +33,39 @@
     (= "content_filter" wire) :refused
     :else :other))
 
+(defn- merge-tool-call-fragment
+  "Fold one `delta.tool_calls` fragment into the calls accumulated so far.
+   OpenAI streams a tool call in pieces: the opening fragment carries the id,
+   type and function name, and later fragments extend `function.arguments` a
+   few characters at a time. Every fragment names its `index`, because a model
+   may open several calls at once and their fragments interleave — so they
+   merge by index, never by blind concatenation (isaac-zg3t)."
+  [fragments fragment]
+  (let [index (or (:index fragment) 0)
+        args  (get-in fragment [:function :arguments])]
+    (assoc fragments index
+           (cond-> (or (get fragments index) {:index index})
+             (:id fragment)   (assoc :id (:id fragment))
+             (:type fragment) (assoc :type (:type fragment))
+             (get-in fragment [:function :name])
+             (assoc-in [:function :name] (get-in fragment [:function :name]))
+             (some? args)
+             (update-in [:function :arguments] str args)))))
+
 (defn process-sse-event
-  "Accumulate an OpenAI Chat Completions SSE event into the running state."
+  "Accumulate an OpenAI Chat Completions SSE event into the running state.
+   Tool-call fragments land in :tool-call-fragments, a map of index to the
+   partially assembled call; a sorted map keeps them in the order the model
+   opened them."
   [data accumulated]
   (let [delta (get-in data [:choices 0 :delta])]
     (cond-> accumulated
       (:content delta) (update :content str (:content delta))
+
+      (seq (:tool_calls delta))
+      (update :tool-call-fragments
+              #(reduce merge-tool-call-fragment (or % (sorted-map)) (:tool_calls delta)))
+
       (:model data)    (assoc :model (:model data))
       (:usage data)    (assoc :usage (:usage data))
       (get-in data [:choices 0 :finish_reason])
@@ -111,17 +138,27 @@
         initial {:role "assistant" :content "" :model nil :usage {}}
         result  (llm-http/post-sse! url headers body
                                     (fn [chunk]
+                                      ;; isaac-zg3t: reasoning_content is the
+                                      ;; thinking GLM and friends stream beside
+                                      ;; the answer. Surfaced as reckoning, the
+                                      ;; same disposition the ollama, messages
+                                      ;; and responses adapters already take.
+                                      (when-let [reasoning (get-in chunk [:choices 0 :delta :reasoning_content])]
+                                        (on-chunk {:reasoning-delta reasoning}))
                                       (when-let [text (get-in chunk [:choices 0 :delta :content])]
                                         (on-chunk {:text-delta text})))
                                     process-sse-event initial (shared/llm-http-opts config))]
     (if (:error result)
       (api/normalize-error result)
-      {:content     (:content result)
-       :model       (:model result)
-       :tool-calls  []
-       :stop-reason (stop-reason (:finish-reason result) [])
-       :usage       (shared/parse-usage (:usage result))
-       :_headers    headers})))
+      ;; Both paths run the same extractor, so a tool call has the same id,
+      ;; name and parsed arguments however it arrived (isaac-zg3t).
+      (let [tool-calls (extract-tool-calls (vals (:tool-call-fragments result)))]
+        {:content     (:content result)
+         :model       (:model result)
+         :tool-calls  tool-calls
+         :stop-reason (stop-reason (:finish-reason result) tool-calls)
+         :usage       (shared/parse-usage (:usage result))
+         :_headers    headers}))))
 
 (defn chat
   "Send a non-streaming Chat Completions request."

@@ -182,3 +182,67 @@ Feature: OpenAI Provider Dispatch
     And session "cookie-jar" has transcript matching:
       | type    | message.role | message.content  |
       | message | assistant    | C is for cookie! |
+
+  Scenario: a streamed tool call arrives as delta.tool_calls fragments and the turn completes (isaac-zg3t)
+    The streaming adapter used to read only delta.content, so a model that
+    opened its turn with a tool call returned nothing at all and the turn died
+    as :empty-terminal-response. Fragments carry the arguments a piece at a
+    time and merge by index.
+    Given the isaac EDN file "config/models/cookie.edn" exists with:
+      | path | value |
+      | model | cookie |
+      | provider | grover:openai |
+      | context-window | 32768 |
+    And the isaac EDN file "config/crew/cmonster.edn" exists with:
+      | path | value |
+      | model | cookie |
+      | tools.allow | exec/run |
+      | soul | Me love cookie! |
+    And the following sessions exist:
+      | name       | crew     |
+      | cookie-jar | cmonster |
+    And the built-in tools are registered
+    And the following model responses are queued:
+      | model  | type      | tool_call | arguments                 | content       |
+      | cookie | tool_call | exec__run | {"command":"echo crumbs"} |               |
+      | cookie | text      |           |                           | Found crumbs! |
+    When the user sends "what's in the jar?" on session "cookie-jar"
+    Then the last outbound HTTP request matches:
+      | key         | value                                      |
+      | url         | https://api.openai.com/v1/chat/completions |
+      | body.stream | true                                       |
+    And session "cookie-jar" has transcript matching:
+      | type       | message.role | message.content | name      |
+      | toolCall   |              |                 | exec__run |
+      | toolResult |              |                 |           |
+      | message    | assistant    | Found crumbs!   |           |
+
+  Scenario: streamed reasoning_content reaches the comm as reckoning (isaac-zg3t)
+    GLM and friends stream their thinking beside the answer as
+    delta.reasoning_content. Isaac surfaces it live as reckoning — the same
+    disposition the claude adapter takes with thinking deltas — and does not
+    replay it to the model.
+    Given the isaac EDN file "config/models/cookie.edn" exists with:
+      | path | value |
+      | model | cookie |
+      | provider | grover:openai |
+      | context-window | 32768 |
+    And the isaac EDN file "config/crew/cmonster.edn" exists with:
+      | path | value |
+      | model | cookie |
+      | tools.allow | exec/run |
+      | soul | Me love cookie! |
+    And the following sessions exist:
+      | name       | crew     |
+      | cookie-jar | cmonster |
+    And the built-in tools are registered
+    And the following model responses are queued:
+      | model  | type      | content       | tool_call | arguments                 |
+      | cookie | reasoning | Which jar?    |           |                           |
+      | cookie | tool_call |               | exec__run | {"command":"echo crumbs"} |
+      | cookie | text      | Found crumbs! |           |                           |
+    When the user sends "what's in the jar?" on session "cookie-jar" via memory comm
+    Then the memory comm has events matching:
+      | event     | text          |
+      | reckoning | Which jar?    |
+      | reply     | Found crumbs! |

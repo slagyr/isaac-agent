@@ -370,6 +370,27 @@
     (seq content)     (str/split content #"(?<=\s)")
     :else             [""]))
 
+(defn- chat-completions-tool-call-events
+  "Stream each scripted tool call the way the Chat Completions wire does: an
+   opening fragment carrying the index, id and function name, then the
+   arguments split across a second fragment. A harness that hands the call over
+   whole cannot catch an adapter that drops fragments (isaac-zg3t)."
+  [response]
+  (->> (get-in response [:message :tool_calls])
+       (map-indexed
+         (fn [index tool-call]
+           (let [args  (let [raw (get-in tool-call [:function :arguments])]
+                         (if (string? raw) raw (json/generate-string raw)))
+                 split (quot (count args) 2)]
+             [{:choices [{:delta {:tool_calls [{:index    index
+                                                :id       (or (:id tool-call) (str "call_grover_" index))
+                                                :type     "function"
+                                                :function {:name      (get-in tool-call [:function :name])
+                                                           :arguments (subs args 0 split)}}]}}]}
+              {:choices [{:delta {:tool_calls [{:index    index
+                                                :function {:arguments (subs args split)}}]}}]}])))
+       (apply concat)))
+
 (defn- reduce-provider-events [events on-chunk process-event initial]
   (reduce (fn [acc evt]
             (on-chunk evt)
@@ -424,15 +445,23 @@
                                  :stop_reason (or (:wire-stop-reason response) "end_turn")
                                  :usage {:output_tokens (:eval_count response)}}])]
             (reduce-provider-events events on-chunk process-event initial))
-          (let [events (concat (map (fn [chunk]
-                                      {:model   (:model response)
-                                       :choices [{:delta {:content chunk}}]})
-                                    (content-chunks (get-in response [:message :content])))
-                               [{:usage   (merge {:prompt_tokens (:prompt_eval_count response)
-                                                 :completion_tokens (:eval_count response)}
-                                                (:usage response))
-                                 :choices [{:delta {}
-                                            :finish_reason (or (:wire-stop-reason response) "stop")}]}])]
+          (let [tool-calls (get-in response [:message :tool_calls])
+                events     (concat (when-let [summary (get-in response [:reasoning :summary])]
+                                     ;; GLM streams its thinking beside the
+                                     ;; answer as delta.reasoning_content
+                                     ;; (isaac-zg3t)
+                                     [{:choices [{:delta {:reasoning_content summary}}]}])
+                                   (map (fn [chunk]
+                                          {:model   (:model response)
+                                           :choices [{:delta {:content chunk}}]})
+                                        (content-chunks (get-in response [:message :content])))
+                                   (chat-completions-tool-call-events response)
+                                   [{:usage   (merge {:prompt_tokens (:prompt_eval_count response)
+                                                     :completion_tokens (:eval_count response)}
+                                                    (:usage response))
+                                     :choices [{:delta {}
+                                                :finish_reason (or (:wire-stop-reason response)
+                                                                   (if (seq tool-calls) "tool_calls" "stop"))}]}])]
             (reduce-provider-events events on-chunk process-event initial)))))))
 
 ;; endregion ^^^^^ Response Building ^^^^^
