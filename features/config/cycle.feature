@@ -1,7 +1,8 @@
 Feature: The :cycle config group
   Turn knobs live under one crew key so `isaac config schema crew.value.cycle`
   lists them: limit (was :cycle-limit — clean cutover, no alias),
-  checkpoint-every, checkpoint-prompt, wrap-up-prompt. Layering is the usual
+  checkpoint-every, checkpoint-prompt, wrap-up-prompt, continuations (the
+  drive's re-drive budget after a wrap-up, isaac-xpkf). Layering is the usual
   one: built-in defaults → crew → charge (hail band, cron) (isaac-tic5).
 
   Background:
@@ -21,7 +22,8 @@ Feature: The :cycle config group
       | crew\.main\.cycle-limit.*:cycle \{:limit  |
     And the exit code is 1
 
-  Scenario: config schema lists the cycle knobs
+  @wip
+  Scenario: config schema lists the cycle knobs (isaac-xpkf adds :continuations)
     Given config file "isaac.edn" containing:
       """
       {:defaults  {:crew :main :model :local}
@@ -36,4 +38,5 @@ Feature: The :cycle config group
       | :checkpoint-every  |
       | :checkpoint-prompt |
       | :wrap-up-prompt    |
+      | :continuations     |
     And the exit code is 0

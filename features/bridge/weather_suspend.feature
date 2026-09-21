@@ -260,3 +260,110 @@ Feature: Turns suspend and resume on provider weather (isaac-nqeq, epic isaac-ug
     And the log has no entries matching:
       | event         |
       | :turn/resumed |
+
+  @wip
+  Scenario: the weather sweep is registered with the shared scheduler (isaac-f3hq)
+    The sweep had no production caller — it was reachable only from the
+    feature steps. It ticks on the shared scheduler like the turn queue does;
+    the smallest backoff is 30 s, so a 10 s tick is prompt enough.
+    When the weather sweep is started
+    Then the scheduled tasks include:
+      | id                 | trigger.kind | trigger.ms |
+      | turn/sweep-weather | interval     | 10000      |
+
+  @wip
+  Scenario: boot resume and the sweep never double-drive a due marker (isaac-f3hq)
+    Boot resume hands a due suspended marker to the turn queue and clears it
+    (isaac-yxch); the first sweep tick after boot finds nothing to drive. One
+    resume note, one reply.
+    Given session "trash-can" has transcript:
+      | type    | message.role | message.content |
+      | message | user         | knock knock     |
+    And a suspended turn marker exists for session "trash-can" with:
+      | key      | value                |
+      | reason   | :wall                |
+      | retry-at | 2026-04-21T10:01:00Z |
+    And the following model responses are queued:
+      | type | content     | model        |
+      | text | Who's there | snuffy-codex |
+    When interrupted turns are resumed at "2026-04-21T10:02:00Z"
+    And the resume sweep runs at "2026-04-21T10:02:01Z"
+    And the turn queue ticks at "2026-04-21T10:02:05Z"
+    Then session "trash-can" has transcript matching:
+      | type    | message.role | message.content    |
+      | message | user         | knock knock        |
+      | message | user         | #".*interrupted.*" |
+      | message | assistant    | Who's there        |
+    And the log has entries matching:
+      | level | event         | session   | trigger |
+      | :info | :turn/resumed | trash-can | :boot   |
+    And the log has no entries matching:
+      | event         | trigger |
+      | :turn/resumed | :sweep  |
+    And no turn marker exists for session "trash-can"
+
+  @wip
+  Scenario: an empty terminal response is weather — the turn parks and the sweep resumes it (isaac-f3hq)
+    Field: an expired provider login looks like a model that returns nothing
+    (fleet auth expiry ⇒ :empty-terminal-response on every turn). After the
+    one continuation nudge (isaac-k4mf) the turn does not fail; it parks like
+    a wall with reason :silence, and the sweep re-drives it from the
+    transcript when the retry comes due. Ruling (Micah, 2026-09-21,
+    isaac-9azm): a turn that errors is weather and resuming it is the
+    drive's job.
+    Given the following model responses are queued:
+      | type | content     | model        |
+      | text |             | snuffy-codex |
+      | text |             | snuffy-codex |
+      | text | Who's there | snuffy-codex |
+    When the user sends "knock knock" on session "trash-can" at "2026-04-21T10:00:00Z"
+    Then the turn result is "suspended"
+    And a turn marker exists for session "trash-can" with:
+      | key       | value                |
+      | suspended | true                 |
+      | reason    | :silence             |
+      | retry-at  | 2026-04-21T10:00:30Z |
+    And the log has entries matching:
+      | level | event           | session   | reason   |
+      | :warn | :turn/suspended | trash-can | :silence |
+    And session "trash-can" has transcript matching:
+      | type    | message.role | message.content | #comment                        |
+      | message | user         | knock knock     | last entry — nothing fabricated |
+    When the resume sweep runs at "2026-04-21T10:00:31Z"
+    And the turn ends on session "trash-can"
+    Then session "trash-can" has transcript matching:
+      | type    | message.role | message.content |
+      | message | user         | knock knock     |
+      | message | assistant    | Who's there     |
+    And no turn marker exists for session "trash-can"
+
+  @wip
+  Scenario: an auth park posts attention at once, throttled per provider (isaac-5a4n, isaac-f3hq)
+    A wall clears on its own; an expired login does not — only a human can
+    re-login. Hail used to post this notice from its deferral branch; now the
+    drive posts it when it parks: the first :auth park at once, then at most
+    hourly per provider while the park persists. The immediate notice sets
+    :attention-posted so the suspended-attention-ms notice does not double up.
+    Given config:
+      | attention.notify.comm   | discord     |
+      | attention.notify.target | boiler-room |
+    And the following model responses are queued:
+      | model        | type       | status |
+      | snuffy-codex | http-error | 401    |
+      | snuffy-codex | http-error | 401    |
+      | snuffy-codex | http-error | 401    |
+    When the user sends "knock knock" on session "trash-can" at "2026-04-21T10:00:00Z"
+    Then a turn marker exists for session "trash-can" with:
+      | key              | value |
+      | suspended        | true  |
+      | reason           | :auth |
+      | attention-posted | true  |
+    And the only file in "comm/delivery/pending" EDN contains:
+      | path    | value                         |
+      | comm    | :discord                      |
+      | target  | boiler-room                   |
+      | content | contains "auth" and "chatgpt" |
+    When the resume sweep runs at "2026-04-21T10:05:00Z"
+    Then the directory "comm/delivery/pending" has exactly 1 file
+    When the resume sweep runs at "2026-04-21T11:06:00Z"
+    Then the directory "comm/delivery/pending" has exactly 2 files

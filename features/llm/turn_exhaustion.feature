@@ -160,7 +160,10 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
       | level | event       | session   | ended-by     | exhaustion  |
       | :info | :turn/ended | trash-can | :cycle-limit | :wrapped-up |
 
-  Scenario: an empty note after wrap-up fails the turn instead of completing it
+  @wip
+  Scenario: an empty note after wrap-up parks the turn as weather instead of completing it (isaac-f3hq)
+    Silence is weather: the drive parks the turn (reason :silence) for its
+    sweep rather than recording a failure.
     Given the memory comm answers :wrap-up on exhaustion
     And the isaac EDN file "config/crew/oscar.edn" exists with:
       | path        | value  |
@@ -176,12 +179,13 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
       | text      |           |                     |         | echo  |
       | text      |           |                     |         | echo  |
     When the user sends "count the cans" on session "trash-can" via memory comm
-    Then the memory comm has events matching:
-      | event    | result.ended-by | result.error             |
-      | turn-end | :error          | :empty-terminal-response |
+    Then a turn marker exists for session "trash-can" with:
+      | key       | value    |
+      | suspended | true     |
+      | reason    | :silence |
     And the log has entries matching:
-      | level  | event       | session   | ended-by | error                    |
-      | :info  | :turn/ended | trash-can | :error   | :empty-terminal-response |
+      | level | event           | session   | reason   |
+      | :warn | :turn/suspended | trash-can | :silence |
 
   Scenario: the wrap-up note is persisted as the turn's final assistant message so the continuation can read it (isaac-x0cw)
     Field 2026-09-10 (isaac-mmod, isaac-work-2): three wrap-ups produced a

@@ -46,23 +46,38 @@ Feature: Resume repair and comm staleness
       | level | event                     | session | repair     |
       | :warn | :resume/transcript-repair | logbook | :torn-line |
 
-  Scenario: a legacy hail marker is requeued and removed from its original path
+  @wip
+  Scenario: a hail marker resumes in its own session through the turn queue (isaac-6doh)
+    Hail's responsibility ended when the turn started (isaac-9azm): a hail
+    marker is a work order like cron's — never stale, however old — and it
+    resumes exactly like any other source. No re-queue to hail/deliveries/,
+    no delivery payload on the marker.
     Given the following sessions exist:
       | name        |
       | engine-room |
+    And session "engine-room" has transcript:
+      | type    | message.role | message.content |
+      | message | user         | Seal the leak.  |
     And the isaac EDN file "sessions/turns/engine-room.edn" exists with:
-      | path          | value          |
-      | source        | :hail          |
-      | delivery-id   | legacy-hail    |
-      | prompt        | Seal the leak. |
-      | bound-session | :engine-room   |
-      | suspended     | true           |
+      | path       | value                |
+      | source     | :hail                |
+      | suspended  | true                 |
+      | boundary   | :clean               |
+      | started-at | 2026-04-21T09:00:00Z |
+    And the following model responses are queued:
+      | type | content | model |
+      | text | Sealed. | echo  |
     When interrupted turns are resumed at "2026-04-21T10:00:00Z"
-    Then the isaac file "hail/deliveries/legacy-hail.edn" EDN contains:
-      | path               | value                |
-      | id                 | legacy-hail          |
-      | resume/requeued-at | 2026-04-21T10:00:00Z |
+    Then the log has entries matching:
+      | level | event            | session     |
+      | :info | :turn.queue/held | engine-room |
     And no turn marker exists for session "engine-room"
+    When the turn queue ticks at "2026-04-21T10:00:05Z"
+    Then session "engine-room" has transcript matching:
+      | type    | message.role | message.content    | #comment                          |
+      | message | user         | Seal the leak.     |                                   |
+      | message | user         | #".*interrupted.*" | resume note — an hour old, not stale |
+      | message | assistant    | Sealed.            | resumed in its own session        |
 
   Scenario: a stale comm marker is dropped, not resumed
     Nobody wants a surprise reply to a conversation they abandoned — outside

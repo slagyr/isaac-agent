@@ -72,10 +72,13 @@ Feature: Error Entry Handling
       | key                  | value               |
       | messages[-1].content | #"(?s).*continue.*" |
 
-  Scenario: two empty responses fail the turn explicitly (isaac-k4mf)
-    Retry budget is exactly one. A second empty response fails the turn with
-    an explicit error entry — never a silent normal completion. Boundedness
-    is enforced by the queue: a third request would exhaust it loudly.
+  @wip
+  Scenario: two empty responses park the turn as weather (isaac-k4mf, isaac-f3hq)
+    Retry budget is exactly one. A second empty response is not a failure to
+    record — it is silence, provider weather (an expired login looks exactly
+    like this). The turn parks with reason :silence for the sweep to
+    re-drive; nothing is fabricated on the transcript. Boundedness is
+    enforced by the queue: a third request would exhaust it loudly.
     Given the following sessions exist:
       | name      |
       | dead-turn |
@@ -84,13 +87,19 @@ Feature: Error Entry Handling
       | text |         | echo  |
       | text |         | echo  |
     When the user sends "status?" on session "dead-turn"
-    Then session "dead-turn" has transcript matching:
-      | type  | content                        |
-      | error | #".*empty-terminal-response.*" |
+    Then a turn marker exists for session "dead-turn" with:
+      | key       | value    |
+      | suspended | true     |
+      | reason    | :silence |
+    And session "dead-turn" has transcript matching:
+      | type    | message.role | message.content | #comment                        |
+      | message | user         | status?         | last entry — nothing fabricated |
 
-  Scenario: empty terminal response after tool execution fails the same way (isaac-k4mf)
+  @wip
+  Scenario: empty terminal response after tool execution parks the same way (isaac-k4mf, isaac-f3hq)
     The observed zanebot shape: tools ran, then the model went silent. Same
-    guard, same explicit failure.
+    guard, same park — the tool results already persisted are kept for the
+    re-drive.
     Given the following sessions exist:
       | name      |
       | dead-tool |
@@ -106,6 +115,12 @@ Feature: Error Entry Handling
       | model | type      | content |
       | echo  | text      |         |
     When the user sends "read it" on session "dead-tool"
-    Then session "dead-tool" has transcript matching:
-      | type  | content                        |
-      | error | #".*empty-terminal-response.*" |
+    Then a turn marker exists for session "dead-tool" with:
+      | key       | value    |
+      | suspended | true     |
+      | reason    | :silence |
+    And session "dead-tool" has transcript matching:
+      | type     | message.role | #comment                        |
+      | message  | user         |                                 |
+      | toolCall | assistant    | the tool ran                    |
+      | message  | toolResult   | last entry — nothing fabricated |
