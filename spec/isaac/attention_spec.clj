@@ -71,7 +71,51 @@
       (let [content (:content (first (queue/list-pending)))]
         (should (< (count content) 1100))
         (should (str/includes? content "chatgpt"))
-        (should (str/includes? content "truncated"))))
+        (should (str/includes? content "characters dropped"))))
+
+    (it "clips any caller's oversized content at enqueue and logs the full text (isaac-9af8)"
+      (let [giant (apply str (repeat 3000 "z"))]
+        (log/capture-logs
+          (sut/maybe-notify-turn-failed! notify-cfg "trash-can" {:message giant}))
+        (let [content (:content (first (queue/list-pending)))]
+          (should (< (count content) 1100))
+          (should (str/includes? content "Turn failed for session trash-can"))
+          (should (str/includes? content "characters dropped")))
+        (let [entry (last (filter #(= :attention/content-clipped (:event %)) @log/captured-logs))]
+          (should-not-be-nil entry)
+          (should (> (:content-chars entry) (count giant)))
+          (should (str/includes? (str (:full-content entry)) (apply str (repeat 300 "z")))))))
+
+    (it "bounds the provider message itself so the leaders always lead (isaac-9af8)"
+      (sut/maybe-notify-provider-broken!
+        notify-cfg
+        (broken {:message (str "stream-head " (apply str (repeat 5000 "x")))})
+        0)
+      (let [content (:content (first (queue/list-pending)))]
+        (should (str/includes? content "Provider chatgpt is broken"))
+        (should (str/includes? content "model snuffy-codex"))
+        (should (str/includes? content "session trash-can"))
+        (should (str/includes? content "stream-head"))
+        (should (str/includes? content "characters dropped"))
+        (should-not (str/includes? content "truncated "))
+        (should (< (count content) 600))))
+
+    (it "leaves a short provider message untouched (isaac-9af8)"
+      (sut/maybe-notify-provider-broken! notify-cfg (broken {}) 0)
+      (let [content (:content (first (queue/list-pending)))]
+        (should (str/includes? content "The 'snuffy-codex' model is not supported on this account"))
+        (should-not (str/includes? content "dropped"))
+        (should-not (str/includes? content "…"))))
+
+    (it "keeps the full untruncated text in the log when the message is clipped (isaac-9af8)"
+      (let [giant (str "full-log-copy " (apply str (repeat 3000 "y")))]
+        (log/capture-logs
+          (sut/maybe-notify-provider-broken! notify-cfg (broken {:message giant}) 0)
+          (let [entry (last (filter #(= :attention/provider-message-clipped (:event %)) @log/captured-logs))]
+            (should-not-be-nil entry)
+            (should= (count giant) (:message-chars entry))
+            (should (str/includes? (str (:full-message entry)) "full-log-copy ")))
+          (should= 1 (count (queue/list-pending))))))
 
     (it "posts once per provider within an hour and logs the suppressed count"
       (log/capture-logs

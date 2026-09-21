@@ -18,13 +18,21 @@
   (reset! last-provider-notified* {}))
 
 (def ^:private content-cap 1000)
+(def ^:private provider-message-cap 400)
+
+(defn- clip [s cap]
+  (let [n (count s)]
+    (if (<= n cap)
+      s
+      (str (subs s 0 cap) "… " (- n cap) " characters dropped"))))
 
 (defn- clip-content [content]
   (let [s (str content)
         n (count s)]
-    (if (<= n content-cap)
-      s
-      (str (subs s 0 content-cap) "… truncated " (- n content-cap) " bytes"))))
+    (when (> n content-cap)
+      ;; The alert is a summary; the log is the transport for the payload.
+      (log/info :attention/content-clipped :content-chars n :full-content s))
+    (clip s content-cap)))
 
 (defn- notify-coords [cfg]
   (get-in cfg [:attention :notify]))
@@ -51,7 +59,11 @@
                      (when session (str "session " session))
                      (when (pos? suppressed)
                        (str suppressed " more " (if (= 1 suppressed) "failure" "failures")))
-                     (when message message)])))
+                     ;; An alert is a summary, not a transport for a payload
+                     ;; (isaac-9af8): keep a head of the provider's raw
+                     ;; message — the full text goes to the log when the
+                     ;; enqueue-level clip fires.
+                     (when message (clip (str message) provider-message-cap))])))
 
 (defn maybe-notify-conversation-blocked!
   "Post attention when a conversation is blocked and needs intervention."
@@ -106,6 +118,14 @@
                         (>= (- now last-ms) provider-throttle-ms))]
      (if elapsed?
        (do
+         (when-let [m (:message payload)]
+           (let [s (str m)]
+             ;; The alert carries a head; the log carries the payload (isaac-9af8).
+             (when (> (count s) provider-message-cap)
+               (log/info :attention/provider-message-clipped
+                         :provider provider
+                         :message-chars (count s)
+                         :full-message s))))
          (enqueue-attention! cfg (provider-content payload suppressed))
          (swap! last-provider-notified* assoc provider {:at now :suppressed 0}))
        (let [next-suppressed (inc suppressed)]
