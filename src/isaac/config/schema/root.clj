@@ -31,7 +31,6 @@
 (def server (table :server))
 (def sessions (table :sessions))
 (def gateway (table :gateway))
-(def hail (table :hail))
 (def hooks (table :hooks))
 (def slash-commands (table :slash-commands))
 
@@ -53,7 +52,6 @@
 (def model (:value-spec field-models))
 (def provider (:value-spec field-providers))
 (def comm-instance (:value-spec field-comms))
-(def hail-band (:value-spec hail))
 (def slash-command (:value-spec slash-commands))
 (def cron-job (:value-spec field-cron))
 (def hook (:value-spec hooks))

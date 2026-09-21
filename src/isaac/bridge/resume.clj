@@ -1,6 +1,5 @@
 (ns isaac.bridge.resume
   (:require
-    [clojure.pprint :as pprint]
     [clojure.set :as set]
     [isaac.config.loader :as loader]
     [isaac.fs :as fs]
@@ -21,10 +20,6 @@
 (def ^:private synthesized-tool-result
   "Interrupted before/during execution; result unknown — verify side effects before repeating.")
 
-(defn- write-edn [value]
-  (binding [*print-namespace-maps* false]
-    (with-out-str (pprint/pprint value))))
-
 (defn- filesystem []
   (or (fs/instance) (nexus/get :fs) (fs/real-fs)))
 
@@ -38,47 +33,13 @@
 (defn- marker-time-ms [marker]
   (some-> (or (:interrupted-at marker) (:started-at marker)) instant->epoch-ms))
 
-(defn- comm-stale? [marker window-ms now-ms]
+(defn- comm-stale?
+  "Only an interactive turn goes stale. Every other source is a work order:
+   nobody is waiting on it, so however old it is, it still wants doing."
+  [marker window-ms now-ms]
   (and (= :comm (:source marker))
        (when-let [t (marker-time-ms marker)]
          (> (- now-ms t) window-ms))))
-
-(defn- crash-orphan? [marker]
-  (and (= :hail (:source marker)) (not (:suspended marker))))
-
-(defn- resume-attempts [marker]
-  (let [base (or (:attempts marker) 0)]
-    (if (crash-orphan? marker) (inc base) base)))
-
-(defn- normalize-id [value]
-  (cond
-    (keyword? value) (name value)
-    (string? value)  value
-    (nil? value)     nil
-    :else            (str value)))
-
-(defn- marker->delivery [marker]
-  (or (:delivery marker)
-      (when (= :hail (:source marker))
-        (cond-> {:id            (or (:delivery-id marker)
-                                    (some-> (:delivery marker) :id normalize-id))
-                 :prompt        (or (:prompt marker) (get-in marker [:delivery :prompt]))
-                 :crew          (or (:crew marker) (get-in marker [:delivery :crew]))
-                 :bound-session (or (:bound-session marker) (get-in marker [:delivery :bound-session]))
-                 :attempts      (or (:attempts marker) 0)}
-          (:thread-id marker) (assoc :thread-id (:thread-id marker))
-          (:params marker)    (assoc :params (:params marker))))))
-
-(defn- deliveries-path [root delivery-id]
-  (str root "/hail/deliveries/" delivery-id ".edn"))
-
-(defn- write-delivery! [root delivery]
-  (let [fs*  (filesystem)
-        path (deliveries-path root (:id delivery))
-        temp (str path ".tmp")]
-    (fs/mkdirs fs* (fs/parent path))
-    (fs/spit fs* temp (write-edn delivery))
-    (fs/move fs* temp path)))
 
 (defn- dangling-tool-call-ids [transcript]
   (let [tool-call-ids (->> transcript
@@ -121,13 +82,6 @@
     (or (policy/repair-transcript! sess session-id)
         (repair-dangling-tool-calls! sess session-id))))
 
-(defn- requeue-hail! [root marker now-ms]
-  (when-let [delivery (some-> (marker->delivery marker)
-                              (assoc :attempts (resume-attempts marker)
-                                     :resume/requeued-at (str (Instant/ofEpochMilli now-ms))))]
-    (write-delivery! root delivery)
-    true))
-
 (defn- enqueue-resume-turn!
   "Parks the resumed turn in the normal turn queue (isaac-yxch). Resume is
    recovery work, not boot work: the scan hands the turn over and returns, so
@@ -152,19 +106,6 @@
                 :error (.getMessage t))
       false)))
 
-(defn- cancelled-dir [root]
-  (str root "/hail/cancelled"))
-
-(defn- archive-cancelled-hail! [root marker]
-  (when-let [delivery (marker->delivery marker)]
-    (let [fs*  (filesystem)
-          path (str (cancelled-dir root) "/" (:id delivery) ".edn")
-          temp (str path ".tmp")]
-      (fs/mkdirs fs* (fs/parent path))
-      (fs/spit fs* temp (write-edn delivery))
-      (fs/move fs* temp path)
-      true)))
-
 (defn- clear-marker! [session-store root session-id]
   (store/clear-turn-marker! session-store session-id)
   (when root
@@ -172,13 +113,10 @@
 
 (defn- resume-marker!
   [{:keys [session-store root cfg window-ms now-ms] :as opts} marker]
-  (let [session-id (or (:session-id marker) (get marker "session-id"))
-        source     (:source marker)]
+  (let [session-id (or (:session-id marker) (get marker "session-id"))]
     (cond
       (true? (:cancelled marker))
       (do
-        (when (= :hail source)
-          (archive-cancelled-hail! root marker))
         (clear-marker! session-store root session-id)
         {:dropped 1})
 
@@ -215,21 +153,11 @@
 
       :else
       (do
-        (when (crash-orphan? marker)
-          (log/warn :resume/crash-orphan :session session-id))
         (repair-transcript! session-store cfg session-id)
         (try
-          (cond
-            (= :hail source)
-            (when (requeue-hail! root marker now-ms)
-              {:requeued 1})
-
-            (#{:comm :cron :cli} source)
-            (if (enqueue-resume-turn! opts session-id marker)
-              {:requeued 1}
-              {:dropped 1})
-
-            :else nil)
+          (if (enqueue-resume-turn! opts session-id marker)
+            {:requeued 1}
+            {:dropped 1})
           (finally
             (clear-marker! session-store root session-id)))))))
 

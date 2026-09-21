@@ -164,34 +164,33 @@
       :else
       {:charge c})))
 
-(defn- marker-source [charge]
-  (let [origin (:origin charge)
-        kind   (:kind origin)]
+(defn- marker-source
+  "An autonomous origin names its own kind and the bridge carries it unread —
+   the drive knows dispatchers only by the kind they stamp on the origin."
+  [charge]
+  (let [origin (:origin charge)]
     (cond
-      (= :hail kind)   :hail
-      (= :cron kind)   :cron
-      (:comm charge)   :comm
+      (autonomous-origin? origin) (:kind origin)
+      (:comm charge)              :comm
       ;; A resumed turn (isaac-yxch) runs off the turn queue with no comm
       ;; attached; its origin carries the source of the marker it came from so
       ;; staleness keeps applying to what was once a comm turn.
-      (:source origin) (:source origin)
-      :else            :cli)))
+      (:source origin)            (:source origin)
+      :else                       :cli)))
 
 (defn- turn-marker
-  "The durable resume ROUTING for an in-flight turn (isaac-7li9): source, the hail
-   delivery id / embedded delivery payload when present, and started-at. Resolved
-   values (model, etc.) are deliberately NOT stored — they re-resolve at resume."
+  "The durable resume ROUTING for an in-flight turn (isaac-7li9): which source
+   the turn came from and when it started. Nothing about the dispatcher that
+   sent it (isaac-6doh) — a marker is a work order, and resume re-drives it in
+   its own session. Resolved values (model, etc.) are deliberately NOT stored;
+   they re-resolve at resume."
   [charge]
-  (let [origin   (:origin charge)
-        delivery (:hail-delivery charge)]
-    (cond-> {:source     (marker-source charge)
-             :started-at (System/currentTimeMillis)}
-      (:hail-id origin) (assoc :delivery-id (str (:hail-id origin)))
-      delivery          (assoc :attempts (:attempts delivery) :delivery delivery))))
+  {:source     (marker-source charge)
+   :started-at (System/currentTimeMillis)})
 
 (defn record-turn-marker!
   "The bridge is the single writer of durable turn markers (isaac-7li9). Callers
-   (comm dispatch here, the hail delivery worker) hand a charge; the bridge builds
+   (comm dispatch here, a delivery worker) hand a charge; the bridge builds
    the resume-routing marker from it and persists it via the SessionStore."
   [store session-key charge]
   (policy/record-turn-marker! (policy/wrap store) session-key (turn-marker charge)))

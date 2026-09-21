@@ -102,19 +102,14 @@
       (should= 1 (:dropped entry)))
     (should= nil (store/get-turn-marker (store/registered-store) "logbook")))
 
-  (it "logs scan-complete with requeued hail count for a suspended hail marker"
+  (it "enqueues a suspended hail marker like any other source, writing nothing under hail/"
     (helper/create-session! test-root "isaac-verify")
     (store/record-turn-marker! (store/registered-store) "isaac-verify"
-                               {:source       :hail
-                                :session-id   "isaac-verify"
-                                :suspended    true
-                                :boundary     :clean
-                                :started-at   "2026-07-07T16:37:09Z"
-                                :delivery-id  "c27493a3"
-                                :delivery     {:id "c27493a3"
-                                               :prompt "verify the bean"
-                                               :crew "verify"
-                                               :attempts 2}})
+                               {:source     :hail
+                                :session-id "isaac-verify"
+                                :suspended  true
+                                :boundary   :clean
+                                :started-at "2026-07-07T16:37:09Z"})
     (sut/resume-interrupted-turns! {:session-store (store/registered-store)
                                     :root          test-root
                                     :cfg           {}
@@ -124,22 +119,36 @@
       (should= 1 (:markers entry))
       (should= 1 (:requeued entry))
       (should= 0 (:dropped entry)))
-    (let [delivery-path (str test-root "/hail/deliveries/c27493a3.edn")]
-      (should (fs/exists? (nexus/get :fs) delivery-path))
-      (should= "2026-07-07T16:37:28Z"
-               (:resume/requeued-at (clojure.edn/read-string (fs/slurp (nexus/get :fs) delivery-path))))
-      (should= nil (store/get-turn-marker (store/registered-store) "isaac-verify"))))
+    (let [record (first (binding [queue/*root* test-root] (queue/list-held)))]
+      (should-not-be-nil record)
+      (should= "isaac-verify" (:session record))
+      (should= :resume (get-in record [:origin :kind]))
+      (should= :hail (get-in record [:origin :source])))
+    (should-not (fs/exists? (nexus/get :fs) (str test-root "/hail")))
+    (should= nil (store/get-turn-marker (store/registered-store) "isaac-verify")))
 
-  (it "clears the legacy marker path after requeueing its hail"
+  (it "resumes an hour-old hail marker: a work order never goes stale"
+    (helper/create-session! test-root "engine-room")
+    (store/record-turn-marker! (store/registered-store) "engine-room"
+                               {:source     :hail
+                                :session-id "engine-room"
+                                :started-at "2026-04-21T09:00:00Z"})
+    (sut/resume-interrupted-turns! {:session-store    (store/registered-store)
+                                    :root             test-root
+                                    :cfg              {}
+                                    :resume-window-ms 600000
+                                    :now              (Instant/parse "2026-04-21T10:00:00Z")})
+    (let [entry (first (filter #(= :resume/scan-complete (:event %)) @log/captured-logs))]
+      (should= 1 (:requeued entry))
+      (should= 0 (:dropped entry))))
+
+  (it "clears the legacy marker path after enqueueing its turn"
     (let [fs*         (nexus/get :fs)
           session-id  "isaac-verify"
           marker-path (str test-root "/sessions/turns/" session-id ".edn")
-          marker      {:source      :hail
-                       :session-id  session-id
-                       :delivery-id "legacy-hail"
-                       :delivery    {:id            "legacy-hail"
-                                     :prompt        "verify the bean"
-                                     :bound-session session-id}}]
+          marker      {:source     :hail
+                       :session-id session-id
+                       :started-at "2026-07-07T16:37:09Z"}]
       (fs/mkdirs fs* (fs/parent marker-path))
       (fs/spit fs* marker-path (pr-str marker))
       ;; The memory store represents the startup scan result while the legacy
@@ -150,7 +159,7 @@
                                       :cfg           {}
                                       :now           (Instant/parse "2026-07-07T16:37:28Z")})
       (should-not (fs/exists? fs* marker-path))
-      (should (fs/exists? fs* (str test-root "/hail/deliveries/legacy-hail.edn")))))
+      (should-not-be-nil (first (binding [queue/*root* test-root] (queue/list-held))))))
 
   (it "logs scan-complete with dropped comm count for a stale comm marker"
     (helper/create-session! test-root "firewatch")
@@ -173,17 +182,13 @@
       (should= 1 (:dropped entry)))
     (should= nil (store/get-turn-marker (store/registered-store) "firewatch")))
 
-  (it "archives a cancelled hail marker to hail/cancelled and drops it without re-queue"
+  (it "drops a cancelled hail marker the same as any other source, archiving nothing"
     (helper/create-session! test-root "engine-room")
     (store/record-turn-marker! (store/registered-store) "engine-room"
-                               {:source         :hail
-                                :session-id     "engine-room"
-                                :delivery-id    "hail-1"
-                                :prompt         "Seal the leak."
-                                :crew           "bartholomew"
-                                :bound-session  :engine-room
-                                :attempts       2
-                                :cancelled      true})
+                               {:source     :hail
+                                :session-id "engine-room"
+                                :started-at "2026-04-21T09:59:30Z"
+                                :cancelled  true})
     (sut/resume-interrupted-turns! {:session-store (store/registered-store)
                                     :root          test-root
                                     :cfg           {}
@@ -193,8 +198,8 @@
       (should= 1 (:markers entry))
       (should= 0 (:requeued entry))
       (should= 1 (:dropped entry)))
-    (should (fs/exists? (nexus/get :fs) (str test-root "/hail/cancelled/hail-1.edn")))
-    (should-not (fs/exists? (nexus/get :fs) (str test-root "/hail/deliveries/hail-1.edn")))
+    (should-not (fs/exists? (nexus/get :fs) (str test-root "/hail")))
+    (should= [] (vec (binding [queue/*root* test-root] (queue/list-held))))
     (should= nil (store/get-turn-marker (store/registered-store) "engine-room")))
 
   (it "drops a cancelled comm marker without dispatching an interruption note"

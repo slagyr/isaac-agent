@@ -46,7 +46,6 @@ Feature: Resume repair and comm staleness
       | level | event                     | session | repair     |
       | :warn | :resume/transcript-repair | logbook | :torn-line |
 
-  @wip
   Scenario: a hail marker resumes in its own session through the turn queue (isaac-6doh)
     Hail's responsibility ended when the turn started (isaac-9azm): a hail
     marker is a work order like cron's — never stale, however old — and it
