@@ -38,6 +38,7 @@
                          :origin      (or (:origin record) {:kind :queue})
                          :config      cfg}
                   (:crew record) (assoc :crew (:crew record))
+                  (queue/live-comm (:id record)) (assoc :comm (queue/live-comm (:id record)))
                   (:observers record) (assoc :observers (:observers record))
                   (:turnstiles record) (assoc :turnstiles (:turnstiles record))
                   (:cwd record) (assoc :cwd (:cwd record)))

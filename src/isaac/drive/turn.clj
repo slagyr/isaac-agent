@@ -25,6 +25,7 @@
     [isaac.tool.memory :as memory]
     [isaac.tool.names :as names]
     [isaac.tool.registry :as tool-registry]
+    [isaac.turn.queue :as turn-queue]
     [isaac.turnstile :as turnstile])
   (:import (clojure.lang ExceptionInfo)
            (java.nio.charset StandardCharsets)
@@ -443,12 +444,23 @@
       (get-in config [:crew crew :cycle])
       {}))
 
+(def default-continuations
+  "How many times a wrapped-up turn re-drives itself when the crew says
+   nothing. Continuations are a last resort — checkpoints inside the turn are
+   the save point (isaac-tic5)."
+  2)
+
 (defn- resolve-cycle [{:keys [cycle config crew crew-cfg]}]
-  (let [defaults (or (get-in config [:defaults :cycle]) {})
-        layered  (merge defaults (crew-cycle config crew crew-cfg) (or cycle {}))
-        limit    (or (:limit layered)
-                     tool-loop/default-max-loops)]
-    (assoc layered :limit (parse-long-or-raw limit))))
+  (let [defaults      (or (get-in config [:defaults :cycle]) {})
+        layered       (merge defaults (crew-cycle config crew crew-cfg) (or cycle {}))
+        limit         (or (:limit layered)
+                          tool-loop/default-max-loops)
+        continuations (if (some? (:continuations layered))
+                        (:continuations layered)
+                        default-continuations)]
+    (assoc layered
+           :limit (parse-long-or-raw limit)
+           :continuations (parse-long-or-raw continuations))))
 
 (defn- resolve-cycle-limit [opts]
   (:limit (resolve-cycle opts)))
@@ -1313,6 +1325,102 @@
         (notify-observers! observers :on-turn-ended ctx (observer/outcome result))))
     result))
 
+;; region ----- Continuations -----
+
+(def continuation-note
+  "The continuation turn's input. The wrap-up note is the turn's last
+   assistant message (isaac-x0cw), so the model reads its own done/next note
+   straight above this line."
+  "Your previous turn ran out of cycles and wrapped up. Read your own wrap-up note above and continue from where it says to resume. Do not redo finished work.")
+
+(defn- wrapped-up? [result]
+  (and (= :cycle-limit (:ended-by result))
+       (= :wrapped-up (:exhaustion result))))
+
+(defn- continuation-count
+  "How many continuations this turn already is. The count rides on the
+   charge's origin, so it survives the queue without the drive keeping state."
+  [charge]
+  (or (get-in charge [:origin :continuation]) 0))
+
+(defn- continuation-plan
+  "What follows a finished turn: a fresh turn (:continue), the end of the
+   budget (:exhausted), or nothing at all. Only a wrapped-up cycle-limit turn
+   continues - a comm that answers :stop never does."
+  [result n budget]
+  (when (wrapped-up? result)
+    (if (< n budget)
+      {:action :continue :continuation (inc n) :budget budget}
+      {:action :exhausted :continuation n :budget budget})))
+
+(defn- turn-root [charge]
+  (or (:root charge)
+      (get-in charge [:config :root])
+      (nexus/get :root)
+      (loader/root)))
+
+(defn- enqueue-continuation!
+  "Park a fresh turn for this session on the durable turn queue - the same
+   waiting room a resumed or held turn parks in (isaac-yxch). The note is
+   persisted here, the way a parked CLI turn persists its user message at
+   submit time; the queue worker drives a :from-queue? charge and never
+   re-appends it. The origin carries the count and the original source, so
+   the next turn knows which continuation it is."
+  [charge ctx ch session-key {:keys [continuation budget]}]
+  (append-message! ctx session-key {:role "user" :content continuation-note})
+  (binding [turn-queue/*root* (turn-root charge)]
+    (turn-queue/enqueue! {:session session-key
+                          :input   continuation-note
+                          :origin  (assoc (or (:origin charge) {:kind :queue})
+                                          :continuation continuation)
+                          :comm    ch
+                          :crew    (:crew charge)
+                          :cwd     (:cwd charge)
+                          :root    (turn-root charge)}))
+  (log/info :turn/continued
+            :session session-key
+            :continuation continuation
+            :budget budget))
+
+(defn- continuations-exhausted!
+  "The budget is spent and the work is still unfinished. Loud on purpose: an
+   ERROR log, attention for the operator, and a bulletin so the comm that
+   asked for the wrap-up can say so in its own channel."
+  [charge ch session-key {:keys [continuation budget]}]
+  (log/error :turn/continuations-exhausted
+             :session session-key
+             :continuation continuation
+             :budget budget)
+  (attention/maybe-notify-continuations-exhausted!
+    (or (:config charge) (loader/snapshot "continuations-exhausted attention"))
+    session-key
+    {:continuation continuation :budget budget})
+  (comm/on-bulletin ch session-key
+                    {:kind :turn/continuations-exhausted
+                     :text (str "Session " session-key " ran out of continuations ("
+                                continuation " of " budget ") with work still unfinished")}))
+
+(defn- maybe-continue!
+  "Called once per finished turn. The drive owns continuations (isaac-xpkf);
+   nothing here knows what started the turn."
+  [charge ctx ch session-key result]
+  (try
+    (let [{:keys [crew config crew-cfg cycle]} charge
+          budget (:continuations (resolve-cycle {:cycle cycle :config config
+                                                 :crew crew :crew-cfg crew-cfg}))
+          n      (continuation-count charge)]
+      (when-let [plan (continuation-plan result n budget)]
+        (if (= :continue (:action plan))
+          (enqueue-continuation! charge ctx ch session-key plan)
+          (continuations-exhausted! charge ch session-key plan))))
+    (catch Throwable t
+      (log/warn :turn/continuation-failed
+                :session session-key
+                :error (.getMessage t))))
+  result)
+
+;; endregion ^^^^^ Continuations ^^^^^
+
 (defn- announce-tool-call!
   [{:keys [session-key] ch :comm :as tool-ctx} tc]
   (let [tool-state     (atom :announced)
@@ -1643,7 +1751,8 @@
         ch          (or (:comm charge) null-comm/channel)
         turn-id     (bridge/begin-turn! session-key)
         observers   (observer/for-turn (:observers charge))
-        finish!     #(finish-turn! ch session-key % observers (:origin charge))]
+        finish!     #(-> (finish-turn! ch session-key % observers (:origin charge))
+                         (as-> result (maybe-continue! charge ctx ch session-key result)))]
     (try
       (comm/on-turn-start ch session-key input)
       (notify-observers! observers :on-turn-started (observer-ctx session-key) nil)

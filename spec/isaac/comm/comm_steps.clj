@@ -146,7 +146,9 @@
     (g/assoc! :outbound-http-request (or (first outbound-requests)
                                          (grover/last-provider-request)
                                          grover-request))
-    (g/assoc! :memory-comm-events @events)
+    ;; the atom, not a snapshot: a turn that parks a continuation on the turn
+    ;; queue (isaac-xpkf) keeps sending on this channel after this step returns
+    (g/assoc! :memory-comm-events events)
     (g/assoc! :channel-events events)
     (g/assoc! :output output)))
 

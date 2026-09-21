@@ -78,6 +78,19 @@
                                    (when message (str "error " message))]))]
     (enqueue-attention! cfg content)))
 
+(defn maybe-notify-continuations-exhausted!
+  "Post attention when a session wrapped up as often as its budget allows and
+   the work is still unfinished (isaac-xpkf)."
+  [cfg session-key {:keys [continuation budget]}]
+  (enqueue-attention!
+    cfg
+    (str/join " "
+              (remove str/blank?
+                      [(str "Session " session-key " ran out of continuations")
+                       (when continuation (str "after " continuation))
+                       (when budget (str "of " budget))
+                       "with work still unfinished"]))))
+
 (defn maybe-notify-provider-broken!
   "Post attention when a provider answers with a non-wall, non-auth error.
    Throttled per provider: first failure posts, then at most one post per hour

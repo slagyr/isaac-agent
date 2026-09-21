@@ -22,7 +22,6 @@ Feature: The :cycle config group
       | crew\.main\.cycle-limit.*:cycle \{:limit  |
     And the exit code is 1
 
-  @wip
   Scenario: config schema lists the cycle knobs (isaac-xpkf adds :continuations)
     Given config file "isaac.edn" containing:
       """

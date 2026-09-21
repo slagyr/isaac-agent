@@ -512,7 +512,7 @@
       :cycle
       {:type :map,
        :description
-       "Turn knobs: limit (was :cycle-limit), checkpoint-every, checkpoint-prompt, wrap-up-prompt",
+       "Turn knobs: limit (was :cycle-limit), checkpoint-every, checkpoint-prompt, wrap-up-prompt, continuations",
        :schema
        {:limit
         {:type :int,
@@ -525,7 +525,10 @@
          :description "Optional override of the drive's default checkpoint nudge"},
         :wrap-up-prompt
         {:type :string,
-         :description "Optional override of the drive's default wrap-up nudge"}}},
+         :description "Optional override of the drive's default wrap-up nudge"},
+        :continuations
+        {:type :int,
+         :description "How many times a wrapped-up turn may be re-driven on this crew (default 2)"}}},
       :model
       {:type :id,
        :description "ID of the model this crew member uses.",
@@ -609,7 +612,7 @@
      :cycle
      {:type :map,
       :description
-      "Default turn knobs: limit, checkpoint-every, checkpoint-prompt, wrap-up-prompt",
+      "Default turn knobs: limit, checkpoint-every, checkpoint-prompt, wrap-up-prompt, continuations",
       :schema
       {:limit
        {:type :int,
@@ -622,7 +625,10 @@
         :description "Optional override of the drive's default checkpoint nudge"},
        :wrap-up-prompt
        {:type :string,
-        :description "Optional override of the drive's default wrap-up nudge"}}}}}},
+        :description "Optional override of the drive's default wrap-up nudge"},
+       :continuations
+       {:type :int,
+        :description "How many times a wrapped-up turn may be re-driven (default 2)"}}}}}},
   :attention
   {:schema
    {:name :attention,

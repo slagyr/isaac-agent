@@ -41,6 +41,19 @@
       (update :state #(or % :held))
       (update :created-at #(or % (str (memory/now))))))
 
+;; A live comm channel cannot be written to an EDN record, but a turn parked
+;; by a still-running process (a continuation, isaac-xpkf) should wake on the
+;; channel that asked for it. The channel is a process-local attachment keyed
+;; by record id: present while this process lives, gone after a restart, when
+;; the turn wakes comm-less exactly like a resumed one.
+(defonce ^:private live-comms* (atom {}))
+
+(defn live-comm [id]
+  (get @live-comms* id))
+
+(defn forget-live-comm! [id]
+  (swap! live-comms* dissoc id))
+
 (defn- read-record [path]
   (let [fs* (filesystem)]
     (when (fs/exists? fs* path)
@@ -51,10 +64,13 @@
 
 (defn enqueue! [record]
   (let [fs*    (filesystem)
-        record (normalize-record record)
+        comm   (:comm record)
+        record (normalize-record (dissoc record :comm))
         path   (held-path (:id record))]
     (fs/mkdirs fs* (fs/parent path))
     (fs/spit fs* path (write-edn record))
+    (when comm
+      (swap! live-comms* assoc (:id record) comm))
     (log/info :turn.queue/held
               :id (:id record)
               :session (:session record))
@@ -64,6 +80,7 @@
   (read-record (held-path id)))
 
 (defn delete-held! [id]
+  (forget-live-comm! id)
   (fs/delete (filesystem) (held-path id)))
 
 (defn list-held []

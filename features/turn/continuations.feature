@@ -1,4 +1,3 @@
-@wip
 Feature: Continuations — the drive re-drives a wrapped-up turn within a cycle.continuations budget (isaac-xpkf)
   A wrap-up is a checkpoint, not an ending. When the cycle budget runs out
   and the comm answers :wrap-up, the drive runs the final cycle and the

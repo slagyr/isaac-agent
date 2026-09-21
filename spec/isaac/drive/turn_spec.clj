@@ -1631,6 +1631,45 @@
         (should= 10 (:limit cycle))
         (should= 1 (:checkpoint-every cycle))))
 
+    (it "the continuation budget defaults to 2 and layers like the rest of :cycle"
+      (should= sut/default-continuations
+               (:continuations (#'sut/resolve-cycle {:crew "oscar" :config {}})))
+      (should= 2 sut/default-continuations)
+      (should= 5 (:continuations (#'sut/resolve-cycle {:crew   "oscar"
+                                                       :config {:defaults {:cycle {:continuations 5}}}})))
+      (should= 3 (:continuations (#'sut/resolve-cycle {:crew-cfg {:cycle {:continuations 3}}
+                                                       :crew     "oscar"
+                                                       :config   {:defaults {:cycle {:continuations 5}}}})))
+      (should= 1 (:continuations (#'sut/resolve-cycle {:cycle    {:continuations 1}
+                                                       :crew-cfg {:cycle {:continuations 3}}
+                                                       :crew     "oscar"
+                                                       :config   {:defaults {:cycle {:continuations 5}}}})))
+      (should= 4 (:continuations (#'sut/resolve-cycle {:crew   "oscar"
+                                                       :config {:defaults {:cycle {:continuations "4"}}}}))))
+
+    (it "reads the continuation count off the charge's origin"
+      (should= 0 (#'sut/continuation-count {}))
+      (should= 0 (#'sut/continuation-count {:origin {:kind :memory}}))
+      (should= 2 (#'sut/continuation-count {:origin {:kind :memory :continuation 2}})))
+
+    (it "plans a continuation only for a wrapped-up turn, and only within budget"
+      (let [wrapped {:ended-by :cycle-limit :exhaustion :wrapped-up}]
+        (should-be-nil (#'sut/continuation-plan {:ended-by :reply} 0 2))
+        (should-be-nil (#'sut/continuation-plan {:ended-by :cycle-limit :exhaustion :stopped} 0 2))
+        (should-be-nil (#'sut/continuation-plan {:ended-by :error :error :exception} 0 2))
+        (should= {:action :continue :continuation 1 :budget 2}
+                 (#'sut/continuation-plan wrapped 0 2))
+        (should= {:action :continue :continuation 2 :budget 2}
+                 (#'sut/continuation-plan wrapped 1 2))
+        (should= {:action :exhausted :continuation 2 :budget 2}
+                 (#'sut/continuation-plan wrapped 2 2))
+        (should= {:action :exhausted :continuation 0 :budget 0}
+                 (#'sut/continuation-plan wrapped 0 0))))
+
+    (it "the continuation note tells the model to continue from its own wrap-up note"
+      (should (re-find #"continue" sut/continuation-note))
+      (should (re-find #"(?i)note" sut/continuation-note)))
+
     (it "default wrap-up and checkpoint prompts are task-agnostic"
       (doseq [word ["git" "commit" "branch" "bean" "test" "verify"]]
         (should-not (re-find (re-pattern (str "(?i)\\b" word "\\b")) sut/default-wrap-up-prompt))
