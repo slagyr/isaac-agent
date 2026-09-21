@@ -206,7 +206,7 @@
 (when (compare-and-set! foundation-minimal-config-patched? false true)
   (when-let [minimal-config-var (ns-resolve 'isaac.foundation.root-steps 'minimal-config)]
     (alter-var-root minimal-config-var
-                    #(assoc % :tools (assoc (or (:tools %) {}) :max-parallel 4)))))
+                    #(assoc-in % [:defaults :crew :tools :max-parallel] 4))))
 
 (defn- stamp-fixture-default-crew [path content]
   (if-not (= "isaac.edn" path)
@@ -693,9 +693,10 @@
         fs*  (mem-fs)]
     (fs/mkdirs fs* root)
     (fs/spit   fs* (str root "/isaac.edn")
-                    (pr-str {:defaults {:frequencies {:crew "main"} :crew {:model "grover"}}
-                             :tools    {:max-parallel 4
-                                        :directories  {:allow [:cwd :quarters]}}}))
+                    (pr-str {:defaults {:frequencies {:crew "main"}
+                                        :crew        {:model "grover"
+                                                      :tools {:max-parallel 4
+                                                              :directories  {:allow [:cwd :quarters]}}}}}))
     (fs/mkdirs fs* (str root "/crew"))
     (write-grover-provider-files! (root-dir))
     (fs/spit   fs* (str root "/crew/main.edn")
@@ -1947,6 +1948,9 @@
     (g/should-not (some #(= role (:role %)) messages))))
 
 (defn tool-loop-request-contains [table]
+  ;; The turn writes the assistant and toolResult entries this rebuilds from,
+  ;; so read the transcript only once the turn has finished.
+  (await-turn!)
   (with-feature-fs
     (fn []
       (let [key-str       (current-key)

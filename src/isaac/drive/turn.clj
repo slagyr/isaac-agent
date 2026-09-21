@@ -1198,7 +1198,7 @@
    Candidates are registered tools plus any exact tokens declared in policy
    (test fixtures / not-yet-activated modules)."
   [crew-members crew-id config]
-  (let [global-tools (:tools config)
+  (let [global-tools (defaults/tools config)
         crew-tools   (get-in crew-members [crew-id :tools])
         _            (tool-registry/ensure-policy-tools! (:module-index config)
                                                          (concat (names/policy-list (:allow global-tools))

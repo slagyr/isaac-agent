@@ -34,10 +34,9 @@ Feature: Global and crew directory allow/deny
   Scenario: Global cwd grant allows the session workdir and not outside it
     Given config file "isaac.edn" containing:
       """
-      {:defaults    {:frequencies {:crew :main} :crew {:model :echo}}
+      {:defaults    {:frequencies {:crew :main} :crew {:model :echo :tools {:directories {:allow [:cwd]}}}}
        :providers   {:grover {:base-url "http://test" :api "grover"}}
-       :models      {:echo {:model "echo" :provider :grover :context-window 32768}}
-       :tools       {:directories {:allow [:cwd]}}}
+       :models      {:echo {:model "echo" :provider :grover :context-window 32768}}}
       """
     And config file "crew/main.edn" containing:
       """
@@ -63,10 +62,9 @@ Feature: Global and crew directory allow/deny
   Scenario: :role is not a directory grant
     Given config file "isaac.edn" containing:
       """
-      {:defaults    {:frequencies {:crew :main} :crew {:model :echo}}
+      {:defaults    {:frequencies {:crew :main} :crew {:model :echo :tools {:directories {:allow [:role]}}}}
        :providers   {:grover {:base-url "http://test" :api "grover"}}
-       :models      {:echo {:model "echo" :provider :grover :context-window 32768}}
-       :tools       {:directories {:allow [:role]}}}
+       :models      {:echo {:model "echo" :provider :grover :context-window 32768}}}
       """
     And config file "crew/main.edn" containing:
       """
@@ -88,10 +86,9 @@ Feature: Global and crew directory allow/deny
   Scenario: Global quarters grant allows the crew area and not cwd
     Given config file "isaac.edn" containing:
       """
-      {:defaults    {:frequencies {:crew :main} :crew {:model :echo}}
+      {:defaults    {:frequencies {:crew :main} :crew {:model :echo :tools {:directories {:allow [:quarters]}}}}
        :providers   {:grover {:base-url "http://test" :api "grover"}}
-       :models      {:echo {:model "echo" :provider :grover :context-window 32768}}
-       :tools       {:directories {:allow [:quarters]}}}
+       :models      {:echo {:model "echo" :provider :grover :context-window 32768}}}
       """
     And config file "crew/main.edn" containing:
       """
@@ -116,10 +113,9 @@ Feature: Global and crew directory allow/deny
   Scenario: Crew extra absolute path overlays and inherited cwd still works
     Given config file "isaac.edn" containing:
       """
-      {:defaults    {:frequencies {:crew :main} :crew {:model :echo}}
+      {:defaults    {:frequencies {:crew :main} :crew {:model :echo :tools {:directories {:allow [:cwd]}}}}
        :providers   {:grover {:base-url "http://test" :api "grover"}}
-       :models      {:echo {:model "echo" :provider :grover :context-window 32768}}
-       :tools       {:directories {:allow [:cwd]}}}
+       :models      {:echo {:model "echo" :provider :grover :context-window 32768}}}
       """
     And config file "crew/main.edn" containing:
       """
@@ -145,10 +141,9 @@ Feature: Global and crew directory allow/deny
   Scenario: A more specific global deny under a crew-allowed parent still denies
     Given config file "isaac.edn" containing:
       """
-      {:defaults    {:frequencies {:crew :main} :crew {:model :echo}}
+      {:defaults    {:frequencies {:crew :main} :crew {:model :echo :tools {:directories {:deny ["/work/project/secret"]}}}}
        :providers   {:grover {:base-url "http://test" :api "grover"}}
-       :models      {:echo {:model "echo" :provider :grover :context-window 32768}}
-       :tools       {:directories {:deny ["/work/project/secret"]}}}
+       :models      {:echo {:model "echo" :provider :grover :context-window 32768}}}
       """
     And config file "crew/main.edn" containing:
       """
@@ -174,10 +169,9 @@ Feature: Global and crew directory allow/deny
   Scenario: Crew allow of the denied child prefix re-opens it
     Given config file "isaac.edn" containing:
       """
-      {:defaults    {:frequencies {:crew :main} :crew {:model :echo}}
+      {:defaults    {:frequencies {:crew :main} :crew {:model :echo :tools {:directories {:deny ["/work/project/secret"]}}}}
        :providers   {:grover {:base-url "http://test" :api "grover"}}
-       :models      {:echo {:model "echo" :provider :grover :context-window 32768}}
-       :tools       {:directories {:deny ["/work/project/secret"]}}}
+       :models      {:echo {:model "echo" :provider :grover :context-window 32768}}}
       """
     And config file "crew/main.edn" containing:
       """
@@ -199,10 +193,9 @@ Feature: Global and crew directory allow/deny
   Scenario: Crew deny of a subpath; sibling under the root still works
     Given config file "isaac.edn" containing:
       """
-      {:defaults    {:frequencies {:crew :main} :crew {:model :echo}}
+      {:defaults    {:frequencies {:crew :main} :crew {:model :echo :tools {:directories {:allow ["/work/project"]}}}}
        :providers   {:grover {:base-url "http://test" :api "grover"}}
-       :models      {:echo {:model "echo" :provider :grover :context-window 32768}}
-       :tools       {:directories {:allow ["/work/project"]}}}
+       :models      {:echo {:model "echo" :provider :grover :context-window 32768}}}
       """
     And config file "crew/main.edn" containing:
       """

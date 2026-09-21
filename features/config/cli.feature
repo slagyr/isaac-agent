@@ -13,33 +13,33 @@ Feature: Config Command
   Scenario: config is registered and has help
     When isaac is run with "help config"
     Then the stdout matches:
-      | pattern                                                         |
-      | Usage: isaac config \[subcommand\] \[options\]                  |
-      | Manage Isaac configuration                                      |
-      | Subcommands:                                                    |
-      | validate\s+Validate config                                      |
-      | get \[config-path\]\s+Print the resolved config, or a subtree   |
-      | sources\s+List contributing config files                        |
+      | pattern                                                       |
+      | Usage: isaac config \[subcommand\] \[options\]                |
+      | Manage Isaac configuration                                    |
+      | Subcommands:                                                  |
+      | validate\s+Validate config                                    |
+      | get \[config-path\]\s+Print the resolved config, or a subtree |
+      | sources\s+List contributing config files                      |
     And the exit code is 0
 
   Scenario: config validate has its own help page via --help
     When isaac is run with "config validate --help"
     Then the stdout matches:
-      | pattern                                                  |
-      | Usage: isaac config validate \[options\] \[-\]           |
-      | Validate the config composition                          |
-      | Options:                                                 |
-      | --as CONFIG-PATH\s+Overlay stdin EDN                     |
-      | Arguments:                                               |
-      | -\s+Read EDN to validate from stdin                      |
+      | pattern                                        |
+      | Usage: isaac config validate \[options\] \[-\] |
+      | Validate the config composition                |
+      | Options:                                       |
+      | --as CONFIG-PATH\s+Overlay stdin EDN           |
+      | Arguments:                                     |
+      | -\s+Read EDN to validate from stdin            |
     And the exit code is 0
 
   Scenario: config help validate is an alternate way to reach subcommand help
     When isaac is run with "config help validate"
     Then the stdout matches:
-      | pattern                                                  |
-      | Usage: isaac config validate \[options\] \[-\]           |
-      | Validate the config composition                          |
+      | pattern                                        |
+      | Usage: isaac config validate \[options\] \[-\] |
+      | Validate the config composition                |
     And the exit code is 0
 
   # ----- Get (whole config / --raw / --reveal) -----
@@ -76,9 +76,9 @@ Feature: Config Command
       """
     When isaac is run with "config get --raw"
     Then the stdout lines contain in order:
-      | pattern                    |
-      | :api-key                   |
-      | "${CONFIG_TEST_API_KEY}"  |
+      | pattern                  |
+      | :api-key                 |
+      | "${CONFIG_TEST_API_KEY}" |
     And the stdout does not contain "sk-test-123"
     And the stdout does not contain "redacted"
     And the exit code is 0
@@ -99,9 +99,9 @@ Feature: Config Command
     When isaac is run with "config get --reveal"
     Then the stderr contains "type REVEAL to confirm:"
     And the stdout lines contain in order:
-      | pattern         |
-      | :api-key        |
-      | "sk-test-123"  |
+      | pattern       |
+      | :api-key      |
+      | "sk-test-123" |
     And the exit code is 0
 
   Scenario: config get --reveal refuses without typed confirmation
@@ -135,10 +135,10 @@ Feature: Config Command
       """
     When isaac is run with "config sources"
     Then the stdout matches:
-      | pattern                    |
-      | config/isaac\.edn          |
-      | config/crew/cordelia\.edn    |
-      | config/models/grover\.edn  |
+      | pattern                   |
+      | config/isaac\.edn         |
+      | config/crew/cordelia\.edn |
+      | config/models/grover\.edn |
     And the exit code is 0
 
   # ----- Validate -----
@@ -162,8 +162,8 @@ Feature: Config Command
       """
     When isaac is run with "config validate"
     Then the stderr matches:
-      | pattern                                    |
-      | defaults\.crew.*references undefined crew  |
+      | pattern                                   |
+      | defaults\.frequencies\.crew.*references undefined crew |
     And the exit code is 1
 
   Scenario: validate reports unknown llm api refs with file and valid set
@@ -177,15 +177,15 @@ Feature: Config Command
       """
     When isaac is run with "config validate"
     Then the stderr matches:
-      | pattern                                                              |
-      | providers\.bogus\.api                                                |
+      | pattern                                                                |
+      | providers\.bogus\.api                                                  |
       | must be (a registered contribution to :isaac\.agent/llm-api)?(one of)? |
-      | file: config/providers/bogus\.edn                                    |
-      | bad value: carrier-pigeon                                            |
-      | valid: .*chat-completions.*                                          |
+      | file: config/providers/bogus\.edn                                      |
+      | bad value: carrier-pigeon                                              |
+      | valid: .*chat-completions.*                                            |
     And the exit code is 1
 
-  Scenario: validate requires defaults.crew
+  Scenario: validate requires defaults.frequencies.crew
     Given config file "isaac.edn" containing:
       """
       {:defaults  {:crew {:model :llama}}
@@ -195,8 +195,8 @@ Feature: Config Command
       """
     When isaac is run with "config validate"
     Then the stderr matches:
-      | pattern        |
-      | defaults\.crew |
+      | pattern                    |
+      | defaults\.frequencies\.crew |
     And the exit code is 1
 
   Scenario: validate reports unknown tool refs with file and valid set
@@ -217,9 +217,9 @@ Feature: Config Command
       """
     When isaac is run with "config validate"
     Then the stderr matches:
-      | pattern                                                  |
-      | crew\.main\.tools\.allow                                |
-      | namespace                                                |
+      | pattern                  |
+      | crew\.main\.tools\.allow |
+      | namespace                |
     And the exit code is 1
 
   Scenario: validate reports unknown provider refs with file and valid set
@@ -242,12 +242,12 @@ Feature: Config Command
       """
     When isaac is run with "config validate"
     Then the stderr matches:
-      | pattern                               |
-      | models\.grover\.provider            |
-      | must be one of                        |
-      | file: config/models/grover\.edn      |
-      | bad value: foo                       |
-      | valid: .*anthropic.*grover.*         |
+      | pattern                         |
+      | models\.grover\.provider        |
+      | must be one of                  |
+      | file: config/models/grover\.edn |
+      | bad value: foo                  |
+      | valid: .*anthropic.*grover.*    |
     And the exit code is 1
 
   Scenario: validate reports unknown comm type refs with file and valid set
@@ -266,12 +266,12 @@ Feature: Config Command
       """
     When isaac is run with "config validate"
     Then the stderr matches:
-      | pattern                                   |
-      | comms\[:relay\]\.type                     |
-      | must be one of                            |
-      | file: config/isaac\.edn                   |
-      | bad value: smoke-signals                  |
-      | valid: .*telly.*                          |
+      | pattern                  |
+      | comms\[:relay\]\.type    |
+      | must be one of           |
+      | file: config/isaac\.edn  |
+      | bad value: smoke-signals |
+      | valid: .*telly.*         |
     And the exit code is 1
 
   Scenario: validate reports warnings but still exits 0
@@ -285,9 +285,9 @@ Feature: Config Command
       """
     When isaac is run with "config validate"
     Then the stderr matches:
-      | pattern                      |
-      | warning: :experimental       |
-      | unknown key                  |
+      | pattern                |
+      | warning: :experimental |
+      | unknown key            |
     And the stdout contains "OK"
     And the exit code is 0
 
@@ -311,17 +311,16 @@ Feature: Config Command
   Scenario: validate rejects the retired :role directory token
     Given config file "isaac.edn" containing:
       """
-      {:defaults  {:frequencies {:crew :main} :crew {:model :llama}}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :llama :tools {:directories {:allow [:role]}}}}
        :crew      {:main {}}
        :models    {:llama {:model "llama3.3:1b" :provider :anthropic}}
-       :providers {:anthropic {}}
-       :tools     {:directories {:allow [:role]}}}
+       :providers {:anthropic {}}}
       """
     When isaac is run with "config validate"
     Then the stderr matches:
-      | pattern                    |
+      | pattern                   |
       | tools\.directories\.allow |
-      | must be :cwd               |
+      | must be :cwd              |
     And the exit code is 1
 
   # ----- Validate overlay (--as) -----
@@ -479,38 +478,38 @@ Feature: Config Command
   Scenario: config schema prints the root schema with title, fields, and guidance
     When isaac is run with "config schema"
     Then the stdout matches:
-      | pattern                                 |
-      | \[isaac\] isaac schema                  |
-      | crew\s+.*\[crew\]                       |
-      | defaults\s+.*\[defaults\]               |
-      | models\s+.*\[models\]                   |
-      | providers\s+.*\[providers\]             |
-      | Try:                                    |
-      | isaac config schema crew                |
-      | isaac config schema providers\.value    |
-      | isaac config schema crew\.value\.model  |
+      | pattern                                |
+      | \[isaac\] isaac schema                 |
+      | crew\s+.*\[crew\]                      |
+      | defaults\s+.*\[defaults\]              |
+      | models\s+.*\[models\]                  |
+      | providers\s+.*\[providers\]            |
+      | Try:                                   |
+      | isaac config schema crew               |
+      | isaac config schema providers\.value   |
+      | isaac config schema crew\.value\.model |
     And the exit code is 0
 
   Scenario: config schema --tree expands every named sub-schema
     When isaac is run with "config schema --tree"
     Then the stdout matches:
-      | pattern                                           |
-      | \[isaac\] isaac schema                            |
-      | \[crew\.value\] crew schema                       |
-      | Crew member id; must match filename when present  |
-      | \[providers\.value\] provider schema              |
-      | base-url                                          |
+      | pattern                                          |
+      | \[isaac\] isaac schema                           |
+      | \[crew\.value\] crew schema                      |
+      | Crew member id; must match filename when present |
+      | \[providers\.value\] provider schema             |
+      | base-url                                         |
     And the exit code is 0
 
   Scenario: config schema crew renders the map wrapper with key/value rows
     When isaac is run with "config schema crew"
     Then the stdout matches:
-      | pattern                                       |
-      | \[crew\] crew table schema                    |
-      | map of                                        |
-      | key\s+string\s+\[crew\.key\]               |
-      | value\s+.*crew\s+\[crew\.value\]                |
-      | Crew member configurations                    |
+      | pattern                          |
+      | \[crew\] crew table schema       |
+      | map of                           |
+      | key\s+string\s+\[crew\.key\]     |
+      | value\s+.*crew\s+\[crew\.value\] |
+      | Crew member configurations       |
     And the stdout does not contain "Model alias"
     And the stdout does not contain "System prompt"
     And the exit code is 0
@@ -518,45 +517,45 @@ Feature: Config Command
   Scenario: config schema crew.value prints the crew entity fields
     When isaac is run with "config schema crew.value"
     Then the stdout matches:
-      | pattern                                           |
-      | \[crew\.value\] crew schema                          |
-      | model\s+id\s+\[crew\.value\.model\]                   |
-      | soul\s+string\s+\[crew\.value\.soul\]                 |
+      | pattern                               |
+      | \[crew\.value\] crew schema           |
+      | model\s+id\s+\[crew\.value\.model\]   |
+      | soul\s+string\s+\[crew\.value\.soul\] |
     And the exit code is 0
 
   Scenario: config schema providers.key resolves the map-key spec
     When isaac is run with "config schema providers.key"
     Then the stdout matches:
-      | pattern                          |
-      | \[providers\.key\] schema       |
-      | string\s+\[providers\.key\]     |
+      | pattern                     |
+      | \[providers\.key\] schema   |
+      | string\s+\[providers\.key\] |
     And the exit code is 0
 
   Scenario: config schema providers.value prints the provider entity template
     When isaac is run with "config schema providers.value"
     Then the stdout matches:
-      | pattern                                           |
-      | \[providers\.value\] provider schema                  |
-      | api-key\s+string\s+\[providers\.value\.api-key\]      |
-      | base-url\s+string\s+\[providers\.value\.base-url\]    |
+      | pattern                                            |
+      | \[providers\.value\] provider schema               |
+      | api-key\s+string\s+\[providers\.value\.api-key\]   |
+      | base-url\s+string\s+\[providers\.value\.base-url\] |
     And the exit code is 0
 
   Scenario: config schema crew.value.id prints the :id field schema
     When isaac is run with "config schema crew.value.id"
     Then the stdout matches:
-      | pattern                                           |
-      | \[crew\.value\.id\] schema                            |
-      | id\s+\[crew\.value\.id\]                              |
-      | Crew member id; must match filename when present  |
+      | pattern                                          |
+      | \[crew\.value\.id\] schema                       |
+      | id\s+\[crew\.value\.id\]                         |
+      | Crew member id; must match filename when present |
     And the exit code is 0
 
   Scenario: config schema drills into a single field
     When isaac is run with "config schema providers.value.api-key"
     Then the stdout matches:
-      | pattern                                       |
-      | \[providers\.value\.api-key\] schema              |
-      | string\s+\[providers\.value\.api-key\]            |
-      | API key                                       |
+      | pattern                                |
+      | \[providers\.value\.api-key\] schema   |
+      | string\s+\[providers\.value\.api-key\] |
+      | API key                                |
     And the exit code is 0
 
   Scenario: config schema gives a friendly error for an invalid path
@@ -568,16 +567,16 @@ Feature: Config Command
   Scenario: config help lists the schema subcommand
     When isaac is run with "help config"
     Then the stdout matches:
-      | pattern                                               |
-      | schema \[schema-path\]\s+Print the config schema      |
+      | pattern                                          |
+      | schema \[schema-path\]\s+Print the config schema |
     And the exit code is 0
 
   Scenario: config schema --help describes the --tree flag
     When isaac is run with "config schema --help"
     Then the stdout matches:
-      | pattern                              |
-      | Usage: isaac config schema           |
-      | --tree\s+Expand every named           |
+      | pattern                     |
+      | Usage: isaac config schema  |
+      | --tree\s+Expand every named |
     And the exit code is 0
 
   # ----- Set -----
@@ -594,11 +593,11 @@ Feature: Config Command
     When isaac is run with "config set crew.cordelia.model gpt"
     Then the config file "isaac.edn" matches:
       | pattern       |
-      | :cordelia       |
+      | :cordelia     |
       | :model\s+:gpt |
     And the log has entries matching:
-      | level | event       | path              | value | file       |
-      | :info | :config/set | crew.cordelia.model | :gpt  | isaac.edn  |
+      | level | event       | path                | value | file      |
+      | :info | :config/set | crew.cordelia.model | :gpt  | isaac.edn |
     And the exit code is 0
 
   Scenario: set writes to the existing entity file when one already defines the key
@@ -620,7 +619,7 @@ Feature: Config Command
       | :model\s+:gpt |
     And the config file "isaac.edn" does not contain "cordelia"
     And the log has entries matching:
-      | level | event       | path              | value | file            |
+      | level | event       | path                | value | file              |
       | :info | :config/set | crew.cordelia.model | :gpt  | crew/cordelia.edn |
     And the exit code is 0
 
@@ -637,11 +636,11 @@ Feature: Config Command
     When isaac is run with "config set crew.cordelia.model gpt"
     Then the config file "isaac.edn" matches:
       | pattern       |
-      | :cordelia       |
+      | :cordelia     |
       | :model\s+:gpt |
     And the config file "crew/cordelia.edn" does not exist
     And the log has entries matching:
-      | level | event       | path              | value | file      |
+      | level | event       | path                | value | file      |
       | :info | :config/set | crew.cordelia.model | :gpt  | isaac.edn |
     And the exit code is 0
 
@@ -661,7 +660,7 @@ Feature: Config Command
       | :model\s+:gpt |
     And the config file "isaac.edn" does not contain "cordelia"
     And the log has entries matching:
-      | level | event       | path              | value | file            |
+      | level | event       | path                | value | file              |
       | :info | :config/set | crew.cordelia.model | :gpt  | crew/cordelia.edn |
     And the exit code is 0
 
@@ -688,7 +687,7 @@ Feature: Config Command
       | New soul. |
     And the config file "crew/cordelia.edn" does not contain ":soul"
     And the log has entries matching:
-      | level | event       | path             | value     | file           |
+      | level | event       | path               | value     | file             |
       | :info | :config/set | crew.cordelia.soul | New soul. | crew/cordelia.md |
     And the exit code is 0
 
@@ -707,12 +706,12 @@ Feature: Config Command
       """
     When isaac is run with "config set crew.cordelia.soul \"You are Cordelia, first mate of the Marigold, steady-handed, sharp-eyed, and always three moves ahead of the weather.\""
     Then the config file "crew/cordelia.md" matches:
-      | pattern            |
-      | You are Cordelia   |
-      | sharp-eyed         |
+      | pattern          |
+      | You are Cordelia |
+      | sharp-eyed       |
     And the config file "crew/cordelia.edn" does not contain ":soul"
     And the log has entries matching:
-      | level | event       | path             | value                                                                                                            | file           |
+      | level | event       | path               | value                                                                                                                 | file             |
       | :info | :config/set | crew.cordelia.soul | You are Cordelia, first mate of the Marigold, steady-handed, sharp-eyed, and always three moves ahead of the weather. | crew/cordelia.md |
     And the exit code is 0
 
@@ -731,11 +730,11 @@ Feature: Config Command
       """
     When isaac is run with "config set crew.cordelia.soul \"First mate.\""
     Then the config file "crew/cordelia.edn" matches:
-      | pattern                      |
+      | pattern                |
       | :soul\s+"First mate\." |
     And the config file "crew/cordelia.md" does not exist
     And the log has entries matching:
-      | level | event       | path             | value              | file            |
+      | level | event       | path               | value       | file              |
       | :info | :config/set | crew.cordelia.soul | First mate. | crew/cordelia.edn |
     And the exit code is 0
 
@@ -847,7 +846,7 @@ Feature: Config Command
       | :model\s+:gpt |
     And the config file "crew/cordelia.edn" does not contain ":soul"
     And the log has entries matching:
-      | level | event         | path             | file            |
+      | level | event         | path               | file              |
       | :info | :config/unset | crew.cordelia.soul | crew/cordelia.edn |
     And the exit code is 0
 
@@ -867,7 +866,7 @@ Feature: Config Command
     When isaac is run with "config unset crew.cordelia.model"
     Then the config file "crew/cordelia.edn" does not exist
     And the log has entries matching:
-      | level | event         | path              | file            |
+      | level | event         | path                | file              |
       | :info | :config/unset | crew.cordelia.model | crew/cordelia.edn |
     And the exit code is 0
 
@@ -888,9 +887,9 @@ Feature: Config Command
       | pattern                             |
       | :grok                               |
       | :base-url\s+"https://api\.x\.ai/v1" |
-      | :api\s+"chat-completions"         |
+      | :api\s+"chat-completions"           |
     And the log has entries matching:
-      | level | event       | path           | value              | file      |
+      | level | event       | path           | value                | file      |
       | :info | :config/set | providers.grok | #".*api\.x\.ai/v1.*" | isaac.edn |
     And the exit code is 0
 
@@ -911,14 +910,14 @@ Feature: Config Command
     And the config file "providers/grok.edn" does not contain "old.example.com"
     And the config file "providers/grok.edn" does not contain ":api "
     And the log has entries matching:
-      | level | event       | path           | value                  | file               |
+      | level | event       | path           | value                     | file               |
       | :info | :config/set | providers.grok | #".*\$\{GROK_API_KEY\}.*" | providers/grok.edn |
     And the exit code is 0
 
   Scenario: config help lists set and unset subcommands
     When isaac is run with "help config"
     Then the stdout matches:
-      | pattern                                                 |
+      | pattern                                                  |
       | set <config-path> <value>\s+Set a value at a config path |
       | unset <config-path>\s+Remove a value at a config path    |
     And the exit code is 0
@@ -926,9 +925,9 @@ Feature: Config Command
   Scenario: config set --help documents stdin form and examples
     When isaac is run with "config set --help"
     Then the stdout matches:
-      | pattern                                       |
-      | Usage: isaac config set <config-path>         |
-      | -\s+Read the value as EDN from stdin          |
+      | pattern                               |
+      | Usage: isaac config set <config-path> |
+      | -\s+Read the value as EDN from stdin  |
     And the exit code is 0
 
   # ----- Keys / list (isaac-grof) -----
@@ -1019,10 +1018,10 @@ Feature: Config Command
       """
     When isaac is run with "config keys providers --json"
     Then the stdout JSON contains:
-      | path | expected    |
-      | 0    | "grok"      |
-      | 1    | "ollama"    |
-      | 2    | "xai"       |
+      | path | expected |
+      | 0    | "grok"   |
+      | 1    | "ollama" |
+      | 2    | "xai"    |
     When isaac is run with "config list providers --json"
     Then the stdout contains "\"source\""
     And the stdout does not contain "sk-real-secret-value"
@@ -1066,7 +1065,7 @@ Feature: Config Command
       """
     When isaac is run with "config validate"
     Then the stderr matches:
-      | pattern                                                                  |
-      | crew\.cordelia\.session-policy                                          |
+      | pattern                                                                         |
+      | crew\.cordelia\.session-policy                                                  |
       | references undefined session policy \(got "ledger"\); known: chronicle, lantern |
     And the exit code is 1

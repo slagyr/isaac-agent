@@ -15,7 +15,7 @@ Feature: Per-turn tool registry — isaac's tools served to a provider-driven lo
     And the built-in tools are registered
     And the crew "main" allows tools: "exec/run,fs/read"
     And the following sessions exist:
-      | name    |
+      | name     |
       | mcp-sess |
 
   Scenario: tools/list renders exactly the turn's allowed tools with their schemas
@@ -25,11 +25,11 @@ Feature: Per-turn tool registry — isaac's tools served to a provider-driven lo
       {"jsonrpc":"2.0","id":1,"method":"tools/list"}
       """
     Then the MCP response matches:
-      | key                                   | value      |
-      | result.tools[0].name                  | exec__run  |
-      | result.tools[0].inputSchema.type      | object     |
-      | result.tools[1].name                  | fs__read   |
-      | result.tools[1].inputSchema.type      | object     |
+      | key                              | value     |
+      | result.tools[0].name             | exec__run |
+      | result.tools[0].inputSchema.type | object    |
+      | result.tools[1].name             | fs__read  |
+      | result.tools[1].inputSchema.type | object    |
     And the log has entries matching:
       | event             | turn   | count |
       | :mcp/tools-listed | t-list | 2     |
@@ -41,9 +41,9 @@ Feature: Per-turn tool registry — isaac's tools served to a provider-driven lo
       {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"exec__run","arguments":{"command":"echo hi"}}}
       """
     Then the MCP response matches:
-      | key                    | value    |
-      | result.isError         | false    |
-      | result.content[0].type | text     |
+      | key                    | value     |
+      | result.isError         | false     |
+      | result.content[0].type | text      |
       | result.content[0].text | #"(?s)hi" |
     And session "mcp-sess" has transcript matching:
       | type       | name      |
@@ -64,14 +64,14 @@ Feature: Per-turn tool registry — isaac's tools served to a provider-driven lo
   Scenario: an oversized tool result is capped by isaac before it is returned
     Given a turn "t-big" is registered for session "mcp-sess"
     And config:
-      | tools.defaults.max-bytes | 4096 |
+      | defaults.tools.max-bytes | 4096 |
     When an MCP request is handled for turn "t-big":
       """
       {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"exec__run","arguments":{"command":"head -c 200000 /dev/zero | tr '\\0' x"}}}
       """
     Then the MCP response matches:
-      | key                    | value           |
-      | result.isError         | false           |
+      | key                    | value            |
+      | result.isError         | false            |
       | result.content[0].text | #"(?s)truncated" |
 
   Scenario: an unknown or ended turn is refused and nothing executes
@@ -82,12 +82,12 @@ Feature: Per-turn tool registry — isaac's tools served to a provider-driven lo
       {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"exec__run","arguments":{"command":"echo never"}}}
       """
     Then the MCP response matches:
-      | key           | value               |
-      | error.code    | -32001              |
+      | key           | value                  |
+      | error.code    | -32001                 |
       | error.message | #"(?i)turn not active" |
     And session "mcp-sess" has transcript not matching:
       | type     | name      |
       | toolCall | exec__run |
     And the log has entries matching:
-      | level  | event                 | turn   |
-      | :warn  | :mcp/turn-not-active  | t-done |
+      | level | event                | turn   |
+      | :warn | :mcp/turn-not-active | t-done |

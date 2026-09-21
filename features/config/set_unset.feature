@@ -72,11 +72,11 @@ Feature: Config set / unset
     Then the stderr contains "effort"
     And the exit code is 1
 
-  Scenario: config set tools.defaults.max-lines succeeds and the value lands
+  Scenario: config set defaults.tools.max-lines succeeds and the value lands
     Given default Grover setup
-    When isaac is run with "config set tools.defaults.max-lines 500"
+    When isaac is run with "config set defaults.tools.max-lines 500"
     Then the exit code is 0
-    When isaac is run with "config get tools.defaults.max-lines"
+    When isaac is run with "config get defaults.tools.max-lines"
     Then the stdout contains "500"
     And the exit code is 0
 
@@ -111,7 +111,7 @@ Feature: Config set / unset
       | model | grover |
     When isaac is run with "config set crew.joe.model echo"
     Then the stdout matches:
-      | pattern                                    |
+      | pattern                                     |
       | set crew\.joe\.model = :echo.*crew/joe\.edn |
     And the exit code is 0
 
@@ -122,8 +122,8 @@ Feature: Config set / unset
       | model | grover |
     When isaac is run with "config set crew.joe.tags.wip"
     Then the stdout matches:
-      | pattern                                       |
-      | set crew\.joe\.tags \+= :wip.*crew/joe\.edn   |
+      | pattern                                     |
+      | set crew\.joe\.tags \+= :wip.*crew/joe\.edn |
     And the exit code is 0
 
   Scenario: config unset confirms what it removed
@@ -133,8 +133,8 @@ Feature: Config set / unset
       | model | grover |
     When isaac is run with "config unset crew.joe.model"
     Then the stdout matches:
-      | pattern                                |
-      | unset crew\.joe\.model.*crew/joe\.edn  |
+      | pattern                               |
+      | unset crew\.joe\.model.*crew/joe\.edn |
     And the exit code is 0
 
   Scenario: config set --edn prints only the structured record
@@ -150,9 +150,9 @@ Feature: Config set / unset
     Given default Grover setup
     When isaac is run with "config set --help"
     Then the stdout matches:
-      | pattern                                              |
-      | Set-typed fields take the member in the path         |
-      | isaac config set crew\.marvin\.tags\.role/worker     |
+      | pattern                                          |
+      | Set-typed fields take the member in the path     |
+      | isaac config set crew\.marvin\.tags\.role/worker |
     And the exit code is 0
 
   Scenario: config set on a crew using a module-contributed session policy succeeds

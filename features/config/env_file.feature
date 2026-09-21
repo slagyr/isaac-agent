@@ -46,5 +46,5 @@ Feature: Isaac .env file for ${VAR} substitution
        :providers {:anthropic {}}}
       """
     Then the loaded config has:
-      | key           | value |
-      | defaults.crew | main  |
+      | key                       | value |
+      | defaults.frequencies.crew | main  |

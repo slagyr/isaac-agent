@@ -1,6 +1,7 @@
 (ns isaac.bridge.status
   (:require
     [clojure.string :as str]
+    [isaac.config.defaults :as defaults]
     [isaac.llm.api.protocol :as api]
     [isaac.nexus :as nexus]
     [isaac.session.policy :as policy]
@@ -70,7 +71,7 @@
   (or (some->> (:allowed-tools ctx) (map ->tool-name) set)
       (let [crew         (or (:crew-cfg ctx)
                              (get (:crew-members ctx) (:crew ctx)))
-            global-tools (get-in ctx [:config :tools])
+            global-tools (defaults/tools (:config ctx))
             crew-tools   (:tools crew)
             registered   (map :name (tool-registry/all-tools))
             allowed      (->> registered

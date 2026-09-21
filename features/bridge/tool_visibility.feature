@@ -1,5 +1,5 @@
 Feature: Crew tools reach every comm path
-  A crew's :tools.allow is the source of truth for which tools are
+  A crew's :tools :allow is the source of truth for which tools are
   offered to the model on every turn. Every in-tree channel that
   drives a turn (currently just `prompt`) must surface the same tool
   set. If a crew has no :tools section, no tools are offered —
@@ -22,9 +22,9 @@ Feature: Crew tools reach every comm path
 
   Scenario: a crew with no :tools section still gets zero tools over every comm
     Given the isaac EDN file "config/crew/main.edn" exists with:
-      | path  | value                    |
-      | model | grover                   |
-      | soul  | Marvin. Paranoid droid.  |
-      | tools | #delete                  |
+      | path  | value                   |
+      | model | grover                  |
+      | soul  | Marvin. Paranoid droid. |
+      | tools | #delete                 |
     When isaac is run with "prompt hi"
     Then the prompt has 0 tools

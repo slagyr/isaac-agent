@@ -10,8 +10,8 @@ Feature: Global cap on tool-result output before transcript persist
     Given an empty Isaac root at "/test"
     And the isaac EDN file isaac.edn exists with:
       | path                     | value |
-      | tools.defaults.max-lines | 5     |
-      | tools.defaults.max-bytes | 100   |
+      | defaults.tools.max-lines | 5     |
+      | defaults.tools.max-bytes | 100   |
 
   Scenario: exec stdout exceeding the byte cap is truncated with a marker naming the cap
     When tool "exec__run" is executed with:

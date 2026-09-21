@@ -7,10 +7,9 @@ Feature: Per-crew filesystem boundaries
     Given an Isaac root at "isaac-state"
     And config file "isaac.edn" containing:
       """
-      {:defaults  {:frequencies {:crew :main} :crew {:model :echo}}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :echo :tools {:directories {:allow [:cwd :quarters]}}}}
        :providers {:grover {:base-url "http://test" :api "grover"}}
-       :models    {:echo {:model "echo" :provider :grover :context-window 32768}}
-       :tools     {:directories {:allow [:cwd :quarters]}}}
+       :models    {:echo {:model "echo" :provider :grover :context-window 32768}}}
       """
 
   Scenario: crew can read files in their quarters

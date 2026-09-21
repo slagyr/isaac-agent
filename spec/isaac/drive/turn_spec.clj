@@ -1017,7 +1017,7 @@
                       :session-key    "inherit-all"
                       :input          "hi"
                       :comm           :test-comm
-                      :config         {:root test-dir :tools {:allow :all}}
+                      :config         {:root test-dir :defaults {:crew {:tools {:allow :all}}}}
                       :crew           "main"
                       :crew-members   {"main" {:model "spark"}}
                       :context-window 32768
@@ -1040,7 +1040,7 @@
                       :session-key    "crew-reallow"
                       :input          "hi"
                       :comm           :test-comm
-                      :config         {:root test-dir :tools {:allow :all :deny [:exec/run]}}
+                      :config         {:root test-dir :defaults {:crew {:tools {:allow :all :deny [:exec/run]}}}}
                       :crew           "main"
                       :crew-members   {"main" {:model "spark" :tools {:allow [:exec/run]}}}
                       :context-window 32768
@@ -1064,7 +1064,7 @@
                       :session-key    "crew-overlay"
                       :input          "hi"
                       :comm           :test-comm
-                      :config         {:root test-dir :tools {:allow :all :deny [:exec/run]}}
+                      :config         {:root test-dir :defaults {:crew {:tools {:allow :all :deny [:exec/run]}}}}
                       :crew           "main"
                       :crew-members   {"main" {:model "spark" :tools {:deny [:fs/*]}}}
                       :context-window 32768
