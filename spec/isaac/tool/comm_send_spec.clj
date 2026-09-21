@@ -20,7 +20,7 @@
                         :tannoy  {:type :telly}}
          :module-index {:isaac.comm.telly
                         {:manifest
-                         {:isaac.http/comm
+                         {:isaac.agent/comm
                           {:telly {:send-schema {:telly/target {:type :string}
                                                  :telly/loft   {:type :string}}}}}}}}
         "comm_send spec")

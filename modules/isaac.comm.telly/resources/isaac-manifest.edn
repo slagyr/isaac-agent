@@ -3,10 +3,10 @@
  :factory isaac.module.protocol/module
 
  ;; Phase 8 of the berth epic (isaac-qqgv) moved comm contributions to
- ;; the :isaac.http/comm berth declared by isaac-http. Per-impl
+ ;; the :isaac.agent/comm berth declared by isaac-http. Per-impl
  ;; user-config field schemas live under :extra-schema (was the
  ;; legacy :schema field on the old :comm extension).
- :isaac.http/comm
+ :isaac.agent/comm
  {:telly {:namespace    isaac.comm.telly
           :extra-schema {:loft  {:type :string
                                  :validations [[:present-when? :type :telly]]}

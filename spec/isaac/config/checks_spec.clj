@@ -28,7 +28,7 @@
                                {:config {:comms {:bert {:type :telly}}}
                                 :module-index
                                 {:isaac.comm.telly
-                                 {:manifest {:isaac.http/comm {:telly {}}}}}})]
+                                 {:manifest {:isaac.agent/comm {:telly {}}}}}})]
         (should= [] errors)))
 
     (it "accepts a comm type registered programmatically"
@@ -38,6 +38,17 @@
                                  {:config {:comms {:bert {:type :embedded}}}
                                   :module-index {}})]
           (should= [] errors))))
+
+    (it "does not accept a comm type contributed under a retired berth key"
+      (let [{:keys [errors]} (sut/check-comm-types
+                               {:config {:comms {:bert {:type :telly}}}
+                                :module-index
+                                {:isaac.comm.telly
+                                 {:manifest {:isaac.http/comm {:telly {}}}}}})]
+        (should= [{:key   "comms.bert"
+                   :path  "comms.bert"
+                   :value "unknown :type \"telly\""}]
+                 errors)))
     )
 
   (context "check-crew-model-aliases"

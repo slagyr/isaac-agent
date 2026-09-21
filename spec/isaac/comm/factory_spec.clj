@@ -37,6 +37,12 @@
 
   (it "loads the contributing module's :namespace on first dispatch"
     (binding [registered-in/*module-index*
-              {:isaac.comm.lazy {:manifest {:isaac.http/comm
+              {:isaac.comm.lazy {:manifest {:isaac.agent/comm
                                             {:lazyimpl {:namespace 'isaac.comm.factory-lazy-fixture}}}}}]
-      (should= :isaac.comm.factory-lazy-fixture/lazy (sut/create! [:comms :bert] {:type :lazyimpl})))))
+      (should= :isaac.comm.factory-lazy-fixture/lazy (sut/create! [:comms :bert] {:type :lazyimpl}))))
+
+  (it "does not find impls contributed under retired berth keys"
+    (binding [registered-in/*module-index*
+              {:isaac.comm.lazy {:manifest {:isaac.http/comm
+                                            {:lazyghost {:namespace 'isaac.comm.factory-lazy-fixture}}}}}]
+      (should-be-nil (sut/create! [:comms :bert] {:type :lazyghost})))))
