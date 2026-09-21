@@ -44,12 +44,52 @@
       (get-in data [:choices 0 :finish_reason])
       (assoc :finish-reason (get-in data [:choices 0 :finish_reason])))))
 
+(def ^:private wire-fields
+  "Fields the OpenAI Chat Completions API accepts, mapped to their wire names.
+   Isaac hangs its own keys on the request map — :session-key, :stateful,
+   :provider, :root, :context-window — and those must never reach the wire: a
+   strict server rejects unknown fields outright (Fireworks: \"Extra inputs are
+   not permitted\"), and :session-key is session metadata leaving the machine.
+   Lenient servers ignoring them is what hid this. (isaac-uxe1)
+
+   :system is deliberately absent — the prompt builder already emits the system
+   prompt as a {:role \"system\"} entry in :messages."
+  {:model               :model
+   :messages            :messages
+   :tools               :tools
+   :tool-choice         :tool_choice
+   :tool_choice         :tool_choice
+   :max-tokens          :max_tokens
+   :max_tokens          :max_tokens
+   :reasoning_effort    :reasoning_effort
+   :temperature         :temperature
+   :top_p               :top_p
+   :stop                :stop
+   :n                   :n
+   :seed                :seed
+   :user                :user
+   :response_format     :response_format
+   :parallel_tool_calls :parallel_tool_calls
+   :frequency_penalty   :frequency_penalty
+   :presence_penalty    :presence_penalty
+   :stream              :stream})
+
+(defn- wire-body
+  "Project the request onto the fields the API actually accepts."
+  [request]
+  (reduce-kv (fn [m k v]
+               (if-let [field (get wire-fields k)]
+                 (assoc m field v)
+                 m))
+             {}
+             request))
+
 (defn- chat-with-completions-api [config base-url headers request]
   (let [url     (str base-url "/chat/completions")
         request (if-let [level (effort/effort->string (:effort request))]
                   (-> request (assoc :reasoning_effort level) (dissoc :effort))
                   (dissoc request :effort))
-        resp    (llm-http/post-json! url headers request (shared/llm-http-opts config))]
+        resp    (llm-http/post-json! url headers (wire-body request) (shared/llm-http-opts config))]
     (if (:error resp)
       (api/normalize-error resp)
       (let [choice     (first (:choices resp))
@@ -67,7 +107,7 @@
         request (if-let [level (effort/effort->string (:effort request))]
                   (-> request (assoc :reasoning_effort level) (dissoc :effort))
                   (dissoc request :effort))
-        body    (assoc request :stream true)
+        body    (wire-body (assoc request :stream true))
         initial {:role "assistant" :content "" :model nil :usage {}}
         result  (llm-http/post-sse! url headers body
                                     (fn [chunk]

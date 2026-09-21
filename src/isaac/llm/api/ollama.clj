@@ -57,12 +57,28 @@
        :usage       {:prompt-tokens (or (:prompt_eval_count response) 0)
                      :output-tokens (or (:eval_count response) 0)}})))
 
+(def ^:private wire-fields
+  "Top-level fields Ollama's native /api/chat accepts. Isaac's own keys —
+   :session-key, :provider, :root, :context-window, :stateful — must not reach
+   the wire; :session-key is session metadata leaving the machine (isaac-uxe1).
+
+   :max-tokens is absent because it is not a top-level Ollama field: its
+   equivalent is options.num_predict, and wiring Isaac's budget into :options
+   belongs with isaac-lrqo (which covers options.num_ctx). It was being sent as
+   an unknown field and silently ignored, so dropping it changes nothing."
+  #{:model :messages :tools :stream :think :format :options :keep_alive})
+
+(defn- wire-body
+  "Project the request onto the fields Ollama actually accepts."
+  [request]
+  (select-keys request wire-fields))
+
 (defn chat
   "Send a chat request to Ollama. Returns the parsed response or error map."
   [request provider-name cfg]
   (let [url   (str (or (:base-url cfg) "http://localhost:11434") "/api/chat")
         think (effort->think (:effort request) (:think-mode cfg))
-        body  (cond-> (-> request (dissoc :effort) (assoc :stream false))
+        body  (cond-> (-> request wire-body (assoc :stream false))
                 (some? think) (assoc :think think))]
     (normalize-response (llm-http/post-json! url default-headers body (http-opts cfg)))))
 
@@ -93,7 +109,7 @@
   [request on-chunk provider-name cfg]
   (let [url    (str (or (:base-url cfg) "http://localhost:11434") "/api/chat")
         think  (effort->think (:effort request) (:think-mode cfg))
-        body   (cond-> (-> request (dissoc :effort) (assoc :stream true))
+        body   (cond-> (-> request wire-body (assoc :stream true))
                  (some? think) (assoc :think think))
         folded (atom {:message {:content ""}})
         final  (llm-http/post-ndjson-stream!

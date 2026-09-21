@@ -32,6 +32,26 @@
           (should= "Hello!" (:content result))
           (should= "gpt-5" (:model result)))))
 
+    (it "sends only fields the API accepts, never Isaac's internal keys (isaac-uxe1)"
+      (let [captured (atom nil)]
+        (with-redefs [http/post (fn [_ opts]
+                                  (reset! captured (json/parse-string (:body opts) true))
+                                  (chat-response "ok"))]
+          (sut/chat {:model       "gpt-5"
+                     :messages    [{:role "user" :content "hi"}]
+                     :max-tokens  256
+                     :effort      5
+                     :system      "already a system message in :messages"
+                     :stateful    false
+                     :provider    "fireworks"
+                     :session-key "isaac-work-1"
+                     :root        "/Users/zane/.isaac"}
+                    "fireworks" test-config)
+          (should= #{:model :messages :max_tokens :reasoning_effort}
+                   (set (keys @captured)))
+          (should= 256 (:max_tokens @captured))
+          (should= "medium" (:reasoning_effort @captured)))))
+
     (it "parses token usage"
       (with-redefs [http/post (fn [_ _] (chat-response "Hi" :prompt-tokens 42 :completion-tokens 18))]
         (let [result (sut/chat {:model "gpt-5" :messages []} "openai" test-config)]

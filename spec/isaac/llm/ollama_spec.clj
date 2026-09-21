@@ -36,6 +36,23 @@
           (sut/chat {:model "test" :messages []} "ollama" {:base-url "http://myhost:1234"})
           (should= "http://myhost:1234/api/chat" @captured-url))))
 
+    (it "sends only fields Ollama accepts, never Isaac's internal keys (isaac-uxe1)"
+      (let [captured-body (atom nil)]
+        (with-redefs [http/post (fn [_ opts]
+                                  (reset! captured-body (json/parse-string (:body opts) true))
+                                  (mock-response {:message {:role "assistant" :content ""}}))]
+          (sut/chat {:model          "test"
+                     :messages       [{:role "user" :content "hi"}]
+                     :max-tokens     256
+                     :system         "already a system message in :messages"
+                     :stateful       false
+                     :provider       "ollama"
+                     :session-key    "isaac-work-1"
+                     :root           "/Users/zane/.isaac"
+                     :context-window 128000}
+                    "ollama" {})
+          (should= #{:model :messages :stream} (set (keys @captured-body))))))
+
     (it "sets stream to false"
       (let [captured-body (atom nil)]
         (with-redefs [http/post (fn [_ opts] (reset! captured-body (json/parse-string (:body opts) true)) (mock-response {:message {:role "assistant" :content ""}}))]
