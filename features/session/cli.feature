@@ -387,4 +387,5 @@ Feature: Sessions Command
     Then the stdout contains "cancelled engine-room"
     And the exit code is 0
     And a turn marker exists for session "engine-room" with:
-      | cancelled | true |
+      | key       | value |
+      | cancelled | true  |
