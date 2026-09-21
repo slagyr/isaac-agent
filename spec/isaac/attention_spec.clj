@@ -73,6 +73,34 @@
         (should (str/includes? content "chatgpt"))
         (should (str/includes? content "characters dropped"))))
 
+    (it "names why it broke: the error keyword and status lead, the message tail-clips (isaac-9af8)"
+      (sut/maybe-notify-provider-broken!
+        notify-cfg
+        (broken {:error  :llm-error
+                 :status nil
+                 :message (str "HEADMARK handshake tools inventory "
+                               (apply str (repeat 120 "noise,"))
+                               " error event: stream dropped mid-response TAILMARK")})
+        0)
+      (let [content (:content (first (queue/list-pending)))]
+        (should (str/includes? content "error llm-error"))
+        (should (str/includes? content "model snuffy-codex"))
+        (should (str/includes? content "session trash-can"))
+        (should (str/includes? content "stream dropped mid-response"))
+        (should (str/includes? content "characters dropped"))
+        (should (str/includes? content "TAILMARK"))
+        (should-not (str/includes? content "HEADMARK"))))
+
+    (it "carries a structured status when one is present (isaac-9af8)"
+      (sut/maybe-notify-provider-broken!
+        notify-cfg
+        (broken {:error :api-error :status 400})
+        0)
+      (let [content (:content (first (queue/list-pending)))]
+        (should (str/includes? content "error api-error"))
+        (should (str/includes? content "status 400"))
+        (should (str/includes? content "not supported"))))
+
     (it "clips any caller's oversized content at enqueue and logs the full text (isaac-9af8)"
       (let [giant (apply str (repeat 3000 "z"))]
         (log/capture-logs
@@ -89,13 +117,13 @@
     (it "bounds the provider message itself so the leaders always lead (isaac-9af8)"
       (sut/maybe-notify-provider-broken!
         notify-cfg
-        (broken {:message (str "stream-head " (apply str (repeat 5000 "x")))})
+        (broken {:message (str (apply str (repeat 5000 "x")) " stream-tail")})
         0)
       (let [content (:content (first (queue/list-pending)))]
         (should (str/includes? content "Provider chatgpt is broken"))
         (should (str/includes? content "model snuffy-codex"))
         (should (str/includes? content "session trash-can"))
-        (should (str/includes? content "stream-head"))
+        (should (str/includes? content "stream-tail"))
         (should (str/includes? content "characters dropped"))
         (should-not (str/includes? content "truncated "))
         (should (< (count content) 600))))

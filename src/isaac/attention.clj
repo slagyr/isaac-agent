@@ -51,19 +51,32 @@
         (.toEpochMilli now))
       (System/currentTimeMillis)))
 
-(defn- provider-content [{:keys [provider model session message]} suppressed]
+(defn- tail-clip
+  "Keep the tail of a long payload: for a streamed provider error the head
+  is the handshake and the failure is at the end (isaac-9af8)."
+  [s cap]
+  (let [n (count s)]
+    (if (<= n cap)
+      s
+      (str "… " (- n cap) " characters dropped … " (subs s (- n cap))))))
+
+(defn- provider-content [{:keys [provider model session error status message]} suppressed]
   (str/join " "
             (remove str/blank?
                     [(str "Provider " provider " is broken")
+                     ;; The diagnosis leads so an operator never has to open
+                     ;; the log to learn why (isaac-9af8).
+                     (when error (str "error " (name error)))
+                     (when status (str "status " status))
                      (when model (str "model " model))
                      (when session (str "session " session))
                      (when (pos? suppressed)
                        (str suppressed " more " (if (= 1 suppressed) "failure" "failures")))
                      ;; An alert is a summary, not a transport for a payload
-                     ;; (isaac-9af8): keep a head of the provider's raw
-                     ;; message — the full text goes to the log when the
-                     ;; enqueue-level clip fires.
-                     (when message (clip (str message) provider-message-cap))])))
+                     ;; (isaac-9af8): the full text goes to the log when the
+                     ;; message cap fires; the alert keeps the tail, where a
+                     ;; streamed failure actually is.
+                     (when message (tail-clip (str message) provider-message-cap))])))
 
 (defn maybe-notify-conversation-blocked!
   "Post attention when a conversation is blocked and needs intervention."

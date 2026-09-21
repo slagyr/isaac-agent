@@ -73,6 +73,11 @@
       {:provider provider
        :model    (or (:model request) (:model result))
        :session  (request-session p request)
+       ;; The diagnosis, not just the transcript: an operator reading the
+       ;; alert must learn why the provider broke without opening the log
+       ;; (isaac-9af8).
+       :error    (:error result)
+       :status   (:status result)
        :message  (result-message result)})))
 
 (defn- log-dispatch-result [p provider request result error-event response-event]
