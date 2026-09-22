@@ -61,14 +61,24 @@
    :input input
    :store (boolean store?)})
 
+(defn- stateful-request? [{:keys [stateful]} provider-cfg]
+  (truthy-stateful? (if (nil? stateful) (get provider-cfg :stateful) stateful)))
+
+(defn- chained-request?
+  "True when this request rides a stored :response-id chain: the server holds
+   the history and only the new tool outputs go over the wire. The Responses
+   API bills such a chain cumulatively, so its usage is a running sum and says
+   nothing about the size of the prompt just sent (isaac-dgod)."
+  [request provider-cfg]
+  (and (stateful-request? request provider-cfg)
+       (not (str/blank? (str (:previous-response-id request))))))
+
 (defn- ->responses-request
   ([request] (->responses-request request nil))
-  ([{:keys [model messages system tools stateful previous-response-id]} provider-cfg]
-   (let [store?       (truthy-stateful? (if (nil? stateful)
-                                          (get provider-cfg :stateful)
-                                          stateful))
+  ([{:keys [model messages system tools previous-response-id] :as request} provider-cfg]
+   (let [store?       (stateful-request? request provider-cfg)
          prev-id      previous-response-id
-         chained?     (and store? (not (str/blank? (str prev-id))))
+         chained?     (chained-request? request provider-cfg)
          all-messages (cond->> messages
                          system (into [{:role "system" :content system}]))
          instructions (->> all-messages
@@ -215,7 +225,10 @@
                                   (= "content_filter" (get-in response [:incomplete_details :reason])) :refused
                                   (= "cancelled" (:status response)) :cancelled
                                   :else :other)
-                 :usage         (shared/parse-usage (:usage result))
+                 :usage         (assoc (shared/parse-usage (:usage result))
+                                       :prompt-scope (if (chained-request? request config)
+                                                       :unknown
+                                                       :request))
                  :_headers      (shared/auth-headers provider-name config)}
           response-id (assoc :response-id response-id))))))
 
