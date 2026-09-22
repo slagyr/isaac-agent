@@ -198,6 +198,79 @@
                              {:model "echo" :provider "grover:grok"})
       (let [session (helper/get-session test-dir "refused")]
         (should= 180000 (:last-input-tokens session))))
+
+    (it "a prompt bigger than the window is over budget, not impossible (isaac-dgod)"
+      ;; isaac-work-2 ran nineteen requests at 271k-304k against a 200k budget.
+      ;; Every stamp was discarded for being "implausible", the gauge fell back
+      ;; to its chars/4 tally of ~125k, and compaction never fired while the real
+      ;; request was ~290k. A prompt over the window is the loudest compaction
+      ;; trigger there is.
+      (helper/create-session! test-dir "over-budget")
+      (log/capture-logs
+        (sut/process-response! {:charge {:context-window 200000}}
+                               "over-budget"
+                               {:usage    {:requests 1 :prompt-tokens 290000 :output-tokens 40}
+                                :response {:content "Aye" :model "echo" :tool-calls [] :stop-reason :end-turn
+                                           :usage {:prompt-tokens 290000 :output-tokens 40}}}
+                               {:model "echo" :provider "grover:grok"})
+        (let [session (helper/get-session test-dir "over-budget")]
+          (should= 290000 (:last-input-tokens session))
+          (should (compaction/should-compact? (compaction/context-gauge session) session 200000))
+          (should-be-nil (first (filter #(= :session/stamp-implausible (:event %)) @log/captured-logs))))))
+
+    (it "an adapter that cannot measure this request's prompt leaves the tally alone (isaac-dgod)"
+      ;; :prompt-scope :unknown is the adapter saying so out loud. The gauge keeps
+      ;; the last value it trusted and falls back to its own tally; no zero is
+      ;; written (isaac-166j) and nothing is warned about.
+      (helper/create-session! test-dir "declares-none")
+      (helper/update-session! test-dir "declares-none" {:last-input-tokens 42000})
+      (log/capture-logs
+        (sut/process-response! {:charge {:context-window 200000}}
+                               "declares-none"
+                               {:usage    {:requests 1 :prompt-tokens 980000 :output-tokens 40}
+                                :response {:content "Aye" :model "echo" :tool-calls [] :stop-reason :end-turn
+                                           :usage {:prompt-tokens 980000 :output-tokens 40
+                                                   :prompt-scope :unknown}}}
+                               {:model "echo" :provider "grover:grok"})
+        (let [session (helper/get-session test-dir "declares-none")]
+          (should= 42000 (:last-input-tokens session))
+          (should-be-nil (first (filter #(= :session/stamp-implausible (:event %)) @log/captured-logs))))))
+
+    (it "a stateful provider whose adapter declares nothing is reporting a running sum (isaac-dgod)"
+      ;; orchestration-verify stamped 12,031,158 of a 278,528 window with
+      ;; cache-read 11,174,912 — the Responses :response-id chain's total, not a
+      ;; prompt. A stateful adapter that has not been taught to say which it is
+      ;; is an adapter bug, and that is all :session/stamp-implausible means now.
+      (helper/create-session! test-dir "running-sum")
+      (helper/update-session! test-dir "running-sum" {:last-input-tokens 42000})
+      (log/capture-logs
+        (sut/process-response! {:charge   {:context-window 200000}
+                                :provider (->TestProvider marigold/starcore {:stateful true})}
+                               "running-sum"
+                               {:usage    {:requests 1 :prompt-tokens 12031158 :output-tokens 40}
+                                :response {:content "Aye" :model "echo" :tool-calls [] :stop-reason :end-turn
+                                           :usage {:prompt-tokens 12031158 :output-tokens 40}}}
+                               {:model "echo" :provider "chatgpt"})
+        (let [session (helper/get-session test-dir "running-sum")
+              warned  (first (filter #(= :session/stamp-implausible (:event %)) @log/captured-logs))]
+          (should= 42000 (:last-input-tokens session))
+          (should= 12031158 (:prompt-tokens warned))
+          (should= 200000 (:context-window warned)))))
+
+    (it "a stateful provider whose adapter reports per request is taken at its word (isaac-dgod)"
+      (helper/create-session! test-dir "stateful-declared")
+      (log/capture-logs
+        (sut/process-response! {:charge   {:context-window 200000}
+                                :provider (->TestProvider marigold/starcore {:stateful true})}
+                               "stateful-declared"
+                               {:usage    {:requests 1 :prompt-tokens 150000 :output-tokens 40}
+                                :response {:content "Aye" :model "echo" :tool-calls [] :stop-reason :end-turn
+                                           :usage {:prompt-tokens 150000 :output-tokens 40
+                                                   :prompt-scope :request}}}
+                               {:model "echo" :provider "chatgpt"})
+        (let [session (helper/get-session test-dir "stateful-declared")]
+          (should= 150000 (:last-input-tokens session))
+          (should-be-nil (first (filter #(= :session/stamp-implausible (:event %)) @log/captured-logs))))))
     )
 
   (describe "empty terminal response guard"

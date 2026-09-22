@@ -240,7 +240,42 @@
             (should= "function_call_output" (get-in body [:input 2 :type]))
             (should= "fc_123" (get-in body [:input 2 :call_id]))
             (should= "Old newspaper and a banana peel." (get-in body [:input 2 :output]))
-            (should-be-nil (get-in body [:input 2 :role])))))))
+            (should-be-nil (get-in body [:input 2 :role]))))))
+
+    (it "an unchained request reports the prompt it just sent (isaac-dgod)"
+      (let [token (jwt-with-account-id "acct-123")]
+        (with-redefs [llm-http/post-sse!         (fn [_ _ _ _ process-event initial & _]
+                                                   (process-event {:type     "response.completed"
+                                                                   :response {:model "gpt-5.4"
+                                                                              :usage {:input_tokens 100 :output_tokens 50}}}
+                                                                  initial))
+                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) (* 30 60 1000))})
+                      auth-store/token-expired? (fn [_] false)]
+          (let [result (sut/chat {:model "gpt-5.4" :messages [{:role "user" :content "hi"}]}
+                                 "chatgpt" oauth-device-config)]
+            (should= :request (get-in result [:usage :prompt-scope]))
+            (should= 100 (get-in result [:usage :prompt-tokens]))))))
+
+    (it "a chained request declares no prompt size — the chain's usage is a running sum (isaac-dgod)"
+      ;; orchestration-verify stamped 12,031,158 of a 278,528 window with
+      ;; cache-read 11,174,912. The Responses API bills a :response-id chain
+      ;; cumulatively, so this adapter cannot say how big the prompt it just
+      ;; sent was, and says so rather than letting the gauge invent a number.
+      (let [token (jwt-with-account-id "acct-123")]
+        (with-redefs [llm-http/post-sse!         (fn [_ _ _ _ process-event initial & _]
+                                                   (process-event {:type     "response.completed"
+                                                                   :response {:model "gpt-5.4"
+                                                                              :usage {:input_tokens 12031158 :output_tokens 50}}}
+                                                                  initial))
+                      auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) (* 30 60 1000))})
+                      auth-store/token-expired? (fn [_] false)]
+          (let [result (sut/chat {:model                "gpt-5.4"
+                                  :stateful             true
+                                  :previous-response-id "resp-1"
+                                  :messages             [{:role "user" :content "hi"}]}
+                                 "chatgpt" oauth-device-config)]
+            (should= :unknown (get-in result [:usage :prompt-scope]))))))
+    )
 
   (describe "shared helpers"
 

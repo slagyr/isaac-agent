@@ -224,30 +224,42 @@
 (defn- response-model [result model]
   (or (get-in result [:response :model]) model))
 
-(defn- normalized-provider-prompt-tokens
-  "A prompt larger than the window cannot be a prompt that was just answered.
-   It means the adapter handed us the wrong quantity — a turn total, or a
-   stateful chain's running sum (isaac-dgod). Clamping it to the window
-   produced a number that was wrong but plausible-looking, which is worse than
-   one that is obviously wrong: work-2 and work-3 read 295% and 253% and were
-   still dispatched to. Report nothing instead, so callers keep the last value
-   they trusted, and let the warn stand as an adapter alarm."
-  [ctx session-key result]
-  (let [context-window (get-in ctx [:charge :context-window])
-        raw-prompt     (or (:prompt-tokens (request-usage result)) 0)]
-    (if (and (pos? (or context-window 0)) (> raw-prompt context-window))
-      (do
-        (log/warn :session/stamp-implausible
-                  :session session-key
-                  :prompt-tokens raw-prompt
-                  :context-window context-window)
-        0)
-      raw-prompt)))
-
 (defn- provider-stateful? [ctx]
   (boolean (get (some-> (or (:provider ctx) (:provider (:charge ctx)))
                         api/config)
                 :stateful)))
+
+(defn- prompt-scope
+  "How to read the :prompt-tokens a request reported. The adapter declares it;
+   one that declares nothing is taken at its word — per request — except on a
+   provider that chains state, where an undeclared figure is the chain's
+   running sum and the adapter has simply not been taught the contract."
+  [ctx result]
+  (or (:prompt-scope (request-usage result))
+      (if (provider-stateful? ctx) :running-sum :request)))
+
+(defn- provider-prompt-tokens
+  "The size of the prompt this request carried, or nil when nothing can be said
+   about it. A figure larger than the window is not impossible: it means the
+   working context is over budget, which is the loudest compaction trigger
+   there is, so it is reported as it stands (isaac-dgod). Discarding it was
+   what blinded the gauge — isaac-work-2 ran nineteen requests at 271k-304k
+   against a 200k budget, every stamp was dropped, and compaction never fired.
+   Only a running sum is refused, and that is an adapter bug."
+  [ctx session-key result]
+  (let [usage (request-usage result)]
+    (case (prompt-scope ctx result)
+      :request     (:prompt-tokens usage)
+      :running-sum (do
+                     (log/warn :session/stamp-implausible
+                               :session session-key
+                               :prompt-tokens (or (:prompt-tokens usage) 0)
+                               :context-window (get-in ctx [:charge :context-window]))
+                     nil)
+      ;; :unknown — the adapter cannot measure this request's prompt. The last
+      ;; trusted stamp stands and the gauge falls back to its own tally; a zero
+      ;; is never written in its place (isaac-166j).
+      nil)))
 
 (defn- replayable-output-tokens [ctx result]
   (let [usage     (request-usage result)
@@ -263,7 +275,7 @@
 
 (defn- stamp-provider-prompt! [ctx session-key result]
   (let [sess          (session-policy ctx)
-        prompt-tokens (normalized-provider-prompt-tokens ctx session-key result)]
+        prompt-tokens (or (provider-prompt-tokens ctx session-key result) 0)]
     (when (pos? prompt-tokens)
       ;; Read the transcript only when there is something to stamp: this runs
       ;; once per cycle, and the read is the whole transcript (isaac-8cur).
@@ -285,7 +297,7 @@
         stop-reason       (get-in result [:response :stop-reason])
         session-entry     (or (policy/get-session sess session-key) {})
         turn-input-tokens (:input-tokens turn-tokens 0)
-        prompt-tokens     (normalized-provider-prompt-tokens ctx session-key result)
+        prompt-tokens     (or (provider-prompt-tokens ctx session-key result) 0)
         output-tokens     (:output-tokens turn-tokens 0)
         cache-read        (:cache-read turn-tokens)
         cache-write       (:cache-write turn-tokens)]

@@ -38,6 +38,43 @@ Feature: Compact from the last provider count; overflow compact-and-retry
       | compaction |              |                 | folded older |
       | message    | assistant    | here you go     |              |
 
+  Scenario: a prompt above the window compacts before the next request (isaac-dgod)
+    A stamp larger than the window is not impossible — it says the working
+    context is over budget, which is the loudest compaction trigger there is.
+    Throwing it away blinded the gauge: isaac-work-2 ran nineteen requests at
+    271k-304k against a 200k budget, every stamp was discarded, the gauge fell
+    back to its chars/4 tally of ~125k and compaction never fired.
+    Given the isaac EDN file "config/models/local.edn" exists with:
+      | path           | value      |
+      | model          | test-model |
+      | provider       | grover     |
+      | context-window | 1000       |
+    And the isaac EDN file "config/crew/main.edn" exists with:
+      | path  | value            |
+      | model | local            |
+      | soul  | You are Atticus. |
+    And the following sessions exist:
+      | name   | last-input-tokens |
+      | ledger | 0                 |
+    And session "ledger" has transcript:
+      | type    | message.role | message.content | tokens |
+      | message | user         | older ask       | 20     |
+      | message | assistant    | older reply     | 20     |
+    And the following model responses are queued:
+      | type | content      | model      | usage.input_tokens |
+      | text | over budget  | test-model | 1400               |
+      | text | folded older | test-model | 30                 |
+      | text | here you go  | test-model | 30                 |
+    When the user sends "and again" on session "ledger"
+    Then the following sessions match:
+      | name   | last-input-tokens |
+      | ledger | 1400              |
+    When the user sends "once more" on session "ledger"
+    Then session "ledger" has transcript matching:
+      | type       | message.role | message.content | summary      |
+      | compaction |              |                 | folded older |
+      | message    | assistant    | here you go     |              |
+
   Scenario: a provider 400 for prompt length compact-and-retries
     Given the isaac EDN file "config/models/local.edn" exists with:
       | path           | value      |
