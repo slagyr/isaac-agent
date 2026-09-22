@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Parallel-tool-calls hint rewritten from a survey of public coding-agent prompts: capability statement, default-to-parallel with the one sequential exception, the cost named in round-trips, plan-the-batch, and a 3–5 call batch bound. Same var, same insertion point, all providers (isaac-pn98).
+
 - Context gauge counts the assistant output the tally cursor left behind: only the first reply after the cursor is covered by `:last-output-tokens`, so a tool loop's later replies are no longer counted nowhere. A response reporting zero prompt tokens (a refusal, or a provider that does not count) no longer overwrites `:last-input-tokens` with zero. `sessions list` falls back to the transcript's own stamped sum when the tally reads zero under a transcript of real size, so a full session is never listed as empty (isaac-166j).
 - Provider response contract: `:reasoning :summary` is optional. A provider that streams thinking with no summarizable text (claude-cli) no longer fails the turn as `:provider-contract`, so a completed turn stops logging `:chat/provider-contract-violated` at `:error` and the episodes seal stops failing with `:provider-error` (isaac-ddls).
 - Repin isaac-foundation (and spec / test-support / marigold.*) to foundation main `0b120cc` so the pin is reachable after bean-branch squash (isaac-lsz2).
