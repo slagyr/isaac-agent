@@ -344,6 +344,54 @@
    (process-response* (normalize-ctx ctx-or-root)
                       session-key result opts)))
 
+(defn- completed-cycle-stamp
+  "The prompt size of the last cycle that reported one. A cycle that measured
+   nothing leaves the last trusted stamp standing (isaac-166j)."
+  [result]
+  (->> (:cycle-usages result)
+       (map :prompt-tokens)
+       (filter #(and (number? %) (pos? %)))
+       last))
+
+(defn- keep-cycle-usage* [ctx session-key result]
+  (when (:error result)
+    (let [sess   (session-policy ctx)
+          tokens (extract-tokens result)
+          input  (:input-tokens tokens 0)
+          output (:output-tokens tokens 0)
+          stamp  (completed-cycle-stamp result)]
+      (when (and sess (or (pos? input) (pos? output)))
+        (let [entry       (or (policy/get-session sess session-key) {})
+              cache-read  (:cache-read tokens)
+              cache-write (:cache-write tokens)
+              input-total (+ (or (:input-tokens entry) 0) input)
+              out-total   (+ (or (:output-tokens entry) 0) output)]
+          (log/debug :session/cycle-usage-kept
+                     :session session-key
+                     :error (:error result)
+                     :cycles (count (:cycle-usages result))
+                     :input-tokens input
+                     :output-tokens output)
+          (policy/update-session! sess session-key
+                                  (cond-> {:input-tokens      input-total
+                                           :turn-input-tokens input
+                                           :output-tokens     out-total
+                                           :total-tokens      (+ input-total out-total)}
+                                    stamp (assoc :last-input-tokens stamp)
+                                    cache-read (assoc :cache-read (+ (or (:cache-read entry) 0) cache-read))
+                                    cache-write (assoc :cache-write (+ (or (:cache-write entry) 0) cache-write)))))))))
+
+(defn keep-cycle-usage!
+  "A turn that ends in a provider error still burned every cycle that finished
+   before it. Fold those sums into the session and stamp the last completed
+   cycle's prompt size, so a walled turn is neither free nor blinding to the
+   gauge (isaac-ewxh). A clean turn is store-response!'s business, and an error
+   that measured nothing writes nothing (isaac-166j)."
+  ([session-key result]
+   (keep-cycle-usage* (nexus/necho) session-key result))
+  ([ctx-or-root session-key result]
+   (keep-cycle-usage* (normalize-ctx ctx-or-root) session-key result)))
+
 ;; endregion ^^^^^ Response Persistence ^^^^^
 
 ;; region ----- Streaming -----
@@ -1639,6 +1687,10 @@
                                                      (session-gauge session-key (mid-turn-compaction-opts ctx))
                                                      (:context-window charge))
                            loop-result)
+            ;; Before the wall classifier reshapes the result: a turn that died
+            ;; on its last request still burned the cycles that finished
+            ;; (isaac-ewxh).
+            _            (keep-cycle-usage! ctx session-key loop-result)
             result       (if (:unavailable? loop-result)
                            loop-result
                            (let [normalized (provider-wall/normalize loop-result config (api/display-name p))

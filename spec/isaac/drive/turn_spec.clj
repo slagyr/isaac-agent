@@ -273,6 +273,65 @@
           (should-be-nil (first (filter #(= :session/stamp-implausible (:event %)) @log/captured-logs))))))
     )
 
+  (describe "keep-cycle-usage! (isaac-ewxh)"
+    #_{:clj-kondo/ignore [:unresolved-symbol]}
+    (around [example]
+      (nexus/-with-nexus {:root test-dir :fs (fs/mem-fs)}
+        (helper/with-memory-store
+          (example))))
+
+    (it "keeps the completed cycles' sums when the turn ends in a provider error"
+      ;; The seat's window closed on the eightieth cycle; the seventy-nine that
+      ;; finished still cost what they cost.
+      (helper/create-session! test-dir "walled")
+      (helper/update-session! test-dir "walled" {:input-tokens 1000 :output-tokens 10 :last-input-tokens 15028})
+      (sut/keep-cycle-usage! "walled"
+                             {:error        :rate-limited
+                              :unavailable? true
+                              :message      "You've hit your session limit"
+                              :usage        {:prompt-tokens 950 :output-tokens 21
+                                             :cache-read-tokens 180 :cache-write-tokens 10}
+                              :cycle-usages [{:prompt-tokens 260 :output-tokens 7}
+                                             {:prompt-tokens 320 :output-tokens 7}
+                                             {:prompt-tokens 370 :output-tokens 7}]})
+      (let [session (helper/get-session test-dir "walled")]
+        (should= 1950 (:input-tokens session))
+        (should= 950 (:turn-input-tokens session))
+        (should= 31 (:output-tokens session))
+        (should= 370 (:last-input-tokens session))
+        (should= 180 (:cache-read session))
+        (should= 10 (:cache-write session))))
+
+    (it "leaves the tally alone when the error reports no usage at all (isaac-166j)"
+      (helper/create-session! test-dir "walled-cold")
+      (helper/update-session! test-dir "walled-cold" {:input-tokens 1000 :last-input-tokens 15028})
+      (sut/keep-cycle-usage! "walled-cold" {:error :rate-limited :unavailable? true})
+      (let [session (helper/get-session test-dir "walled-cold")]
+        (should= 1000 (:input-tokens session))
+        (should= 15028 (:last-input-tokens session))))
+
+    (it "keeps the sums but never stamps a zero prompt size (isaac-166j)"
+      (helper/create-session! test-dir "walled-unmeasured")
+      (helper/update-session! test-dir "walled-unmeasured" {:input-tokens 1000 :last-input-tokens 15028})
+      (sut/keep-cycle-usage! "walled-unmeasured"
+                             {:error        :rate-limited
+                              :usage        {:prompt-tokens 260 :output-tokens 7}
+                              :cycle-usages [{:prompt-tokens 0 :output-tokens 0}]})
+      (let [session (helper/get-session test-dir "walled-unmeasured")]
+        (should= 1260 (:input-tokens session))
+        (should= 15028 (:last-input-tokens session))))
+
+    (it "ignores a turn that ended cleanly — store-response! owns that tally"
+      (helper/create-session! test-dir "clean")
+      (helper/update-session! test-dir "clean" {:input-tokens 1000 :last-input-tokens 15028})
+      (sut/keep-cycle-usage! "clean"
+                             {:usage    {:prompt-tokens 950 :output-tokens 21}
+                              :response {:content "done"}})
+      (let [session (helper/get-session test-dir "clean")]
+        (should= 1000 (:input-tokens session))
+        (should= 15028 (:last-input-tokens session))))
+    )
+
   (describe "empty terminal response guard"
 
     (it "retries once with a continuation nudge and accepts a non-empty follow-up"
