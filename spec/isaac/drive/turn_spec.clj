@@ -1709,16 +1709,16 @@
                (:continuations (#'sut/resolve-cycle {:crew "oscar" :config {}})))
       (should= 2 sut/default-continuations)
       (should= 5 (:continuations (#'sut/resolve-cycle {:crew   "oscar"
-                                                       :config {:defaults {:cycle {:continuations 5}}}})))
+                                                       :config {:defaults {:crew {:cycle {:continuations 5}}}}})))
       (should= 3 (:continuations (#'sut/resolve-cycle {:crew-cfg {:cycle {:continuations 3}}
                                                        :crew     "oscar"
-                                                       :config   {:defaults {:cycle {:continuations 5}}}})))
+                                                       :config   {:defaults {:crew {:cycle {:continuations 5}}}}})))
       (should= 1 (:continuations (#'sut/resolve-cycle {:cycle    {:continuations 1}
                                                        :crew-cfg {:cycle {:continuations 3}}
                                                        :crew     "oscar"
-                                                       :config   {:defaults {:cycle {:continuations 5}}}})))
+                                                       :config   {:defaults {:crew {:cycle {:continuations 5}}}}})))
       (should= 4 (:continuations (#'sut/resolve-cycle {:crew   "oscar"
-                                                       :config {:defaults {:cycle {:continuations "4"}}}}))))
+                                                       :config {:defaults {:crew {:cycle {:continuations "4"}}}}}))))
 
     (it "reads the continuation count off the charge's origin"
       (should= 0 (#'sut/continuation-count {}))
