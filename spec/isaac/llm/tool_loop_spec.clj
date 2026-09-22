@@ -353,6 +353,20 @@
                 :cache-write-tokens   11}
                (:usage result))))
 
+  (it "leaves each request's :prompt-scope out of the turn's total (isaac-dgod)"
+    ;; :prompt-scope says how to read one request's prompt size. A turn total is
+    ;; a sum by definition, so the declaration has no meaning in it — and
+    ;; summing two keywords is how the whole turn used to die.
+    (let [chat-fn     (queue-chat
+                        [{:tool-calls [{:id "tc1" :name "a" :arguments {}}]
+                          :usage      {:prompt-tokens 10 :output-tokens 5 :prompt-scope :request}}
+                         {:content "done" :tool-calls []
+                          :usage   {:prompt-tokens 4 :output-tokens 1 :prompt-scope :request}}])
+          tool-fn     (fn [_ _] "ok")
+          followup-fn (recording-followup (atom []))
+          result      (sut/run chat-fn followup-fn {:messages []} tool-fn)]
+      (should= {:requests 2 :prompt-tokens 14 :output-tokens 6} (:usage result))))
+
   (it "does not invoke after-tools when the first response has no tool-calls"
     (let [after-calls (atom 0)
           chat-fn     (fn [_] {:message {:role "assistant" :content "done"} :usage {}})

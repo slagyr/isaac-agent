@@ -14,9 +14,13 @@
 (defn- response-tool-calls [response]
   (:tool-calls response))
 
-(defn- response-usage [response]
+(defn- response-usage
+  "The tokens one request spent. :prompt-scope declares how to read that
+   request's prompt size; a turn total is a sum by definition, so the
+   declaration has no meaning in it and does not ride along (isaac-dgod)."
+  [response]
   (merge {:prompt-tokens 0 :output-tokens 0}
-         (:usage response)))
+         (dissoc (:usage response) :prompt-scope)))
 
 (defn- add-usage [turn-usage request-usage]
   (-> (merge-with + turn-usage request-usage)

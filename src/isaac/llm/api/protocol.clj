@@ -50,10 +50,28 @@
 
 ;; --- Provider-neutral response contract ---
 
+(def prompt-scopes
+  "How to read a usage map's :prompt-tokens.
+
+   :request     — the size of the prompt this one request carried. This is the
+                  figure the context gauge wants, and the only one it stamps.
+   :running-sum — a total: a whole turn's requests, or a stateful chain billed
+                  cumulatively. Not a prompt size; the gauge refuses it and
+                  warns, because an adapter reporting one is an adapter bug.
+   :unknown     — the adapter cannot measure this request's prompt. The gauge
+                  leaves the last stamp alone and falls back to its own tally.
+
+   Absent means :request — a stateless adapter reports per request by nature
+   (isaac-dgod)."
+  #{:request :running-sum :unknown})
+
 (def usage
   {:name :usage :type :map
    :description "Token accounting for one request. The adapter owns the arithmetic."
    :schema {:prompt-tokens      {:type :long :validations [schema/required]}
+            :prompt-scope       {:type :keyword
+                                 :validations [{:validate #(or (nil? %) (prompt-scopes %))
+                                                :message "is invalid"}]}
             :output-tokens      {:type :long :validations [schema/required]}
             :reasoning-tokens   {:type :long}
             :cache-read-tokens  {:type :long}

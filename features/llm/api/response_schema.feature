@@ -363,14 +363,15 @@ Feature: The provider response schema (isaac-g71i)
       | type    | message.role | message.reasoning.summary | message.reasoning.effort |
       | message | assistant    | Checked the rigging       | 7                        |
 
-  Scenario: a prompt size larger than the window leaves the gauge alone instead of clamping to the window (isaac-dgod)
-    A prompt bigger than the window is not a prompt that was just answered — it
-    is the adapter handing over the wrong quantity: a turn total, or a stateful
-    chain's running sum. Clamping it to the window wrote a number that was wrong
-    but plausible-looking. Field: orchestration-verify stamped 12,031,158 of a
-    278,528 window (chatgpt, cache-read 11,174,912); isaac-work-2 read 295% and
-    was still dispatched to. The last trusted value stands, and the warn is the
-    adapter alarm.
+  Scenario: a prompt size larger than the window is over budget, and the gauge takes it as it stands (isaac-dgod)
+    A prompt bigger than the window means the working context is over budget —
+    the loudest compaction trigger there is, not a number to throw away.
+    Discarding it blinded the gauge: isaac-work-2 ran nineteen requests at
+    271k-304k against a 200k budget, every stamp was dropped, the gauge fell
+    back to its chars/4 tally of ~125k, compaction never fired, and three
+    workers closed the seat's five-hour window in seventeen minutes.
+    :session/stamp-implausible is now reserved for an adapter reporting a
+    running sum, and says nothing about a prompt that is merely too big.
     Given default Grover setup
     And the isaac EDN file "config/models/tinfoil.edn" exists with:
       | path           | value            |
@@ -394,7 +395,7 @@ Feature: The provider response schema (isaac-g71i)
     When the user sends "knock again" on session "paperclip"
     Then the following sessions match:
       | name      | last-input-tokens |
-      | paperclip | 1000              |
-    And the log has entries matching:
-      | event                      | prompt-tokens | context-window |
-      | :session/stamp-implausible | 900000        | 400000         |
+      | paperclip | 900000            |
+    And the log has no entries matching:
+      | event                      |
+      | :session/stamp-implausible |
