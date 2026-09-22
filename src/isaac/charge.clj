@@ -110,16 +110,17 @@
   (session-ctx/normalize-model-ref (:model session-entry)))
 
 (defn- behavior-opts
-  "Opts for resolve-behavior: crew plus explicit model overrides only.
+  "Opts for resolve-behavior: crew plus explicit model/context-mode overrides only.
    Resolved provider model ids from the request's :model are omitted so a
    stale dispatch-time model cannot pin behavior across config reload."
-  [crew-id {:keys [model-override model-ref]} session-entry]
+  [crew-id {:keys [model-override model-ref context-mode-override]} session-entry]
   (let [session-model (session-model-override session-entry)]
     (cond-> {:crew crew-id}
       model-override (assoc :model (session-ctx/normalize-model-ref model-override))
       model-ref (assoc :model (session-ctx/normalize-model-ref model-ref))
       (and (nil? model-override) (nil? model-ref) session-model)
-      (assoc :model session-model))))
+      (assoc :model session-model)
+      context-mode-override (assoc :context-mode context-mode-override))))
 
 (defn build
   "Build a charge from a request map.
@@ -130,7 +131,8 @@
    model) returns a charge marked :charge/unresolved with a :charge/reason
    keyword."
   [{:keys [session-key input comm crew config model model-ref model-override model-cfg
-           provider provider-cfg context-window soul soul-prepend guidance origin observers turnstiles cycle dispatch-error]}]
+           provider provider-cfg context-window soul soul-prepend guidance origin observers turnstiles cycle dispatch-error
+           context-mode-override]}]
   (let [config*         (or (when (map? config) config) (loader/snapshot "charge build fallback — no :config passed (entry seed)") {})
         ss*             (store/registered-store)
         session-entry   (when (and ss* session-key (satisfies? store/SessionStore ss*))
@@ -140,8 +142,9 @@
         unknown?        (and crew-id (not (contains? known-crews crew-id)))
         session-context (delay (session-ctx/resolve-behavior session-key
                                                              (behavior-opts crew-id
-                                                                            {:model-override model-override
-                                                                             :model-ref      model-ref}
+                                                                            {:model-override         model-override
+                                                                             :model-ref              model-ref
+                                                                             :context-mode-override  context-mode-override}
                                                                             session-entry)))
         model*          (delay (or model (get-in @session-context [:model-cfg :model]) (:model @session-context)))
         base            (cond-> {:session-key   session-key

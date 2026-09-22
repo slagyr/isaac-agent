@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Per-turn `--with-context-mode` (CLI) / `:with-context-mode` override now wins over the crew's `:context-mode`, matching `--with-model` and `--with-crew`: `charge/build`'s `behavior-opts` was only forwarding model/crew overrides to `resolve-behavior`, so a crew-level `:context-mode` always beat the turn override (isaac-zdnx).
 - Token gauge: a per-request prompt size above `:context-window` is recorded as the gauge value instead of being discarded, so `should-compact?` is true on the next check and compaction runs before the next request — discarding it left the gauge on its chars/4 tally and three workers ran at ~290k against a 200k budget without ever compacting. The adapter contract now distinguishes per-request prompt size from turn usage: usage carries `:prompt-scope` (`:request` / `:running-sum` / `:unknown`, absent means `:request`), the Responses API declares `:unknown` on a chained `previous_response_id` request because that chain is billed cumulatively, and an adapter that declares none leaves the stamp untouched — no zero is written. `:session/stamp-implausible` now fires only for a running sum and means "adapter bug" (isaac-dgod).
 - Parallel-tool-calls hint rewritten from a survey of public coding-agent prompts: capability statement, default-to-parallel with the one sequential exception, the cost named in round-trips, plan-the-batch, and a 3–5 call batch bound. Same var, same insertion point, all providers (isaac-pn98).
 

@@ -187,6 +187,19 @@
             (should= "beta" (:model @seen))
             (should-be-nil (:config @seen))))))
 
+    (it "forwards a context-mode override to resolve-behavior, same as the model override"
+      (let [seen (atom nil)]
+        (with-redefs [loader/snapshot             (fn [_] {:defaults {:crew "main"}
+                                                         :crew     {"main" (crew-cfg marigold/captain test-model-id "Base.")}
+                                                         :models   {test-model-id (model-cfg test-model-id 4096)}})
+                      session-ctx/resolve-behavior (fn [_ opts]
+                                                     (reset! seen opts)
+                                                     (stub-behavior "main" "Base." test-model-id 4096))]
+          (sut/build {:session-key           "s1"
+                     :input                 "hi"
+                     :context-mode-override :full})
+          (should= :full (:context-mode @seen)))))
+
     (it "re-resolves crew model from live config when the caller passes a stale config snapshot"
       (let [test-root "/test/charge-reload"
             alpha-cfg {:defaults {:crew "flipper"}

@@ -254,14 +254,15 @@
       (do
         (host/ensure-runtime! {:install! builtin/register-all!})
         (let [result (bridge/dispatch!
-                       (assoc (charge/build (cond-> {:session-key    session-key
-                                                     :input          (:message opts)
-                                                     :config         cfg
-                                                     :crew           (or (:with-crew override) (:crew session))
-                                                     :model-override (or (:with-model override) (:model opts))
-                                                     :origin         {:kind :cli}
-                                                     :comm           comm
-                                                     :session-store  session-store}
+                       (assoc (charge/build (cond-> {:session-key           session-key
+                                                     :input                 (:message opts)
+                                                     :config                cfg
+                                                     :crew                  (or (:with-crew override) (:crew session))
+                                                     :model-override        (or (:with-model override) (:model opts))
+                                                     :context-mode-override (:with-context-mode override)
+                                                     :origin                {:kind :cli}
+                                                     :comm                  comm
+                                                     :session-store         session-store}
                                                     (seq obs-refs) (assoc :observers obs-refs)
                                                     (seq ts-refs) (assoc :turnstiles ts-refs)))
                               :root (root-of opts)
