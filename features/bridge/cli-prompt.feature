@@ -245,6 +245,33 @@ Feature: Prompt single-turn command
       | type    | message.model | message.crew |
       | message | echo-alt      | ketch        |
 
+  Scenario: --with-context-mode overrides the crew's :context-mode :reset for the turn (isaac-zdnx)
+    Given the isaac EDN file "config/crew/ketch.edn" exists with:
+      | path         | value             |
+      | model        | grover            |
+      | soul         | You are a pirate. |
+      | context-mode | reset             |
+    And the following sessions exist:
+      | name          | crew  |
+      | ketch-session | ketch |
+    And session "ketch-session" has transcript:
+      | type    | message.role | message.content |
+      | message | user         | Ahoy there       |
+      | message | assistant    | Arr, matey       |
+    And the following model responses are queued:
+      | type | content | model |
+      | text | Aye aye | echo  |
+    When isaac is run with "prompt --session ketch-session --with-context-mode full -m 'Status report'"
+    Then the exit code is 0
+    And the last LLM request matches:
+      | key                 | value         |
+      | messages[1].role    | user          |
+      | messages[1].content | Ahoy there    |
+      | messages[2].role    | assistant     |
+      | messages[2].content | Arr, matey    |
+      | messages[3].role    | user          |
+      | messages[3].content | Status report |
+
   Scenario: --session with --session-tag errors clearly
     When isaac is run with "prompt --session bridge --session-tag wip -m 'Hi'"
     Then the stderr contains "mutually exclusive"
