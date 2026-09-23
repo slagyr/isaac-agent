@@ -114,7 +114,7 @@
                      :turnstiles [[:tide "22:00-06:00"]]
                      :state      :held})
     (let [seen (atom nil)
-          cfg  {:defaults {:crew "main" :model "echo"}
+          cfg  {:defaults {:frequencies {:crew "main"} :crew {:model "echo"}}
                 :crew     {"main" {:model "echo"}}
                 :models   {"echo" {:model "echo" :provider "grover"}}}]
       (with-redefs [loader/snapshot (fn [_] cfg)
@@ -133,7 +133,7 @@
       (fs/mkdirs fs* "/test/isaac/config/crew")
       (fs/mkdirs fs* "/test/isaac/config/providers")
       (fs/spit fs* "/test/isaac/config/isaac.edn"
-               (pr-str {:defaults {:crew "main" :model "grover"}}))
+               (pr-str {:defaults {:frequencies {:crew "main"} :crew {:model "grover"}}}))
       (fs/spit fs* "/test/isaac/config/models/grover.edn"
                (pr-str {:model "echo" :provider :grover}))
       (fs/spit fs* "/test/isaac/config/crew/main.edn"
@@ -152,7 +152,7 @@
                                        (assoc request :charge/type :charge :model "echo"))
                     bridge/dispatch! (fn [_] {:content "Setting sail"})]
         (sut/tick! {:now (Instant/parse "2026-03-01T23:30:00Z")}))
-      (should= "grover" (get-in @seen [:config :defaults :model]))
+      (should= "grover" (get-in @seen [:config :defaults :crew :model]))
       (should= "harbor" (:session-key @seen))))
 
   (it "registers its tick with the shared scheduler"

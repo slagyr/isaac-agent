@@ -14,7 +14,7 @@ Feature: Isaac .env file for ${VAR} substitution
       """
     And config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :llama}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :llama}}
        :providers {:anthropic {:base-url "https://api.anthropic.com"
                                :api     "anthropic"
                                :api-key "${ISAAC_ENV_FILE_TEST_KEY}"}}}
@@ -40,11 +40,11 @@ Feature: Isaac .env file for ${VAR} substitution
   Scenario: config loads when the isaac .env file is absent
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :main :model :llama}
+      {:defaults {:frequencies {:crew :main} :crew {:model :llama}}
        :crew {:main {}}
        :models {:llama {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {}}}
       """
     Then the loaded config has:
-      | key           | value |
-      | defaults.crew | main  |
+      | key                       | value |
+      | defaults.frequencies.crew | main  |

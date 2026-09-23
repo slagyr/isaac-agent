@@ -18,8 +18,8 @@ Feature: Compaction history retention policy
 
   Scenario: Under :retain, compacted entries remain in a frozen segment
     Given the isaac EDN file isaac.edn exists with:
-      | path                       | value   |
-      | defaults.history-retention | :retain |
+      | path                                | value   |
+      | defaults.provider.history-retention | :retain |
     And the following sessions exist:
       | name        |
       | retain-keep |
@@ -39,17 +39,17 @@ Feature: Compaction history retention policy
       | type       | summary              |
       | compaction | Caught up the model. |
     And session "retain-keep" has transcript matching:
-      | type    | message.content  |
-      | message | Recent question  |
-      | message | Recent answer    |
+      | type    | message.content |
+      | message | Recent question |
+      | message | Recent answer   |
     And session "retain-keep" has transcript not matching:
       | type    | message.content  |
       | message | Earlier question |
 
   Scenario: Under :prune, compacted entries are removed from the transcript file
     Given the isaac EDN file isaac.edn exists with:
-      | path                       | value  |
-      | defaults.history-retention | :prune |
+      | path                                | value  |
+      | defaults.provider.history-retention | :prune |
     And the following sessions exist:
       | name      |
       | prune-cut |
@@ -79,8 +79,8 @@ Feature: Compaction history retention policy
 
   Scenario: Retention is locked at session creation; changing defaults later does not flip it
     Given the isaac EDN file isaac.edn exists with:
-      | path                       | value   |
-      | defaults.history-retention | :retain |
+      | path                                | value   |
+      | defaults.provider.history-retention | :retain |
     And the following sessions exist:
       | name        |
       | locked-keep |
@@ -88,17 +88,17 @@ Feature: Compaction history retention policy
       | key               | value   |
       | history-retention | :retain |
     When the isaac EDN file isaac.edn exists with:
-      | path                       | value  |
-      | defaults.history-retention | :prune |
+      | path                                | value  |
+      | defaults.provider.history-retention | :prune |
     Then session "locked-keep" matches:
       | key               | value   |
       | history-retention | :retain |
 
   Scenario: Explicit create-time override wins over crew and defaults
     Given the isaac EDN file isaac.edn exists with:
-      | path                        | value  |
-      | defaults.history-retention  | :prune |
-      | crew.main.history-retention | :prune |
+      | path                                | value  |
+      | defaults.provider.history-retention | :prune |
+      | crew.main.history-retention         | :prune |
     And the following sessions exist:
       | name     | crew | history-retention |
       | override | main | :retain           |

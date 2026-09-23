@@ -1,6 +1,7 @@
 (ns isaac.tool.memory
   (:require
     [clojure.string :as str]
+    [isaac.config.defaults :as defaults]
     [isaac.config.loader :as loader]
     [isaac.fs :as fs]
     [isaac.session.store.spi :as store]
@@ -20,7 +21,7 @@
   (let [args        (string-key-map args)
         session-key (get args "session_key")]
     (or (some->> session-key (store/get-session (bounds/session-store args)) :crew)
-        (get-in (loader/snapshot "tool memory: default crew") [:defaults :crew]))))
+        (defaults/crew-id (loader/snapshot "tool memory: default crew")))))
 
 (defn- memory-dir [root crew-id]
   (str root "/crew/" crew-id "/memory"))

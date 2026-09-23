@@ -2,15 +2,15 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
   A batch of tool calls in one provider response is a set of independent
   calls: the model gets every result back together and cannot see one before
   issuing the next. Isaac runs the batch concurrently, bounded by
-  tools.max-parallel, and hands the results back in the order the model
+  defaults.crew.tools.max-parallel, and hands the results back in the order the model
   issued them. The test-double tools here block on conditions, never clocks:
   their one-second ceilings run only when the implementation is already wrong.
 
   Background:
     Given default Grover setup
     And config:
-      | key         | value                 |
-      | tools.allow | [:all :test :test/*] |
+      | key                       | value                |
+      | defaults.crew.tools.allow | [:all :test :test/*] |
     And the built-in tools are registered
 
   Scenario: two calls in one batch overlap — a rendezvous serial execution could never satisfy
@@ -19,9 +19,9 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
       | name    |
       | on-deck |
     And the following model responses are queued:
-      | model | type       | tool_calls                                                                                                          | content   |
+      | model | type       | tool_calls                                                                                                      | content   |
       |       | tool_calls | [{"function":{"name":"test__handshake","arguments":{}}},{"function":{"name":"test__handshake","arguments":{}}}] |           |
-      | echo  | text       |                                                                                                                     | Both met. |
+      | echo  | text       |                                                                                                                 | Both met. |
     When the user sends "shake on it" on session "on-deck" via memory comm
     Then the memory comm has events matching:
       | event       | tool-name       |
@@ -42,9 +42,9 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
       | name    |
       | on-deck |
     And the following model responses are queued:
-      | model | type       | tool_calls                                                                                              | content |
+      | model | type       | tool_calls                                                                                             | content |
       |       | tool_calls | [{"function":{"name":"test__slow","arguments":{}}},{"function":{"name":"test__quick","arguments":{}}}] |         |
-      | echo  | text       |                                                                                                         | Noted.  |
+      | echo  | text       |                                                                                                        | Noted.  |
     When the user sends "go" on session "on-deck" via memory comm
     Then the memory comm has events matching:
       | event       | tool-name   |
@@ -55,24 +55,24 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
       | messages[3].content | slow done  |
       | messages[4].content | quick done |
 
-  Scenario: tools.max-parallel is a config knob with a default of 4
+  Scenario: defaults.crew.tools.max-parallel is a config knob with a default of 4
     Given an Isaac root at "target/test-state"
-    When isaac is run with "config get tools.max-parallel"
+    When isaac is run with "config get defaults.crew.tools.max-parallel"
     Then the stdout contains "4"
 
   Scenario: cancel mid-batch — in-flight calls stop, queued calls never run, both report cancelled
     Given config:
-      | key                | value |
-      | tools.max-parallel | 1     |
+      | key                              | value |
+      | defaults.crew.tools.max-parallel | 1     |
     And a blocking tool "test__anchor" is registered that returns cancelled once the turn is cancelled
     And a streaming tool "test__quick" is registered that emits progress [] and returns "never ran"
     And the following sessions exist:
       | name    |
       | on-deck |
     And the following model responses are queued:
-      | model | type       | tool_calls                                                                                                | content |
+      | model | type       | tool_calls                                                                                               | content |
       |       | tool_calls | [{"function":{"name":"test__anchor","arguments":{}}},{"function":{"name":"test__quick","arguments":{}}}] |         |
-      | echo  | text       |                                                                                                           | never   |
+      | echo  | text       |                                                                                                          | never   |
     When the user sends "drop anchor" on session "on-deck"
     And the turn is cancelled on session "on-deck" after 2 tool calls
     Then the turn result is "cancelled"
@@ -96,12 +96,12 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
       | name    |
       | on-deck |
     And the following model responses are queued:
-      | model | type       | tool_calls                                                                                                              | content |
+      | model | type       | tool_calls                                                                                               | content |
       |       | tool_calls | [{"function":{"name":"test__broken","arguments":{}}},{"function":{"name":"test__quick","arguments":{}}}] |         |
-      | echo  | text       |                                                                                                                         | Noted.  |
+      | echo  | text       |                                                                                                          | Noted.  |
     When the user sends "go" on session "on-deck" via memory comm
     Then the memory comm has events matching:
-      | event       | tool-name   |
+      | event       | tool-name    |
       | tool-result | test__quick  |
       | tool-result | test__broken |
       | reply       |              |
@@ -117,9 +117,9 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
       | name    |
       | on-deck |
     And the following model responses are queued:
-      | model | type       | tool_calls                                                                                              | content |
+      | model | type       | tool_calls                                                                                             | content |
       |       | tool_calls | [{"function":{"name":"test__slow","arguments":{}}},{"function":{"name":"test__quick","arguments":{}}}] |         |
-      | echo  | text       |                                                                                                         | Noted.  |
+      | echo  | text       |                                                                                                        | Noted.  |
     When the user sends "go" on session "on-deck" via memory comm
     Then session "on-deck" has transcript matching:
       | type    | message.role | message.content[0].name | message.content[1].name | message.content |
@@ -136,9 +136,9 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
       | name    |
       | on-deck |
     And the following model responses are queued:
-      | model | type       | tool_calls                                                                                                | content |
+      | model | type       | tool_calls                                                                                               | content |
       |       | tool_calls | [{"function":{"name":"test__broken","arguments":{}}},{"function":{"name":"test__quick","arguments":{}}}] |         |
-      | echo  | text       |                                                                                                           | Noted.  |
+      | echo  | text       |                                                                                                          | Noted.  |
     When the user sends "go" on session "on-deck" via memory comm
     Then session "on-deck" has transcript matching:
       | type    | message.role | message.content |
@@ -153,9 +153,9 @@ Feature: Parallel tool batches — a response's tool calls execute concurrently
       | name    |
       | on-deck |
     And the following model responses are queued:
-      | model | type       | tool_calls                                                                                              | content |
+      | model | type       | tool_calls                                                                                             | content |
       |       | tool_calls | [{"function":{"name":"test__slow","arguments":{}}},{"function":{"name":"test__quick","arguments":{}}}] |         |
-      | echo  | text       |                                                                                                         | Noted.  |
+      | echo  | text       |                                                                                                        | Noted.  |
     When the user sends "go" on session "on-deck" via memory comm
     And the prompt for session "on-deck" is built for provider "openai"
     Then the prompt messages contain a tool call with:

@@ -1076,7 +1076,7 @@
                       :session-key    "inherit-all"
                       :input          "hi"
                       :comm           :test-comm
-                      :config         {:root test-dir :tools {:allow :all}}
+                      :config         {:root test-dir :defaults {:crew {:tools {:allow :all}}}}
                       :crew           "main"
                       :crew-members   {"main" {:model "spark"}}
                       :context-window 32768
@@ -1099,7 +1099,7 @@
                       :session-key    "crew-reallow"
                       :input          "hi"
                       :comm           :test-comm
-                      :config         {:root test-dir :tools {:allow :all :deny [:exec/run]}}
+                      :config         {:root test-dir :defaults {:crew {:tools {:allow :all :deny [:exec/run]}}}}
                       :crew           "main"
                       :crew-members   {"main" {:model "spark" :tools {:allow [:exec/run]}}}
                       :context-window 32768
@@ -1123,7 +1123,7 @@
                       :session-key    "crew-overlay"
                       :input          "hi"
                       :comm           :test-comm
-                      :config         {:root test-dir :tools {:allow :all :deny [:exec/run]}}
+                      :config         {:root test-dir :defaults {:crew {:tools {:allow :all :deny [:exec/run]}}}}
                       :crew           "main"
                       :crew-members   {"main" {:model "spark" :tools {:deny [:fs/*]}}}
                       :context-window 32768
@@ -1744,14 +1744,14 @@
       (should= 12 (#'sut/resolve-cycle-limit {:cycle       {:limit 12}
                                               :crew-cfg    {:cycle {:limit 3}}
                                               :crew        "oscar"
-                                              :config      {:defaults {:cycle {:limit 5}}
+                                              :config      {:defaults {:crew {:cycle {:limit 5}}}
                                                             :crew     {"oscar" {:cycle {:limit 3}}}}}))
       (should= 3 (#'sut/resolve-cycle-limit {:crew-cfg {:cycle {:limit 3}}
                                             :crew     "oscar"
-                                            :config   {:defaults {:cycle {:limit 5}}
+                                            :config   {:defaults {:crew {:cycle {:limit 5}}}
                                                        :crew     {"oscar" {:cycle {:limit 8}}}}}))
       (should= 5 (#'sut/resolve-cycle-limit {:crew   "oscar"
-                                            :config {:defaults {:cycle {:limit 5}}}}))
+                                            :config {:defaults {:crew {:cycle {:limit 5}}}}}))
       (should= tool-loop/default-max-loops
                (#'sut/resolve-cycle-limit {:crew "oscar" :config {}})))
 
@@ -1759,7 +1759,7 @@
       (let [cycle (#'sut/resolve-cycle {:cycle    {:checkpoint-every 1}
                                         :crew-cfg {:cycle {:limit 10 :checkpoint-every 5}}
                                         :crew     "oscar"
-                                        :config   {:defaults {:cycle {:limit 100}}}})]
+                                        :config   {:defaults {:crew {:cycle {:limit 100}}}}})]
         (should= 10 (:limit cycle))
         (should= 1 (:checkpoint-every cycle))))
 
@@ -1768,16 +1768,16 @@
                (:continuations (#'sut/resolve-cycle {:crew "oscar" :config {}})))
       (should= 2 sut/default-continuations)
       (should= 5 (:continuations (#'sut/resolve-cycle {:crew   "oscar"
-                                                       :config {:defaults {:cycle {:continuations 5}}}})))
+                                                       :config {:defaults {:crew {:cycle {:continuations 5}}}}})))
       (should= 3 (:continuations (#'sut/resolve-cycle {:crew-cfg {:cycle {:continuations 3}}
                                                        :crew     "oscar"
-                                                       :config   {:defaults {:cycle {:continuations 5}}}})))
+                                                       :config   {:defaults {:crew {:cycle {:continuations 5}}}}})))
       (should= 1 (:continuations (#'sut/resolve-cycle {:cycle    {:continuations 1}
                                                        :crew-cfg {:cycle {:continuations 3}}
                                                        :crew     "oscar"
-                                                       :config   {:defaults {:cycle {:continuations 5}}}})))
+                                                       :config   {:defaults {:crew {:cycle {:continuations 5}}}}})))
       (should= 4 (:continuations (#'sut/resolve-cycle {:crew   "oscar"
-                                                       :config {:defaults {:cycle {:continuations "4"}}}}))))
+                                                       :config {:defaults {:crew {:cycle {:continuations "4"}}}}}))))
 
     (it "reads the continuation count off the charge's origin"
       (should= 0 (#'sut/continuation-count {}))
@@ -1907,7 +1907,7 @@
                                    :usage       {:output-tokens 1 :prompt-tokens 1}}
                       :tool-calls []
                       :usage      {:output-tokens 1 :prompt-tokens 1 :requests 1}}]
-        (config/dangerously-install-config! {:defaults {:crew "main" :model "test"}
+        (config/dangerously-install-config! {:defaults {:frequencies {:crew "main"} :crew {:model "test"}}
                                :crew     {"main" {:model "test" :soul "You are Isaac." :tools {:allow [:logbook-entry]}}}
                                :models   {"test" {:model "test-model" :provider marigold/starcore :context-window 32768}}} "spec")
         (tool-registry/clear!)

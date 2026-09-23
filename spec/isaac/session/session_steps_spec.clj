@@ -53,7 +53,7 @@
 
   (it "reuses loaded config until a feature fixture changes it"
     (let [loads* (atom 0)
-          cfg    {:defaults {:crew "main"}
+          cfg    {:defaults {:frequencies {:crew "main"}}
                   :crew     {"main" {}}
                   :models   {}
                   :providers {}}]
@@ -85,9 +85,9 @@
               {:key "tools.allow" :value ":all is the list, not a list item — use :allow :all, never [:all]"}
               {"key" "tools.allow" "value" "#\":all\""})))
 
-  (it "enriches an Isaac root fixture with tools.max-parallel 4"
+  (it "enriches an Isaac root fixture with defaults.crew.tools.max-parallel 4"
     (froot/in-memory-state "target/test-state")
-    (should= 4 (get-in (#'sut/loaded-config) [:tools :max-parallel])))
+    (should= 4 (get-in (#'sut/loaded-config) [:defaults :crew :tools :max-parallel])))
 
   (it "parks a waiting send only after the turn has started"
     (sut/default-grover-setup)

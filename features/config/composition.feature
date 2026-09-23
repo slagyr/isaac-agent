@@ -16,7 +16,7 @@ Feature: Config Composition
       {:crew {:main {:soul "You are Atticus."}}}
       """
     Then the loaded config has:
-      | key            | value          |
+      | key            | value            |
       | crew.main.soul | You are Atticus. |
 
   Scenario: loads a crew member from crew/<id>.edn
@@ -25,8 +25,8 @@ Feature: Config Composition
       {:model :llama :soul "You are Cordelia."}
       """
     Then the loaded config has:
-      | key               | value           |
-      | crew.cordelia.model | llama           |
+      | key                 | value             |
+      | crew.cordelia.model | llama             |
       | crew.cordelia.soul  | You are Cordelia. |
 
   Scenario: loads a crew member from crew/<id>.md frontmatter
@@ -44,8 +44,8 @@ Feature: Config Composition
       You are Cordelia.
       """
     Then the loaded config has:
-      | key               | value           |
-      | crew.cordelia.model | llama           |
+      | key                 | value             |
+      | crew.cordelia.model | llama             |
       | crew.cordelia.soul  | You are Cordelia. |
 
   # ----- Soul -----
@@ -60,7 +60,7 @@ Feature: Config Composition
       You are Cordelia, first mate.
       """
     Then the loaded config has:
-      | key              | value                             |
+      | key                | value                         |
       | crew.cordelia.soul | You are Cordelia, first mate. |
 
   Scenario: defining soul in both :soul and <id>.md is an error
@@ -73,7 +73,7 @@ Feature: Config Composition
       File soul.
       """
     Then the config has validation errors matching:
-      | key              | value                      |
+      | key                | value                      |
       | crew.cordelia.soul | must be set in .edn OR .md |
 
   # ----- Filename / id -----
@@ -93,7 +93,7 @@ Feature: Config Composition
       {:id "ketch" :model :llama}
       """
     Then the config has validation errors matching:
-      | key            | value                               |
+      | key              | value                               |
       | crew.cordelia.id | must match filename \(got "ketch"\) |
 
   # ----- Unknown keys warn but do not fail -----
@@ -104,7 +104,7 @@ Feature: Config Composition
       {:crew {:cordelia {:model :llama}}}
       """
     Then the config has validation warnings matching:
-      | key              | value       |
+      | key                | value       |
       | crew.cordelia.crew | unknown key |
 
   # ----- Composition (additive) -----
@@ -119,10 +119,10 @@ Feature: Config Composition
       {:model :llama :soul "Cordelia"}
       """
     Then the loaded config has:
-      | key               | value  |
-      | crew.main.soul    | Atticus  |
+      | key                 | value    |
+      | crew.main.soul      | Atticus  |
       | crew.cordelia.soul  | Cordelia |
-      | crew.cordelia.model | llama  |
+      | crew.cordelia.model | llama    |
 
   Scenario: composes models from isaac.edn and models/*.edn additively
     Given config file "isaac.edn" containing:
@@ -143,7 +143,7 @@ Feature: Config Composition
   Scenario: composes providers from isaac.edn and providers/*.edn additively
     Given config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :llama}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :llama}}
        :providers {:ollama {:base-url "http://localhost:11434" :api "ollama"}}}
       """
     And config file "providers/anthropic.edn" containing:
@@ -151,10 +151,10 @@ Feature: Config Composition
       {:base-url "https://api.anthropic.com" :api "anthropic" :api-key "sk-ant-test"}
       """
     Then the loaded config has:
-      | key                        | value                  |
+      | key                         | value                  |
       | providers.ollama.base-url   | http://localhost:11434 |
-      | providers.anthropic.api    | anthropic              |
-      | providers.anthropic.api-key | sk-ant-test                        |
+      | providers.anthropic.api     | anthropic              |
+      | providers.anthropic.api-key | sk-ant-test            |
 
   # ----- Duplicate ids across sources are hard errors -----
 
@@ -168,13 +168,13 @@ Feature: Config Composition
       {:soul "Second"}
       """
     Then the config has validation errors matching:
-      | key         | value                                           |
+      | key           | value                                             |
       | crew.cordelia | defined in both isaac\.edn and crew/cordelia\.edn |
 
   Scenario: duplicate model id across isaac.edn and models/*.edn is a hard error
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :main :model :llama}
+      {:defaults {:frequencies {:crew :main} :crew {:model :llama}}
        :models   {:grover {:model "claude-opus-4-6" :provider :grover :context-window 200000}}}
       """
     And config file "models/grover.edn" containing:
@@ -187,32 +187,32 @@ Feature: Config Composition
 
   # ----- Semantic validation -----
 
-  Scenario: defaults.crew must reference an existing crew
+  Scenario: defaults.frequencies.crew must reference an existing crew
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :ghost :model :llama}}
+      {:defaults {:frequencies {:crew :ghost} :crew {:model :llama}}}
       """
     Then the config has validation errors matching:
-      | key           | value                     |
-      | defaults.crew | references undefined crew |
+      | key                       | value                     |
+      | defaults.frequencies.crew | references undefined crew |
 
-  Scenario: defaults.model must reference an existing model
+  Scenario: defaults.crew.model must reference an existing model
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :main :model :nonexistent}}
+      {:defaults {:frequencies {:crew :main} :crew {:model :nonexistent}}}
       """
     Then the config has validation errors matching:
-      | key            | value                      |
-      | defaults.model | references undefined model |
+      | key                 | value                      |
+      | defaults.crew.model | references undefined model |
 
   Scenario: crew.model must reference an existing model
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :main :model :llama}
+      {:defaults {:frequencies {:crew :main} :crew {:model :llama}}
        :crew     {:cordelia {:model :gpt}}}
       """
     Then the config has validation errors matching:
-      | key               | value                      |
+      | key                 | value                      |
       | crew.cordelia.model | references undefined model |
 
   Scenario: model.provider must reference an existing provider
@@ -221,7 +221,7 @@ Feature: Config Composition
     # validator picks the small-set form when ≤5 ids are accepted.
     Given config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :llama}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :llama}}
        :providers {:ollama {:base-url "http://localhost:11434" :api "ollama"}}
        :models    {:grover {:model "claude-opus-4-7" :provider :foo :context-window 200000}}}
       """
@@ -234,7 +234,7 @@ Feature: Config Composition
   Scenario: crew references a model defined in models/<id>.edn
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:crew :main :model :llama}
+      {:defaults {:frequencies {:crew :main} :crew {:model :llama}}
        :crew     {:cordelia {:model :grover}}}
       """
     And config file "models/grover.edn" containing:
@@ -251,11 +251,11 @@ Feature: Config Composition
 
   Scenario: no config files yields the built-in default config
     Then the loaded config has:
-      | key                   | value       |
-      | defaults.crew         | main        |
-      | defaults.model        | llama       |
-      | models.llama.model    | llama3.3:1b |
-      | models.llama.provider | ollama      |
+      | key                       | value       |
+      | defaults.frequencies.crew | main        |
+      | defaults.crew.model       | llama       |
+      | models.llama.model        | llama3.3:1b |
+      | models.llama.provider     | ollama      |
 
   # ----- Syntax -----
 
@@ -265,7 +265,7 @@ Feature: Config Composition
       {:model :llama
       """
     Then the config has validation errors matching:
-      | key             | value            |
+      | key               | value            |
       | crew/cordelia.edn | EDN syntax error |
 
   # ----- Env substitution -----
@@ -274,11 +274,11 @@ Feature: Config Composition
     Given environment variable "ANTHROPIC_API_KEY" is "sk-test-123"
     And config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :llama}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :llama}}
        :providers {:anthropic {:base-url "https://api.anthropic.com"
                                :api     "anthropic"
                                :api-key  "${ANTHROPIC_API_KEY}"}}}
       """
     Then the loaded config has:
-      | key                        | value       |
+      | key                         | value       |
       | providers.anthropic.api-key | sk-test-123 |

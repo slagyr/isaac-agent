@@ -81,8 +81,7 @@
         (store-helper/create-session! root session-key {:crew crew-name :cwd "/work/project"})
         (.mkdirs (io/file quarters))
         (spit (str quarters "/notes.txt") "hello")
-        (let [result (helper/with-config {:defaults {}
-                                          :tools {:directories {:allow [:quarters]}}
+        (let [result (helper/with-config {:defaults {:crew {:tools {:directories {:allow [:quarters]}}}}
                                           :crew {crew-name {:tools {:allow [:fs/read]}}}
                                           :models {} :providers {}}
                        (sut/read-tool {"file_path"   (str quarters "/notes.txt")
@@ -199,8 +198,7 @@
             session-key default-session-key
             path        (str root "/crew/" crew-name "/new.txt")]
         (store-helper/create-session! root session-key {:crew crew-name :cwd "/work/project"})
-        (let [result (helper/with-config {:defaults {}
-                                          :tools {:directories {:allow [:quarters]}}
+        (let [result (helper/with-config {:defaults {:crew {:tools {:directories {:allow [:quarters]}}}}
                                           :crew {crew-name {:tools {:allow [:fs/write]}}}
                                           :models {} :providers {}}
                        (sut/write-tool {"file_path"   path
@@ -343,8 +341,7 @@
 
     (it "read resolves '.' to session cwd"
       (spit (str @cwd "/marker.txt") "found")
-      (let [result (helper/with-config {:defaults {}
-                                        :tools {:directories {:allow [:cwd]}}
+      (let [result (helper/with-config {:defaults {:crew {:tools {:directories {:allow [:cwd]}}}}
                                         :crew {} :models {} :providers {}}
                      (sut/read-tool {"file_path" "." "session_key" @session-key}))]
         (should-be-nil (:isError result))
@@ -352,8 +349,7 @@
 
     (it "read resolves an empty file_path to session cwd"
       (spit (str @cwd "/marker.txt") "found")
-      (let [result (helper/with-config {:defaults {}
-                                        :tools {:directories {:allow [:cwd]}}
+      (let [result (helper/with-config {:defaults {:crew {:tools {:directories {:allow [:cwd]}}}}
                                         :crew {} :models {} :providers {}}
                      (sut/read-tool {"file_path" "" "session_key" @session-key}))]
         (should-be-nil (:isError result))
@@ -361,16 +357,14 @@
 
     (it "read resolves a relative file_path against session cwd"
       (spit (str @cwd "/hello.txt") "relative content")
-      (let [result (helper/with-config {:defaults {}
-                                        :tools {:directories {:allow [:cwd]}}
+      (let [result (helper/with-config {:defaults {:crew {:tools {:directories {:allow [:cwd]}}}}
                                         :crew {} :models {} :providers {}}
                      (sut/read-tool {"file_path" "hello.txt" "session_key" @session-key}))]
         (should-be-nil (:isError result))
         (should (str/includes? (:result result) "relative content"))))
 
     (it "write resolves a relative file_path against session cwd"
-      (let [result (helper/with-config {:defaults {}
-                                        :tools {:directories {:allow [:cwd]}}
+      (let [result (helper/with-config {:defaults {:crew {:tools {:directories {:allow [:cwd]}}}}
                                         :crew {} :models {} :providers {}}
                      (sut/write-tool {"file_path" "out.txt" "content" "written" "session_key" @session-key}))]
         (should-be-nil (:isError result))
@@ -378,8 +372,7 @@
 
     (it "edit resolves a relative file_path against session cwd"
       (spit (str @cwd "/target.txt") "original")
-      (let [result (helper/with-config {:defaults {}
-                                        :tools {:directories {:allow [:cwd]}}
+      (let [result (helper/with-config {:defaults {:crew {:tools {:directories {:allow [:cwd]}}}}
                                         :crew {} :models {} :providers {}}
                      (sut/edit-tool {"file_path" "target.txt" "old_string" "original"
                                      "new_string" "updated" "session_key" @session-key}))]

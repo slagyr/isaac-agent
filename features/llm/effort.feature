@@ -78,10 +78,10 @@ Feature: Universal effort knob
       | key    | value |
       | effort | 2     |
 
-  Scenario: defaults.effort overrides the built-in default of 7
+  Scenario: defaults.provider.effort overrides the built-in default of 7
     Given the isaac EDN file "config/isaac.edn" exists with:
-      | path            | value |
-      | defaults.effort | 4     |
+      | path                     | value |
+      | defaults.provider.effort | 4     |
     When the user sends "hi" on session "effort-s"
     Then the last LLM request matches:
       | key    | value |

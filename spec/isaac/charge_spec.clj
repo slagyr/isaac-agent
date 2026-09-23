@@ -31,7 +31,7 @@
   (marigold/crew-cfg crew-id :model model-id :soul soul))
 
 (def base-cfg
-  {:defaults {:crew "main"}
+  {:defaults {:frequencies {:crew "main"}}
    :crew     {"main" (crew-cfg marigold/captain test-model-id "You are Atticus.")}
    :models   {test-model-id (model-cfg test-model-id 4096)}})
 
@@ -123,7 +123,7 @@
 
     (it "uses defaults.crew when the request and session are unlabeled"
       (let [cfg (assoc base-cfg
-                       :defaults {:crew marigold/first-mate}
+                       :defaults {:frequencies {:crew marigold/first-mate}}
                        :crew {marigold/first-mate (crew-cfg marigold/first-mate test-model-id "Cordelia")})]
         (with-redefs [loader/snapshot              (fn [_] cfg)
                       session-ctx/resolve-behavior (fn [_ opts]
@@ -131,7 +131,7 @@
           (should= marigold/first-mate (sut/agent (sut/build {:session-key "s1" :input "hi"}))))))
 
     (it "rejects main when it is not configured"
-      (with-redefs [loader/snapshot              (fn [_] {:defaults {:crew marigold/first-mate}
+      (with-redefs [loader/snapshot              (fn [_] {:defaults {:frequencies {:crew marigold/first-mate}}
                                                          :crew {marigold/first-mate {}}})
                     session-ctx/resolve-behavior (fn [_ _] (stub-behavior "main" "Legacy" test-model-id 4096))]
         (let [charge (sut/build {:session-key "s1" :input "hi" :crew "main"})]
@@ -150,7 +150,7 @@
 
     (it "uses explicit crew override when provided"
       (let [first-mate-model marigold/starcore-7]
-        (with-redefs [loader/snapshot             (fn [_] {:defaults {:crew "main"}
+        (with-redefs [loader/snapshot             (fn [_] {:defaults {:frequencies {:crew "main"}}
                                                          :crew     {"main"                 (crew-cfg marigold/captain test-model-id "Main bridge orders")
                                                                     marigold/first-mate (crew-cfg marigold/first-mate first-mate-model "Cordelia has the watch")}
                                                          :models   {test-model-id      (model-cfg test-model-id 4096)
@@ -163,7 +163,7 @@
             (should= first-mate-model (:model charge))))))
 
     (it "appends soul-prepend when provided"
-      (with-redefs [loader/snapshot             (fn [_] {:defaults {:crew "main"}
+      (with-redefs [loader/snapshot             (fn [_] {:defaults {:frequencies {:crew "main"}}
                                                          :crew     {"main" (crew-cfg marigold/captain test-model-id "Base.")}
                                                          :models   {test-model-id (model-cfg test-model-id 4096)}})
                     session-ctx/resolve-behavior (fn [_ _] (stub-behavior "main" "Base." test-model-id 4096))]
@@ -172,7 +172,7 @@
 
     (it "forwards crew and explicit model overrides to resolve-behavior without pinning config"
       (let [seen (atom nil)]
-        (with-redefs [loader/snapshot             (fn [_] {:defaults  {:crew "main"}
+        (with-redefs [loader/snapshot             (fn [_] {:defaults  {:frequencies {:crew "main"}}
                                                          :crew      {"main" (crew-cfg marigold/captain test-model-id "Base.")}
                                                          :models    {test-model-id (model-cfg test-model-id 4096)}
                                                          :root "/tmp/isaac/.isaac"})
@@ -202,7 +202,7 @@
 
     (it "re-resolves crew model from live config when the caller passes a stale config snapshot"
       (let [test-root "/test/charge-reload"
-            alpha-cfg {:defaults {:crew "flipper"}
+            alpha-cfg {:defaults {:frequencies {:crew "flipper"}}
                          :crew     {"flipper" {:model "alpha" :soul "flip"}}
                          :models   {"alpha" {:model "alpha-1" :provider "grover"}
                                     "beta"  {:model "beta-1" :provider "grover"}}
@@ -221,7 +221,7 @@
             (config/dangerously-install-config! nil "spec")))))
 
     (it "returns an unresolved charge with :no-model when no model is configured"
-      (with-redefs [loader/snapshot             (fn [_] {:defaults {:crew "main"}
+      (with-redefs [loader/snapshot             (fn [_] {:defaults {:frequencies {:crew "main"}}
                                                          :crew     {"main" {:soul "You are Atticus."}}})
                     session-ctx/resolve-behavior (fn [_ _] {:crew "main" :soul "You are Atticus."})]
         (let [charge (sut/build {:session-key "s1" :input "hi"})]

@@ -12,6 +12,7 @@
     [isaac.cli.registry :as cli]
     [isaac.cli.table :as table]
     [isaac.config.api :as config]
+    [isaac.config.defaults :as defaults]
     [isaac.config.loader :as loader]
     [isaac.config.nav :as nav]
     [isaac.config.root :as root]
@@ -227,7 +228,7 @@
 (defn- resolve-context-window [cfg crew-id]
   (let [cfg       (loader/normalize-config cfg)
         crew      (get-in cfg [:crew crew-id])
-        model-id  (or (:model crew) (get-in cfg [:defaults :model]))
+        model-id  (or (:model crew) (defaults/model-id cfg))
         model-cfg (get-in cfg [:models model-id])]
     (or (:context-window model-cfg) 32768)))
 
@@ -237,7 +238,7 @@
         ;; crew's window. (When a --crew filter is set, every session
         ;; resolves through the same crew, which matches prior behavior.)
         rows          (mapv (fn [entry]
-                              (let [cw (resolve-context-window cfg (or (:crew entry) (get-in cfg [:defaults :crew])))]
+                              (let [cw (resolve-context-window cfg (or (:crew entry) (defaults/crew-id cfg)))]
                                 (session->row entry cw session-store)))
                             sessions)
         columns       (cond
@@ -517,7 +518,7 @@
           (cond
             (or (:json opts) (:edn opts))
             (print-session-data
-              (mapv #(session->payload (assoc % :crew (or (:crew %) (get-in cfg [:defaults :crew])))) sessions)
+              (mapv #(session->payload (assoc % :crew (or (:crew %) (defaults/crew-id cfg)))) sessions)
               opts)
 
             (empty? sessions)

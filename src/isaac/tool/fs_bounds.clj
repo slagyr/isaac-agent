@@ -3,6 +3,7 @@
   (:require
     [clojure.java.io :as io]
     [clojure.string :as str]
+    [isaac.config.defaults :as defaults]
     [isaac.config.loader :as loader]
     [isaac.fs :as fs]
     [isaac.session.store.spi :as store]
@@ -107,7 +108,7 @@
 (defn- session-ctx [args session]
   (let [root    (root args)
         crew-id (or (:crew session)
-                    (get-in (loader/snapshot "tool fs-bounds: default crew") [:defaults :crew]))]
+                    (defaults/crew-id (loader/snapshot "tool fs-bounds: default crew")))]
     {:cwd      (or (:cwd session) (session-workdir args))
      :quarters (when root (crew-quarters root crew-id))}))
 
@@ -128,8 +129,8 @@
                         (store/get-session store session-key))]
       (when session
         (let [cfg         (loader/snapshot "tool fs-bounds: directory policy")
-              crew-id     (or (:crew session) (get-in cfg [:defaults :crew]))
-              global-dirs (directory-policy (:tools cfg))
+              crew-id     (or (:crew session) (defaults/crew-id cfg))
+              global-dirs (directory-policy (defaults/tools cfg))
               crew-dirs   (directory-policy (get-in cfg [:crew crew-id :tools]))
               ctx         (session-ctx args session)
               resolved    (canonical-path file-path)

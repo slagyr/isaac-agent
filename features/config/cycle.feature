@@ -11,7 +11,7 @@ Feature: The :cycle config group
   Scenario: the retired :cycle-limit key is rejected and names its replacement
     Given config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :local}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :local}}
        :crew      {:main {:cycle-limit 120}}
        :models    {:local {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {}}}
@@ -25,7 +25,7 @@ Feature: The :cycle config group
   Scenario: config schema lists the cycle knobs (isaac-xpkf adds :continuations)
     Given config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :local}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :local}}
        :crew      {:main {}}
        :models    {:local {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {}}}

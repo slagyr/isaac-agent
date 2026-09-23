@@ -19,7 +19,7 @@
   {:root "/test/prompt"})
 
 (def ^:private synthetic-config
-  {:defaults {:crew crew-name}
+  {:defaults {:frequencies {:crew crew-name}}
    :crew   {crew-name {:name crew-name :soul crew-soul :model "grover"}}
    :models {"grover" {:alias "grover" :model "echo" :provider "grover" :context-window 32768}}})
 

@@ -42,7 +42,7 @@
           session-store (store/create nil :memory)]
       (nexus/-with-nexus {:root "/test/runtime" :sessions {:store session-store} :fs mem}
         (store/open-session! session-store "chat-1" {:crew marigold/captain :cwd "/work/project"})
-        (config/dangerously-install-config! {:tools {:directories {:allow [:cwd]}}
+        (config/dangerously-install-config! {:defaults {:crew {:tools {:directories {:allow [:cwd]}}}}
                                              :crew  {marigold/captain {:tools {:allow [:fs/read]}}}} "spec")
         (should-be-nil (sut/ensure-path-allowed {"session_key" "chat-1"}
                                                 "/work/project/hello.txt"))
@@ -55,7 +55,7 @@
           quarters      (str "/test/runtime/crew/" marigold/captain)]
       (nexus/-with-nexus {:root "/test/runtime" :sessions {:store session-store} :fs mem}
         (store/open-session! session-store "chat-1" {:crew marigold/captain :cwd "/work/project"})
-        (config/dangerously-install-config! {:tools {:directories {:allow [:quarters]}}
+        (config/dangerously-install-config! {:defaults {:crew {:tools {:directories {:allow [:quarters]}}}}
                                              :crew  {marigold/captain {:tools {:allow [:fs/read]}}}} "spec")
         (should-be-nil (sut/ensure-path-allowed {"session_key" "chat-1"}
                                                 (str quarters "/notes.txt")))
@@ -68,8 +68,9 @@
       (nexus/-with-nexus {:root "/isaac-state" :sessions {:store session-store} :fs mem}
         (store/open-session! session-store "fence-test" {:crew "main" :cwd "/work/project"})
         (config/dangerously-install-config!
-          {:defaults {:crew :main :model :echo}
-           :tools    {:directories {:allow [:cwd]}}
+          {:defaults {:frequencies {:crew :main}
+                      :crew        {:model :echo
+                                    :tools {:directories {:allow [:cwd]}}}}
            :crew     {"main" {:tools {:allow [:fs/read]}}}}
           "spec")
         (should-be-nil (sut/ensure-path-allowed {"session_key" "fence-test"}
@@ -94,7 +95,7 @@
       (nexus/-with-nexus {:root "/isaac-state" :sessions {:store session-store} :fs mem}
         (store/open-session! session-store "fence-test" {:crew "main" :cwd "/work/project"})
         (config/dangerously-install-config!
-          {:tools {:directories {:allow [:cwd :quarters]}}
+          {:defaults {:crew {:tools {:directories {:allow [:cwd :quarters]}}}}
            :crew  {"main" {:tools {:allow [:fs/read]}}}}
           "spec")
         (let [denied (sut/ensure-path-allowed {"session_key" "fence-test"}
@@ -108,7 +109,7 @@
       (nexus/-with-nexus {:root "/isaac-state" :sessions {:store session-store} :fs mem}
         (store/open-session! session-store "fence-test" {:crew "main" :cwd "/isaac-state"})
         (config/dangerously-install-config!
-          {:tools {:directories {:allow [:cwd :quarters]}}
+          {:defaults {:crew {:tools {:directories {:allow [:cwd :quarters]}}}}
            :crew  {"main" {:tools {:allow [:fs/read]}}}}
           "spec")
         (let [denied (sut/ensure-path-allowed {"session_key" "fence-test"}
@@ -130,7 +131,7 @@
         (nexus/-with-nexus {:root "/isaac-state" :sessions {:store session-store}}
           (store/open-session! session-store "fence-test" {:crew "main" :cwd cwd})
           (config/dangerously-install-config!
-            {:tools {:directories {:allow [:cwd]}}
+            {:defaults {:crew {:tools {:directories {:allow [:cwd]}}}}
              :crew  {"main" {:tools {:allow [:fs/read]}}}}
             "spec")
           (let [denied (sut/ensure-path-allowed {"session_key" "fence-test"} link)]

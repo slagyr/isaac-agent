@@ -348,8 +348,19 @@
        :validations [[:present-when? :auth "api-key"]]},
       :stream-idle-timeout-ms
       {:type :int,
+       :default 90000,
        :description
-       "Per-provider idle-stall timeout (ms) for SSE/NDJSON streams; overrides :defaults"}}}}},
+       "Idle-stall timeout (ms) for this provider's SSE/NDJSON streams; close and treat as weather when no bytes arrive"},
+      :retry-after-ms
+      {:type :int,
+       :default 1800000,
+       :description
+       "Retry-after (ms) when a wall from this provider carries no Retry-After header"},
+      :auth-retry-ms
+      {:type :int,
+       :default 300000,
+       :description
+       "Retry-after (ms) when an auth failure from this provider blocks a turn"}}}}},
   :skill-menu-threshold
   {:schema
    {:type :int,
@@ -359,23 +370,14 @@
   :tools
   {:schema
    {:type :map,
-    :description "Tool configuration (per-tool config maps and global defaults)",
+    :description "Per-tool configuration (crew-wide tool defaults live at :defaults :crew :tools, output caps at :defaults :tools)",
     :schema
     {:max-parallel
      {:type :int,
-      :default 4,
-      :description "Max concurrent tool calls Isaac executes from one model response batch",
-      :validations [:positive?]}
+      :validations [[:retired? "use :defaults :crew :tools :max-parallel"]]}
      :defaults
      {:type :map,
-      :description "Global tool output caps applied at the turn boundary",
-      :schema
-      {:max-lines
-       {:type :int,
-        :description "Max lines in a tool result string before head-tail truncation"},
-       :max-bytes
-       {:type :int,
-        :description "Max UTF-8 bytes in a tool result string before head-tail truncation"}}}
+      :validations [[:retired? "use :defaults :tools"]]}
      :web_search
      {:type :map,
       :description "Web search tool config",
@@ -384,23 +386,13 @@
        :api-key {:type :string, :validations [:present?]}}}
      :allow
      {:type :ignore,
-      :description "Global allowed tools: :all or a vector of namespaced keywords / ns/* globs"}
+      :validations [[:retired? "use :defaults :crew :tools :allow"]]}
      :deny
      {:type :ignore,
-      :description "Global denied tools: :all or a vector of namespaced keywords / ns/* globs"}
+      :validations [[:retired? "use :defaults :crew :tools :deny"]]}
      :directories
      {:type :map,
-      :description
-      "Global directory allow/deny. Empty means no paths. Tokens: :cwd, :quarters, or absolute paths.",
-      :schema
-      {:allow
-       {:type :seq,
-        :description "Allowed directory prefixes",
-        :spec {:type :ignore, :validations [:cwd-or-path?]}}
-       :deny
-       {:type :seq,
-        :description "Denied directory prefixes",
-        :spec {:type :ignore, :validations [:cwd-or-path?]}}}}}}},
+      :validations [[:retired? "use :defaults :crew :tools :directories"]]}}}},
   :crew
   {:entity-dir "crew",
    :frontmatter? true,
@@ -546,89 +538,72 @@
   {:schema
    {:name :defaults,
     :type :map,
-    :description "Default crew and model selections",
+    :description
+    "Entity templates. :defaults :<entity> behaves exactly as if every entity of that kind had set the field, so where a default is written decides how it ranks: :defaults :provider :effort is outranked by a model's or crew's effort, while :defaults :crew :effort outranks every model's. To keep a field's existing rank, write its default on the lowest layer that carries it.",
     :schema
-    {:compaction
+    {:frequencies
      {:type :map,
-      :description "Default compaction policy for sessions",
+      :description
+      "Default session selection (selection fields only; the per-turn :with-* overrides sit above every layer and are never defaults)",
+      :entity-template
+      {:kind :frequencies,
+       :except [:with-crew :with-model :with-effort :with-context-mode],
+       :override
+       {:crew
+        {:type :id,
+         :required? true,
+         :description "Default crew member id",
+         :validations [:present? :crew-exists?]}}}},
+     :crew
+     {:type :map,
+      :message
+      "must be a map of crew defaults; the default crew id moved to :defaults :frequencies :crew",
+      :description "Template for every crew member",
+      :entity-template {:kind :crew, :except [:id :soul :tags]}},
+     :model
+     {:type :map,
+      :message
+      "must be a map of model defaults; the default model alias moved to :defaults :crew :model",
+      :description "Template for every model",
+      :entity-template {:kind :models, :except [:id]}},
+     :provider
+     {:type :map,
+      :description "Template for every provider",
+      :entity-template {:kind :providers, :except [:id :name]}},
+     :tools
+     {:type :map,
+      :description "Global tool output caps applied at the turn boundary",
       :schema
-      {:async? {:type :boolean},
-       :effort
+      {:max-lines
        {:type :int,
-        :description
-        "Effort used for compaction summary requests (default 2)"},
-       :head
-       {:type :double,
-        :validations
-        [[:percentage? "e.g. 0.3 for 30% of context-window"]]},
-       :head-threshold
-       {:type :ignore,
-        :description "Derived: head must stay below threshold",
-        :validations [[:less-than? :head :threshold]]},
-       :strategy
-       {:type :keyword, :validations [[:one-of? :rubberband :slinky]]},
-       :threshold
-       {:type :double,
-        :validations
-        [[:percentage? "e.g. 0.8 for 80% of context-window"]]}}},
+        :description "Max lines in a tool result string before head-tail truncation"},
+       :max-bytes
+       {:type :int,
+        :description "Max UTF-8 bytes in a tool result string before head-tail truncation"}}},
      :context-mode
      {:type :keyword,
-      :description "Default transcript replay mode for new turns",
-      :validations [[:one-of? :full :reset]]},
-     :crew
-     {:type :id,
-      :required? true,
-      :description "Default crew member id",
-      :validations [:present? :crew-exists?]},
-     :effort
-     {:type :int,
-      :description
-      "Default effort level (0-10) when not overridden by provider/model/crew/session"},
-     :history-retention
-     {:type :keyword,
-      :description
-      "Default transcript history retention policy for new sessions",
-      :validations [[:one-of? :prune :retain]]},
-     :model
-     {:type :id,
-      :default "llama",
-      :description "Default model alias",
-      :validations [:model-exists?]},
-     :provider-retry-after-ms
-     {:type :int,
-      :default 1800000,
-      :description
-      "Default retry-after (ms) when a provider wall has no Retry-After header"},
-     :provider-auth-retry-ms
-     {:type :int,
-      :default 300000,
-      :description
-      "Default retry-after (ms) when a provider auth failure blocks a turn"},
-     :stream-idle-timeout-ms
-     {:type :int,
-      :default 90000,
-      :description
-      "Idle-stall timeout (ms) for provider SSE/NDJSON streams; close and treat as weather when no bytes arrive"},
+      :validations [[:retired? "use :defaults :crew :context-mode"]]},
      :cycle
      {:type :map,
-      :description
-      "Default turn knobs: limit, checkpoint-every, checkpoint-prompt, wrap-up-prompt, continuations",
-      :schema
-      {:limit
-       {:type :int,
-        :description "Default tool-call cycle budget for turns (default 100)"},
-       :checkpoint-every
-       {:type :int,
-        :description "Nudge a checkpoint every N cycles; omit to leave checkpoints off"},
-       :checkpoint-prompt
-       {:type :string,
-        :description "Optional override of the drive's default checkpoint nudge"},
-       :wrap-up-prompt
-       {:type :string,
-        :description "Optional override of the drive's default wrap-up nudge"},
-       :continuations
-       {:type :int,
-        :description "How many times a wrapped-up turn may be re-driven (default 2)"}}}}}},
+      :validations [[:retired? "use :defaults :crew :cycle"]]},
+     :effort
+     {:type :int,
+      :validations [[:retired? "use :defaults :provider :effort"]]},
+     :history-retention
+     {:type :keyword,
+      :validations [[:retired? "use :defaults :provider :history-retention"]]},
+     :compaction
+     {:type :map,
+      :validations [[:retired? "use :defaults :provider :compaction"]]},
+     :stream-idle-timeout-ms
+     {:type :int,
+      :validations [[:retired? "use :defaults :provider :stream-idle-timeout-ms"]]},
+     :provider-retry-after-ms
+     {:type :int,
+      :validations [[:retired? "use :defaults :provider :retry-after-ms"]]},
+     :provider-auth-retry-ms
+     {:type :int,
+      :validations [[:retired? "use :defaults :provider :auth-retry-ms"]]}}}},
   :attention
   {:schema
    {:name :attention,

@@ -12,6 +12,7 @@
     [isaac.comm.protocol :as comm]
     [isaac.comm.render :as render]
     [isaac.config.api :as config]
+    [isaac.config.defaults :as defaults]
     [isaac.config.loader :as loader]
     [isaac.config.root :as root]
     [isaac.drive.observer :as observer]
@@ -136,7 +137,7 @@
 (defn- episode-crew-id [opts override cfg]
   (or (:with-crew override)
       (:crew opts)
-      (get-in cfg [:defaults :crew])))
+      (defaults/crew-id cfg)))
 
 (defn- prompt-policy [opts override cfg session-store]
   (policy/for-request {:crew          (episode-crew-id opts override cfg)

@@ -19,7 +19,7 @@
 
     (it "prefers explicit override over crew model provider and defaults"
       (should= :retain
-               (sut/resolve-history-retention {:defaults  {:history-retention :prune}
+               (sut/resolve-history-retention {:defaults  {:provider {:history-retention :prune}}
                                               :crew      {"main" {:model "gpt" :history-retention :prune}}
                                               :models    {"gpt" {:provider marigold/starcore :history-retention :prune}}
                                               :providers {marigold/starcore {:history-retention :prune}}}
@@ -28,21 +28,21 @@
 
     (it "falls through crew model provider defaults in order"
       (should= :prune
-               (sut/resolve-history-retention {:defaults  {:history-retention :retain}
+               (sut/resolve-history-retention {:defaults  {:provider {:history-retention :retain}}
                                               :crew      {"main" {:model "gpt" :history-retention :prune}}
                                               :models    {"gpt" {:provider marigold/starcore :history-retention :retain}}
                                               :providers {marigold/starcore {:history-retention :retain}}}
                                              "main"
                                              nil))
       (should= :prune
-               (sut/resolve-history-retention {:defaults  {:history-retention :retain}
+               (sut/resolve-history-retention {:defaults  {:provider {:history-retention :retain}}
                                               :crew      {"main" {:model "gpt"}}
                                               :models    {"gpt" {:model "gpt-5" :provider marigold/starcore :history-retention :prune}}
                                               :providers {marigold/starcore {:history-retention :retain}}}
                                              "main"
                                              nil))
       (should= :prune
-               (sut/resolve-history-retention {:defaults  {:history-retention :retain}
+               (sut/resolve-history-retention {:defaults  {:provider {:history-retention :retain}}
                                               :crew      {"main" {:model "gpt"}}
                                               :models    {"gpt" {:model "gpt-5" :provider marigold/starcore}}
                                               :providers {marigold/starcore {:history-retention :prune}}}
@@ -119,7 +119,7 @@
     (it "resolves crew model provider and context window from the new map-by-id shape"
       (with-redefs [llm-provider/make-provider (fn [provider-id provider-cfg]
                                                  {:id provider-id :cfg provider-cfg})]
-        (let [cfg {:defaults  {:crew "main" :model "llama"}
+        (let [cfg {:defaults  {:frequencies {:crew "main"} :crew {:model "llama"}}
                    :crew      {"main" {:model "grover" :soul "You are Isaac."}}
                    :models    {"grover" {:model "helm-mk-3-1.0" :provider marigold/helm-systems :context-window 200000}}
                    :providers {marigold/helm-systems {:api marigold/helm-api :base-url (:base-url marigold/helm-provider)}}}
@@ -133,7 +133,7 @@
     (it "returns crew-cfg and model-cfg for effort resolution"
       (with-redefs [llm-provider/make-provider (fn [provider-id provider-cfg]
                                                  {:id provider-id :cfg provider-cfg})]
-        (let [cfg {:defaults  {:crew "main" :model "snuffy"}
+        (let [cfg {:defaults  {:frequencies {:crew "main"} :crew {:model "snuffy"}}
                    :crew      {"main" {:model "snuffy" :effort 9}}
                    :models    {"snuffy" {:model "snuffy-codex" :provider "grover" :effort 5}}
                    :providers {"grover" {:api "responses" :effort 3}}}
@@ -144,7 +144,7 @@
     (it "uses a named model config whose id matches the provider model string"
       (with-redefs [llm-provider/make-provider (fn [provider-id provider-cfg]
                                                  {:id provider-id :cfg provider-cfg})]
-        (let [cfg {:defaults  {:crew "main" :model "grover"}
+        (let [cfg {:defaults  {:frequencies {:crew "main"} :crew {:model "grover"}}
                    :crew      {"cordelia" {:model "echo" :soul "You are Cordelia."}}
                    :models    {"grover" {:model "echo" :provider "grover" :context-window 32768}
                                "echo"   {:model "echo" :provider "grover" :context-window 200}}
@@ -157,7 +157,7 @@
     (it "resolves a crew model that matches an existing model's provider string"
       (with-redefs [llm-provider/make-provider (fn [provider-id provider-cfg]
                                                  {:id provider-id :cfg provider-cfg})]
-        (let [cfg {:defaults  {:crew "main" :model "grover"}
+        (let [cfg {:defaults  {:frequencies {:crew "main"} :crew {:model "grover"}}
                    :crew      {"cordelia" {:model "echo" :soul "You are Cordelia."}}
                    :models    {"grover" {:model "echo" :provider "grover" :context-window 32768}}
                    :providers {"grover" {:api "grover"}}}

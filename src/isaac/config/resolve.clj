@@ -3,6 +3,7 @@
    Requires the foundation loader for normalize-config and workspace reads."
   (:require
     [clojure.string :as str]
+    [isaac.config.defaults :as defaults]
     [isaac.config.loader :as loader]
     [isaac.config.schema.root :as schema]
     [isaac.llm.provider :as llm-provider]
@@ -11,15 +12,19 @@
 (def ^:private ->id schema/->id)
 
 (defn default-crew [cfg]
-  (get-in (loader/normalize-config (or cfg {})) [:defaults :crew]))
+  (defaults/crew-id (loader/normalize-config (or cfg {}))))
 
-(defn resolve-provider [cfg provider-id]
+(defn resolve-provider
+  "The provider entity under the :defaults :provider template. Nil when no such
+   provider is configured — the template alone is not a provider."
+  [cfg provider-id]
   (let [cfg         (loader/normalize-config cfg)
         provider-id (->id provider-id)]
     (when provider-id
-      (or (llm-providers/lookup cfg (:module-index cfg) provider-id)
-          (when-let [idx (str/index-of provider-id ":")]
-            (get-in cfg [:providers (subs provider-id 0 idx)]))))))
+      (when-let [provider-cfg (or (llm-providers/lookup cfg (:module-index cfg) provider-id)
+                                  (when-let [idx (str/index-of provider-id ":")]
+                                    (get-in cfg [:providers (subs provider-id 0 idx)])))]
+        (merge (defaults/provider-template cfg) provider-cfg)))))
 
 (defn parse-model-ref [model-ref]
   (let [idx (str/index-of model-ref "/")]
@@ -34,17 +39,20 @@
               model-cfg))
           (:models cfg))))
 
-(defn- lookup-model-cfg [cfg model-id]
-  (or (get-in cfg [:models model-id])
-      (get-in cfg [:models (keyword model-id)])
-      (model-by-provider-string cfg model-id)))
+(defn- lookup-model-cfg
+  "The model entity under the :defaults :model template."
+  [cfg model-id]
+  (when-let [model-cfg (or (get-in cfg [:models model-id])
+                           (get-in cfg [:models (keyword model-id)])
+                           (model-by-provider-string cfg model-id))]
+    (merge (defaults/model-template cfg) model-cfg)))
 
 (defn- model-override-cfg [cfg model-override]
   (or (lookup-model-cfg cfg model-override)
       (parse-model-ref model-override)))
 
 (defn- model-override-provider-opts [cfg provider-cfg model-cfg]
-  (merge (select-keys (get cfg :defaults {}) [:stream-idle-timeout-ms])
+  (merge (select-keys (defaults/provider-template cfg) [:stream-idle-timeout-ms])
          provider-cfg
          {:module-index (:module-index cfg)}
          (select-keys model-cfg [:enforce-context-window :thinking-budget-max :think-mode])))
@@ -59,11 +67,13 @@
       (:context-window ctx)
       32768))
 
-(defn resolve-crew [cfg crew-id]
-  (let [cfg      (loader/normalize-config cfg)
-        crew-id  (->id crew-id)
-        defaults (:defaults cfg)]
-    (merge (when-let [model-id (:model defaults)] {:model model-id})
+(defn resolve-crew
+  "The crew entity under the :defaults :crew template: every crew behaves as if
+   it had set the template's fields, and its own values outrank them."
+  [cfg crew-id]
+  (let [cfg     (loader/normalize-config cfg)
+        crew-id (->id crew-id)]
+    (merge (defaults/crew-template cfg)
            (get-in cfg [:crew crew-id] {}))))
 
 (def default-history-retention :retain)
@@ -74,7 +84,7 @@
   [cfg crew-id explicit-retention]
   (let [cfg          (loader/normalize-config (or cfg {}))
         crew-cfg     (resolve-crew cfg crew-id)
-        model-id     (or (:model crew-cfg) (get-in cfg [:defaults :model]))
+        model-id     (or (:model crew-cfg) (defaults/model-id cfg))
         model-cfg    (or (lookup-model-cfg cfg model-id)
                          (when-let [provider-id (:provider crew-cfg)]
                            {:provider provider-id}))
@@ -84,7 +94,7 @@
         (:history-retention crew-cfg)
         (:history-retention model-cfg)
         (:history-retention provider-cfg)
-        (get-in cfg [:defaults :history-retention])
+        (defaults/history-retention cfg)
         default-history-retention)))
 
 (defn- apply-model-override [cfg ctx model-override]
@@ -109,7 +119,7 @@
         cfg          (loader/normalize-config cfg)
         crew-id      (->id crew-id)
         crew-cfg     (resolve-crew cfg crew-id)
-        model-id     (or (:model crew-cfg) (get-in cfg [:defaults :model]))
+        model-id     (or (:model crew-cfg) (defaults/model-id cfg))
         model-cfg    (or (lookup-model-cfg cfg model-id)
                          (when-let [provider-id (:provider crew-cfg)]
                            {:model model-id :provider provider-id})

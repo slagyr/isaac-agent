@@ -72,7 +72,7 @@
       (let [fs* (fs/mem-fs)]
         (nexus/-with-nested-nexus {:fs fs*}
           (marigold.agent/with-real-manifest
-            (marigold/write-config! {:defaults {:crew "main" :model "grover"}})
+            (marigold/write-config! {:defaults {:frequencies {:crew "main"} :crew {:model "grover"}}})
             (marigold/write-model! "grover" {:model "echo" :provider "grover" :context-window 32768})
             (marigold/write-crew! "main" {:model "grover" :soul "You are Atticus."})
             (marigold/write-crew! "cordelia" {:model "echo" :soul "You are Cordelia." :session-policy :episodes})
@@ -86,7 +86,7 @@
       (let [fs* (fs/mem-fs)]
         (nexus/-with-nested-nexus {:fs fs*}
           (marigold.agent/with-real-manifest
-            (marigold/write-config! {:defaults {:crew "main" :model "grover"}})
+            (marigold/write-config! {:defaults {:frequencies {:crew "main"} :crew {:model "grover"}}})
             (marigold/write-model! "grover" {:model "echo" :provider "grover" :context-window 32768})
             (marigold/write-crew! "main" {:model "grover" :soul "You are Atticus."})
             (marigold/write-crew! "cordelia" {:model "ghost" :soul "You are Cordelia."})
@@ -178,16 +178,16 @@
         (should= "crew.main.tools.allow" (:key (first errors)))
         (should (re-find #":all" (:value (first errors))))))
 
-    (it "rejects [:all] on global tools.allow"
+    (it "rejects [:all] on the crew tool defaults"
       (let [{:keys [errors]} (sut/check-tool-allow-tokens
-                               {:config {:tools {:allow [:all]}}})]
+                               {:config {:defaults {:crew {:tools {:allow [:all]}}}}})]
         (should= 1 (count errors))
-        (should= "tools.allow" (:key (first errors)))
+        (should= "defaults.crew.tools.allow" (:key (first errors)))
         (should (re-find #":all" (:value (first errors))))))
 
-    (it "accepts global :allow :all as the policy keyword"
+    (it "accepts :allow :all as the policy keyword in the crew tool defaults"
       (let [{:keys [errors]} (sut/check-tool-allow-tokens
-                               {:config {:tools {:allow :all :deny [:exec/run]}}})]
+                               {:config {:defaults {:crew {:tools {:allow :all :deny [:exec/run]}}}}})]
         (should= [] errors)))
 
     (it "rejects an unqualified deny token"
@@ -273,7 +273,7 @@
           (marigold.agent/with-real-manifest
             (fs/mkdirs fs* (str root "/config"))
             (fs/spit fs* (str root "/config/isaac.edn")
-                     (pr-str {:defaults  {:crew :main :model :local}
+                     (pr-str {:defaults  {:frequencies {:crew :main} :crew {:model :local}}
                               :crew      {:main {:cycle-limit 120}}
                               :models    {:local {:model "llama3.3:1b" :provider :anthropic}}
                               :providers {:anthropic {}}}))

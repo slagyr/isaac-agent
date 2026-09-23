@@ -6,7 +6,8 @@
     [c3kit.apron.schema.path :as path]
     [clojure.edn :as edn]
     [clojure.string :as str]
-    [isaac.config.schema-base :as schema-base]))
+    [isaac.config.schema-base :as schema-base]
+    [isaac.config.schema-compose :as schema-compose]))
 
 (def ->id schema-base/->id)
 (def schema-fields schema-base/schema-fields)
@@ -24,9 +25,16 @@
 (defn- table [config-key]
   (get-in contributions [config-key :schema]))
 
+(def ^:private manifest-root
+  "The merged manifests as a root schema, so :defaults' entity templates can be
+   expanded against the entity tables they copy."
+  {:schema (into {} (map (fn [[config-key descriptor]] [config-key (:schema descriptor)]))
+                 contributions)})
+
 ;; region ----- Entity Schemas (manifest views) -----
 
-(def defaults (table :defaults))
+(def defaults
+  (get-in (schema-compose/resolve-entity-templates manifest-root) [:schema :defaults]))
 (def acp (table :acp))
 (def server (table :server))
 (def sessions (table :sessions))

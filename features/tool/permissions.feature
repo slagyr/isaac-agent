@@ -16,8 +16,8 @@ Feature: Global and crew tool allow/deny cascade
 
   Scenario: Global allow all is inherited when the crew omits :tools
     Given config:
-      | key         | value |
-      | tools.allow | :all  |
+      | key                       | value |
+      | defaults.crew.tools.allow | :all  |
     And the following sessions exist:
       | name       |
       | tools-test |
@@ -45,9 +45,9 @@ Feature: Global and crew tool allow/deny cascade
 
   Scenario: Global deny exec is inherited
     Given config:
-      | key         | value        |
-      | tools.allow | :all         |
-      | tools.deny  | [:exec/run]  |
+      | key                       | value       |
+      | defaults.crew.tools.allow | :all        |
+      | defaults.crew.tools.deny  | [:exec/run] |
     And the following sessions exist:
       | name       |
       | tools-test |
@@ -77,13 +77,13 @@ Feature: Global and crew tool allow/deny cascade
 
   Scenario: Crew allow re-enables a globally denied tool
     Given config:
-      | key         | value       |
-      | tools.allow | :all        |
-      | tools.deny  | [:exec/run] |
+      | key                       | value       |
+      | defaults.crew.tools.allow | :all        |
+      | defaults.crew.tools.deny  | [:exec/run] |
     And the isaac EDN file "config/crew/main.edn" exists with:
-      | path        | value      |
-      | model       | grover     |
-      | soul        | Atticus.   |
+      | path        | value       |
+      | model       | grover      |
+      | soul        | Atticus.    |
       | tools.allow | [:exec/run] |
     And the following sessions exist:
       | name       |
@@ -112,14 +112,14 @@ Feature: Global and crew tool allow/deny cascade
 
   Scenario: Crew deny overlays and does not drop a global deny
     Given config:
-      | key         | value       |
-      | tools.allow | :all        |
-      | tools.deny  | [:exec/run] |
+      | key                       | value       |
+      | defaults.crew.tools.allow | :all        |
+      | defaults.crew.tools.deny  | [:exec/run] |
     And the isaac EDN file "config/crew/main.edn" exists with:
-      | path       | value     |
-      | model      | grover    |
-      | soul       | Atticus.  |
-      | tools.deny | [:fs/*]   |
+      | path       | value    |
+      | model      | grover   |
+      | soul       | Atticus. |
+      | tools.deny | [:fs/*]  |
     And the following sessions exist:
       | name       |
       | tools-test |
@@ -145,14 +145,14 @@ Feature: Global and crew tool allow/deny cascade
 
   Scenario: Crew deny all then allow memory leaves only memory tools
     Given config:
-      | key         | value |
-      | tools.allow | :all  |
+      | key                       | value |
+      | defaults.crew.tools.allow | :all  |
     And the isaac EDN file "config/crew/main.edn" exists with:
-      | path        | value        |
-      | model       | grover       |
-      | soul        | Atticus.     |
-      | tools.deny  | :all         |
-      | tools.allow | [:memory/*]  |
+      | path        | value       |
+      | model       | grover      |
+      | soul        | Atticus.    |
+      | tools.deny  | :all        |
+      | tools.allow | [:memory/*] |
     And the following sessions exist:
       | name       |
       | tools-test |
@@ -171,29 +171,29 @@ Feature: Global and crew tool allow/deny cascade
     Given an empty Isaac root at "/tmp/isaac-allow-all-vec"
     And the isaac file "isaac.edn" exists with:
       """
-      {:tools {:allow [:all]}}
+      {:defaults {:crew {:tools {:allow [:all]}}}}
       """
     When the config is loaded
     Then the config has validation errors matching:
-      | key         | value   |
-      | tools.allow | #":all" |
+      | key                       | value   |
+      | defaults.crew.tools.allow | #":all" |
 
   Scenario: Crew deny of a family overlays; other global allows remain
     Given config:
-      | key         | value |
-      | tools.allow | :all  |
+      | key                       | value |
+      | defaults.crew.tools.allow | :all  |
     And the isaac EDN file "config/crew/main.edn" exists with:
-      | path       | value     |
-      | model      | grover    |
-      | soul       | Atticus.  |
-      | tools.deny | [:web/*]  |
+      | path       | value    |
+      | model      | grover   |
+      | soul       | Atticus. |
+      | tools.deny | [:web/*] |
     And the following sessions exist:
       | name       |
       | tools-test |
     When the user sends "hello" on session "tools-test"
     Then the prompt does not have tools:
-      | name       |
-      | web__fetch |
+      | name        |
+      | web__fetch  |
       | web__search |
     And the prompt has tools:
       | name           |

@@ -43,7 +43,7 @@
                (sut/classify result {} "chatgpt"))))
 
   (it "uses configured auth retry-after"
-    (let [cfg {:defaults {:provider-auth-retry-ms 120000}}
+    (let [cfg {:defaults {:provider {:auth-retry-ms 120000}}}
           result {:error :api-error :status 401 :message "Unauthorized"}]
       (should= 120000 (:retry-after-ms (sut/classify result cfg "grover")))))
 

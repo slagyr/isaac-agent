@@ -14,7 +14,7 @@ Feature: Config validation — dangling .md warnings
   Scenario: dangling crew/<id>.md with no matching entity warns
     Given config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :llama}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :llama}}
        :crew      {:main {:soul "Hello"}}
        :models    {:llama {:model "llama" :provider :anthropic}}
        :providers {:anthropic {}}}
@@ -39,7 +39,7 @@ Feature: Config validation — dangling .md warnings
       """
     And config file "isaac.edn" containing:
       """
-      {:defaults  {:crew :main :model :llama}
+      {:defaults  {:frequencies {:crew :main} :crew {:model :llama}}
        :models    {:llama {:model "llama" :provider :anthropic}}
        :providers {:anthropic {}}}
       """

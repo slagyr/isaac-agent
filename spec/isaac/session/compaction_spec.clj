@@ -375,7 +375,7 @@
           (should= 5 (:effort @chat-called)))))
 
     (it "stamps last-compaction-request with crew compaction.effort 5 from resolved config"
-      (config/dangerously-install-config! {:defaults  {:crew "purser" :model "spark"}
+      (config/dangerously-install-config! {:defaults  {:frequencies {:crew "purser"} :crew {:model "spark"}}
                                            :crew      {"purser" {:model "spark" :soul "You keep the accounts."
                                                                  :compaction {:effort 5}}}
                                            :models    {"spark" {:model "echo" :provider "grover" :context-window 200}}
@@ -398,7 +398,7 @@
       (config/dangerously-install-config! nil "spec"))
 
     (it "resolves crew compaction.effort 5 from the session-store passed to compact!"
-      (config/dangerously-install-config! {:defaults  {:crew "main" :model "spark"}
+      (config/dangerously-install-config! {:defaults  {:frequencies {:crew "main"} :crew {:model "spark"}}
                                            :crew      {"main"   {:model "spark" :soul "You are Atticus."}
                                                        "purser" {:model "spark" :soul "You keep the accounts."
                                                                  :compaction {:effort 5}}}

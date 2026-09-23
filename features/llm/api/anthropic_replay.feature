@@ -9,8 +9,8 @@ Feature: Anthropic replay keeps tool calls and results paired (isaac-lddb)
   Background:
     Given default Grover setup
     And config:
-      | key         | value                 |
-      | tools.allow | [:all :test :test/*] |
+      | key                       | value                |
+      | defaults.crew.tools.allow | [:all :test :test/*] |
     And the built-in tools are registered
     And the isaac EDN file "config/models/harbor-haiku.edn" exists with:
       | path     | value            |
@@ -24,9 +24,9 @@ Feature: Anthropic replay keeps tool calls and results paired (isaac-lddb)
       | name    |
       | on-deck |
     And the following model responses are queued:
-      | model | type       | tool_calls                                                                                              | content |
+      | model | type       | tool_calls                                                                                             | content |
       |       | tool_calls | [{"function":{"name":"test__slow","arguments":{}}},{"function":{"name":"test__quick","arguments":{}}}] |         |
-      | echo  | text       |                                                                                                         | Noted.  |
+      | echo  | text       |                                                                                                        | Noted.  |
     When the user sends "go" on session "on-deck" via memory comm
     And the isaac EDN file "config/crew/main.edn" exists with:
       | path  | value            |

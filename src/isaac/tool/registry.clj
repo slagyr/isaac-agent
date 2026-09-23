@@ -1,6 +1,7 @@
 (ns isaac.tool.registry
   (:require
     [clojure.string :as str]
+    [isaac.config.defaults :as defaults]
     [isaac.config.loader :as loader]
     [isaac.logger :as log]
     [isaac.module.loader :as module-loader]
@@ -159,8 +160,8 @@
 
 (defn- snapshot-caps []
   (let [cfg (or (loader/snapshot "tool output caps — ambient fallback when caller passes no caps") {})]
-    {:max-lines (get-in cfg [:tools :defaults :max-lines])
-     :max-bytes (get-in cfg [:tools :defaults :max-bytes])}))
+    {:max-lines (:max-lines (defaults/tool-caps cfg))
+     :max-bytes (:max-bytes (defaults/tool-caps cfg))}))
 
 ;; caps is {:max-lines _ :max-bytes _} resolved from config at the turn boundary
 ;; and threaded in as a value; nil falls back to the ambient snapshot.

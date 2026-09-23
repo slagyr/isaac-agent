@@ -4,6 +4,7 @@
    Callers (bridge, drive, comms, tools) talk to SessionPolicy. The store
    underneath is persistence primitives; a policy never sees a directory."
   (:require
+    [isaac.config.defaults :as defaults]
     [isaac.nexus :as nexus]
     [isaac.session.store.spi :as store]))
 
@@ -117,7 +118,7 @@
   ([crew-id cfg]
    (for-crew crew-id cfg (store/registered-store)))
   ([crew-id cfg store]
-   (let [crew-id  (or (->id crew-id) (get-in cfg [:defaults :crew]))
+   (let [crew-id  (or (->id crew-id) (defaults/crew-id cfg))
          crew-cfg (get-in cfg [:crew crew-id])
          name     (policy-name crew-cfg)]
      (create name store))))
@@ -159,7 +160,7 @@
                           (some-> (nexus/get :config) deref)
                           {})
               crew-id (or (:crew request)
-                          (get-in cfg [:defaults :crew]))
+                          (defaults/crew-id cfg))
               store   (or (:session-store request) (store/registered-store))]
           (when store
             (for-crew crew-id cfg store))))))

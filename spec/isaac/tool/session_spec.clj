@@ -22,7 +22,7 @@
       (nexus/-with-nested-nexus {:root support/test-dir}
         (example))))
 
-  (let [base-cfg {:defaults  {:crew crew-name :model crew-model}
+  (let [base-cfg {:defaults  {:frequencies {:crew crew-name} :crew {:model crew-model}}
                   :crew      {crew-name {:model :grover :soul (:soul (marigold/crew-cfg crew-name))}}
                   :models    {crew-model {:model "echo" :provider :grover :context-window 32768}
                               "parrot" {:model "squawk" :provider :grover :context-window 16384}}
@@ -49,7 +49,7 @@
       (it "resolves alias and provider when the session stores the upstream model name"
         (store-helper/create-session! support/test-dir "si-upstream" {:crew crew-name :cwd support/test-dir})
         (store-helper/update-session! support/test-dir "si-upstream" {:model "lettuce-grande"})
-        (let [cfg    {:defaults  {:crew crew-name :model crew-model}
+        (let [cfg    {:defaults  {:frequencies {:crew crew-name} :crew {:model crew-model}}
                       :crew      {crew-name {:model :grover :soul (:soul (marigold/crew-cfg crew-name))}}
                       :models    {crew-model {:model "echo" :provider :grover :context-window 32768}
                                   "lettuce" {:model "lettuce-grande" :provider :hieronymus :context-window 128000}}

@@ -20,7 +20,7 @@
       (helper/with-memory-store
         (fs/mkdirs (nexus/get :fs) "/test/.isaac/config")
         (fs/spit (nexus/get :fs) "/test/.isaac/config/isaac.edn"
-                 (pr-str {:defaults {:crew "main"} :crew {"main" {}}}))
+                 (pr-str {:defaults {:frequencies {:crew "main"}} :crew {"main" {}}}))
         (it))))
 
   (it "shows management help by default instead of listing sessions"
@@ -146,7 +146,7 @@
 
   (it "reassigns the crew when the target exists"
     (helper/create-session! "/test/sessions" "joe" {:crew "main"})
-    (fs/spit (nexus/get :fs) "/test/.isaac/config/isaac.edn" (pr-str {:defaults {:crew "main"} :crew {"main" {} "alice" {}}}))
+    (fs/spit (nexus/get :fs) "/test/.isaac/config/isaac.edn" (pr-str {:defaults {:frequencies {:crew "main"}} :crew {"main" {} "alice" {}}}))
     (should= 0 (sut/run-fn {:home "/test" :_raw-args ["set" "joe.crew" "alice"]}))
     (should= "alice" (:crew (helper/get-session "/test/sessions" "joe"))))
 
@@ -182,7 +182,7 @@
 
   (it "rejects reassignment to an unknown crew"
     (helper/create-session! "/test/sessions" "joe" {:crew "main"})
-    (fs/spit (nexus/get :fs) "/test/.isaac/config/isaac.edn" (pr-str {:defaults {:crew "main"} :crew {"main" {}}}))
+    (fs/spit (nexus/get :fs) "/test/.isaac/config/isaac.edn" (pr-str {:defaults {:frequencies {:crew "main"}} :crew {"main" {}}}))
     (let [err (binding [*err* (java.io.StringWriter.)]
                 (should= 1 (sut/run-fn {:home "/test" :_raw-args ["set" "joe.crew" "nobody"]}))
                 (str *err*))]
