@@ -97,6 +97,27 @@
       (should (sut/should-compact? 80 {} 100))
       (should-not (sut/should-compact? 79 {} 100))))
 
+  (describe "reset-gauge"
+    (it "measures only the last user entry — everything else is trimmed before the request"
+      (should= 10 (sut/reset-gauge [{:id "u1" :type "message" :message {:role "user"} :tokens 400}
+                                    {:id "a1" :type "message" :message {:role "assistant"} :tokens 900}
+                                    {:id "u2" :type "message" :message {:role "user"} :tokens 10}]
+                                   nil)))
+
+    (it "measures the pending input alone — the turn appends it, then trims to it"
+      (should= 2 (sut/reset-gauge [{:id "u1" :type "message" :message {:role "user"} :tokens 4}]
+                                  "12345678")))
+
+    (it "is zero for an empty transcript with no pending input"
+      (should= 0 (sut/reset-gauge [] nil)))
+
+    (it "ignores the accumulated session the running tally would report"
+      ;; isaac-work-1 read 938,870 of a 1,000,000 window while every request it
+      ;; sent was a fraction of that. The stored session is not the request.
+      (should= 3 (sut/reset-gauge [{:id "u1" :type "message" :message {:role "user"} :tokens 900000}
+                                   {:id "u2" :type "message" :message {:role "user"} :tokens 3}]
+                                  nil))))
+
   (describe "context-gauge"
     (it "is last prompt plus last output plus stamped entries after the tally cursor"
       (should= 360 (sut/context-gauge {:last-input-tokens  300

@@ -96,6 +96,23 @@
                       (stamped-sum (tally-history-entries transcript))))]
      (+ last-in last-out delta (pending-input-tokens pending-input)))))
 
+(defn reset-gauge
+  "What a :reset request will carry, in transcript tokens: the last user entry
+   and nothing before it, because that is exactly what both build paths send
+   (turn.clj `execute-llm-turn!` and `rebuild-chat-request`).
+
+   The running tally `context-gauge` reports is the wrong number for a :reset
+   session — it measures what is *stored*, which reset discards. Read as a
+   context gauge it says a session is nearly full while every request it sends
+   is small, and on a session that never compacts it climbs toward the window
+   forever (isaac-5nx5)."
+  [transcript pending-input]
+  (if (str/blank? (str pending-input))
+    (stamped-sum (if-let [current (last (or transcript []))] [current] []))
+    ;; The turn appends the pending input before it trims, so the one entry the
+    ;; request keeps is that input — not the entry the transcript ends on now.
+    (pending-input-tokens pending-input)))
+
 (defn should-compact? [gauge session-entry context-window]
   (let [{:keys [threshold]} (resolve-config session-entry context-window)]
     (>= (or gauge 0) (* threshold context-window))))

@@ -5,6 +5,7 @@
   (:require
     [clojure.string :as str]
     [isaac.llm.api.protocol :as api]
+    [isaac.llm.usage :as usage]
     [isaac.logger :as log])
   (:import (clojure.lang ExceptionInfo)))
 
@@ -13,21 +14,6 @@
 
 (defn- response-tool-calls [response]
   (:tool-calls response))
-
-(defn- response-usage
-  "The tokens one request spent. :prompt-scope declares how to read that
-   request's prompt size; a turn total is a sum by definition, so the
-   declaration has no meaning in it and does not ride along (isaac-dgod)."
-  [response]
-  (merge {:prompt-tokens 0 :output-tokens 0}
-         (dissoc (:usage response) :prompt-scope)))
-
-(defn- add-usage [turn-usage request-usage]
-  (-> (merge-with + turn-usage request-usage)
-      (update :requests inc)))
-
-(defn- empty-turn-usage []
-  {:requests 0 :prompt-tokens 0 :output-tokens 0})
 
 (defn- previous-response-not-found? [response]
   (and (:error response)
@@ -117,7 +103,7 @@
                                                prepare-tool-call  nil}}]
   (loop [req          (dissoc request :previous-response-id)
          all-tools    []
-         turn-usage   (empty-turn-usage)
+         turn-usage   usage/empty-turn
          loops        0
          chain-id     nil
          full-context request]
@@ -148,7 +134,7 @@
           (if (or (:error response) (:unavailable? response))
             response
             (let [tool-calls   (response-tool-calls response)
-                  new-usage    (add-usage turn-usage (response-usage response))
+                  new-usage    (usage/add turn-usage (:usage response))
                   budget-left? (< loops max-loops)
                   next-chain   (or (:response-id response) chain-id)]
               (if (and (seq tool-calls) budget-left?)

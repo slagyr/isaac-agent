@@ -511,3 +511,32 @@ Feature: Prompt single-turn command
       | 🥬 compacting        |
       | 🥀 compaction failed |
     And the stdout does not contain "here is the answer"
+
+  Scenario: --usage reports what the turn cost, without a transcript dig
+    Given the following model responses are queued:
+      | type | content | model | usage.input_tokens | usage.output_tokens |
+      | text | Hello   | echo  | 5000               | 12                  |
+    When isaac is run with "prompt -m 'Hi' --usage"
+    Then the stdout contains "Hello"
+    And the stderr contains "prompt-tokens=5000"
+    And the stderr contains "output-tokens=12"
+    And the stderr contains "requests=1"
+    And the exit code is 0
+
+  Scenario: a caller who did not ask gets no token bill
+    Given the following model responses are queued:
+      | type | content | model | usage.input_tokens | usage.output_tokens |
+      | text | Hello   | echo  | 5000               | 12                  |
+    When isaac is run with "prompt -m 'Hi'"
+    Then the stdout contains "Hello"
+    And the stderr does not contain "prompt-tokens"
+    And the exit code is 0
+
+  Scenario: --usage rides the JSON result when both are asked for
+    Given the following model responses are queued:
+      | type | content | model | usage.input_tokens | usage.output_tokens |
+      | text | Hello   | echo  | 5000               | 12                  |
+    When isaac is run with "prompt -m 'Hi' --json --usage"
+    Then the stdout contains "prompt-tokens"
+    And the stdout contains "5000"
+    And the exit code is 0

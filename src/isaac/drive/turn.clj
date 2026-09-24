@@ -9,6 +9,7 @@
     [isaac.comm.protocol :as comm]
     [isaac.config.defaults :as defaults]
     [isaac.config.loader :as loader]
+    [isaac.drive.accounting :as accounting]
     [isaac.drive.dispatch :as dispatch]
     [isaac.drive.observer :as observer]
     [isaac.drive.provider-wall :as provider-wall]
@@ -17,6 +18,7 @@
     [isaac.llm.api.protocol :as api]
     [isaac.llm.provider :as llm-provider]
     [isaac.llm.tool-loop :as tool-loop]
+    [isaac.llm.usage :as usage]
     [isaac.logger :as log]
     [isaac.nexus :as nexus]
     [isaac.session.compaction :as compaction]
@@ -66,7 +68,7 @@
   (or (get-in result [:response :usage]) (:usage result)))
 
 (defn- turn-usage [result]
-  (or (:usage result) {:requests 0 :prompt-tokens 0 :output-tokens 0}))
+  (or (:usage result) usage/empty-turn))
 
 (defn extract-tokens [result]
   (let [usage (turn-usage result)]
@@ -307,6 +309,15 @@
                :session session-key
                :model resolved-model
                :tokens (select-keys turn-tokens [:input-tokens :output-tokens]))
+    ;; The drive demands a figure from every provider. One that has nothing to
+    ;; say is named here rather than contributing a silent zero, so a turn
+    ;; reporting a fraction of its real cost cannot pass for a cheap one
+    ;; (isaac-5nx5).
+    (when-not (usage/reported? (turn-usage result))
+      (log/warn :turn/usage-unreported
+                :session session-key
+                :provider provider
+                :requests (:requests (turn-usage result) 0)))
     (append-message! ctx session-key
                      (cond-> {:role     "assistant"
                               :content  (get-in result [:response :content])
@@ -572,12 +583,21 @@
             (some? cycle-limit) (assoc :cycle-limit cycle-limit))))
 
 (defn- log-turn-ended! [session-key result]
-  (let [ended-by (or (:ended-by result) (classify-ended-by result))]
+  (let [ended-by (or (:ended-by result) (classify-ended-by result))
+        turn     (:usage result)]
     (log/info :turn/ended
               (cond-> {:session session-key :ended-by ended-by}
                       (some? (:exhaustion result)) (assoc :exhaustion (:exhaustion result))
                       (some? (:error result)) (assoc :error (:error result))
-                      (some? (:cycle-limit result)) (assoc :cycle-limit (:cycle-limit result))))))
+                      (some? (:cycle-limit result)) (assoc :cycle-limit (:cycle-limit result))
+                      ;; What the turn cost, beside how it ended — the caller
+                      ;; should not need a transcript dig to find out.
+                      (some? (:requests turn)) (assoc :requests (:requests turn))
+                      (some? (:prompt-tokens turn)) (assoc :prompt-tokens (:prompt-tokens turn))
+                      (some? (:output-tokens turn)) (assoc :output-tokens (:output-tokens turn))
+                      (some? (:cache-read-tokens turn)) (assoc :cache-read-tokens (:cache-read-tokens turn))
+                      (some? (:cache-write-tokens turn)) (assoc :cache-write-tokens (:cache-write-tokens turn))
+                      (some? (:unsupported-requests turn)) (assoc :unsupported-requests (:unsupported-requests turn))))))
 
 (def ^:private loop-exhausted-summary-instruction
   "You have hit the cycle limit. Do not call any more tools. Write a concise assistant reply for the user using what you learned so far. If you still cannot fully answer, summarize the useful findings and what remains unresolved.")
@@ -1058,11 +1078,17 @@
                :elapsed-ms (elapsed-ms check-ns))
     (cond
       (= :reset (:context-mode opts))
+      ;; :total-tokens sits beside :context-window on this line, so it has to be
+      ;; the number that is comparable to the window — what the request will
+      ;; carry. On a :reset session the running tally measures the stored
+      ;; session, which the request never contains; it keeps its own name so
+      ;; nobody reads it as "this session is 94% full" (isaac-5nx5).
       (log/info :session/compaction-skipped
                 :session session-key
                 :provider prov-name
                 :model model
-                :total-tokens gauge
+                :total-tokens (compaction/reset-gauge tx (:input opts))
+                :stored-tokens gauge
                 :context-window context-window
                 :reason :context-reset)
 
@@ -1603,7 +1629,19 @@
       (when-let [done (:compaction-llm-done (active-compaction-state session-key))]
         (deref done 5000 nil))
       (let [cycle*      (atom {:n 1 :model model :origin (:origin charge)})
-            chat-fn     (chat-fn-for ch session-key p @current-request cycle*)
+            ;; Every request the drive sends goes out through here, so this is
+            ;; where its size and composition are recorded — in the log, never
+            ;; in the transcript (isaac-5nx5).
+            parts       {:soul            soul
+                         :boot-files      boot-files
+                         :rules-text      rules-text
+                         :skill-menu-text skill-menu-text}
+            acct-info   (fn [] {:session  session-key
+                                :provider (api/display-name p)
+                                :model    model
+                                :cycle    (:n @cycle*)})
+            measured    (fn [f] (accounting/measuring f acct-info parts))
+            chat-fn     (measured (chat-fn-for ch session-key p @current-request cycle*))
             followup-elapsed* (atom nil)
             followup-fn (fn [req response tool-calls tool-results]
                           (let [start-ns (System/nanoTime)
@@ -1649,7 +1687,7 @@
             run-loop      (fn [req]
                             (let [provider-name (api/display-name p)
                                   request*      (assoc req :provider provider-name)
-                                  chat-fn*      (chat-fn-for ch session-key p request* cycle*)]
+                                  chat-fn*      (measured (chat-fn-for ch session-key p request* cycle*))]
                               (tool-loop/run chat-fn* followup-fn request* tool-fn
                                              {:max-loops          cycle-budget
                                               :max-parallel-tools max-parallel

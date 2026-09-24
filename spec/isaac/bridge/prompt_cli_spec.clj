@@ -391,3 +391,27 @@
 
     )
   )
+
+(describe "prompt usage report"
+
+  (it "totals what the caller asked for"
+    (should= {:requests 2 :prompt-tokens 5000 :output-tokens 12 :total-tokens 5012}
+             (#'sut/turn-usage {:usage {:requests 2 :prompt-tokens 5000 :output-tokens 12}})))
+
+  (it "carries the cache split when the provider reported one"
+    (should= {:requests 1 :prompt-tokens 100 :output-tokens 5 :total-tokens 105
+              :cache-read-tokens 60 :cache-write-tokens 30}
+             (#'sut/turn-usage {:usage {:requests 1 :prompt-tokens 100 :output-tokens 5
+                                        :cache-read-tokens 60 :cache-write-tokens 30}})))
+
+  (it "names requests the provider could not measure"
+    (should= 1 (:unsupported-requests
+                 (#'sut/turn-usage {:usage {:requests 1 :prompt-tokens 0 :output-tokens 0
+                                            :unsupported-requests 1}}))))
+
+  (it "says nothing when the turn reported no usage at all"
+    (should-be-nil (#'sut/turn-usage {})))
+
+  (it "renders one line the caller can read"
+    (should= "usage: requests=1 prompt-tokens=5000 output-tokens=12 total-tokens=5012"
+             (#'sut/usage-line (#'sut/turn-usage {:usage {:requests 1 :prompt-tokens 5000 :output-tokens 12}})))))

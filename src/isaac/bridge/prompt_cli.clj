@@ -109,6 +109,32 @@
      {:comm (->PromptComm text (boolean live?))
       :text text})))
 
+(def ^:private usage-fields
+  [:requests :prompt-tokens :output-tokens :total-tokens
+   :cache-read-tokens :cache-write-tokens :reasoning-tokens :unsupported-requests])
+
+(defn- turn-usage
+  "What the turn cost, as the caller should see it. The drive already totals
+   every request; this only adds the total the caller reads first."
+  [result]
+  (when-let [u (:usage result)]
+    (let [total (+ (or (:prompt-tokens u) 0) (or (:output-tokens u) 0))]
+      (not-empty (into {} (keep (fn [k]
+                                  (when-let [v (get (assoc u :total-tokens total) k)]
+                                    [k v])))
+                       usage-fields)))))
+
+(defn- usage-line [usage]
+  (str "usage: " (str/join " " (map (fn [[k v]] (str (name k) "=" v)) usage))))
+
+(defn- report-usage!
+  "Opt-in, per caller. A human asking a question over a comm must never get a
+   token bill appended to the answer, so nothing prints unless --usage asked
+   (isaac-5nx5)."
+  [result]
+  (when-let [usage (turn-usage result)]
+    (stderr-line! (usage-line usage))))
+
 (defn- root-of [opts]
   (root/default-root opts))
 
@@ -289,10 +315,13 @@
 
             :else
             (do
+              (when (and (:usage opts) (not (:json opts)))
+                (report-usage! result))
               (cond
                 (:json opts)
-                (println (json/generate-string {:session  session-key
-                                                :response @text}))
+                (println (json/generate-string (cond-> {:session  session-key
+                                                        :response @text}
+                                                       (:usage opts) (assoc :usage (turn-usage result)))))
 
                 (seq obs-refs)
                 (when-not (str/ends-with? (or @text "") "\n")
@@ -341,6 +370,7 @@
   (concat
     [["-m" "--message TEXT" "Message to send (required)"]
      ["-j" "--json" "Output result as JSON"]
+     [nil "--usage" "Report this turn's token usage (stderr, or in the JSON result)"]
      [nil "--observer REF" "Submit a turn observer (repeatable); e.g. lookout or foreman:bean-work/bn-7"
       :assoc-fn (fn [m k v] (update m k (fnil conj []) v))]
      [nil "--turnstile REF" "Submit a turnstile (repeatable); e.g. worksite or worksite:chart-room"
