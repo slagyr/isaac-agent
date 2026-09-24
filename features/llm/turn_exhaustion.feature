@@ -160,7 +160,6 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
       | level | event       | session   | ended-by     | exhaustion  |
       | :info | :turn/ended | trash-can | :cycle-limit | :wrapped-up |
 
-  @wip
   Scenario: an empty note after wrap-up parks the turn as weather instead of completing it (isaac-f3hq)
     Silence is weather: the drive parks the turn (reason :silence) for its
     sweep rather than recording a failure.

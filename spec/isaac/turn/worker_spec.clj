@@ -3,9 +3,11 @@
     [isaac.bridge.core :as bridge]
     [isaac.charge :as charge]
     [isaac.config.loader :as loader]
+    [isaac.drive.weather :as weather]
     [isaac.fs :as fs]
     [isaac.nexus :as nexus]
     [isaac.scheduler.runtime :as scheduler]
+    [isaac.session.store.spi :as store]
     [isaac.spec-helper :as helper]
     [isaac.turn.queue :as queue]
     [isaac.turn.worker :as sut]
@@ -155,19 +157,40 @@
       (should= "grover" (get-in @seen [:config :defaults :crew :model]))
       (should= "harbor" (:session-key @seen))))
 
-  (it "registers its tick with the shared scheduler"
+  (it "registers its tick and the weather sweep with the shared scheduler"
     (nexus/-with-nexus {}
       (let [sched (-> (scheduler/create {:clock (fn [] (Instant/parse "2026-03-01T14:00:00Z"))})
                       scheduler/start!)]
         (try
           (nexus/register! [:scheduler] sched)
           (let [handle (sut/start! {:tick-ms 10000})]
-            (should= [{:id :turn.queue/tick :trigger {:kind :interval :ms 10000}}]
+            (should= [{:id :turn.queue/tick :trigger {:kind :interval :ms 10000}}
+                      {:id :turn/sweep-weather :trigger {:kind :interval :ms 10000}}]
                      (mapv #(select-keys % [:id :trigger]) (scheduler/list-tasks sched)))
-            (sut/stop! handle))
+            (sut/stop! handle)
+            (should= [] (mapv :id (scheduler/list-tasks sched))))
           (finally
             (scheduler/stop! sched)
             (turnstile/set-wake-hook! nil))))))
+
+  (it "sweeps weather on its own tick"
+    (let [swept (atom [])
+          store (reify Object)]
+      (nexus/-with-nested-nexus {:sessions {:store store}}
+        (with-redefs [weather/sweep-weather! (fn [opts] (swap! swept conj opts))]
+          (sut/sweep-tick! {:now (Instant/parse "2026-03-01T14:00:00Z")})))
+      (should= 1 (count @swept))
+      (should= store (:session-store (first @swept)))
+      (should= :sweep (:trigger (first @swept)))
+      (should= (Instant/parse "2026-03-01T14:00:00Z") (:now (first @swept)))))
+
+  (it "sweeps nothing when no session store is registered"
+    (let [swept (atom [])]
+      (nexus/-with-nexus {}
+        (with-redefs [store/registered-store    (fn [] nil)
+                      weather/sweep-weather! (fn [opts] (swap! swept conj opts))]
+          (sut/sweep-tick!)))
+      (should= [] @swept)))
 
   (it "does not wake parked turns on token release until start!"
     (turnstile/set-wake-hook! nil)

@@ -94,6 +94,30 @@
   [_cfg _session-key _payload _now-ms]
   nil)
 
+(defn- parked-content [session-key {:keys [reason provider]}]
+  (str/join " "
+            (remove str/blank?
+                    [(str "Turn parked for session " session-key)
+                     (str "suspended (" (name (or reason :wall)) ")")
+                     (when provider (str "provider " provider))
+                     (when (= :auth reason) "— only a human can re-login")])))
+
+(defn maybe-notify-turn-parked!
+  "Post attention for a turn parked on provider weather; returns true when it
+   posted. Throttled per session, not per park: the :auth park posts the moment
+   it parks (a wall clears itself, an expired login does not) and the
+   :suspended-attention-ms threshold notice says the same thing about the same
+   session, so they share one throttle instead of arriving back to back
+   (isaac-f3hq)."
+  ([cfg session-key payload] (maybe-notify-turn-parked! cfg session-key payload nil))
+  ([cfg session-key payload now-ms]
+   (let [now     (clock-ms now-ms)
+         last-ms (get @last-session-notified* session-key)]
+     (when (or (nil? last-ms) (>= (- now last-ms) session-throttle-ms))
+       (enqueue-attention! cfg (parked-content session-key payload))
+       (swap! last-session-notified* assoc session-key now)
+       true))))
+
 (defn maybe-notify-turn-failed!
   "Post attention when a turn dies with an uncaught throwable."
   [cfg session-key {:keys [message]}]

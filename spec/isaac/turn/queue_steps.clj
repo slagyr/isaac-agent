@@ -5,6 +5,7 @@
     [isaac.foundation.cli-steps :as fcli]
     [isaac.fs :as fs]
     [isaac.nexus :as nexus]
+    [isaac.scheduler.runtime :as scheduler]
     [isaac.session.session-steps :as session-steps]
     [isaac.tool.memory :as memory]
     [isaac.turn.queue :as queue]
@@ -68,12 +69,42 @@
   (ensure-wake-hook!)
   (let [now (parse-iso iso)]
     (g/assoc! :current-time now)
-    (with-feature-fs
+    ;; Outside the nested scopes below: the worker wakes on the process-wide
+    ;; snapshot, and a config registered inside a nested nexus dies with it.
+    (session-steps/with-feature-config! "turn queue tick"
       (fn []
-        (binding [memory/*now* now
-                  queue/*root* (root-dir)]
-          (nexus/-with-nested-nexus {:root (root-dir) :fs (mem-fs)}
-            (worker/tick! {:now now})))))))
+        (with-feature-fs
+          (fn []
+            (binding [memory/*now* now
+                      queue/*root* (root-dir)]
+              (nexus/-with-nested-nexus {:root (root-dir) :fs (mem-fs)}
+                (worker/tick! {:now now})))))))))
+
+(defonce ^:private live-scheduler* (atom nil))
+
+(defn- shutdown-live-scheduler! []
+  (when-let [running @live-scheduler*]
+    (worker/stop! {:scheduler running
+                   :task-id       :turn.queue/tick
+                   :sweep-task-id :turn/sweep-weather})
+    (scheduler/shutdown! running)
+    ;; A dead scheduler left in the nexus makes every later scenario think
+    ;; background services are available.
+    (nexus/deregister! [:scheduler])
+    (reset! live-scheduler* nil)))
+
+(defn weather-sweep-started []
+  (shutdown-live-scheduler!)
+  ;; Created, not started: the assertion reads the registered tasks, and a
+  ;; running scheduler would drive turns in the background of every scenario
+  ;; that follows this one.
+  (let [instance (scheduler/create {:clock (fn [] (parse-iso "2026-04-21T10:00:00Z"))})]
+    (nexus/register! [:scheduler] instance)
+    (worker/start! {})
+    (reset! live-scheduler* instance)
+    ;; isaac.scheduler-steps reads the scheduler from here; its
+    ;; "the scheduled tasks include:" step does the asserting.
+    (g/assoc! :scheduler instance)))
 
 (defn- scripted-gate [name n]
   (let [state (or (get @scripted-gates* name)
@@ -122,9 +153,15 @@
   (fn []
     (reset! scripted-gates* {})
     (g/dissoc! :held-id)
+    (shutdown-live-scheduler!)
+    (g/dissoc! :scheduler)
     (turnstile/set-wake-hook! nil)))
 
 (defwhen #"the turn queue ticks at \"([^\"]+)\"" isaac.turn.queue-steps/turn-queue-ticks-at)
+
+(defwhen "the weather sweep is started"
+  isaac.turn.queue-steps/weather-sweep-started
+  "Starts the turn worker on a live shared scheduler so its tasks can be read.")
 
 (defgiven #"a turnstile \"([^\"]+)\" is registered that admits (\d+) at a time"
   isaac.turn.queue-steps/register-admits-n-turnstile)

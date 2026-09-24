@@ -2431,6 +2431,28 @@
                           nested)]
         (store/record-turn-marker! (session-store) session-name marker)))))
 
+(defn with-feature-config!
+  "Run `f` with the feature's on-disk config committed as the process snapshot,
+   then put back whatever was installed before. A step that drives a turn
+   outside the nexus scope that loaded the config — the turn queue tick — needs
+   this: in production the snapshot is installed once at boot and every worker
+   reads it. Install from the caller's scope, not inside a nested nexus, where
+   the registration dies with the scope; restore after, so one scenario's config
+   never becomes the next one's."
+  [reason f]
+  ;; Look at the registration directly: loader/snapshot registers a fresh
+  ;; [:config] atom when none exists, and that stray registration outlives the
+  ;; step and leaks into every later scenario.
+  (let [registered (nexus/get :config)
+        previous   (some-> registered deref)]
+    (try
+      (config/dangerously-install-config! (loader/normalize-config (loaded-config)) reason)
+      (f)
+      (finally
+        (if registered
+          (config/dangerously-install-config! previous "feature: restore snapshot")
+          (nexus/deregister! [:config]))))))
+
 (defn resume-sweep-runs-at [iso]
   (with-feature-fs
     (fn []

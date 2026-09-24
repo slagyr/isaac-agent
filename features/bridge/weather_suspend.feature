@@ -261,7 +261,6 @@ Feature: Turns suspend and resume on provider weather (isaac-nqeq, epic isaac-ug
       | event         |
       | :turn/resumed |
 
-  @wip
   Scenario: the weather sweep is registered with the shared scheduler (isaac-f3hq)
     The sweep had no production caller — it was reachable only from the
     feature steps. It ticks on the shared scheduler like the turn queue does;
@@ -271,7 +270,6 @@ Feature: Turns suspend and resume on provider weather (isaac-nqeq, epic isaac-ug
       | id                 | trigger.kind | trigger.ms |
       | turn/sweep-weather | interval     | 10000      |
 
-  @wip
   Scenario: boot resume and the sweep never double-drive a due marker (isaac-f3hq)
     Boot resume hands a due suspended marker to the turn queue and clears it
     (isaac-yxch); the first sweep tick after boot finds nothing to drive. One
@@ -302,7 +300,6 @@ Feature: Turns suspend and resume on provider weather (isaac-nqeq, epic isaac-ug
       | :turn/resumed | :sweep  |
     And no turn marker exists for session "trash-can"
 
-  @wip
   Scenario: an empty terminal response is weather — the turn parks and the sweep resumes it (isaac-f3hq)
     Field: an expired provider login looks like a model that returns nothing
     (fleet auth expiry ⇒ :empty-terminal-response on every turn). After the
@@ -337,7 +334,6 @@ Feature: Turns suspend and resume on provider weather (isaac-nqeq, epic isaac-ug
       | message | assistant    | Who's there     |
     And no turn marker exists for session "trash-can"
 
-  @wip
   Scenario: an auth park posts attention at once, throttled per provider (isaac-5a4n, isaac-f3hq)
     A wall clears on its own; an expired login does not — only a human can
     re-login. Hail used to post this notice from its deferral branch; now the

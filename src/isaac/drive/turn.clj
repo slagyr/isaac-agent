@@ -1769,7 +1769,8 @@
             (let [ss (or (:session-store ctx) (nexus/get-in [:sessions :store]))]
               (if ss
                 (weather/stamp-weather! ss session-key result
-                                        {:provider provider-name
+                                        {:cfg      config
+                                         :provider provider-name
                                          :model    model
                                          :now      (or memory/*now* (memory/now))
                                          :model-override (:model-override charge)})

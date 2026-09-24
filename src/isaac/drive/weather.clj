@@ -15,7 +15,15 @@
 (def max-backoff-ms 1800000)
 
 (defn weather-reason [result]
-  (when (:unavailable? result)
+  (cond
+    ;; Silence is weather (isaac-f3hq). An expired provider login looks exactly
+    ;; like a model that answers nothing, even after the one continuation nudge
+    ;; (isaac-k4mf): park it for the sweep instead of recording a failure the
+    ;; operator has to read as "the model said nothing".
+    (= :empty-terminal-response (:error result))
+    :silence
+
+    (:unavailable? result)
     (case (:reason result)
       :wall :wall
       :auth :auth
@@ -40,15 +48,29 @@
 (defn- clock [now]
   (or now memory/*now* (memory/now) (Instant/now)))
 
+(defn- notify-auth-park!
+  "An :auth park posts attention the moment it parks (isaac-f3hq). A wall clears
+   itself and a stall retries; only a human can re-login, so waiting out
+   :suspended-attention-ms before saying so wastes the whole park. Throttled in
+   isaac.attention, so a park that keeps re-parking notifies at most hourly."
+  [cfg session-key reason provider now]
+  (when (= :auth reason)
+    (attention/maybe-notify-turn-parked! cfg session-key
+                                         {:reason reason :provider provider}
+                                         (.toEpochMilli ^Instant now))))
+
 (defn stamp-weather!
   "Merge weather fields onto the session's turn marker and return a suspended result."
-  [store session-key result {:keys [provider model now model-override]}]
+  [store session-key result {:keys [cfg provider model now model-override]}]
   (let [reason        (or (weather-reason result) :wall)
         existing      (store/get-turn-marker store session-key)
         suspend-count (inc (or (:suspend-count existing) 0))
         now*          (clock now)
         wait-ms       (backoff-ms result suspend-count)
         retry-at      (plus-ms now* wait-ms)
+        notified?     (notify-auth-park! cfg session-key reason
+                                         (or provider (get-in existing [:suspended-on :provider]))
+                                         now*)
         marker        (cond-> (assoc (or existing {})
                                 :session-id     session-key
                                 :suspended      true
@@ -60,7 +82,7 @@
                                 :suspend-count  suspend-count)
                         (or model-override (:model-override existing))
                         (assoc :model-override (or model-override (:model-override existing)))
-                        (:attention-posted existing)
+                        (or notified? (:attention-posted existing))
                         (assoc :attention-posted true))]
     (store/record-turn-marker! store session-key marker)
     (log/warn :turn/suspended
@@ -89,10 +111,12 @@
          (>= (- (.toEpochMilli ^Instant now) (.toEpochMilli (Instant/parse at)))
              attention-ms))))
 
-(defn- post-attention! [store session-id marker cfg]
-  (attention/maybe-notify-turn-failed!
+(defn- post-attention! [store session-id marker cfg now]
+  (attention/maybe-notify-turn-parked!
     cfg session-id
-    {:message (str "session " session-id " suspended (" (name (or (:reason marker) :wall)) ")")})
+    {:reason   (:reason marker)
+     :provider (get-in marker [:suspended-on :provider])}
+    (.toEpochMilli ^Instant now))
   (store/record-turn-marker! store session-id (assoc marker :attention-posted true)))
 
 (defn- resume-suspended! [store session-id marker now trigger]
@@ -122,11 +146,15 @@
   (when session-store
     (let [now*         (clock now)
           attention-ms (or (get-in cfg [:turn :suspended-attention-ms]) default-attention-ms)]
-      (doseq [marker (store/turn-markers session-store)
+      ;; Orphaned markers only: a session whose turn is in flight is already
+      ;; being driven — by the turn queue after boot resume handed it over, or
+      ;; by a previous tick that is still running — and must not be driven a
+      ;; second time (isaac-f3hq).
+      (doseq [marker (store/orphaned-turn-markers session-store)
               :when (true? (:suspended marker))
               :let [session-id (or (:session-id marker) (:session marker))]]
         (when (attention-due? marker now* attention-ms)
-          (post-attention! session-store session-id marker cfg))
+          (post-attention! session-store session-id marker cfg now*))
         (when (retry-due? marker now*)
           (resume-suspended! session-store session-id
                              (or (store/get-turn-marker session-store session-id) marker)

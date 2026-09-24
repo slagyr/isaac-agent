@@ -72,7 +72,6 @@ Feature: Error Entry Handling
       | key                  | value               |
       | messages[-1].content | #"(?s).*continue.*" |
 
-  @wip
   Scenario: two empty responses park the turn as weather (isaac-k4mf, isaac-f3hq)
     Retry budget is exactly one. A second empty response is not a failure to
     record — it is silence, provider weather (an expired login looks exactly
@@ -95,7 +94,6 @@ Feature: Error Entry Handling
       | type    | message.role | message.content | #comment                        |
       | message | user         | status?         | last entry — nothing fabricated |
 
-  @wip
   Scenario: empty terminal response after tool execution parks the same way (isaac-k4mf, isaac-f3hq)
     The observed zanebot shape: tools ran, then the model went silent. Same
     guard, same park — the tool results already persisted are kept for the
