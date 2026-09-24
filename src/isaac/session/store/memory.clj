@@ -124,9 +124,14 @@
           retention (resolve/resolve-history-retention (effective-config (:config opts))
                                                        (:crew opts)
                                                        (:history-retention opts))
-          name      (or name
-                        (when root
-                          (naming/generate (store/ensure-naming-strategy! root (fs/instance)))))
+          ;; A blank identifier ("") must not survive to session-id, whose
+          ;; blank fallback resolves to the literal id "session" and can
+          ;; collide with an unrelated session (isaac-j95x) — treat it the
+          ;; same as nil.
+          name      (if (c/blank-identifier? name)
+                      (when root
+                        (naming/generate (store/ensure-naming-strategy! root (fs/instance))))
+                      name)
           id        (c/session-id (or name "session"))
           existing  (or (get-in @state [:sessions id])
                         (ensure-hydrated! root state id))]

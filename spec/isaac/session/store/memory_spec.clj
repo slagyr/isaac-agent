@@ -87,6 +87,14 @@
           (should= "oscar" (:crew again))
           (should= "trash-can" (:id again)))))
 
+    (it "mints a fresh name for a blank identifier instead of colliding with the literal 'session'"
+      (let [s (sut/create-store "/blank-id-root")]
+        (store/register-store! s)
+        (store/open-session! s "session" {:crew "main"})
+        (let [entry (store/open-session! s "" {:crew "oscar"})]
+          (should-not= "session" (:id entry))
+          (should= "oscar" (:crew entry)))))
+
     (it "hydrates a session that exists on disk but not in the memory atom"
       (let [root "/hydrate-root"
             first (sut/create-store root)
