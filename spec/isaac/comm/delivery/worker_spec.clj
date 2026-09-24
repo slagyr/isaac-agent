@@ -89,6 +89,71 @@
     (should= {:event :comm.delivery/dead-lettered :id "7f3a" :reason :permanent}
              (select-keys (last @log/captured-logs) [:event :id :reason])))
 
+  (it "logs the :error the comm returned on a transient attempt-failed"
+    (queue/enqueue! {:id      "7f3a"
+                     :comm    :stub
+                     :target  "C999"
+                     :content "Hello"})
+    (comm-registry/register-instance! "stub" (->StubComm {:ok         false
+                                                          :transient? true
+                                                          :error      "Delivery outcome unknown"}))
+    (sut/tick! {:now (Instant/parse "2026-04-21T10:00:00Z")})
+    (should= {:event :comm.delivery/attempt-failed :id "7f3a" :error "Delivery outcome unknown"}
+             (select-keys (last @log/captured-logs) [:event :id :error])))
+
+  (it "logs the :error the comm returned on the terminal dead-letter"
+    (queue/enqueue! {:id       "7f3a"
+                     :comm     :stub
+                     :target   "C999"
+                     :content  "Hello"
+                     :attempts 4})
+    (comm-registry/register-instance! "stub" (->StubComm {:ok         false
+                                                          :transient? true
+                                                          :error      "Delivery outcome unknown"}))
+    (sut/tick! {:now (Instant/parse "2026-04-21T10:00:00Z")})
+    (should= {:event :comm.delivery/dead-lettered :reason :exhausted :error "Delivery outcome unknown"}
+             (select-keys (last @log/captured-logs) [:event :reason :error])))
+
+  (it "logs a keyword :error such as :timeout on a permanent failure"
+    (queue/enqueue! {:id      "7f3a"
+                     :comm    :stub
+                     :target  "C999"
+                     :content "Hello"})
+    (comm-registry/register-instance! "stub" (->StubComm {:ok false :transient? false :error :timeout}))
+    (sut/tick! {:now (Instant/parse "2026-04-21T10:00:00Z")})
+    (should= {:event :comm.delivery/dead-lettered :reason :permanent :error :timeout}
+             (select-keys (last @log/captured-logs) [:event :reason :error])))
+
+  (it "logs the :error the comm returned on a deferred send"
+    (queue/enqueue! {:id      "7f3a"
+                     :comm    :stub
+                     :target  "C999"
+                     :content "Hold the lantern."})
+    (comm-registry/register-instance! "stub" (->StubComm {:ok         false
+                                                          :transient? true
+                                                          :defer?     true
+                                                          :error      "gateway not READY"}))
+    (sut/tick! {:now (Instant/parse "2026-04-21T10:00:00Z")})
+    (should= {:event :comm.delivery/deferred :id "7f3a" :error "gateway not READY"}
+             (select-keys (last @log/captured-logs) [:event :id :error])))
+
+  (it "logs the recipient the record actually carries, not the generic :target"
+    (queue/enqueue! {:id              "c972"
+                     :comm            :stub
+                     :imessage/target "friend@icloud.com"
+                     :content         "Hello"})
+    (comm-registry/register-instance! "stub" (->StubComm {:ok false :transient? false :error "nope"}))
+    (sut/tick! {:now (Instant/parse "2026-04-21T10:00:00Z")})
+    (should= "friend@icloud.com" (:target (last @log/captured-logs))))
+
+  (it "omits :target when the record carries no recipient at all"
+    (queue/enqueue! {:id      "c972"
+                     :comm    :stub
+                     :content "Hello"})
+    (comm-registry/register-instance! "stub" (->StubComm {:ok false :transient? false :error "nope"}))
+    (sut/tick! {:now (Instant/parse "2026-04-21T10:00:00Z")})
+    (should= false (contains? (last @log/captured-logs) :target)))
+
   (it "leaves a deferred send pending without burning an attempt"
     (queue/enqueue! {:id       "7f3a"
                      :comm     :stub

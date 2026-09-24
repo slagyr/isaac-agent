@@ -125,6 +125,43 @@ Feature: Delivery queue
       | level | event                         | attempts |
       | info  | :comm.delivery/attempt-failed | 1        |
 
+  Scenario: a transient failure logs the reason the comm gave (isaac-clba)
+    The comm's :error is the only record of WHY a delivery failed. Without it
+    :comm.delivery/attempt-failed says that something went wrong and nothing
+    more, and establishing the reason means reproducing the send by hand.
+    Given the comm "stub" returns:
+      | ok    | transient? | error                    |
+      | false | true       | Delivery outcome unknown |
+    And the isaac EDN file comm/delivery/pending/7f3a.edn exists with:
+      | path    | value             |
+      | id      | 7f3a              |
+      | comm    | stub              |
+      | target  | C999              |
+      | content | Trying once more. |
+    When the delivery worker ticks
+    Then the log has entries matching:
+      | level | event                         | id   | error                    |
+      | info  | :comm.delivery/attempt-failed | 7f3a | Delivery outcome unknown |
+
+  Scenario: the dead-letter carries the reason and the recipient the record holds (isaac-clba)
+    Comms name the recipient in their own keyword namespace (:imessage/target,
+    :discord/target); the generic :target is optional. Logging :target nil
+    reads as "this record has no recipient" — a misleading hypothesis to hand
+    someone diagnosing a dead delivery.
+    Given the comm "stub" returns:
+      | ok    | transient? | error                    |
+      | false | false      | Delivery outcome unknown |
+    And the isaac EDN file comm/delivery/pending/c972.edn exists with:
+      | path            | value             |
+      | id              | c972              |
+      | comm            | stub              |
+      | imessage/target | friend@icloud.com |
+      | content         | Hello             |
+    When the delivery worker ticks
+    Then the log has entries matching:
+      | level | event                        | id   | reason     | error                    | target            |
+      | error | :comm.delivery/dead-lettered | c972 | :permanent | Delivery outcome unknown | friend@icloud.com |
+
   Scenario: a deferred send leaves the delivery pending without burning an attempt
     The comm asked us to wait (gateway not READY) rather than retry with
     backoff. File state stays pending so a later tick can deliver once the
