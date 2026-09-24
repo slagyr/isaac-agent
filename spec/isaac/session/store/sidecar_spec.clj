@@ -5,7 +5,7 @@
     [isaac.session.store.spi :as store]
     [isaac.session.store.sidecar :as sut]
     [isaac.nexus :as nexus]
-    [speclj.core :refer [describe it should should-not should-throw should=]]))
+    [speclj.core :refer [describe it should should-not should-not= should-throw should=]]))
 
 (def test-dir "/test/sidecar-store")
 
@@ -74,6 +74,24 @@
           (fs/spit mem (str test-dir "/sessions/main/torn/session.edn") "")
           (should-throw clojure.lang.ExceptionInfo
             (store/get-session fs-store "torn"))))))
+
+  (it "get-session never resolves a blank or nil identifier to the literal 'session' entry"
+    (let [mem (fs/mem-fs)]
+      (nexus/-with-nexus {:fs mem}
+        (let [fs-store (sut/create-store test-dir)]
+          (store/open-session! fs-store "session" {:crew "main"})
+          (should= nil (store/get-session fs-store ""))
+          (should= nil (store/get-session fs-store nil))))))
+
+  (it "open-session! with a blank identifier mints a fresh session instead of colliding with 'session'"
+    (let [mem (fs/mem-fs)]
+      (nexus/-with-nexus {:fs mem}
+        (let [fs-store (sut/create-store test-dir)]
+          (store/register-store! fs-store)
+          (let [main-session (store/open-session! fs-store "session" {:crew "main"})
+                opened       (store/open-session! fs-store "" {:crew "marvin"})]
+            (should-not= (:id main-session) (:id opened))
+            (should= "marvin" (:crew opened)))))))
 
   (it "does not create a flat marker directory for an unpersisted session"
     (let [mem (fs/mem-fs)]

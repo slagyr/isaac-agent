@@ -123,6 +123,15 @@
 (defn session-id [identifier]
   (slugify identifier))
 
+(defn blank-identifier?
+  "True for nil or a blank string. A blank identifier means 'no id given' —
+   it must never be handed to `slugify`/`session-id`, whose blank-input
+   fallback (\"session\") would otherwise collide with an unrelated session
+   literally named \"session\" (isaac-j95x)."
+  [identifier]
+  (or (nil? identifier)
+      (and (string? identifier) (str/blank? identifier))))
+
 (declare effective-config)
 
 (defn entry-defaults [opts]
@@ -706,9 +715,13 @@
   "Single-session read for the sidecar store: resolve `identifier` to its
    location and read only that session.edn. nil when no such session exists;
    throws :session/unreadable when it exists but cannot be read (never a
-   skeleton). Replaces reading every session on the host to answer for one."
+   skeleton). Replaces reading every session on the host to answer for one.
+
+   A blank/nil identifier is always nil — never slugified into the literal
+   \"session\" and resolved against an unrelated session that happens to be
+   named that (isaac-j95x)."
   [with-session-defaults-fn root identifier fs]
-  (when identifier
+  (when-not (blank-identifier? identifier)
     (let [id   (session-id identifier)
           loc  (resolve-session-loc root id fs)
           path (when loc (session-edn-for root id (:crew loc) fs))]
@@ -744,7 +757,7 @@
 
 (defn resolve-entry-id [store identifier]
   (cond
-    (nil? identifier) nil
+    (blank-identifier? identifier) nil
     (contains? store identifier) identifier
     :else (let [id (session-id identifier)] (when (contains? store id) id))))
 
@@ -805,7 +818,13 @@
                           (when-not (clojure.string/blank? s) s)))
         opts     (entry-defaults opts)
         store    (read-session-fn root fs)
-        name     (or identifier (naming/generate (session-store/ensure-naming-strategy! root fs)))
+        ;; A blank identifier ("" as well as nil) means "no id given" — mint
+        ;; one. Only `or`-ing on nil would let "" survive through to
+        ;; `session-id`, whose blank fallback resolves to the literal id
+        ;; "session" and can collide with an unrelated session (isaac-j95x).
+        name     (if (blank-identifier? identifier)
+                   (naming/generate (session-store/ensure-naming-strategy! root fs))
+                   identifier)
         id       (session-id name)
         existing (get store id)
         crew     (or (when existing (crew-of existing))

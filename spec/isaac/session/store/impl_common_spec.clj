@@ -123,6 +123,17 @@
           (should= :crew-collision (:reason (ex-data e)))))))
   )
 
+(describe "impl-common resolve-entry-id"
+
+  (it "returns nil for a nil identifier even when a session named 'session' exists"
+    (should= nil (sut/resolve-entry-id {"session" {:id "session"}} nil)))
+
+  (it "returns nil for a blank identifier even when a session named 'session' exists"
+    (should= nil (sut/resolve-entry-id {"session" {:id "session"}} "")))
+
+  (it "still resolves a literal 'session' identifier"
+    (should= "session" (sut/resolve-entry-id {"session" {:id "session"}} "session"))))
+
 (describe "impl-common ednl transcript"
 
   #_{:clj-kondo/ignore [:unresolved-symbol]}

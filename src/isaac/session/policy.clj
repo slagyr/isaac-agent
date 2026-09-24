@@ -9,7 +9,18 @@
     [isaac.session.store.spi :as store]))
 
 (defprotocol SessionPolicy
-  (open-session! [this name opts])
+  (open-session! [this name opts]
+    "Open (or reopen) the session `name` under `(:crew opts)`. Callers should
+     hand this a concrete id — the agent owns naming (see
+     `isaac.session.store.spi/mint-name`); a blank/nil `name` is a caller
+     bug, and every implementation refuses to let it silently resolve to an
+     unrelated session (e.g. the sidecar/common store never slugifies a
+     blank id into the literal \"session\" and matches it against whatever
+     happens to be named that — episodes goes further and refuses the open
+     outright). When `name` already exists under a DIFFERENT crew than
+     `(:crew opts)`, the policy refuses (throws) instead of silently
+     returning the foreign session — no silent cross-crew attach
+     (isaac-j95x).")
   (delete-session! [this name])
   (rename-session! [this old-name new-name])
   (list-sessions [this])

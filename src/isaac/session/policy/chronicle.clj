@@ -31,11 +31,13 @@
   (get-turn-marker [_ session-id] (store/get-turn-marker store session-id))
   (turn-markers [_] (store/turn-markers store))
   (default-session [_ crew _opts]
-    (let [crew-id (if (keyword? crew) (name crew) (str crew))
-          recent  (or (when crew-id
-                        (last (sort-by :updated-at (store/list-sessions-by-agent store crew-id))))
-                      (store/most-recent-session store))]
-      (or (:id recent) nil)))
+    ;; Crew-scoped only: a crew with no sessions of its own gets nil, never
+    ;; another crew's most-recent session (isaac-j95x) — the caller (e.g. the
+    ;; ACP server) is responsible for minting a fresh id in that case.
+    (let [crew-id (when crew (if (keyword? crew) (name crew) (str crew)))
+          recent  (when crew-id
+                    (last (sort-by :updated-at (store/list-sessions-by-agent store crew-id))))]
+      (:id recent)))
   (repair-transcript! [_ session-id] (store/repair-transcript! store session-id))
   (request-cancel! [_ session-id] (store/request-cancel! store session-id)))
 

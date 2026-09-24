@@ -202,7 +202,14 @@
       (do (config/dangerously-install-config! {:defaults {:frequencies {:crew "main"}} :sessions {:naming-strategy :sequential}} "spec")
         (let [entry (sut/create-session! test-dir "friday-debug")]
           (should= "friday-debug" (:name entry))
-          (should= nil (store/get-session (s) "session-1"))))))
+          (should= nil (store/get-session (s) "session-1")))))
+
+    (it "mints a fresh name for a blank identifier instead of colliding with the literal 'session'"
+      (store/register-store! (s))
+      (sut/create-session! test-dir "session" {:crew "main"})
+      (let [entry (sut/create-session! test-dir "" {:crew "oscar"})]
+        (should-not= "session" (:id entry))
+        (should= "oscar" (:crew entry)))))
 
   ;; endregion ^^^^^ create-session! ^^^^^
 
