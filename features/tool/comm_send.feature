@@ -76,3 +76,68 @@ Feature: comm_send tool
     And the turn ends on session "dawn-watch"
     Then the comm_send tool result is an error
     And there are no pending comm deliveries
+
+  # Attachments (isaac-o9h4): file paths ride the delivery record; a comm
+  # opts in with :send-attachments? in its manifest entry.
+
+  @wip
+  Scenario: comm_send offers attachments alongside the common fields (isaac-o9h4)
+    Given config:
+      | key                | value   |
+      | comms.skybeam.type | skybeam |
+    When the prompt for session "dawn-watch" is built for provider "grover"
+    Then the prompt tool "comm__send" has parameters:
+      | param       | type   | required |
+      | comm        | string | true     |
+      | content     | string | true     |
+      | attachments | array  | false    |
+
+  @wip
+  Scenario: attachments ride the queued delivery for a comm that accepts them (isaac-o9h4)
+    Given the telly comm module is registered
+    And config:
+      | key               | value |
+      | comms.tannoy.type | telly |
+    And a file "report.pdf" exists in the session working directory with content "%PDF-1.4 stub"
+    And the following model responses are queued:
+      | type     | tool_call  | arguments                                                                                            |
+      | toolCall | comm__send | {"comm":"tannoy","content":"Report attached.","telly.target":"bridge","attachments":["report.pdf"]} |
+      | text     |            | Done.                                                                                                |
+    When the user sends "send the report" on session "dawn-watch"
+    And the turn ends on session "dawn-watch"
+    Then a pending comm delivery matches:
+      | path          | value               |
+      | comm          | tannoy              |
+      | content       | Report attached.    |
+      | telly/target  | bridge              |
+      | attachments.0 | #".*report\.pdf$"   |
+
+  @wip
+  Scenario: a comm that does not accept attachments refuses the call and queues nothing (isaac-o9h4)
+    Given config:
+      | key                | value   |
+      | comms.skybeam.type | skybeam |
+    And a file "report.pdf" exists in the session working directory with content "%PDF-1.4 stub"
+    And the following model responses are queued:
+      | type     | tool_call  | arguments                                                             |
+      | toolCall | comm__send | {"comm":"skybeam","content":"Here.","attachments":["report.pdf"]}     |
+      | text     |            | Could not send.                                                       |
+    When the user sends "send the report" on session "dawn-watch"
+    And the turn ends on session "dawn-watch"
+    Then the comm_send tool result is an error
+    And there are no pending comm deliveries
+
+  @wip
+  Scenario: an attachment outside the allowed directories is refused (isaac-o9h4)
+    Given the telly comm module is registered
+    And config:
+      | key               | value |
+      | comms.tannoy.type | telly |
+    And the following model responses are queued:
+      | type     | tool_call  | arguments                                                                                   |
+      | toolCall | comm__send | {"comm":"tannoy","content":"Here.","telly.target":"bridge","attachments":["/etc/passwd"]}   |
+      | text     |            | Could not send.                                                                             |
+    When the user sends "send it" on session "dawn-watch"
+    And the turn ends on session "dawn-watch"
+    Then the comm_send tool result is an error
+    And there are no pending comm deliveries
