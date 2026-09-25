@@ -57,10 +57,15 @@
         (map (fn [name] [name (->StubComm)]))
         (or (g/get :stub-comm-names) default-stub-comm-names)))
 
-(defn- with-stub-comm [f]
-  (binding [comm-registry/*registry* (atom (assoc (comm-registry/fresh-registry)
-                                                  :instances (stub-comm-instances)))]
-    (f)))
+(defn- with-stub-comm
+  "Tick against the stub comms, layered over any comm the scenario has
+   registered for real - a module's own feature (gchat's comm__send, say)
+   drives its live comm through this same step (isaac-baf1)."
+  [f]
+  (let [live (:instances @comm-registry/*registry*)]
+    (binding [comm-registry/*registry* (atom (assoc (comm-registry/fresh-registry)
+                                                    :instances (merge live (stub-comm-instances))))]
+      (f))))
 
 (defn comm-stub-returns [_comm-name table]
   (let [headers (:headers table)

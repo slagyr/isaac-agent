@@ -2,6 +2,7 @@
   (:require
     [clojure.string :as str]
     [isaac.comm.delivery.queue :as queue]
+    [isaac.comm.factory :as comm-factory]
     [isaac.config.loader :as loader]
     [isaac.fs :as fs]
     [isaac.tool.fs-bounds :as bounds]))
@@ -13,25 +14,28 @@
   (or (loader/snapshot "comm_send tool")
       {}))
 
-(defn- impl-keyword [slot-cfg]
-  (keyword (name (:type slot-cfg))))
+(defn- impl-keyword
+  "The impl a slot sends through: its :type, else its slot id - the same
+   rule the comm factory instantiates by (isaac-baf1)."
+  [slot-id slot-cfg]
+  (comm-factory/impl-id [slot-id] slot-cfg))
 
 (defn- manifest-comm-entry [module-index impl-kw]
   (some (fn [[_ entry]]
           (get-in entry [:manifest :isaac.agent/comm impl-kw]))
         module-index))
 
-(defn- send-schema-for-slot [module-index slot-cfg]
-  (or (:send-schema (manifest-comm-entry module-index (impl-keyword slot-cfg)))
+(defn- send-schema-for-slot [module-index slot-id slot-cfg]
+  (or (:send-schema (manifest-comm-entry module-index (impl-keyword slot-id slot-cfg)))
       {}))
 
-(defn- accepts-attachments? [module-index slot-cfg]
-  (true? (:send-attachments? (manifest-comm-entry module-index (impl-keyword slot-cfg)))))
+(defn- accepts-attachments? [module-index slot-id slot-cfg]
+  (true? (:send-attachments? (manifest-comm-entry module-index (impl-keyword slot-id slot-cfg)))))
 
 (defn- union-send-schema [module-index comms]
   (reduce-kv
-    (fn [acc _slot-id slot-cfg]
-      (merge acc (send-schema-for-slot module-index slot-cfg)))
+    (fn [acc slot-id slot-cfg]
+      (merge acc (send-schema-for-slot module-index slot-id slot-cfg)))
     {}
     (or comms {})))
 
@@ -152,7 +156,7 @@
           (required-send-fields send-schema)))
 
 (defn- enqueue-for-slot! [args comm-str content {comm-kw :record-key slot-cfg :cfg} module-index]
-  (let [send-schema (send-schema-for-slot module-index slot-cfg)
+  (let [send-schema (send-schema-for-slot module-index comm-kw slot-cfg)
         missing     (missing-send-fields args send-schema)
         attachments (attachment-args args)
         attaching?  (and (vector? attachments) (seq attachments))
@@ -160,14 +164,14 @@
     (cond
       (seq missing)
       (error (str "missing required field(s) for "
-                  (name (impl-keyword slot-cfg))
+                  (name (impl-keyword comm-kw slot-cfg))
                   ": "
                   (str/join ", " (map name missing))))
 
       (= ::invalid attachments)
       (error "attachments must be an array of file paths")
 
-      (and attaching? (not (accepts-attachments? module-index slot-cfg)))
+      (and attaching? (not (accepts-attachments? module-index comm-kw slot-cfg)))
       (error (str "comm " comm-str " does not accept attachments"))
 
       (:error resolved)

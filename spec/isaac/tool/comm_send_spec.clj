@@ -70,6 +70,12 @@
         (should= #{"comm" "content" "attachments" "telly.target" "telly.loft"}
                  (set (keys (:properties params))))))
 
+    (it "takes a slot with no :type to be the impl its slot id names, as the comm factory does (isaac-baf1)"
+      (let [params (sut/build-parameters {:module-index (:module-index (loader/snapshot "test"))
+                                           :comms        {:telly {:telly/loft "high"}}})]
+        (should= #{"comm" "content" "attachments" "telly.target" "telly.loft"}
+                 (set (keys (:properties params))))))
+
     (it "exposes only tool-API-safe JSON property keys"
       (let [params (sut/build-parameters {:module-index (:module-index (loader/snapshot "test"))
                                            :comms        (:comms (loader/snapshot "test"))})]
