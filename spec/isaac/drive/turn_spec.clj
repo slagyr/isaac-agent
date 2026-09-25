@@ -403,7 +403,7 @@
             (should= "search" (first @args-seen))
             (should= "logs" (get (second @args-seen) "query"))
             (should= "tool-success" (get (second @args-seen) "session_key"))
-            (should= "worker" (get (second @args-seen) "crew"))
+            (should= "worker" (get (second @args-seen) "caller_crew"))
             (should (fn? (:progress! (second @args-seen))))
             (should= "tool-success" (first @registered))
             (should= 1 @tool-count)

@@ -45,7 +45,7 @@
         (config/dangerously-install-config! {:defaults {:crew {:tools {:directories {:allow []}}}}
                                              :crew     {"worker" {:tools {:directories {:allow [:cwd]}}}}}
                                             "spec")
-        (should-be-nil (sut/ensure-path-allowed {"session_key" "stale-crew" "crew" "worker"}
+        (should-be-nil (sut/ensure-path-allowed {"session_key" "stale-crew" "caller_crew" "worker"}
                                                 "/work/project/hello.txt")))))
 
   (it "allows session cwd when global directories allow :cwd"
