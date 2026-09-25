@@ -171,4 +171,35 @@
     (it "falls back from simulated provider ids to the base provider config"
       (let [cfg {:providers {marigold/grover-api {:api marigold/grover-api :effort 3}}}]
         (should= {:api marigold/grover-api :effort 3}
-                 (sut/resolve-provider cfg (str marigold/grover-api ":" marigold/quantum-anvil)))))))
+                 (sut/resolve-provider cfg (str marigold/grover-api ":" marigold/quantum-anvil)))))
+
+    ;; isaac-rxun: an unresolvable ${VAR} leaves the field absent. The provider
+    ;; slice carries that provider's reasons so auth can name the variable
+    ;; from the value it is handed.
+    (it "carries the provider's unresolved references on its slice"
+      (let [cfg {:providers       {marigold/grover-api {:api marigold/grover-api}}
+                 :unresolved-refs {(str "providers." marigold/grover-api ".api-key") "RXUN_MISSING"
+                                   "providers.other.api-key"                         "OTHER_MISSING"}}]
+        (should= {(str "providers." marigold/grover-api ".api-key") "RXUN_MISSING"}
+                 (:unresolved-refs (sut/resolve-provider cfg marigold/grover-api)))))
+
+    (it "carries the base provider's unresolved references for a simulated id"
+      (let [cfg {:providers       {marigold/grover-api {:api marigold/grover-api}}
+                 :unresolved-refs {(str "providers." marigold/grover-api ".api-key") "RXUN_MISSING"}}]
+        (should= "RXUN_MISSING"
+                 (get-in (sut/resolve-provider cfg (str marigold/grover-api ":" marigold/quantum-anvil))
+                         [:unresolved-refs (str "providers." marigold/grover-api ".api-key")]))))
+
+    (it "adds no :unresolved-refs to a provider whose references all resolved"
+      (let [cfg {:providers       {marigold/grover-api {:api marigold/grover-api}}
+                 :unresolved-refs {"providers.other.api-key" "OTHER_MISSING"}}]
+        (should-not-contain :unresolved-refs (sut/resolve-provider cfg marigold/grover-api))))
+
+    (it "hands resolve-crew-context's provider the slice's reasons"
+      (let [cfg {:crew            {"main" {:model "echo" :soul "You are main."}}
+                 :models          {"echo" {:model "echo" :provider marigold/grover-api}}
+                 :providers       {marigold/grover-api {:api marigold/grover-api}}
+                 :unresolved-refs {(str "providers." marigold/grover-api ".api-key") "RXUN_MISSING"}}]
+        (should= "RXUN_MISSING"
+                 (get-in (sut/resolve-crew-context cfg "main")
+                         [:provider-cfg :unresolved-refs (str "providers." marigold/grover-api ".api-key")]))))))

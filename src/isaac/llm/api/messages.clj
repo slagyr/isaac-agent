@@ -11,14 +11,7 @@
 ;; region ----- Auth -----
 
 (defn- missing-auth-error [provider-name config]
-  (when (str/blank? (shared/resolve-api-key provider-name config))
-    (let [env-var (shared/provider-env-var provider-name)
-          label   (or provider-name "anthropic")]
-      {:error   :auth-missing
-       :message (str "No API key for " label "."
-                     (when env-var (str " Set " env-var " in the environment"))
-                     (when provider-name (str " or :api-key in providers/" provider-name ".edn"))
-                     ".")})))
+  (shared/api-key-missing-error provider-name config "anthropic"))
 
 (defn- auth-headers [provider-name config]
   {"x-api-key"         (shared/resolve-api-key provider-name config)

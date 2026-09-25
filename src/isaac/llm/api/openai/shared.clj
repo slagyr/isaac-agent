@@ -103,6 +103,33 @@
       (when-let [env-var (provider-env-var provider-name)]
         (loader/env env-var)))))
 
+(defn- base-provider-name
+  "A simulated provider id (\"grover:quantum-anvil\") reads its config from the
+   base provider's entry."
+  [provider-name]
+  (first (str/split provider-name #":" 2)))
+
+(defn api-key-missing-error
+  "The :auth-missing error for a provider with no API key, or nil when it has
+   one. When the config field is absent because its ${VAR} could not be
+   resolved (isaac-rxun), the message names that variable: the conventional
+   <PROVIDER>_API_KEY advice would point at the wrong one. The reason travels
+   on the provider slice (:unresolved-refs), so nothing ambient is read."
+  [provider-name config default-label]
+  (when (str/blank? (resolve-api-key provider-name config))
+    (let [label     (or provider-name default-label)
+          env-var   (provider-env-var provider-name)
+          reference (when provider-name
+                      (loader/unresolved-ref config (str "providers." (base-provider-name provider-name) ".api-key")))]
+      {:error   :auth-missing
+       :message (if reference
+                  (str "No API key for " label ". :api-key references ${" reference "}, "
+                       "which is not set in this environment.")
+                  (str "No API key for " label "."
+                       (when env-var (str " Set " env-var " in the environment"))
+                       (when provider-name (str " or :api-key in providers/" provider-name ".edn"))
+                       "."))})))
+
 (defn missing-auth-error [provider-name {:keys [auth] :as config}]
   (cond
     (:simulate-provider config)
@@ -116,14 +143,8 @@
         :else                  {:error   :auth-missing
                                 :message (str "Missing OAuth login for " provider-name ". Run `isaac auth login --provider " provider-name "` first.")}))
 
-    (str/blank? (resolve-api-key provider-name config))
-    (let [env-var (provider-env-var provider-name)
-          label   (or provider-name "provider")]
-      {:error   :auth-missing
-       :message (str "No API key for " label "."
-                     (when env-var (str " Set " env-var " in the environment"))
-                     (when provider-name (str " or :api-key in providers/" provider-name ".edn"))
-                     ".")})))
+    :else
+    (api-key-missing-error provider-name config "provider")))
 
 (defn provider-base-url [config]
   (or (:base-url config) "http://localhost:11434/v1"))

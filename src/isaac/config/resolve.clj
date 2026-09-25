@@ -14,9 +14,22 @@
 (defn default-crew [cfg]
   (defaults/crew-id (loader/normalize-config (or cfg {}))))
 
+(defn- provider-unresolved-refs
+  "The loader's unresolved references (isaac-rxun) for one provider's fields,
+   or nil. `provider-id` may be a simulated id (\"grover:quantum-anvil\"); its
+   fields live under the base provider's entry."
+  [cfg provider-id]
+  (let [prefix (str "providers." (first (str/split provider-id #":" 2)) ".")]
+    (not-empty (into {} (filter (fn [[path _]] (str/starts-with? path prefix)))
+                     (:unresolved-refs cfg)))))
+
 (defn resolve-provider
   "The provider entity under the :defaults :provider template. Nil when no such
-   provider is configured — the template alone is not a provider."
+   provider is configured — the template alone is not a provider.
+
+   When any of its fields was emptied by an unresolvable ${VAR}, the slice
+   carries those reasons under :unresolved-refs, so the point of use can name
+   the variable from the value it is handed (isaac-rxun)."
   [cfg provider-id]
   (let [cfg         (loader/normalize-config cfg)
         provider-id (->id provider-id)]
@@ -24,7 +37,9 @@
       (when-let [provider-cfg (or (llm-providers/lookup cfg (:module-index cfg) provider-id)
                                   (when-let [idx (str/index-of provider-id ":")]
                                     (get-in cfg [:providers (subs provider-id 0 idx)])))]
-        (merge (defaults/provider-template cfg) provider-cfg)))))
+        (let [refs (provider-unresolved-refs cfg provider-id)]
+          (cond-> (merge (defaults/provider-template cfg) provider-cfg)
+            refs (assoc :unresolved-refs refs)))))))
 
 (defn parse-model-ref [model-ref]
   (let [idx (str/index-of model-ref "/")]
