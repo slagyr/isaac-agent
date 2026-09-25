@@ -223,9 +223,9 @@
     (builtin/register-all!)
     (sut/crew-tool-allow "main" "exec/run")
     (sut/sessions-exist {:headers ["name"] :rows [["cancel-test"]]})
-    (sut/responses-queued {:headers ["type" "tool_call" "arguments" "content"]
-                           :rows    [["tool_call" "exec__run" "{\"command\": \"sleep 0.05\"}" ""]
-                                     ["text" "" "" "Should never appear"]]})
+    (sut/responses-queued {:headers ["type" "tool_call" "arguments" "content" "wait"]
+                           :rows    [["tool_call" "exec__run" "{\"command\": \"sleep 0.05\"}" "" ""]
+                                     ["text" "" "" "Should never appear" "true"]]})
     (sut/user-sends-on-session "do stuff" "cancel-test")
     (should-not-be-nil (g/get :turn-future))
     (should-not (realized? (g/get :turn-future)))

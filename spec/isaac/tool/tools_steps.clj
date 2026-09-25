@@ -730,9 +730,12 @@
     (when allow
       (session-steps/crew-tool-allow "main" allow))))
 
+(defn- register-mock-tool! [tool]
+  (registry/register! (assoc tool :builtin? true)))
+
 (defn streaming-tool-registered [tool-name progress-edn result]
   (let [chunks (edn/read-string progress-edn)]
-    (registry/register!
+    (register-mock-tool!
       {:name        tool-name
        :description (str "streaming mock " tool-name)
        :parameters  {:type "object" :properties {}}
@@ -746,7 +749,7 @@
     nil))
 
 (defn failing-tool-registered [tool-name waits-for error]
-  (registry/register!
+  (register-mock-tool!
     {:name        tool-name
      :description (str "failing mock " tool-name)
      :parameters  {:type "object" :properties {}}
@@ -762,7 +765,7 @@
   (let [release   (promise)
         in-flight (atom 0)
         target    (long (if (number? n) n (parse-long n)))]
-    (registry/register!
+    (register-mock-tool!
       {:name        tool-name
        :description (str "rendezvous mock " tool-name)
        :parameters  {:type "object" :properties {}}
@@ -779,7 +782,7 @@
 
 (defn gated-tool-registered [tool-name result other-tool]
   (let [gate (completion-signal other-tool)]
-    (registry/register!
+    (register-mock-tool!
       {:name        tool-name
        :description (str "gated mock " tool-name)
        :parameters  {:type "object" :properties {}}
@@ -791,7 +794,7 @@
     nil))
 
 (defn blocking-tool-registered [tool-name]
-  (registry/register!
+  (register-mock-tool!
     {:name        tool-name
      :description (str "blocking mock " tool-name)
      :parameters  {:type "object" :properties {}}

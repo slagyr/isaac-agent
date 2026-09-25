@@ -79,6 +79,7 @@
         (bridge-cancel/cancel! session-key)
         (with-redefs [session-steps/crew-tool-allow (fn [_ _] nil)]
           (sut/blocking-tool-registered "test__anchor"))
+        (should (:builtin? (registry/lookup "test__anchor")))
         (should= {:error :cancelled}
                  ((:handler (registry/lookup "test__anchor")) {"session_key" session-key}))))
 
