@@ -218,3 +218,37 @@ Feature: Global and crew directory allow/deny
       | message | toolResult   |                 |                                             |
       | message | toolResult   | true            | #"(?s).*path outside allowed directories.*" |
       | message | assistant    |                 | done                                        |
+
+  # A comm dispatches its turns with the crew its config names (gchat: the
+  # space's :crew). A session created under another crew — or under one that
+  # no longer exists in config — keeps that stale name on its record. The
+  # directory policy must follow the crew the turn actually runs as, not the
+  # record (isaac-dm session on yopp stored "main", ran as yopp, every path
+  # refused — 2026-09-25).
+
+  @wip
+  Scenario: the directory policy follows the crew the turn runs as, not the stale crew on the session record (isaac-kleb)
+    Given config file "isaac.edn" containing:
+      """
+      {:defaults    {:frequencies {:crew :main} :crew {:model :echo}}
+       :providers   {:grover {:base-url "http://test" :api "grover"}}
+       :models      {:echo {:model "echo" :provider :grover :context-window 32768}}}
+      """
+    And config file "crew/worker.edn" containing:
+      """
+      {:tools {:allow [:fs/read] :directories {:allow [:cwd]}}}
+      """
+    And file "/work/project/hello.txt" contains "hi there"
+    And the following sessions exist:
+      | name       | crew   | cwd           |
+      | stale-crew | ghost  | /work/project |
+    And the following model responses are queued:
+      | type      | tool     | arguments                                |
+      | tool_call | fs__read | {"file_path": "/work/project/hello.txt"} |
+      | text      |          | done                                     |
+    When the user sends "read it" on session "stale-crew" as crew "worker"
+    Then session "stale-crew" has transcript matching:
+      | type    | message.role | message.content |
+      | message | user         | read it         |
+      | message | toolResult   | #".*hi there.*" |
+      | message | assistant    | done            |
