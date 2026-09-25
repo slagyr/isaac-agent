@@ -36,14 +36,6 @@
     (tool-registry/register! {:name "lens__read" :description "Read" :parameters {} :handler (fn [_] {:result "ok"})})
     ["lens__catalog" "lens__read"]))
 
-(def ^:private lens-config {:module-index {:isaac.tool.lens {:manifest {:isaac.agent/tool-providers {:lens {:ensure! 'isaac.drive.turn-spec/lens-provider}}}}}})
-
-(defn- lens-allowed []
-  (#'sut/allowed-tool-names {"main" {:tools {:allow [:lens/*]}}} "main" lens-config))
-
-(defn- withheld-logs []
-  (filter #(= :turn/tools-withheld (:event %)) @log/captured-logs))
-
 (describe "turn ending classification"
   (it "reports provider unavailability separately from context exhaustion"
     (should= :provider-unavailable
@@ -497,43 +489,6 @@
     (it "a glob allow without a module index offers nothing"
       (nexus/-with-nexus {:tool-registry (atom {})}
         (should= #{} (#'sut/allowed-tool-names {"main" {:tools {:allow [:lens/*]}}} "main" {})))))
-
-  (describe "per-charge tools deny overlay (isaac-7mwt)"
-
-    (it "withholds a denied tool from the turn's tool definitions and logs it"
-      (nexus/-with-nexus {:tool-registry (atom {})}
-        (log/capture-logs
-          (let [allowed (#'sut/withhold-charge-tools (lens-allowed) {:session-key "s1" :tools {:deny [:lens/read]}})]
-            (should= #{"lens__catalog"} allowed)
-            (should= ["lens__catalog"] (mapv :name (tool-registry/tool-definitions allowed)))
-            (let [entry (first (withheld-logs))]
-              (should= :debug (:level entry))
-              (should= ["lens__read"] (:tools entry))
-              (should= "s1" (:session entry)))))))
-
-    (it "leaves the tool set unchanged for a charge without :tools"
-      (nexus/-with-nexus {:tool-registry (atom {})}
-        (log/capture-logs
-          (let [allowed (lens-allowed)]
-            (should= allowed (#'sut/withhold-charge-tools allowed {:session-key "s1"}))
-            (should-be-nil (first (withheld-logs)))))))
-
-    (it "is a no-op without a log when denying a tool the cascade already excludes"
-      (nexus/-with-nexus {:tool-registry (atom {})}
-        (log/capture-logs
-          (let [allowed (lens-allowed)]
-            (should= allowed (#'sut/withhold-charge-tools allowed {:session-key "s1" :tools {:deny [:gchat/send]}}))
-            (should-be-nil (first (withheld-logs)))))))
-
-    (it "accepts the wire spelling of a tool token"
-      (nexus/-with-nexus {:tool-registry (atom {})}
-        (should= #{"lens__catalog"}
-                 (#'sut/withhold-charge-tools (lens-allowed) {:session-key "s1" :tools {:deny ["lens__read"]}}))))
-
-    (it "accepts a namespace glob token"
-      (nexus/-with-nexus {:tool-registry (atom {})}
-        (should= nil
-                 (#'sut/withhold-charge-tools (lens-allowed) {:session-key "s1" :tools {:deny [:lens/*]}})))))
 
   (describe "mid-loop transcript flush"
     #_{:clj-kondo/ignore [:unresolved-symbol]}

@@ -256,18 +256,4 @@
         (let [charge (sut/build {:session-key "s1"
                                  :input       "hi"
                                  :cycle       {:checkpoint-every 1}})]
-          (should= {:checkpoint-every 1} (:cycle charge)))))
-
-    (it "preserves charge-level tools deny overlay"
-      (with-redefs [loader/snapshot              (fn [_] base-cfg)
-                    session-ctx/resolve-behavior (fn [_ _] (stub-behavior "main" "You are Atticus." test-model-id 4096))]
-        (let [charge (sut/build {:session-key "s1"
-                                 :input       "hi"
-                                 :tools       {:deny [:lens/read]}})]
-          (should= {:deny [:lens/read]} (:tools charge)))))
-
-    (it "omits :tools when the request carries none"
-      (with-redefs [loader/snapshot              (fn [_] base-cfg)
-                    session-ctx/resolve-behavior (fn [_ _] (stub-behavior "main" "You are Atticus." test-model-id 4096))]
-        (let [charge (sut/build {:session-key "s1" :input "hi"})]
-          (should-not (contains? charge :tools)))))))
+          (should= {:checkpoint-every 1} (:cycle charge)))))))

@@ -1285,19 +1285,6 @@
          (filter #(names/cascade-allowed? global-tools crew-tools %))
          set)))
 
-(defn- withhold-charge-tools
-  "Removes the charge's :tools {:deny [...]} overlay from the cascade result
-   (isaac-7mwt). Deny tokens use the cascade's spellings (:fs/read, fs__read,
-   :fs/*). Withheld tools are never offered to the model."
-  [allowed-tools {:keys [session-key tools]}]
-  (let [deny     (names/policy-list (:deny tools))
-        withheld (when (seq deny)
-                   (filter #(names/allowed? deny %) allowed-tools))]
-    (if (seq withheld)
-      (do (log/debug :turn/tools-withheld :session session-key :tools (vec (sort withheld)))
-          (not-empty (reduce disj (set allowed-tools) withheld)))
-      allowed-tools)))
-
 (defn- active-tools [_p allowed-tools module-index]
   (not-empty (if module-index
                (tool-registry/tool-definitions allowed-tools module-index)
@@ -1374,9 +1361,8 @@
         session          (when sess (policy/get-session sess session-key))
         skill-disclosure (or (session-ctx/read-skill-disclosure (:config charge) root (:cwd session))
                              {:menu-text nil :tool-names #{}})
-        allowed-tools    (-> (merge-allowed-tools (allowed-tool-names crew-members crew (:config charge))
-                                                  (:tool-names skill-disclosure))
-                             (withhold-charge-tools charge))
+        allowed-tools    (merge-allowed-tools (allowed-tool-names crew-members crew (:config charge))
+                                              (:tool-names skill-disclosure))
         boot-files       (session-ctx/read-boot-files (:cwd session))
         rules-text       (session-ctx/read-rules-text (:config charge) root (:cwd session))
         augmented        (augment-provider root provider session-key context-window
