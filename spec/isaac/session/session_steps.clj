@@ -939,7 +939,10 @@
   (g/should-be-nil (with-feature-fs #(get-session session-name))))
 
 (defn session-is-in-flight [session-name]
-  (g/should (store/mark-in-flight! (session-store) session-name)))
+  (let [session-store (session-store)]
+    (g/should (store/mark-in-flight! session-store session-name))
+    (store/record-turn-marker! session-store session-name
+                               {:source :feature :session-id session-name})))
 
 (defn session-matches [key-str table]
   (await-turn!)

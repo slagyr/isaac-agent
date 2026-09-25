@@ -5,9 +5,8 @@
     [isaac.fs :as fs]
     [isaac.nexus :as nexus]))
 
-;; session.store is a dependency of config.install, so it can't require the
-;; config namespace (config.api -> install -> store would cycle). It reads the
-;; config snapshot straight from the nexus :config slot instead.
+;; session.store is a dependency of config.install, so it reads the config
+;; snapshot directly from nexus rather than requiring isaac.config.
 (defn- config-snapshot []
   (some-> (nexus/get :config) deref))
 
@@ -45,9 +44,6 @@
   (request-cancel! [this session-id]))
 
 (defonce ^:private in-flight* (atom {}))
-
-(defn- crew-max-in-flight [crew-name]
-  (or (get-in (config-snapshot) [:crew crew-name :max-in-flight]) 1))
 
 (defn mark-in-flight! [store session-id]
   (let [crew-name (:crew (get-session store session-id))
@@ -88,8 +84,8 @@
        (filter #(= crew-name %))
        count))
 
-(defn can-dispatch? [store crew-name]
-  (< (in-flight-count store crew-name) (crew-max-in-flight crew-name)))
+(defn can-dispatch? [store session-id]
+  (not (in-flight? store session-id)))
 
 (defn tags-of [session]
   (or (:tags session) #{}))

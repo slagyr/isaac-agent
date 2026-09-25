@@ -115,22 +115,13 @@
         (should= 1 (store/in-flight-count s "main"))
         (should= 1 (store/in-flight-count s "other"))))
 
-    (it "can-dispatch? defaults crew capacity to one"
+    (it "can-dispatch? admits an idle session while another session on its crew is in flight"
       (let [s (memory/create-store)]
-        (store/open-session! s "k1" {:crew "main"})
-        (should= true (store/can-dispatch? s "main"))
-        (store/mark-in-flight! s "k1")
-        (should= false (store/can-dispatch? s "main"))))
-
-    (it "can-dispatch? respects configured max-in-flight"
-      (let [s (memory/create-store)]
-        (store/open-session! s "k1" {:crew "main"})
-        (store/open-session! s "k2" {:crew "main"})
-        (nexus/-with-nexus {:config (atom {:crew {"main" {:max-in-flight 2}}})}
-          (should= true (store/mark-in-flight! s "k1"))
-          (should= true (store/can-dispatch? s "main"))
-          (should= true (store/mark-in-flight! s "k2"))
-          (should= false (store/can-dispatch? s "main"))))))
+        (store/open-session! s "port" {:crew "main"})
+        (store/open-session! s "starboard" {:crew "main"})
+        (store/mark-in-flight! s "port")
+        (should= true (store/can-dispatch? s "starboard"))
+        (should= false (store/can-dispatch? s "port")))))
 
   (describe "tag helpers"
 

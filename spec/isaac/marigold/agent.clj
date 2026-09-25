@@ -85,7 +85,11 @@
                         (keyword marigold/skybeam)  {:namespace 'isaac.marigold-comms}
                         (keyword marigold/logbook)  {:namespace 'isaac.marigold-comms}}
 
-   :isaac.config/schema (select-keys config-schema/contributions agent-schema-keys)
+   :isaac.config/schema
+   (update-in (select-keys config-schema/contributions agent-schema-keys)
+              [:crew :schema :value-spec :schema :max-in-flight]
+              (constantly {:type :ignore
+                           :validations [[:retired? "the crew-wide in-flight cap is gone (isaac-ximd); turns serialize per session only"]]}))
    :isaac.config/check  check-contributions/server})
 
 (def baseline-manifest baseline-agent-manifest)

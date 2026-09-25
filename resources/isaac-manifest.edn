@@ -1,5 +1,5 @@
 {:id :isaac.agent,
- :version "0.1.85",
+ :version "0.1.86",
  :builtin? true,
  :factory isaac.agent.module/create-module,
  :berths
@@ -498,10 +498,9 @@
          :validations
          [[:percentage? "e.g. 0.8 for 80% of context-window"]]}}},
       :max-in-flight
-      {:type :int,
-       :description
-       "Maximum concurrent in-flight turns for this crew member",
-       :validations [:positive?]},
+      {:type :ignore,
+       :validations
+       [[:retired? "the crew-wide in-flight cap is gone (isaac-ximd); turns serialize per session only"]]},
       :cycle
       {:type :map,
        :description
