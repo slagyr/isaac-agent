@@ -144,7 +144,8 @@
 
 (defn- spec-for [tool-name]
   (some-> (get built-in-tool-specs tool-name)
-          (dissoc :name :available?)))
+          (dissoc :name :available?)
+          (assoc :builtin? true)))
 
 (defn read-tool-factory [_] (spec-for "fs__read"))
 (defn write-tool-factory [_] (spec-for "fs__write"))
@@ -188,7 +189,8 @@
   (when-let [factory (get extra-built-in-factories tool-name)]
     (tool-registry/unregister! tool-name)
     (tool-registry/register-tool-entry!
-      [(names/config-token tool-name) {:factory factory}])))
+      [(names/config-token tool-name) {:factory factory}])
+    (tool-registry/register! (assoc (tool-registry/lookup tool-name) :builtin? true))))
 
 (defn- register-built-in-tool! [tool-name]
   (when (contains? extra-built-in-factories tool-name)

@@ -65,7 +65,8 @@
                    "No skills discovered.")})))
 
 (defn load-skill-tool-factory [_]
-  {:description "Load the full body of a discovered skill by name, or a bundled resource from that skill's directory."
+  {:builtin?    true
+   :description "Load the full body of a discovered skill by name, or a bundled resource from that skill's directory."
    :parameters  {:type       "object"
                  :properties {"name"     {:type "string" :description "Skill name to load"}
                               "resource" {:type "string" :description "Optional bundled resource path within the skill directory"}}
@@ -73,6 +74,7 @@
    :handler     #'load-skill-tool})
 
 (defn list-skills-tool-factory [_]
-  {:description "List available skills by name and description."
+  {:builtin?    true
+   :description "List available skills by name and description."
    :parameters  {:type "object" :properties {}}
    :handler     #'list-skills-tool})

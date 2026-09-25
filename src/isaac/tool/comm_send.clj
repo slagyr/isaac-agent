@@ -197,7 +197,8 @@
 
 (defn comm-send-tool-factory [_]
   (let [cfg (snapshot-config)]
-    {:description "Send a message over a configured comm channel (queue-first)."
+    {:builtin?    true
+     :description "Send a message over a configured comm channel (queue-first)."
      :parameters  (build-parameters {:module-index (:module-index cfg)
                                      :comms        (:comms cfg)})
      :handler     #'comm-send-tool}))

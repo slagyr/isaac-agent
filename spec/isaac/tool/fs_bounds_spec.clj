@@ -37,6 +37,17 @@
         (should-not (nil? (sut/ensure-path-allowed {"session_key" "chat-1"}
                                                    "/work/project/hello.txt"))))))
 
+  (it "uses the turn crew instead of the stale session crew for directory policy"
+    (let [mem           (fs/mem-fs)
+          session-store (store/create nil :memory)]
+      (nexus/-with-nexus {:root "/test/runtime" :sessions {:store session-store} :fs mem}
+        (store/open-session! session-store "stale-crew" {:crew "ghost" :cwd "/work/project"})
+        (config/dangerously-install-config! {:defaults {:crew {:tools {:directories {:allow []}}}}
+                                             :crew     {"worker" {:tools {:directories {:allow [:cwd]}}}}}
+                                            "spec")
+        (should-be-nil (sut/ensure-path-allowed {"session_key" "stale-crew" "crew" "worker"}
+                                                "/work/project/hello.txt")))))
+
   (it "allows session cwd when global directories allow :cwd"
     (let [mem           (fs/mem-fs)
           session-store (store/create nil :memory)]

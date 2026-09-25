@@ -102,6 +102,12 @@
         (should= "got: hello" (:result result))
         (should-be-nil (:isError result))))
 
+    (it "does not pass runtime crew context to external tool handlers"
+      (let [received (atom nil)]
+        (sut/register! {:name "external__echo" :handler #(do (reset! received %) {:result "ok"})})
+        (sut/execute "external__echo" {"message" "ahoy" "session_key" "session-1" "state_dir" "/state" "crew" "worker"})
+        (should= {"message" "ahoy"} @received)))
+
     (it "returns an error map for an unknown tool"
       (let [result (sut/execute "delete_all" {:path "/"})]
         (should (:isError result))

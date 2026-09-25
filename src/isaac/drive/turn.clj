@@ -1522,10 +1522,11 @@
      :run           (fn []
                       (when-not (compare-and-set! tool-state :announced :running)
                         (throw (ex-info "cancelled" {:type :cancelled})))
-                      (let [{:keys [allowed-tools module-index tool-count caps ctx]} tool-ctx
+                      (let [{:keys [allowed-tools crew module-index tool-count caps]} tool-ctx
                             progress! (fn [chunk] (comm/on-tool-progress ch session-key tc chunk))
                             args      (cond-> (or (:arguments tc) {})
                                          true (assoc "session_key" session-key)
+                                         true (assoc "crew" crew)
                                          true (assoc :progress! progress!))
                             cache      (:window-cache tool-ctx)
                             cycle-n    (or (some-> tool-ctx :cycle* deref :n) 1)
@@ -1674,6 +1675,7 @@
                               (comm/on-cycle-end ch session-key cycle {:outcome :aside :text text :tool-calls tool-calls})
                               (comm/on-aside ch session-key cycle text)))
             tool-ctx      {:comm           ch
+                            :crew           crew
                             :session-key    session-key
                             :allowed-tools  allowed-tools
                             :module-index   module-index

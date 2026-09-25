@@ -394,6 +394,7 @@
                                                      "ok")]
           (let [result (#'sut/record-tool-call! {:comm           (memory-comm/channel events)
                                                  :session-key    "tool-success"
+                                                 :crew           "worker"
                                                  :allowed-tools  #{"search"}
                                                  :tool-count     tool-count}
                                                "search"
@@ -402,6 +403,7 @@
             (should= "search" (first @args-seen))
             (should= "logs" (get (second @args-seen) "query"))
             (should= "tool-success" (get (second @args-seen) "session_key"))
+            (should= "worker" (get (second @args-seen) "crew"))
             (should (fn? (:progress! (second @args-seen))))
             (should= "tool-success" (first @registered))
             (should= 1 @tool-count)

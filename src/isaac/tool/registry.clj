@@ -248,13 +248,21 @@
   (when cache
     (reset! cache {})))
 
+(defn- builtin-tool? [tool]
+  (:builtin? tool))
+
+(defn- handler-arguments [tool arguments]
+  (if (builtin-tool? tool)
+    arguments
+    (dissoc arguments "crew" "session_key" "state_dir" :crew :session_key :state_dir)))
+
 (defn- run-handler [name arguments caps]
   (if-let [tool (lookup name)]
     (let [cwd      (tool-cwd arguments)
           log-args (log-arguments arguments)]
       (log/debug :tool/start :tool name :arguments log-args :cwd cwd)
       (try
-        (let [result ((:handler tool) arguments)]
+        (let [result ((:handler tool) (handler-arguments tool arguments))]
           (cond
             (:isError result)
             (do (log/error :tool/execute-failed :tool name :arguments log-args :cwd cwd :error (:error result))

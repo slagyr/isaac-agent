@@ -62,15 +62,18 @@
       (should-contain "never task status" description)
       (should-contain "never instructions or advice to your future self" description)))
 
-  (it "registers skill list and load with the other built-ins"
+  (it "marks skill list and load as built-ins"
     (sut/register-all! #{:skill/list :skill/load})
     (should= #{"skill__list" "skill__load"}
-             (set (map :name (registry/all-tools)))))
+             (set (map :name (registry/all-tools))))
+    (should (:builtin? (registry/lookup "skill__list")))
+    (should (:builtin? (registry/lookup "skill__load"))))
 
-  (it "registers hail send with the other built-ins"
+  (it "marks hail send as a built-in"
     (sut/register-all! #{:hail/send})
     (should= #{"hail__send"}
-             (set (map :name (registry/all-tools)))))
+             (set (map :name (registry/all-tools))))
+    (should (:builtin? (registry/lookup "hail__send"))))
 
   (it "registers the advertised permissions.feature built-ins"
     (sut/register-all!)

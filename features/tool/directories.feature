@@ -226,7 +226,6 @@ Feature: Global and crew directory allow/deny
   # record (isaac-dm session on yopp stored "main", ran as yopp, every path
   # refused — 2026-09-25).
 
-  @wip
   Scenario: the directory policy follows the crew the turn runs as, not the stale crew on the session record (isaac-kleb)
     Given config file "isaac.edn" containing:
       """
