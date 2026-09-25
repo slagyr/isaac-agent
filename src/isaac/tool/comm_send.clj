@@ -2,7 +2,12 @@
   (:require
     [clojure.string :as str]
     [isaac.comm.delivery.queue :as queue]
-    [isaac.config.loader :as loader]))
+    [isaac.config.loader :as loader]
+    [isaac.fs :as fs]
+    [isaac.tool.fs-bounds :as bounds]))
+
+(def ^:private attachments-description
+  "Local file paths to attach. Only comms that accept attachments take them.")
 
 (defn- snapshot-config []
   (or (loader/snapshot "comm_send tool")
@@ -19,6 +24,9 @@
 (defn- send-schema-for-slot [module-index slot-cfg]
   (or (:send-schema (manifest-comm-entry module-index (impl-keyword slot-cfg)))
       {}))
+
+(defn- accepts-attachments? [module-index slot-cfg]
+  (true? (:send-attachments? (manifest-comm-entry module-index (impl-keyword slot-cfg)))))
 
 (defn- union-send-schema [module-index comms]
   (reduce-kv
@@ -72,16 +80,20 @@
        vec))
 
 (defn build-parameters
-  "JSON-schema parameters for comm_send: comm + content plus the union of
-   configured comms' namespaced :send-schema fields (all optional in the
-   union; required-ness is enforced per chosen comm at execution)."
+  "JSON-schema parameters for comm_send: comm + content + attachments plus
+   the union of configured comms' namespaced :send-schema fields (all
+   optional in the union; required-ness is enforced per chosen comm at
+   execution)."
   [{:keys [module-index comms]}]
   (let [union-fields (union-send-schema module-index comms)
         properties   (merge {"comm"    {:type        "string"
                                         :description "Configured comm slot id"
                                         :enum        (comm-slot-ids comms)}
                               "content" {:type        "string"
-                                         :description "Message body"}}
+                                         :description "Message body"}
+                              "attachments" {:type        "array"
+                                             :items       {:type "string"}
+                                             :description attachments-description}}
                             (into {}
                                   (map (fn [[field spec]]
                                          [(field-json-key field)
@@ -107,39 +119,77 @@
                     [field v])))
               send-schema)))
 
+(defn- error [message]
+  {:isError true :error message})
+
+(defn- attachment-args [args]
+  (let [v (or (get args "attachments") (get args :attachments))]
+    (cond
+      (nil? v)                                v
+      (and (sequential? v) (every? string? v)) (vec v)
+      :else                                   ::invalid)))
+
+(defn- attachment-error [args path]
+  (let [fs* (bounds/filesystem args)]
+    (or (bounds/ensure-path-allowed args path)
+        (cond
+          (not (fs/exists? fs* path)) (error (str "attachment not found: " path))
+          (not (fs/file? fs* path))   (error (str "attachment is not a regular file: " path))))))
+
+(defn- resolve-attachments
+  "Returns {:paths [...]} with each path resolved against the session cwd,
+   or {:error ...} naming the first refused path."
+  [args paths]
+  (let [cwd      (bounds/session-workdir args)
+        resolved (mapv #(bounds/resolve-path % cwd) paths)]
+    (if-let [refusal (some #(attachment-error args %) resolved)]
+      {:error refusal}
+      {:paths resolved})))
+
+(defn- missing-send-fields [args send-schema]
+  (remove #(some (fn [v] (not (str/blank? (str v))))
+                 [(arg-value args %)])
+          (required-send-fields send-schema)))
+
+(defn- enqueue-for-slot! [args comm-str content {comm-kw :record-key slot-cfg :cfg} module-index]
+  (let [send-schema (send-schema-for-slot module-index slot-cfg)
+        missing     (missing-send-fields args send-schema)
+        attachments (attachment-args args)
+        attaching?  (and (vector? attachments) (seq attachments))
+        resolved    (when attaching? (resolve-attachments args attachments))]
+    (cond
+      (seq missing)
+      (error (str "missing required field(s) for "
+                  (name (impl-keyword slot-cfg))
+                  ": "
+                  (str/join ", " (map name missing))))
+
+      (= ::invalid attachments)
+      (error "attachments must be an array of file paths")
+
+      (and attaching? (not (accepts-attachments? module-index slot-cfg)))
+      (error (str "comm " comm-str " does not accept attachments"))
+
+      (:error resolved)
+      (:error resolved)
+
+      :else
+      {:result (:id (queue/enqueue! (cond-> (build-record comm-kw content args send-schema)
+                                      (seq (:paths resolved)) (assoc :attachments (:paths resolved)))))})))
+
 (defn comm-send-tool
   "Queue an outbound comm delivery. Args use string keys (LLM JSON)."
   [arguments]
-  (let [args      (if (map? arguments) arguments {})
-        comm-str  (some-> (or (get args "comm") (get args :comm)) str str/trim)
-        content   (some-> (or (get args "content") (get args :content)) str)
-        cfg       (snapshot-config)
-        comms     (:comms cfg {})
-        slot         (resolve-comm-slot comms comm-str)]
+  (let [args     (if (map? arguments) arguments {})
+        comm-str (some-> (or (get args "comm") (get args :comm)) str str/trim)
+        content  (some-> (or (get args "content") (get args :content)) str)
+        cfg      (snapshot-config)
+        slot     (resolve-comm-slot (:comms cfg {}) comm-str)]
     (cond
-      (str/blank? comm-str)
-      {:isError true :error "comm is required"}
-
-      (str/blank? content)
-      {:isError true :error "content is required"}
-
-      (nil? slot)
-      {:isError true :error (str "unknown comm slot: " comm-str)}
-
-      :else
-      (let [comm-kw        (:record-key slot)
-            slot-cfg       (:cfg slot)
-            send-schema    (send-schema-for-slot (:module-index cfg) slot-cfg)
-            missing        (remove #(some (fn [v] (not (str/blank? (str v))))
-                                        [(arg-value args %)])
-                                 (required-send-fields send-schema))]
-        (if (seq missing)
-          {:isError true
-           :error   (str "missing required field(s) for "
-                         (name (impl-keyword slot-cfg))
-                         ": "
-                         (str/join ", " (map name missing)))}
-          {:result (:id (queue/enqueue! (build-record comm-kw content args send-schema)))})))))
+      (str/blank? comm-str) (error "comm is required")
+      (str/blank? content)  (error "content is required")
+      (nil? slot)           (error (str "unknown comm slot: " comm-str))
+      :else                 (enqueue-for-slot! args comm-str content slot (:module-index cfg)))))
 
 (defn comm-send-tool-factory [_]
   (let [cfg (snapshot-config)]

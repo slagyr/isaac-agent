@@ -7,8 +7,10 @@
     [clojure.java.io :as io]
     [speclj.core :refer :all]))
 
+;; Read this repo's manifest by path: on the JVM classpath another
+;; module's isaac-manifest.edn can shadow io/resource.
 (def manifest
-  (edn/read-string (slurp (io/resource "isaac-manifest.edn"))))
+  (edn/read-string (slurp (io/file "resources/isaac-manifest.edn"))))
 
 (def comm-berth
   (get-in manifest [:berths :isaac.agent/comm]))
@@ -31,6 +33,10 @@
     (let [schema (get-in comm-berth [:schema :value-spec :schema])]
       (should= :schema-map (get-in schema [:extra-schema :type]))
       (should= :schema-map (get-in schema [:send-schema :type]))))
+
+  (it "lets a comm opt in to attachments with :send-attachments?"
+    (let [schema (get-in comm-berth [:schema :value-spec :schema])]
+      (should= :boolean (get-in schema [:send-attachments? :type]))))
 
   (it "does not declare transport-named comm berths"
     (should-not (contains? (:berths manifest) :isaac.http/comm))

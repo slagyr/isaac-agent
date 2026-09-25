@@ -382,6 +382,20 @@
   (or (session-store-proto/registered-store)
       (throw (ex-info "no session-store registered" {}))))
 
+(defn- session-working-directory []
+  (let [store   (session-store)
+        session (or (some->> (g/get :current-key) (session-store-proto/get-session store))
+                    (session-store-proto/most-recent-session store))]
+    (or (:cwd session)
+        (throw (ex-info "no session working directory" {:session (:id session)})))))
+
+(defn file-in-session-workdir [name content]
+  (with-feature-fs
+    #(let [fs*  (feature-fs)
+           path (str (session-working-directory) "/" name)]
+       (isaac-fs/mkdirs fs* (isaac-fs/parent path))
+       (isaac-fs/spit fs* path content))))
+
 (defn- base-tool-args []
   (cond-> {}
     (root)                  (assoc "state_dir" (root))
@@ -541,8 +555,11 @@
         (doseq [row (table-rows table)]
           (let [path     (get row "path")
                 expected (get row "value")
-                actual   (record-value (first pending) path)]
-            (g/should= expected (actual->str actual))))))))
+                actual   (record-value (first pending) path)
+                result   (match/match-value expected (actual->str actual))]
+            (when-not (:match result)
+              (g/should= expected (actual->str actual)))
+            (g/should (:match result))))))))
 
 (defn no-pending-comm-deliveries []
   (with-feature-fs
@@ -600,6 +617,10 @@
 (defgiven "the following files exist:" isaac.tool.tools-steps/files-exist)
 
 (defgiven "a binary file {name:string} exists" isaac.tool.tools-steps/binary-file-exists)
+
+(defgiven "a file {name:string} exists in the session working directory with content {content:string}" isaac.tool.tools-steps/file-in-session-workdir
+  "Writes the file under the current session's :cwd (the :current-key
+   session, else the most recent one) on the feature filesystem.")
 
 (defgiven #"a directory \"([^\"]+)\" exists with files (.+)" isaac.tool.tools-steps/dir-with-files)
 

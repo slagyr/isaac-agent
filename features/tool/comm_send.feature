@@ -80,7 +80,6 @@ Feature: comm_send tool
   # Attachments (isaac-o9h4): file paths ride the delivery record; a comm
   # opts in with :send-attachments? in its manifest entry.
 
-  @wip
   Scenario: comm_send offers attachments alongside the common fields (isaac-o9h4)
     Given config:
       | key                | value   |
@@ -92,7 +91,6 @@ Feature: comm_send tool
       | content     | string | true     |
       | attachments | array  | false    |
 
-  @wip
   Scenario: attachments ride the queued delivery for a comm that accepts them (isaac-o9h4)
     Given the telly comm module is registered
     And config:
@@ -112,7 +110,6 @@ Feature: comm_send tool
       | telly/target  | bridge              |
       | attachments.0 | #".*report\.pdf$"   |
 
-  @wip
   Scenario: a comm that does not accept attachments refuses the call and queues nothing (isaac-o9h4)
     Given config:
       | key                | value   |
@@ -127,7 +124,6 @@ Feature: comm_send tool
     Then the comm_send tool result is an error
     And there are no pending comm deliveries
 
-  @wip
   Scenario: an attachment outside the allowed directories is refused (isaac-o9h4)
     Given the telly comm module is registered
     And config:

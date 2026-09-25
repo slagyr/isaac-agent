@@ -22,6 +22,13 @@
   (merge comm/defaults
          {:send! (fn [this _] (.-result this))}))
 
+(deftype RecordingComm [sent])
+
+(extend RecordingComm
+  comm/Comm
+  (merge comm/defaults
+         {:send! (fn [this record] (reset! (.-sent this) record) {:ok true})}))
+
 (describe "comm.delivery.worker"
 
   (helper/with-captured-logs)
@@ -39,6 +46,12 @@
       (comm-registry/register-instance! "stub" (->StubComm {:ok true}))
       (should= {:ok true}
                (sut/send! {:comm :stub :target "T1" :content "Hello"})))
+
+    (it "hands the record's :attachments to the comm unchanged"
+      (let [sent (atom nil)]
+        (comm-registry/register-instance! "stub" (->RecordingComm sent))
+        (sut/send! {:comm :stub :content "Report attached." :attachments ["/crew/cordelia/report.pdf"]})
+        (should= ["/crew/cordelia/report.pdf"] (:attachments @sent))))
 
     (it "returns permanent failure when no comm is registered for that key"
       (should= {:ok false :transient? false}
