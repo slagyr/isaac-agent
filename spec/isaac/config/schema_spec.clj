@@ -193,6 +193,13 @@
       (let [result (lexicon/conform sut/tools {:directories {:allow [:role]}})]
         (should (schema/error? result))))
 
+    (it "tools directories accepts acknowledgement beside allow"
+      (let [result (lexicon/conform (runtime-spec sut/tools)
+                                    {:directories {:allow [:cwd]
+                                                   :acknowledge-broad? true}})]
+        (should-not (schema/error? result))
+        (should= true (get-in result [:directories :acknowledge-broad?]))))
+
     (it "tools directories accepts :cwd and :quarters"
       (let [result (lexicon/conform (runtime-spec sut/tools) {:directories {:allow [:cwd :quarters]}})]
         (should-not (schema/error? result))))

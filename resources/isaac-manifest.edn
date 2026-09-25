@@ -443,7 +443,10 @@
          {:allow
           {:type :seq,
            :description "Allowed directory prefixes",
-           :spec {:type :ignore, :validations [:cwd-or-path?]}}
+           :spec {:type :ignore, :validations [:cwd-or-path?]}},
+          :acknowledge-broad?
+          {:type :boolean,
+           :description "Suppress deliberate broad-directory grant warnings for this crew"}
           :deny
           {:type :seq,
            :description "Denied directory prefixes",

@@ -243,7 +243,6 @@ Feature: Config set / unset
     And the stderr contains "echo '{…}' | isaac config set models.echo -"
     And the exit code is 1
 
-  @wip
   Scenario: --force writes the first required field and the second set validates clean
     Given default Grover setup
     When isaac is run with "config set models.echo.model echo-v1 --force"
@@ -271,7 +270,6 @@ Feature: Config set / unset
     Then the stderr contains "effort"
     And the exit code is 1
 
-  @wip
   Scenario: config unset --force removes a required field and warns
     Given default Grover setup
     And stdin is:

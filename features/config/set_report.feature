@@ -1,4 +1,3 @@
-@wip
 Feature: config set / unset report the result first, then labelled validation warnings
   A config mutation's first line is its outcome — the confirmation on
   stdout, or the error on stderr. Validation warnings follow on the same

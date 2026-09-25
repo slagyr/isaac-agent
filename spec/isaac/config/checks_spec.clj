@@ -110,6 +110,15 @@
           (should= 1 (count warnings))
           (should (re-find #"user home" (:value (first warnings)))))))
 
+    (it "skips every broad-directory warning for an acknowledged crew"
+      (binding [root/*user-home* "/tmp/isaac-home"]
+        (let [{:keys [warnings]} (sut/check-crew-broad-directories
+                                   {:config {:root "/tmp/isaac-home"
+                                             :crew {:scrapper {:tools {:directories {:allow ["/tmp/isaac-home"]
+                                                                                     :acknowledge-broad? true}}}}}
+                                    :root   "/tmp/isaac-home/.isaac/config"})]
+          (should= [] warnings))))
+
     (it "warns when a crew directory includes the Isaac state root"
       (let [{:keys [warnings]} (sut/check-crew-broad-directories
                                  {:config {:root "/srv/isaac-state"

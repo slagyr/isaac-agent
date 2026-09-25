@@ -169,10 +169,12 @@
                                  tokens      (if (map? directories)
                                                (concat (:allow directories) (:deny directories))
                                                directories)]
-                             (mapcat (fn [directory]
-                                       (when-let [warning (broad-directory-warning (->id crew-id) directory {:root isaac-root})]
-                                         [warning]))
-                                     (or tokens []))))
+                             (if (:acknowledge-broad? directories)
+                               []
+                               (mapcat (fn [directory]
+                                         (when-let [warning (broad-directory-warning (->id crew-id) directory {:root isaac-root})]
+                                           [warning]))
+                                       (or tokens [])))))
                          (or (:crew config) {})))}))
 
 
