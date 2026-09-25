@@ -1,49 +1,35 @@
-Feature: Crew and session concurrency
-  Sessions track a transient `in-flight?` state, set when a turn
-  starts and cleared when it ends. The session store enforces the
-  session-level invariant — at most one turn runs on a session at
-  a time — by refusing same-session dispatches that collide with
-  an in-flight turn. Callers decide how to handle the refusal
-  (CLI re-presents to the user; Hail / cron retry on their own
-  cadence). Callers also consult `can-dispatch?` to route work
-  away from at-capacity crews.
+Feature: Sessions run in parallel; a session runs one turn at a time
+  A turn is serialized per session — two prompts in one session never run at
+  once — but two sessions run their turns at the same time. There is no
+  crew-wide cap (isaac-ximd): the old :max-in-flight defaulted to 1 and serialized
+  every session a crew owned.
 
   Background:
     Given default Grover setup
+    And config:
+      | key                       | value                |
+      | defaults.crew.tools.allow | [:all :test :test/*] |
+    And the built-in tools are registered
 
-  Scenario: a real turn marks its session in-flight, then clears it
-    Given the following sessions exist:
-      | name |
-      | s1   |
+  @wip
+  Scenario: two sessions on one crew run their turns at the same time — no crew-wide cap (isaac-ximd)
+    Given a rendezvous tool "test__handshake" is registered that returns "met" once 2 calls are in flight
+    And the following sessions exist:
+      | name      | crew |
+      | port      | main |
+      | starboard | main |
     And the following model responses are queued:
-      | type | content | model | wait |
-      | text | ok      | echo  | true |
-    When the user sends "hi" on session "s1"
-    Then session "s1" in-flight status is true
-    When the turn ends on session "s1"
-    Then session "s1" in-flight status is false
-
-  Scenario: a second dispatch on the same in-flight session is refused
-    Given the following sessions exist:
-      | name |
-      | s1   |
-    And the following model responses are queued:
-      | type | content | model | wait |
-      | text | first   | echo  | true |
-    When the user sends "hi" on session "s1"
-    And the user sends "go again" on session "s1"
-    Then dispatch is refused with reason "session-in-flight"
-    And the log has entries matching:
-      | level | event             | session |
-      | warn  | :dispatch/refused | s1      |
-    When the turn ends on session "s1"
-
-  Scenario: in-flight clears when a turn errors
-    Given the following sessions exist:
-      | name |
-      | s1   |
-    And the following model responses are queued:
-      | type  | content | model |
-      | error | boom    | echo  |
-    When the user sends "hi" on session "s1"
-    Then session "s1" in-flight status is false
+      | model | type       | tool_calls                                          | content |
+      |       | tool_calls | [{"function":{"name":"test__handshake","arguments":{}}}] |         |
+      |       | tool_calls | [{"function":{"name":"test__handshake","arguments":{}}}] |         |
+      | echo  | text       |                                                     | Met.    |
+      | echo  | text       |                                                     | Met.    |
+    When the user sends "shake on it" on sessions "port" and "starboard" at the same time via memory comm
+    Then session "port" has transcript matching:
+      | type    | message.role | message.content |
+      | message | toolResult   | met             |
+      | message | assistant    | Met.            |
+    And session "starboard" has transcript matching:
+      | type    | message.role | message.content |
+      | message | toolResult   | met             |
+      | message | assistant    | Met.            |

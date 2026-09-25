@@ -157,3 +157,31 @@ Feature: Session mutation
     Then the stderr contains "#{:tag-1 :tag-2}"
     And the stderr contains ".tags.<keyword>"
     And the exit code is 1
+
+  # Changing a session's crew must not strand its files under the old crew's
+  # folder (isaac-2jjb): four yopp sessions repointed from main lost their history to
+  # an empty folder and every turn failed.
+
+  @wip
+  Scenario: isaac sessions set <id>.crew keeps the session's transcript — the next turn still sees the history (isaac-2jjb)
+    Given default Grover setup
+    And the isaac EDN file "config/crew/alice.edn" exists with:
+      | path  | value  |
+      | model | grover |
+    And the following sessions exist:
+      | name | crew |
+      | joe  | main |
+    And the following model responses are queued:
+      | model | type | content        |
+      | echo  | text | Hello, first.  |
+      | echo  | text | Hello, second. |
+    When the user sends "first" on session "joe"
+    And isaac is run with "sessions set joe.crew alice"
+    Then the exit code is 0
+    When the user sends "second" on session "joe"
+    Then session "joe" has transcript matching:
+      | type    | message.role | message.content |
+      | message | user         | first           |
+      | message | assistant    | Hello, first.   |
+      | message | user         | second          |
+      | message | assistant    | Hello, second.  |
