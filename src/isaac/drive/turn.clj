@@ -1526,7 +1526,7 @@
                             progress! (fn [chunk] (comm/on-tool-progress ch session-key tc chunk))
                             args      (cond-> (or (:arguments tc) {})
                                          true (assoc "session_key" session-key)
-                                         true (assoc "crew" crew)
+                                         true (assoc "caller_crew" crew)
                                          true (assoc :progress! progress!))
                             cache      (:window-cache tool-ctx)
                             cycle-n    (or (some-> tool-ctx :cycle* deref :n) 1)
