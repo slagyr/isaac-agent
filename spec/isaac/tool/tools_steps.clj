@@ -382,12 +382,18 @@
   (or (session-store-proto/registered-store)
       (throw (ex-info "no session-store registered" {}))))
 
-(defn- session-working-directory []
+(defn- session-working-directory
+  "The current (or most recent) session's cwd. Before any session exists -
+   a comm that creates its session on the inbound message - the file goes
+   where that session will land: the store's default cwd, user.dir."
+  []
   (let [store   (session-store)
         session (or (some->> (g/get :current-key) (session-store-proto/get-session store))
                     (session-store-proto/most-recent-session store))]
-    (or (:cwd session)
-        (throw (ex-info "no session working directory" {:session (:id session)})))))
+    (cond
+      (nil? session)  (System/getProperty "user.dir")
+      (:cwd session)  (:cwd session)
+      :else           (throw (ex-info "no session working directory" {:session (:id session)})))))
 
 (defn file-in-session-workdir [name content]
   (with-feature-fs
