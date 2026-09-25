@@ -623,7 +623,6 @@ Feature: Config Command
       | :info | :config/set | crew.cordelia.model | :gpt  | crew/cordelia.edn |
     And the exit code is 0
 
-  @wip
   Scenario: set edits the frontmatter of an entity that lives in <id>.md
     Given config file "isaac.edn" containing:
       """
@@ -655,7 +654,6 @@ Feature: Config Command
     Then the stdout contains "gpt"
     And the exit code is 0
 
-  @wip
   Scenario: unset removes a frontmatter field from an entity that lives in <id>.md
     Given config file "isaac.edn" containing:
       """
