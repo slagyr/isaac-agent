@@ -1274,7 +1274,8 @@
                                      :request (or (drive-dispatch/last-request)
                                                   (grover/last-request))
                                      :result  @result}))]
-       (let [result (deref turn-future 50 ::pending)]
+       (g/update! :turn-futures (fnil conj []) turn-future)
+     (let [result (deref turn-future 50 ::pending)]
          (if (= ::pending result)
            (do
              (g/assoc! :turn-future turn-future)
@@ -2199,7 +2200,7 @@
    line (0 = session header). Exercises read-transcript-from-offset without a turn.")
 
 (defwhen #"the user sends \"(.+)\" on session \"([^\"]+)\" without waiting via memory comm"
-  isaac.session.session-steps/user-sends-on-session)
+  isaac.session.session-steps/user-sends-on-session-without-waiting)
 
 (defwhen #"the user sends \"(.+)\" on session \"([^\"]+)\" with coalesce key \"([^\"]+)\" without waiting via memory comm"
   isaac.session.session-steps/user-sends-on-session-with-coalesce-key)
@@ -2218,11 +2219,27 @@
 (defn user-sends-on-session-as-crew [content key-str crew]
   (user-sends-on-session content key-str nil crew))
 
+(defn user-sends-on-session-without-waiting [content key-str]
+  (user-sends-on-session content key-str)
+  ;; The first asynchronous send must own the in-flight marker before the
+  ;; next test action enters the bridge; Grover's promise is a deterministic
+  ;; seam, not a timed wait.
+  (when (= 1 (count (or (g/get :turn-futures) [])))
+    (grover/await-delay-start)))
+
 (defn user-sends-on-session-with-coalesce-key [content key-str coalesce-key]
-  (user-sends-on-session content key-str nil nil coalesce-key))
+  (user-sends-on-session content key-str nil nil coalesce-key)
+  (when (= 1 (count (or (g/get :turn-futures) [])))
+    (grover/await-delay-start)))
 
 (defn turns-on-session-finish [key-str]
-  (turn-ends-on-session key-str)
+  (doseq [turn-future (or (g/get :turn-futures) [])]
+    (when (and (not (realized? turn-future)) (grover/waiting? key-str))
+      (grover/release-wait! key-str))
+    (let [result (deref turn-future 30000 ::timeout)]
+      (when (= ::timeout result)
+        (throw (ex-info "turn did not complete within 30 seconds" {})))))
+  (g/dissoc! :turn-futures)
   (turn-worker/tick!))
 
 (defwhen #"the user sends \"(.+)\" on session \"([^\"]+)\" as crew \"([^\"]+)\""
