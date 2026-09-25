@@ -80,17 +80,86 @@ Feature: Config set / unset
     Then the stdout contains "500"
     And the exit code is 0
 
-  Scenario: config set refuses a value a schema validator rejects
+  @wip
+  Scenario: config set conforms a bare name to the keyword set the field holds
+    Given default Grover setup
+    And the isaac EDN file "config/crew/joe.edn" exists with:
+      | path  | value           |
+      | model | grover          |
+      | tags  | #{:role/worker} |
+    When isaac is run with "config set crew.joe.tags jackalope"
+    Then the stdout matches:
+      | pattern                                            |
+      | set crew\.joe\.tags = #\{:jackalope\}.*crew/joe\.edn |
+    And the exit code is 0
+    When isaac is run with "config get crew.joe.tags"
+    Then the stdout contains ":jackalope"
+    And the stdout does not contain ":role/worker"
+    And the exit code is 0
+
+  @wip
+  Scenario: config set conforms a keyword to a one-member set instead of crashing
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
       | path  | value  |
       | model | grover |
-    When isaac is run with "config set crew.joe.tags jackalope"
-    Then the stderr contains "crew.joe.tags"
-    And the stderr contains "must be a set of keywords"
+    When isaac is run with "config set crew.joe.tags :jackalope"
+    Then the stderr does not contain "ISeq"
+    And the exit code is 0
+    When isaac is run with "config get crew.joe.tags"
+    Then the stdout contains ":jackalope"
+    And the exit code is 0
+
+  @wip
+  Scenario: config set conforms a comma list to a set of keywords
+    Given default Grover setup
+    And the isaac EDN file "config/crew/joe.edn" exists with:
+      | path  | value  |
+      | model | grover |
+    When isaac is run with "config set crew.joe.tags jackalope,role/worker"
+    Then the exit code is 0
+    When isaac is run with "config get crew.joe.tags"
+    Then the stdout contains ":jackalope"
+    And the stdout contains ":role/worker"
+    And the exit code is 0
+
+  @wip
+  Scenario: config set keeps digits a string when the field is a string
+    Given default Grover setup
+    And the isaac EDN file "config/crew/joe.edn" exists with:
+      | path  | value  |
+      | model | grover |
+    When isaac is run with "config set crew.joe.soul 42"
+    Then the exit code is 0
+    When isaac is run with "config validate"
+    Then the exit code is 0
+
+  @wip
+  Scenario: config unset with a member removes only that member
+    Given default Grover setup
+    And the isaac EDN file "config/crew/joe.edn" exists with:
+      | path  | value                      |
+      | model | grover                     |
+      | tags  | #{:role/worker :jackalope} |
+    When isaac is run with "config unset crew.joe.tags jackalope"
+    Then the exit code is 0
+    When isaac is run with "config get crew.joe.tags"
+    Then the stdout contains ":role/worker"
+    And the stdout does not contain ":jackalope"
+    And the exit code is 0
+
+  @wip
+  Scenario: config unset refuses a value on a path that is not a set
+    Given default Grover setup
+    And the isaac EDN file "config/crew/joe.edn" exists with:
+      | path  | value  |
+      | model | grover |
+    When isaac is run with "config unset crew.joe.model echo"
+    Then the stderr contains "crew.joe.model"
+    And the stderr contains "takes no value"
     And the exit code is 1
-    When isaac is run with "config get crew.joe"
-    Then the stdout does not contain "jackalope"
+    When isaac is run with "config get crew.joe.model"
+    Then the stdout contains "grover"
     And the exit code is 0
 
   Scenario: config set still accepts a reference to an entity that is not defined yet
@@ -180,18 +249,21 @@ Feature: Config set / unset
     And the stderr contains "echo '{…}' | isaac config set models.echo -"
     And the exit code is 1
 
+  @wip
   Scenario: --force writes the first required field and the second set validates clean
     Given default Grover setup
     When isaac is run with "config set models.echo.model echo-v1 --force"
-    Then the stderr contains "warning:"
-    And the stderr contains "models.echo.provider"
-    And the stderr contains "is required"
-    And the stdout contains "wrote models.echo.model"
-    And the stdout contains "validation error(s) outstanding"
+    Then the stdout lines contain in order:
+      | pattern                                |
+      | set models.echo.model = "echo-v1"      |
+      | Validation warnings (1):               |
+      | models.echo.provider - is required     |
+    And the stdout does not contain "error(s) outstanding"
+    And the stderr does not contain "warning:"
     And the exit code is 0
     When isaac is run with "config set models.echo.provider grover"
     Then the exit code is 0
-    And the stderr does not contain "warning:"
+    And the stdout does not contain "Validation warnings"
     When isaac is run with "config get models.echo.model"
     Then the stdout contains "echo-v1"
     And the exit code is 0
@@ -205,6 +277,7 @@ Feature: Config set / unset
     Then the stderr contains "effort"
     And the exit code is 1
 
+  @wip
   Scenario: config unset --force removes a required field and warns
     Given default Grover setup
     And stdin is:
@@ -214,9 +287,11 @@ Feature: Config set / unset
     When isaac is run with "config set models.echo -"
     Then the exit code is 0
     When isaac is run with "config unset models.echo.model --force"
-    Then the stderr contains "warning:"
-    And the stderr contains "models.echo.model"
-    And the stderr contains "is required"
+    Then the stdout lines contain in order:
+      | pattern                         |
+      | unset models.echo.model         |
+      | Validation warnings (1):        |
+      | models.echo.model - is required |
     And the exit code is 0
 
   Scenario: the stdin map form sets both required fields in one write with no warning
