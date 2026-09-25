@@ -207,6 +207,31 @@
       (let [[result output] (run-memory-dispatch! (root) cfg opts captured* content key-str)]
         (record-memory-turn! events captured* result output)))))
 
+(defn users-send-via-memory-channel-simultaneously [content first-key second-key]
+  (grover/clear-provider-requests!)
+  (llm-http/clear-outbound-requests!)
+  (drive-dispatch/clear-last-request!)
+  (let [cfg (with-feature-fs #(:config (loader/load-config-result {:root (root) :fs (mem-fs)})))
+        send (fn [key-str]
+               (let [events    (atom [])
+                     captured* (atom [])
+                     channel   (memory-comm/channel events)
+                     existing  (with-feature-fs #(get-session key-str))
+                     crew      (or (:crew existing) (:agent existing)
+                                   (get-in cfg [:defaults :frequencies :crew]) "main")]
+                 (with-feature-fs #(store/open-session! (session-store) key-str {:crew crew}))
+                 (future (run-memory-dispatch! (root) cfg (channel-send-opts key-str channel)
+                                               captured* content key-str))))]
+    (g/assoc! :current-key first-key)
+    (let [first-turn  (send first-key)
+          second-turn (send second-key)]
+      (doseq [turn [first-turn second-turn]]
+        (let [[result output] (deref turn 30000 ::timeout)]
+          (when (= ::timeout result)
+            (throw (ex-info "turn did not complete within 30 seconds" {})))
+          (when (:error result)
+            (throw (ex-info "simultaneous memory turn failed" result))))))))
+
 (defn- normalize-event [event]
   (cond-> event
     (get-in event [:tool :name]) (assoc :tool-name (get-in event [:tool :name]))
@@ -260,6 +285,10 @@
   "Sets the memory comm's on-exhausted reply (:stop or :wrap-up) for the next turn.")
 
 (defwhen "the user sends \"{content:string}\" on session \"{key:string}\" via memory comm" isaac.comm.comm-steps/user-sends-via-memory-channel)
+
+(defwhen "the user sends \"{content:string}\" on sessions \"{first-key:string}\" and \"{second-key:string}\" at the same time via memory comm"
+  isaac.comm.comm-steps/users-send-via-memory-channel-simultaneously)
+
 
 (defthen "grover records zero provider requests" isaac.comm.comm-steps/grover-records-zero-provider-requests)
 

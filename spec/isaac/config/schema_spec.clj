@@ -82,10 +82,11 @@
                                 {:context-mode :reset
                                  :model        (keyword test-model-id)})))
 
-    (it "crew conforms with max-in-flight"
-      (should= {:max-in-flight 3}
-               (lexicon/conform (runtime-spec sut/crew)
-                                {:max-in-flight 3})))
+    (it "crew rejects retired max-in-flight with the bean in the validation message"
+      (let [result (lexicon/conform sut/crew {:max-in-flight 3})]
+        (should (schema/error? result))
+        (should= "retired; the crew-wide in-flight cap is gone (isaac-ximd); turns serialize per session only"
+                 (get-in (schema/message-map result) [:max-in-flight]))))
 
     (it "crew conforms with tags"
       (should= {:tags #{:project/chess :role/worker}}
@@ -226,12 +227,6 @@
       (let [result (lexicon/conform (runtime-spec sut/crew) {:session-policy :ledger})]
         (should-not (schema/error? result))
         (should= {:session-policy :ledger} result)))
-
-    (it "crew rejects non-positive max-in-flight"
-      (let [result (lexicon/conform sut/crew {:max-in-flight 0})]
-        (should (schema/error? result))
-        (should= "must be a positive integer"
-                 (get-in (schema/message-map result) [:max-in-flight]))))
 
     (it "crew rejects non-keyword tags"
       (let [result (lexicon/conform sut/crew {:tags #{"worker"}})]

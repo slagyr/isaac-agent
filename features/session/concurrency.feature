@@ -11,7 +11,6 @@ Feature: Sessions run in parallel; a session runs one turn at a time
       | defaults.crew.tools.allow | [:all :test :test/*] |
     And the built-in tools are registered
 
-  @wip
   Scenario: two sessions on one crew run their turns at the same time — no crew-wide cap (isaac-ximd)
     Given a rendezvous tool "test__handshake" is registered that returns "met" once 2 calls are in flight
     And the following sessions exist:
