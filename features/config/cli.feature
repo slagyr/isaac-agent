@@ -623,6 +623,68 @@ Feature: Config Command
       | :info | :config/set | crew.cordelia.model | :gpt  | crew/cordelia.edn |
     And the exit code is 0
 
+  @wip
+  Scenario: set edits the frontmatter of an entity that lives in <id>.md
+    Given config file "isaac.edn" containing:
+      """
+      {:defaults {:frequencies {:crew :main} :crew {:model :llama}}
+       :crew     {:main {}}
+       :models   {:llama {:model "llama3.3:1b" :provider :anthropic}
+                  :gpt   {:model "gpt-5.4" :provider :anthropic}}
+       :providers {:anthropic {}}}
+      """
+    And config file "crew/cordelia.md" containing:
+      """
+      ---
+      model: llama
+      ---
+
+      You are Cordelia.
+      """
+    When isaac is run with "config set crew.cordelia.model gpt"
+    Then the config file "crew/cordelia.md" matches:
+      | pattern           |
+      | model:\s+:?gpt    |
+      | You are Cordelia\. |
+    And the config file "crew/cordelia.edn" does not exist
+    And the log has entries matching:
+      | level | event       | path                | value | file             |
+      | :info | :config/set | crew.cordelia.model | :gpt  | crew/cordelia.md |
+    And the exit code is 0
+    When isaac is run with "config get crew.cordelia.model"
+    Then the stdout contains "gpt"
+    And the exit code is 0
+
+  @wip
+  Scenario: unset removes a frontmatter field from an entity that lives in <id>.md
+    Given config file "isaac.edn" containing:
+      """
+      {:defaults {:frequencies {:crew :main} :crew {:model :llama}}
+       :crew     {:main {}}
+       :models   {:llama {:model "llama3.3:1b" :provider :anthropic}}
+       :providers {:anthropic {}}}
+      """
+    And config file "crew/cordelia.md" containing:
+      """
+      ---
+      model: llama
+      effort: 3
+      ---
+
+      You are Cordelia.
+      """
+    When isaac is run with "config unset crew.cordelia.effort"
+    Then the config file "crew/cordelia.md" does not contain "effort"
+    And the config file "crew/cordelia.md" matches:
+      | pattern           |
+      | model:\s+:?llama  |
+      | You are Cordelia\. |
+    And the config file "crew/cordelia.edn" does not exist
+    And the exit code is 0
+    When isaac is run with "config get crew.cordelia"
+    Then the stdout does not contain "effort"
+    And the exit code is 0
+
   Scenario: set writes to isaac.edn when the entity is already defined there
     Given config file "isaac.edn" containing:
       """
