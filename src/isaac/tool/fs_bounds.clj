@@ -107,7 +107,7 @@
 
 (defn- session-ctx [args session]
   (let [root    (root args)
-        crew-id (or (get args "crew")
+        crew-id (or (get args "caller_crew")
                     (:crew session)
                     (defaults/crew-id (loader/snapshot "tool fs-bounds: default crew")))]
     {:cwd      (or (:cwd session) (session-workdir args))
@@ -130,7 +130,7 @@
                         (store/get-session store session-key))]
       (when session
         (let [cfg         (loader/snapshot "tool fs-bounds: directory policy")
-              crew-id     (or (get args "crew") (:crew session) (defaults/crew-id cfg))
+              crew-id     (or (get args "caller_crew") (:crew session) (defaults/crew-id cfg))
               global-dirs (directory-policy (defaults/tools cfg))
               crew-dirs   (directory-policy (get-in cfg [:crew crew-id :tools]))
               ctx         (session-ctx args session)
