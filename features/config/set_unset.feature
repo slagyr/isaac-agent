@@ -80,7 +80,6 @@ Feature: Config set / unset
     Then the stdout contains "500"
     And the exit code is 0
 
-  @wip
   Scenario: config set conforms a bare name to the keyword set the field holds
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
@@ -97,7 +96,6 @@ Feature: Config set / unset
     And the stdout does not contain ":role/worker"
     And the exit code is 0
 
-  @wip
   Scenario: config set conforms a keyword to a one-member set instead of crashing
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
@@ -110,7 +108,6 @@ Feature: Config set / unset
     Then the stdout contains ":jackalope"
     And the exit code is 0
 
-  @wip
   Scenario: config set conforms a comma list to a set of keywords
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
@@ -123,7 +120,6 @@ Feature: Config set / unset
     And the stdout contains ":role/worker"
     And the exit code is 0
 
-  @wip
   Scenario: config set keeps digits a string when the field is a string
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
@@ -134,7 +130,6 @@ Feature: Config set / unset
     When isaac is run with "config validate"
     Then the exit code is 0
 
-  @wip
   Scenario: config unset with a member removes only that member
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
@@ -148,7 +143,6 @@ Feature: Config set / unset
     And the stdout does not contain ":jackalope"
     And the exit code is 0
 
-  @wip
   Scenario: config unset refuses a value on a path that is not a set
     Given default Grover setup
     And the isaac EDN file "config/crew/joe.edn" exists with:
