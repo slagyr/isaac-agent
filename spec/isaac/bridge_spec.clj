@@ -407,18 +407,21 @@
                              :comm           nil})
           (should= false (store/in-flight? session-store "testuser")))))
 
-    (it "refuses dispatch when the session is already in flight"
+    (it "queues dispatch when the session is already in flight"
       (let [session-store (store/registered-store)]
         (store/mark-in-flight! session-store "testuser")
         (log/capture-logs
           (let [result (bridge/dispatch! {:charge/type   :charge
                                           :session-key   "testuser"
                                           :input         "hello"
+                                          :root          *root*
                                           :session-store session-store
                                           :comm          nil})
                 entry  (last @log/captured-logs)]
-            (should= {:dispatched? false :reason :session-in-flight} result)
-            (should= :dispatch/refused (:event entry))
+            (should= false (:dispatched? result))
+            (should= :waiting-session (:reason result))
+            (should (string? (:held-id result)))
+            (should= :turn/waiting (:event entry))
             (should= "testuser" (:session entry))))))
 
     )

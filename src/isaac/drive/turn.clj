@@ -1458,6 +1458,7 @@
   (binding [turn-queue/*root* (turn-root charge)]
     (turn-queue/enqueue! {:session session-key
                           :input   continuation-note
+                          :input-persisted? true
                           :origin  (assoc (or (:origin charge) {:kind :queue})
                                           :continuation continuation)
                           :comm    ch
@@ -1586,7 +1587,7 @@
                        :max-bytes (:max-bytes (defaults/tool-caps config))}
         ch            (or comm null-comm/channel)
         p             provider]
-    (when-not (:from-queue? charge)
+    (when-not (:input-persisted? charge)
       (append-message! ctx session-key {:role "user" :content input}))
     (let [transcript      (with-transcript-lock session-key #(policy/active-transcript (session-policy ctx) session-key))
           transcript      (if (= :reset context-mode)

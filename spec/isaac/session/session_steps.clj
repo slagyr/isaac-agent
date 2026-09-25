@@ -52,7 +52,8 @@
     [isaac.tool.memory :as memory]
     [isaac.spec-helper :as helper]
     [isaac.tool.registry :as tool-registry]
-    [isaac.turnstile :as turnstile]))
+    [isaac.turnstile :as turnstile]
+    [isaac.turn.worker :as turn-worker]))
 
 (helper! isaac.session.session-steps)
 
@@ -1219,10 +1220,12 @@
 
 (defn user-sends-on-session
   ([content key-str]
-   (user-sends-on-session content key-str nil))
+   (user-sends-on-session content key-str nil nil nil))
   ([content key-str turnstiles]
-   (user-sends-on-session content key-str turnstiles nil))
+   (user-sends-on-session content key-str turnstiles nil nil))
   ([content key-str turnstiles crew-id]
+   (user-sends-on-session content key-str turnstiles crew-id nil))
+  ([content key-str turnstiles crew-id coalesce-key]
    (-prepare-next-send!)
    (g/assoc! :current-key key-str)
    (grover/clear-provider-requests!)
@@ -1246,7 +1249,8 @@
                                 :comm           channel
                                 :crew           (or crew-id (active-crew-id))
                                 :config         cfg}
-                         (seq turnstiles) (assoc :turnstiles turnstiles))]
+                         (seq turnstiles) (assoc :turnstiles turnstiles)
+                         coalesce-key (assoc :coalesce-key coalesce-key))]
      (g/assoc! :channel-events events)
      (g/assoc! :memory-comm-events events)
      (let [existing-turn-future (g/get :turn-future)
@@ -2194,6 +2198,15 @@
   "Sets :effective-history-offset to the byte position after the indexed transcript
    line (0 = session header). Exercises read-transcript-from-offset without a turn.")
 
+(defwhen #"the user sends \"(.+)\" on session \"([^\"]+)\" without waiting via memory comm"
+  isaac.session.session-steps/user-sends-on-session)
+
+(defwhen #"the user sends \"(.+)\" on session \"([^\"]+)\" with coalesce key \"([^\"]+)\" without waiting via memory comm"
+  isaac.session.session-steps/user-sends-on-session-with-coalesce-key)
+
+(defwhen #"the turns on session \"([^\"]+)\" finish"
+  isaac.session.session-steps/turns-on-session-finish)
+
 (defwhen #"the user sends \"(.+)\" on session \"([^\"]+)\"$" isaac.session.session-steps/user-sends-on-session
   "Drives a full turn via single-turn/run-turn! (in-memory,
    bypasses ACP/HTTP). Runs in a background future; waits 50ms and calls
@@ -2204,6 +2217,13 @@
 
 (defn user-sends-on-session-as-crew [content key-str crew]
   (user-sends-on-session content key-str nil crew))
+
+(defn user-sends-on-session-with-coalesce-key [content key-str coalesce-key]
+  (user-sends-on-session content key-str nil nil coalesce-key))
+
+(defn turns-on-session-finish [key-str]
+  (turn-ends-on-session key-str)
+  (turn-worker/tick!))
 
 (defwhen #"the user sends \"(.+)\" on session \"([^\"]+)\" as crew \"([^\"]+)\""
   isaac.session.session-steps/user-sends-on-session-as-crew

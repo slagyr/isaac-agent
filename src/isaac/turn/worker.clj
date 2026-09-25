@@ -1,6 +1,7 @@
 (ns isaac.turn.worker
   "Wake the turn-request waiting room: clock ticks plus release-token nudges."
   (:require
+    [clojure.string :as str]
     [isaac.bridge.core :as bridge]
     [isaac.charge :as charge]
     [isaac.config.loader :as loader]
@@ -46,7 +47,8 @@
                   (queue/live-comm (:id record)) (assoc :comm (queue/live-comm (:id record)))
                   (:observers record) (assoc :observers (:observers record))
                   (:turnstiles record) (assoc :turnstiles (:turnstiles record))
-                  (:cwd record) (assoc :cwd (:cwd record)))
+                  (:cwd record) (assoc :cwd (:cwd record))
+                  (:input-persisted? record) (assoc :input-persisted? true))
         built   (try
                   (charge/build request)
                   (catch Throwable t
@@ -65,6 +67,14 @@
   (or (:held result)
       (and (:error result) (= :hold (:reason result)))))
 
+(defn- coalesced-record [records]
+  (let [first-record (first records)
+        last-record  (last records)]
+    (assoc first-record
+           :input (str/join "\n" (map :input records))
+           :origin (:origin last-record)
+           :held-ids (mapv :id records))))
+
 (defn- process-record! [now record]
   (let [result (try
                  (bridge/dispatch! (wake-charge record now))
@@ -80,7 +90,8 @@
               :session (:session record))
     (when (and (not (still-held? result))
                (not (:error result)))
-      (queue/delete-held! (:id record)))))
+      (doseq [id (or (:held-ids record) [(:id record)])]
+        (queue/delete-held! id)))))
 
 (defn- request-tick! []
   (loop []
@@ -106,8 +117,20 @@
        (binding [queue/*root* (or queue/*root* (nexus/get :root) (loader/root))]
          (loop []
            (let [failure    (try
-                              (doseq [record (queue/list-held)]
-                                (process-record! now record))
+                              (let [records (queue/list-held)
+                                    waiting-sessions (distinct (map :session (filter #(= :waiting-session (:state %)) records)))
+                                    waiting-ids (set (mapcat #(map :id (queue/waiting-groups %)) waiting-sessions))
+                                    ordinary (remove #(contains? waiting-ids (:id %)) records)]
+                                (doseq [record ordinary]
+                                  (process-record! now record))
+                                (doseq [session waiting-sessions
+                                        :when (not (store/in-flight? (or (nexus/get-in [:sessions :store])
+                                                                          (store/registered-store)) session))
+                                        records (queue/waiting-groups session)]
+                                  (let [record (coalesced-record records)]
+                                    (when (> (count records) 1)
+                                      (log/info :turn/coalesced :session session :key (:coalesce-key record) :count (count records)))
+                                    (process-record! now record))))
                               nil
                               (catch Throwable t t))
                  next-state (finish-tick!)]

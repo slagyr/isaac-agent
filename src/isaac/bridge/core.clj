@@ -31,6 +31,8 @@
 
 ;; region ----- Helpers -----
 
+(declare charge-root)
+
 (defn resolve-session-cwd
   "Resolves session cwd from the cascade: explicit override > crew > channel default.
    explicit-cwd: user-specified override (highest priority).
@@ -54,9 +56,21 @@
   (log/warn :drive/turn-rejected :session session-key :crew crew-id :reason reason)
   {:error reason :message message})
 
-(defn- refuse-dispatch [session-key]
-  (log/warn :dispatch/refused :reason :session-in-flight :session session-key)
-  {:dispatched? false :reason :session-in-flight})
+(defn- wait-for-session! [charge]
+  (let [record (binding [turn-queue/*root* (charge-root charge)]
+                 (turn-queue/enqueue! {:session      (:session-key charge)
+                                       :input        (:input charge)
+                                       :turnstiles   (:turnstiles charge)
+                                       :crew         (:crew charge)
+                                       :origin       (:origin charge)
+                                       :cwd          (:cwd charge)
+                                       :observers    (:observers charge)
+                                       :comm         (:comm charge)
+                                       :coalesce-key (:coalesce-key charge)
+                                       :reason       :waiting-session
+                                       :state        :waiting-session}))]
+    (log/info :turn/waiting :session (:session-key charge) :held-id (:id record) :key (:coalesce-key charge))
+    {:dispatched? false :reason :waiting-session :held-id (:id record)}))
 
 (defn- reply-chunk [result]
   (if (contains? result :data)
@@ -266,7 +280,8 @@
                             :observers  (:observers charge)
                             :message    (:message decision)
                             :reason     :hold
-                            :state      :held}
+                            :state      :held
+                            :input-persisted? true}
                      (:held-id charge) (assoc :id (:held-id charge)))))
         refs   (format-turnstile-refs (:turnstiles charge))
         label  (or (first refs) "turnstile")]
@@ -344,8 +359,12 @@
                               (isolate-cleanup! :clear-turn-marker
                                                 #(clear-turn-marker! (or sess session-store*) session-key))
                               (isolate-cleanup! :clear-in-flight
-                                                #(store/clear-in-flight! session-store* session-key))))))
-                      (refuse-dispatch session-key)))
+                                                #(store/clear-in-flight! session-store* session-key))
+                              ;; A session's own waiting room drains as soon as its running
+                              ;; turn releases it; avoid a bridge → worker load cycle.
+                              (isolate-cleanup! :drain-waiting-session
+                                                #((requiring-resolve 'isaac.turn.worker/tick!)))))))
+                      (wait-for-session! charge)))
                   (turn/run-turn! (assoc charge :session-policy (request-policy charge)))))))))
       result)))
 
