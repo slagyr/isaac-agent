@@ -1,5 +1,10 @@
 ;; mutation-tested: 2026-05-06
 (ns isaac.session.store.sidecar
+  "The default SessionStore: one session.edn + EDNL transcript per session,
+   nested under sessions/<crew>/<id>/. `write-sidecar!` is the sole writer
+   of that sidecar file, and is where a crew change relocates the directory
+   (isaac-2jjb) — see isaac.session.store.impl-common's docstring for the
+   relocate-vs-resolve-by-id rationale."
   (:require
     [isaac.fs :as fs]
     [isaac.session.store.spi :as store]
@@ -42,9 +47,20 @@
 ;; region ----- Storage -----
 
 (defn- write-sidecar! [root {:keys [id] :as entry} fs]
-  (let [loc  (c/locate-session root id fs)
-        crew (or (:crew entry) (:crew loc))
-        path (str (or (:dir loc) (c/session-dir root crew id)) "/session.edn")]
+  (let [loc         (c/locate-session root id fs)
+        old-crew    (:crew loc)
+        old-dir     (:dir loc)
+        crew        (or (:crew entry) old-crew)
+        ;; A crew change (isaac-2jjb) relocates the directory before the
+        ;; record is (re)written, so the write below always lands the entry
+        ;; where it now belongs — never in the old crew's folder with a new
+        ;; :crew value pointing somewhere that was never created.
+        relocating? (and old-dir old-crew (not= (name crew) (name old-crew)))
+        target-dir  (c/session-dir root crew id)
+        _           (when relocating?
+                      (c/relocate-session-dir! fs old-dir target-dir))
+        dir         (if relocating? target-dir (or old-dir target-dir))
+        path        (str dir "/session.edn")]
     (c/atomic-spit! fs path
                     (c/write-edn (dissoc entry :session-file :effective-history-offset)))
     (c/upsert-index-row! fs root id {:crew           crew

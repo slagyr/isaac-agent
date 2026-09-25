@@ -1,4 +1,23 @@
 (ns isaac.session.store.impl-common
+  "Shared layout/persistence helpers behind every isaac.session.store.*
+   implementation. A session's directory is `sessions/<crew>/<id>/`
+   (`session-dir`); the crew segment is a physical partition of the
+   filesystem, not just a field on the record.
+
+   Crew relocation (isaac-2jjb): `isaac sessions set <id>.crew <new>`
+   changes the `:crew` field on the record. The store relocates the
+   directory to match — moving the whole tree (`relocate-session-dir!`,
+   wired into sidecar's `write-sidecar!`) — rather than leaving the record
+   pointing at a crew whose folder was never created. Relocation was chosen
+   over 'resolve session dirs by id regardless of crew' because the physical
+   partition is otherwise meaningful (crew-scoped listing, disk layout,
+   backup/rsync boundaries) and a resolve-only fix would leave every session
+   permanently split between an old and new folder. `locate-session`'s
+   scan fallback still repairs a *stale index row* pointing at the right
+   folder; it does not, and must not, treat two different folders holding
+   the same id as equally valid — see `add-scan-entry` /
+   `:session/split-directory`, which the id being physically split reports
+   as a warning instead of silently picking one out of the two."
   (:require
     [clojure.edn :as edn]
     [clojure.set :as set]
@@ -224,6 +243,25 @@
         (delete-tree! fs source))
       (fs/move fs source destination))))
 
+(defn relocate-session-dir!
+  "Moves a session's whole directory (session.edn, transcript segments,
+   turn marker, episodes — everything under it) from `old-dir` to `new-dir`
+   for a crew reassignment (isaac-2jjb). A no-op when the two paths are the
+   same.
+
+   Refuses when `new-dir` already exists and is non-empty, throwing an
+   ex-info naming both paths *before* touching either tree — the caller
+   (sidecar `write-sidecar!`) runs this first, so a refusal leaves the
+   session's record (and both directories) exactly as they were; nothing
+   partially applies."
+  [fs old-dir new-dir]
+  (when (not= old-dir new-dir)
+    (when (and (exists?* fs new-dir) (seq (children* fs new-dir)))
+      (throw (ex-info (str "cannot relocate session: target directory already exists and is not empty: "
+                           old-dir " -> " new-dir)
+                      {:reason :session/relocate-collision :from old-dir :to new-dir})))
+    (move-tree! fs old-dir new-dir)))
+
 ;; endregion ^^^^^ Helpers ^^^^^
 
 ;; region ----- Paths -----
@@ -327,6 +365,23 @@
         (when (map? raw) (keywordize-index-row (keywordize-map raw))))
       (catch Exception _ nil))))
 
+(defn- add-scan-entry
+  "Adds `loc` (a scanned session location) to `acc` under `id`. When `id` is
+   already present under a *different* crew, the session directory is split
+   across two crew folders (isaac-2jjb) — this is a defect (crew relocation
+   is meant to be atomic; see `relocate-session-dir!`), not a valid layout.
+   Rather than silently pick a winner (or let a later scan pass overwrite an
+   earlier one nondeterministically), warn once per scan and keep the first
+   location found; `sessions list` therefore shows the id exactly once."
+  [acc id loc]
+  (if-let [existing (get acc id)]
+    (if (= (:crew existing) (:crew loc))
+      (assoc acc id loc)
+      (do
+        (log/warn :session/split-directory :id id :crews [(:crew existing) (:crew loc)])
+        acc))
+    (assoc acc id loc)))
+
 (defn scan-session-dirs
   "Walk sessions/<crew>/<sid>/session.edn (and leftover flat sessions/<sid>/session.edn).
    Returns {id {:crew :session-policy :updated-at :dir}}."
@@ -346,7 +401,7 @@
                 (let [entry (session-edn-at fs (str nested-edn "/session.edn"))
                       id    (or (:id entry) name)
                       crew  (or (:crew entry) (resolve/default-crew (effective-config (:config entry))))]
-                  (assoc acc id (merge {:crew crew :dir nested-edn :id id} entry)))
+                  (add-scan-entry acc id (merge {:crew crew :dir nested-edn :id id} entry)))
                 ;; nested sessions/<crew>/<sid>/
                 (reduce
                   (fn [acc2 sid]
@@ -357,7 +412,7 @@
                         (if-let [entry (session-edn-at fs edn-path)]
                           (let [id   (or (:id entry) sid)
                                 crew (or (:crew entry) name)]
-                            (assoc acc2 id (merge {:crew crew :dir sdir :id id} entry)))
+                            (add-scan-entry acc2 id (merge {:crew crew :dir sdir :id id} entry)))
                           acc2))))
                   acc
                   kids)))))

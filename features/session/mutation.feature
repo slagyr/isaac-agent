@@ -162,7 +162,6 @@ Feature: Session mutation
   # folder (isaac-2jjb): four yopp sessions repointed from main lost their history to
   # an empty folder and every turn failed.
 
-  @wip
   Scenario: isaac sessions set <id>.crew keeps the session's transcript — the next turn still sees the history (isaac-2jjb)
     Given default Grover setup
     And the isaac EDN file "config/crew/alice.edn" exists with:

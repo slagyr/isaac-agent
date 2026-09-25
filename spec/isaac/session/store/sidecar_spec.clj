@@ -5,7 +5,7 @@
     [isaac.session.store.spi :as store]
     [isaac.session.store.sidecar :as sut]
     [isaac.nexus :as nexus]
-    [speclj.core :refer [describe it should should-not should-not= should-throw should=]]))
+    [speclj.core :refer [describe it should should-fail should-not should-not= should-throw should=]]))
 
 (def test-dir "/test/sidecar-store")
 
@@ -99,6 +99,41 @@
         (let [fs-store (sut/create-store test-dir)]
           (store/record-turn-marker! fs-store "hook:sleep" {:source :hook :crew "scrapper"})
           (should-not (fs/exists? mem (str test-dir "/sessions/hook:sleep")))))))
+
+  (it "relocates the whole session directory when its crew changes (isaac-2jjb)"
+    (let [mem (fs/mem-fs)]
+      (nexus/-with-nexus {:fs mem}
+        (let [fs-store (sut/create-store test-dir)]
+          (store/open-session! fs-store "joe" {:crew "main"})
+          (store/append-message! fs-store "joe" {:role "user" :content "first"})
+          (store/record-turn-marker! fs-store "joe" {:source :hail})
+          (store/update-session! fs-store "joe" {:crew "alice"})
+          (should= "alice" (:crew (store/get-session fs-store "joe")))
+          (should-not (fs/exists? mem (str test-dir "/sessions/main/joe/session.edn")))
+          (should-not (fs/exists? mem (str test-dir "/sessions/main/joe/current.ednl")))
+          (should-not (fs/exists? mem (str test-dir "/sessions/main/joe/turn.edn")))
+          (should (fs/exists? mem (str test-dir "/sessions/alice/joe/session.edn")))
+          (should (fs/exists? mem (str test-dir "/sessions/alice/joe/current.ednl")))
+          (should (fs/exists? mem (str test-dir "/sessions/alice/joe/turn.edn")))
+          (should (some #(= "message" (:type %)) (store/get-transcript fs-store "joe")))))))
+
+  (it "refuses to relocate crew when the target already holds a non-empty session with the same id, leaving the record unchanged (isaac-2jjb)"
+    (let [mem (fs/mem-fs)]
+      (nexus/-with-nexus {:fs mem}
+        (let [fs-store (sut/create-store test-dir)]
+          (store/open-session! fs-store "joe" {:crew "main"})
+          (store/append-message! fs-store "joe" {:role "user" :content "first"})
+          (fs/mkdirs mem (str test-dir "/sessions/alice/joe"))
+          (fs/spit mem (str test-dir "/sessions/alice/joe/session.edn") "{:id \"joe\" :crew \"alice\"}")
+          (try
+            (store/update-session! fs-store "joe" {:crew "alice"})
+            (should-fail "expected a relocate collision")
+            (catch clojure.lang.ExceptionInfo e
+              (should (str/includes? (ex-message e) (str test-dir "/sessions/main/joe")))
+              (should (str/includes? (ex-message e) (str test-dir "/sessions/alice/joe")))))
+          (should= "main" (:crew (store/get-session fs-store "joe")))
+          (should (fs/exists? mem (str test-dir "/sessions/main/joe/session.edn")))
+          (should (fs/exists? mem (str test-dir "/sessions/main/joe/current.ednl")))))))
 
   (it "repair-transcript! truncates a torn trailing line and reports it"
     (let [mem (fs/mem-fs)]

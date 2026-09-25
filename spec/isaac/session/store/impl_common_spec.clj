@@ -3,6 +3,7 @@
     [clojure.edn :as edn]
     [clojure.string :as str]
     [isaac.fs :as fs]
+    [isaac.logger :as log]
     [isaac.session.store.impl-common :as sut]
     [isaac.nexus :as nexus]
     [speclj.core :refer :all]))
@@ -121,6 +122,23 @@
         (catch clojure.lang.ExceptionInfo e
           (should (re-find #"belongs to crew cordelia" (ex-message e)))
           (should= :crew-collision (:reason (ex-data e)))))))
+
+  (it "warns :session/split-directory once when a session id exists under two crew folders (isaac-2jjb)"
+    (let [fs* (fs*)]
+      (sut/mkdirs*! fs* (sut/session-dir test-dir "main" "lantern-room"))
+      (sut/atomic-spit! fs* (sut/session-edn-path test-dir "main" "lantern-room")
+                        (sut/write-edn {:id "lantern-room" :crew "main" :session-policy :chronicle}))
+      (sut/mkdirs*! fs* (sut/session-dir test-dir "cordelia" "lantern-room"))
+      (sut/atomic-spit! fs* (sut/session-edn-path test-dir "cordelia" "lantern-room")
+                        (sut/write-edn {:id "lantern-room" :crew "cordelia" :session-policy :chronicle}))
+      (log/capture-logs
+        (let [scanned (sut/scan-session-dirs fs* test-dir)
+              warnings (filter #(= :session/split-directory (:event %)) @log/captured-logs)]
+          (should (contains? scanned "lantern-room"))
+          (should= 1 (count warnings))
+          (should= :warn (:level (first warnings)))
+          (should= "lantern-room" (:id (first warnings)))
+          (should= #{"main" "cordelia"} (set (:crews (first warnings))))))))
   )
 
 (describe "impl-common resolve-entry-id"
