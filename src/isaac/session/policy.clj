@@ -160,6 +160,21 @@
     (store? x)  (create :chronicle x)
     :else       x))
 
+(defn session-policy-mismatch
+  "Return a refusal message when an existing session's immutable policy stamp
+   disagrees with the crew policy. Read the primitive store, not the selected
+   policy: selecting that policy can itself open or recall a container."
+  [session-store session-key crew-policy]
+  (when (and session-store session-key)
+    (when-let [session (store/get-session session-store session-key)]
+      (let [stamp (or (:session-policy session) :chronicle)]
+        (when (not= stamp crew-policy)
+          (str "session " session-key " policy " stamp " disagrees with crew policy " crew-policy))))))
+
+(defn refuse-policy-mismatch! [session-store session-key crew-policy]
+  (when-let [message (session-policy-mismatch session-store session-key crew-policy)]
+    (throw (ex-info message {:reason :session-policy-mismatch :id session-key}))))
+
 (defn for-request
   "Policy for a request/charge. Honours an explicit :session-policy, else
    selects from the crew's :session-policy over the root store."

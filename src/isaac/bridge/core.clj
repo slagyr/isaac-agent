@@ -104,6 +104,7 @@
         crew-cfg       (get (:crew cfg) crew-id)
         session-key    (:session-key request)
         resolved-cwd   (resolve-session-cwd (:cwd request) crew-cfg nil)
+        _              (policy/refuse-policy-mismatch! session-store* session-key (policy/policy-name crew-cfg))
         sess           (request-policy request)]
     (when (and session-key sess
                (nil? (policy/get-session sess session-key))
@@ -308,7 +309,19 @@
                :message (turnstile-refuse-message decision)}
               {:charge (assoc charge :turnstile-tokens (:tokens decision))})))))))
 
+(declare dispatch-matched-charge!)
+
 (defn- dispatch-charge! [c]
+  (let [cfg (or (:config c) (some-> (nexus/get :config) deref) {})
+        crew-id (or (:crew c) (defaults/crew-id cfg))
+        session-store* (or (:session-store c) (nexus/get-in [:sessions :store]))
+        mismatch (policy/session-policy-mismatch session-store* (:session-key c)
+                                                 (policy/policy-name (get-in cfg [:crew crew-id])))]
+    (if mismatch
+      {:error :session-policy-mismatch :message mismatch}
+      (dispatch-matched-charge! c))))
+
+(defn- dispatch-matched-charge! [c]
   (let [{:keys [charge result]} (route-charge! c)]
     (if charge
       (let [obs-check (resolve-charge-observers charge)]

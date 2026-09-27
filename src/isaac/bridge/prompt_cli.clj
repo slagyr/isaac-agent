@@ -231,6 +231,7 @@
       (:session-key target)
       (do
         (refuse-crew-collision! session-store (:session-key target) (:crew opts))
+        (policy/refuse-policy-mismatch! session-store (:session-key target) (policy/policy-name (get-in cfg [:crew crew-id])))
         (when (and sess (nil? (policy/get-session sess (:session-key target)))
                    (or (:create? target) (:session opts)))
           (policy/open-session! sess (:session-key target)
@@ -238,6 +239,7 @@
                                         :config        cfg
                                         :origin        {:kind :cli}
                                         :crew          crew-id
+                                        :session-policy (policy/policy-name (get-in cfg [:crew crew-id]))
                                         :session-store session-store}
                                        (or (:create-identity target) {})
                                        (session-frequencies/behavioral-override override))))
@@ -249,7 +251,8 @@
                                 :config        cfg
                                 :origin        {:kind :cli}
                                 :session-store session-store
-                                :crew          crew-id}
+                                :crew          crew-id
+                                :session-policy (policy/policy-name (get-in cfg [:crew crew-id]))}
                                identity
                                (session-frequencies/behavioral-override override))
             ;; The agent names the session when the caller and the policy both
@@ -362,7 +365,7 @@
                       {:keys [comm text]} (make-prompt-comm (seq (:observer opts)))]
                   (dispatch-prompt! opts cfg session-store session-key session comm text))
                 (catch ExceptionInfo e
-                  (if (= :crew-collision (:reason (ex-data e)))
+                  (if (contains? #{:crew-collision :session-policy-mismatch} (:reason (ex-data e)))
                     (do (print-error! (ex-message e)) 1)
                     (throw e)))))))))))
 

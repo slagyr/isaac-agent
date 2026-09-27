@@ -1,4 +1,3 @@
-@wip
 Feature: A turn fails when the session policy stamp disagrees with the crew
   The session record keeps the policy that opened it. The turn reads the
   crew's current policy. When those names differ, the turn fails before it

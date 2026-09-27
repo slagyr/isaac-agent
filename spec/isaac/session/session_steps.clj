@@ -294,7 +294,7 @@
                  {})
         crew (or (:crew opts) (get-in cfg [:defaults :frequencies :crew]) "main")
         pol  (policy/for-crew crew cfg (session-store))]
-    (policy/open-session! pol session-name (assoc opts :crew crew))))
+    (policy/open-session! pol session-name (assoc opts :crew crew :session-policy (policy/policy-name (get-in cfg [:crew crew]))))))
 
 (defn- update-session! [session-key updates]
   (store/update-session! (session-store) session-key updates))
