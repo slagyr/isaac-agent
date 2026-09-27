@@ -6,6 +6,7 @@
     [clojure.string :as str]
     [c3kit.apron.schema :as schema]
     [isaac.session.policy :as policy]
+    [isaac.config.defaults :as defaults]
     [isaac.session.store.spi :as store]))
 
 (def create-modes #{:never :if-missing :always})
@@ -137,7 +138,7 @@
     (str "no session matching tags: " (str/join " " (map name (:session-tags frequencies))))
 
     :else
-    (str "no session: " (:default-session-key frequencies "prompt-default"))))
+    "no session selected"))
 
 (defn resolve-session-targets
   "Resolve a single session target from `frequencies` and `session-store`.
@@ -150,16 +151,18 @@
      :prefer             — :recent | :oldest; multi-match tiebreak when :reach :one (default :recent)
      :resume             — select across all sessions (--resume); mutually exclusive with describe flags
      :create             — :never | :if-missing | :always (default :if-missing)
-     :default-session-key — fallback when no describe/explicit selector (default prompt-default)
+     Config :defaults :frequencies are merged beneath the consumer map.
 
    Returns:
      {:session-key \"id\" :session {...} :create? false}
      {:session-key \"id\" :session nil :create? true :create-identity {...}}
      {:session-key nil :session nil :create? true :create-identity {...}}  ; generated key
      {:error :no-match :message \"...\"}"
-  [frequencies session-store]
-  (let [frequencies  (merge {:reach :one :prefer :recent :create :if-missing :default-session-key "prompt-default"}
-                            frequencies)
+  ([frequencies session-store]
+   (resolve-session-targets frequencies session-store nil))
+  ([frequencies session-store cfg]
+  (let [frequencies  (merge {:reach :one :prefer :recent :create :if-missing}
+                            (defaults/frequencies-template cfg) frequencies)
         create       (:create frequencies)
         sess         (policy/wrap session-store)
         all-sessions (policy/list-sessions sess)]
@@ -223,32 +226,7 @@
           {:error :no-match :message (no-match-message frequencies)}
 
           :else
-          {:session-key     (:default-session-key frequencies)
-           :session         nil
-           :create?         true
-           :create-identity {}}))
+          {:session-key nil :session nil :create? true :create-identity {}}))
 
       :else
-      (let [session-key (:default-session-key frequencies)
-            existing    (policy/get-session sess session-key)]
-        (cond
-          existing
-          {:session-key session-key :session existing :create? false}
-
-          (= create :never)
-          {:error :no-match :message (no-match-message frequencies)}
-
-          :else
-          {:session-key session-key
-           :session     nil
-           :create?     true
-           :create-identity {}})))))
-
-(defn behavioral-override
-  "Project :with-* override keys to behavioral-keys for create-with-resolved-behavior!."
-  [frequencies]
-  (cond-> {}
-    (:with-model frequencies) (assoc :model (:with-model frequencies))
-    (:with-crew frequencies) (assoc :crew (:with-crew frequencies))
-    (:with-effort frequencies) (assoc :effort (:with-effort frequencies))
-    (:with-context-mode frequencies) (assoc :context-mode (:with-context-mode frequencies))))
+      {:error :no-match :message "no session selected"}))))

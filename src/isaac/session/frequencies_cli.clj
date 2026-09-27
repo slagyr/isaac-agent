@@ -28,12 +28,11 @@
 
 (defn build-frequencies
   "Build a frequencies map from parsed CLI options and per-tool defaults."
-  [opts & {:keys [default-session-key default-create]
-           :or   {default-session-key "prompt-default"
-                  default-create        :if-missing}}]
+  [opts & {:keys [default-create]
+           :or   {default-create :if-missing}}]
   (cond-> {:reach               :one
            :create              (or (:create opts) default-create)
-           :default-session-key default-session-key}
+}
     (:session opts) (assoc :session [(:session opts)])
     (:crew opts) (assoc :crew (:crew opts))
     (has-session-tag? opts) (assoc :session-tags (session-tags-from opts))

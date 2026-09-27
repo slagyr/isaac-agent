@@ -170,44 +170,9 @@
                        :config        cfg
                        :session-store session-store}))
 
-(defn- no-session-id? [opts]
-  (and (not (:session opts))
-       (not (:resume opts))
-       (empty? (:session-tag opts))
-       (empty? (:tag opts))))
-
-(defn- frequencies-selected? [opts]
-  (or (contains? opts :create)
-      (:prefer opts)
-      (:session opts)
-      (:resume opts)
-      (seq (:session-tag opts))
-      (seq (:tag opts))))
-
-(defn- policy-default-target [opts override cfg session-store]
-  (let [crew-id (episode-crew-id opts override cfg)
-        sess    (prompt-policy opts override cfg session-store)
-        cwd     (host/cwd)
-        default (when sess (policy/default-session sess crew-id {:cwd cwd :origin {:kind :cli}}))]
-    (if default
-      {:session-key default
-       :session     (when sess (policy/get-session sess default))
-       :create?     (boolean (and sess (nil? (policy/get-session sess default))))
-       :create-identity {:crew crew-id}}
-      {:session-key nil
-       :session     nil
-       :create?     true
-       :create-identity {:crew crew-id}})))
-
-(defn- resolve-target [opts override cfg session-store]
-  ;; Policy default-session is the no-id path for --crew (session_policy
-  ;; scenario 8). Frequencies --create/--prefer/--session/--resume/tags must
-  ;; still win; a bare `prompt -m` without --crew stays on prompt-default.
-  (if (and (:crew opts)
-           (no-session-id? opts)
-           (not (frequencies-selected? opts)))
-    (policy-default-target opts override cfg session-store)
-    (session-frequencies/resolve-session-targets (frequencies-cli/build-frequencies opts) session-store)))
+(defn- resolve-target [opts _override cfg session-store]
+  (session-frequencies/resolve-session-targets
+    (frequencies-cli/build-frequencies opts) session-store cfg))
 
 (defn- refuse-crew-collision!
   "Refuse --session when an explicit --crew disagrees with the stored crew.

@@ -73,26 +73,36 @@
 
   (describe "resolve-session-targets"
 
-    (it "returns an existing default session without creating"
-      (helper/create-session! "/test" "prompt-default" {:crew "main"})
-      (let [result (sut/resolve-session-targets {:default-session-key "prompt-default"
-                                                 :create              :if-missing}
-                                                (store/registered-store))]
-        (should= false (:create? result))
-        (should= "prompt-default" (:session-key result))))
+    (it "resumes the default crew's existing session"
+      (helper/create-session! "/test" "harbor" {:crew "cordelia"})
+      (let [result (sut/resolve-session-targets {} (store/registered-store)
+                                                {:defaults {:frequencies {:crew "cordelia"}}})]
+        (should= "harbor" (:session-key result))
+        (should= false (:create? result))))
 
-    (it "creates the default session key when missing"
-      (let [result (sut/resolve-session-targets {:default-session-key "prompt-default"
-                                                 :create              :if-missing}
-                                                (store/registered-store))]
+    (it "creates for the default crew when no matching session exists"
+      (let [result (sut/resolve-session-targets {} (store/registered-store)
+                                                {:defaults {:frequencies {:crew "cordelia"}}})]
         (should= true (:create? result))
-        (should= "prompt-default" (:session-key result))))
+        (should-be-nil (:session-key result))
+        (should= "cordelia" (get-in result [:create-identity :crew]))))
 
-    (it "errors on :create :never when the default session is missing"
-      (let [result (sut/resolve-session-targets {:default-session-key "prompt-default"
-                                                 :create              :never}
-                                                (store/registered-store))]
-        (should= :no-match (:error result))))
+    (it "consumer crew wins over the default crew"
+      (helper/create-session! "/test" "mooring" {:crew "ketch"})
+      (let [result (sut/resolve-session-targets {:crew "ketch"} (store/registered-store)
+                                                {:defaults {:frequencies {:crew "cordelia"}}})]
+        (should= "mooring" (:session-key result))))
+
+    (it "explicit session wins over the default crew"
+      (helper/create-session! "/test" "mooring" {:crew "ketch"})
+      (let [result (sut/resolve-session-targets {:session ["mooring"]} (store/registered-store)
+                                                {:defaults {:frequencies {:crew "cordelia"}}})]
+        (should= "mooring" (:session-key result))))
+
+    (it "refuses to invent a session without selection fields"
+      (let [result (sut/resolve-session-targets {} (store/registered-store) {})]
+        (should= :no-match (:error result))
+        (should= "no session selected" (:message result))))
 
     (it "selects the most recent crew session when multiple match"
       (helper/create-session! "/test" "older" {:crew "ketch" :updated-at "2026-04-10T10:00:00"})
