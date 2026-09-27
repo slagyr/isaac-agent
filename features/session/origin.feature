@@ -13,11 +13,15 @@ Feature: Session origin
   Background:
     Given default Grover setup
 
+  @wip
   Scenario: CLI-spawned session carries origin :cli
     Given the following model responses are queued:
       | type | content | model |
       | text | Hello   | echo  |
     When isaac is run with "prompt -m 'Hi'"
-    Then the following sessions match:
-      | id              | origin.kind |
-      | prompt-default  | cli         |
+    Then the exit code is 0
+    And the session count is 1
+    And session "prompt-default" does not exist
+    And the following sessions match:
+      | origin.kind |
+      | cli         |

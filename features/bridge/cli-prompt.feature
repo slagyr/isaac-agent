@@ -21,18 +21,26 @@ Feature: Prompt single-turn command
     Then the exit code is 1
     And the stderr contains "api:access"
 
-  Scenario: Default session is prompt-default
-    Given the following model responses are queued:
+  @wip
+  Scenario: a bare prompt uses the default frequencies and does not create prompt-default
+    Given the isaac config path "defaults.frequencies.crew" is "cordelia"
+    And the isaac EDN file "config/crew/cordelia.edn" exists with:
+      | path  | value            |
+      | model | echo             |
+      | soul  | You are Cordelia |
+    And the following sessions exist:
+      | name   | crew     |
+      | harbor | cordelia |
+    And the following model responses are queued:
       | type | content | model |
       | text | Hello   | echo  |
     When isaac is run with "prompt -m 'Hi'"
-    Then the following sessions match:
-      | id              |
-      | prompt-default  |
-    And session "prompt-default" has transcript matching:
+    Then the exit code is 0
+    And session "harbor" has transcript matching:
       | type    | message.role | message.content |
       | message | user         | Hi              |
       | message | assistant    | Hello           |
+    And session "prompt-default" does not exist
 
   Scenario: --session resumes an existing session
     Given the following sessions exist:
@@ -359,14 +367,18 @@ Feature: Prompt single-turn command
     Then the stderr contains "--prefer must be recent or oldest"
     And the exit code is 1
 
-  Scenario: prompt sets cwd on the created session
+  @wip
+  Scenario: prompt sets cwd on the session the default frequencies create
     Given the following model responses are queued:
       | type | content | model |
       | text | Hi      | echo  |
     When isaac is run with "prompt -m 'Hi'"
-    Then the following sessions match:
-      | id             | cwd |
-      | prompt-default | #*  |
+    Then the exit code is 0
+    And the session count is 1
+    And session "prompt-default" does not exist
+    And the following sessions match:
+      | cwd |
+      | #*  |
 
   Scenario: --crew uses the crew member's soul on the crew session
     Given the isaac EDN file "config/crew/ketch.edn" exists with:
@@ -445,7 +457,7 @@ Feature: Prompt single-turn command
       | type | content            | model |
       | text | Summary so far     | echo  |
       | text | here is the answer | echo  |
-    When isaac is run with "prompt -m 'next'"
+    When isaac is run with "prompt --session prompt-default -m 'next'"
     Then the stderr matches:
       | 🥬 compacting |
       | ✨ compacted  |
@@ -482,7 +494,7 @@ Feature: Prompt single-turn command
       | type  | content                 | model |
       | error | context length exceeded | echo  |
       | text  | here is the answer      | echo  |
-    When isaac is run with "prompt -m 'next'"
+    When isaac is run with "prompt --session prompt-default -m 'next'"
     Then the stderr matches:
       | 🥬 compacting           |
       | 🥀 compaction failed    |
@@ -506,7 +518,7 @@ Feature: Prompt single-turn command
       | type  | content                 | model |
       | error | context length exceeded | echo  |
       | text  | here is the answer      | echo  |
-    When isaac is run with "prompt -m 'next'"
+    When isaac is run with "prompt --session prompt-default -m 'next'"
     Then the stderr matches:
       | 🥬 compacting        |
       | 🥀 compaction failed |
