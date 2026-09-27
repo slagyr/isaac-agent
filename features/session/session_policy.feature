@@ -135,7 +135,6 @@ Feature: Session policy berth — chronicle and episodes are per-crew policies o
       | append-message!     | lantern-room |
       | clear-turn-marker!  | lantern-room |
 
-  @wip
   Scenario: a start the policy has no default for is named by the agent, not the policy (isaac-vp7h)
     The agent owns session naming. When the caller gives no id and the resolver
     has a crew but no session, the agent mints one from the configured naming
@@ -164,7 +163,6 @@ Feature: Session policy berth — chronicle and episodes are per-crew policies o
       | message | user         | Light the lamp  |
       | message | assistant    | Lit             |
 
-  @wip
   Scenario: a conversation start without a session id resumes the crew's existing session (isaac-vp7h)
     Chronicle and episodes both answer through the shared resolver. A crew
     frequency with no session id selects the crew's existing session. It does
