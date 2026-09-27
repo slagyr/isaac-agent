@@ -135,10 +135,12 @@ Feature: Session policy berth — chronicle and episodes are per-crew policies o
       | append-message!     | lantern-room |
       | clear-turn-marker!  | lantern-room |
 
-  Scenario: a start the policy has no default for is named by the agent, not the policy
-    The agent owns session naming. When the caller gives no id and the policy
-    answers no default, the agent mints one from the configured naming strategy
-    and hands it to the policy — a policy never invents a session id.
+  @wip
+  Scenario: a start the policy has no default for is named by the agent, not the policy (isaac-vp7h)
+    The agent owns session naming. When the caller gives no id and the resolver
+    has a crew but no session, the agent mints one from the configured naming
+    strategy and hands it to the policy. A policy never invents a session id.
+    Selecting by crew does not ask the policy for a default session first.
     Given a recording session policy "logbook" is registered
     And config:
       | sessions.naming-strategy | sequential |
@@ -154,7 +156,6 @@ Feature: Session policy berth — chronicle and episodes are per-crew policies o
     Then the exit code is 0
     And the logbook policy recorded calls matching:
       | method              | crew     | session-id |
-      | default-session     | cordelia |            |
       | open-session!       | cordelia | session-1  |
       | record-turn-marker! |          | session-1  |
       | append-message!     |          | session-1  |
@@ -163,10 +164,11 @@ Feature: Session policy berth — chronicle and episodes are per-crew policies o
       | message | user         | Light the lamp  |
       | message | assistant    | Lit             |
 
-  Scenario: a conversation start without a session id asks the policy for one
-    Chronicle answers the crew's existing session; episodes answers a fresh
-    id (isaac-6yg0's acp scenario stays the proof of that side). Frequencies
-    and ACP session/new no longer branch on the crew's mode themselves.
+  @wip
+  Scenario: a conversation start without a session id resumes the crew's existing session (isaac-vp7h)
+    Chronicle and episodes both answer through the shared resolver. A crew
+    frequency with no session id selects the crew's existing session. It does
+    not ask the policy for a default session first.
     Given a recording session policy "logbook" is registered
     And the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path          | value            |
@@ -182,11 +184,10 @@ Feature: Session policy berth — chronicle and episodes are per-crew policies o
     When isaac is run with "prompt --crew cordelia -m 'Light the lamp'"
     Then the exit code is 0
     And the logbook policy recorded calls matching:
-      | method              | crew     | session-id   |
-      | default-session     | cordelia |              |
-      | record-turn-marker! |          | lantern-room |
-      | append-message!     |          | lantern-room |
-      | clear-turn-marker!  |          | lantern-room |
+      | method              | session-id   |
+      | record-turn-marker! | lantern-room |
+      | append-message!     | lantern-room |
+      | clear-turn-marker!  | lantern-room |
     And session "lantern-room" has transcript matching:
       | type    | message.role | message.content |
       | message | user         | Light the lamp  |
