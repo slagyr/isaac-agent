@@ -41,9 +41,12 @@
     (it "maps CLI options without inventing a session"
       (let [frequencies (sut/build-frequencies {:crew "ketch"})]
         (should= "ketch" (:crew frequencies))
-        (should= :if-missing (:create frequencies))
-        (should= :one (:reach frequencies))
+        (should-not (contains? frequencies :create))
+        (should-not (contains? frequencies :reach))
         (should-not (contains? frequencies :default-session-key))))
+
+    (it "includes create only when explicitly passed"
+      (should= {:create :never} (sut/build-frequencies {:create :never})))
 
     (it "normalizes session-tags to keywords"
       (let [frequencies (sut/build-frequencies {:session-tag ["project/chess" "wip"]})]
