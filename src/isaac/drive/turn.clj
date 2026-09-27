@@ -1361,8 +1361,13 @@
         session          (when sess (policy/get-session sess session-key))
         skill-disclosure (or (session-ctx/read-skill-disclosure (:config charge) root (:cwd session))
                              {:menu-text nil :tool-names #{}})
+        crew-cfg         (get crew-members crew)
+        recall-tools     (when (= :episodes (policy/policy-name crew-cfg))
+                           (->> ["recall__search" "recall__scene"]
+                                (remove #(names/allowed? (get-in crew-cfg [:tools :deny]) %))
+                                set))
         allowed-tools    (merge-allowed-tools (allowed-tool-names crew-members crew (:config charge))
-                                              (:tool-names skill-disclosure))
+                                              (concat (:tool-names skill-disclosure) recall-tools))
         boot-files       (session-ctx/read-boot-files (:cwd session))
         rules-text       (session-ctx/read-rules-text (:config charge) root (:cwd session))
         augmented        (augment-provider root provider session-key context-window
