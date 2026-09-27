@@ -38,12 +38,12 @@
 
   (describe "build-frequencies"
 
-    (it "maps CLI options to a frequencies map with prompt defaults"
+    (it "maps CLI options without inventing a session"
       (let [frequencies (sut/build-frequencies {:crew "ketch"})]
         (should= "ketch" (:crew frequencies))
         (should= :if-missing (:create frequencies))
         (should= :one (:reach frequencies))
-        (should= "prompt-default" (:default-session-key frequencies))))
+        (should-not (contains? frequencies :default-session-key))))
 
     (it "normalizes session-tags to keywords"
       (let [frequencies (sut/build-frequencies {:session-tag ["project/chess" "wip"]})]

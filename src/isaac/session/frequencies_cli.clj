@@ -30,9 +30,8 @@
   "Build a frequencies map from parsed CLI options and per-tool defaults."
   [opts & {:keys [default-create]
            :or   {default-create :if-missing}}]
-  (cond-> {:reach               :one
-           :create              (or (:create opts) default-create)
-}
+  (cond-> {:reach  :one
+           :create (or (:create opts) default-create)}
     (:session opts) (assoc :session [(:session opts)])
     (:crew opts) (assoc :crew (:crew opts))
     (has-session-tag? opts) (assoc :session-tags (session-tags-from opts))

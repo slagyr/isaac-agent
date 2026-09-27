@@ -13,7 +13,6 @@ Feature: Session origin
   Background:
     Given default Grover setup
 
-  @wip
   Scenario: CLI-spawned session carries origin :cli
     Given the following model responses are queued:
       | type | content | model |

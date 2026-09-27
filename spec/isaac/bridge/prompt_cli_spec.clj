@@ -146,14 +146,15 @@
             (should= 0 (sut/run (assoc base-opts :config threaded-config :message "Hello")))))
         (should= (:module-index threaded-config) (get-in @captured [:config :module-index]))))
 
-    (it "uses prompt-default as the default session"
+    (it "uses the default crew existing session"
+      (helper/create-session! "/test/prompt" "harbor" {:crew crew-name})
       (let [used-key (atom nil)]
         (with-redefs [bridge/dispatch! (fn [charge]
                                          (reset! used-key (:session-key charge))
                                          (comm/on-chatter (:comm charge) (:session-key charge) nil "Hi")
                                          {})]
           (with-out-str (sut/run (assoc base-opts :message "Hi"))))
-        (should= "prompt-default" @used-key)))
+        (should= "harbor" @used-key)))
 
     (it "uses --session when provided"
       (helper/create-session! "/test/prompt" (str "agent:" crew-name ":cli:direct:user1"))
@@ -242,7 +243,7 @@
       (with-redefs [bridge/dispatch! (fake-dispatch! "Hello")]
         (with-out-str
           (sut/run (assoc base-opts :message "Hi")))
-        (let [session (helper/get-session "/test/prompt" "prompt-default")]
+        (let [session (first (helper/list-sessions "/test/prompt"))]
           (should= (System/getProperty "user.dir") (:cwd session)))))
 
     (it "writes only crew when creating a fresh prompt session"
@@ -376,7 +377,7 @@
                                          {})]
           (with-out-str
             (sut/run (assoc base-opts :message "Hi" :resume true))))
-        (should= "prompt-default" @used-key)))
+        (should (not= "prompt-default" @used-key))))
 
     (it "prints the collision and exits 1 when --session belongs to another crew"
       (let [ss (store/registered-store)]

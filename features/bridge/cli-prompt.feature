@@ -21,7 +21,6 @@ Feature: Prompt single-turn command
     Then the exit code is 1
     And the stderr contains "api:access"
 
-  @wip
   Scenario: a bare prompt uses the default frequencies and does not create prompt-default
     Given the isaac config path "defaults.frequencies.crew" is "cordelia"
     And the isaac EDN file "config/crew/cordelia.edn" exists with:
@@ -367,7 +366,6 @@ Feature: Prompt single-turn command
     Then the stderr contains "--prefer must be recent or oldest"
     And the exit code is 1
 
-  @wip
   Scenario: prompt sets cwd on the session the default frequencies create
     Given the following model responses are queued:
       | type | content | model |

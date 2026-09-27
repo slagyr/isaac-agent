@@ -183,6 +183,25 @@
            :create?     true
            :create-identity (select-keys frequencies [:crew :session-tags])}))
 
+      (resume-select? frequencies)
+      (let [matches (matching-sessions {} all-sessions)]
+        (cond
+          (= create :always)
+          {:session-key     nil
+           :session         nil
+           :create?         true
+           :create-identity {}}
+
+          (seq matches)
+          (let [picked (pick-by-prefer matches (:prefer frequencies))]
+            {:session-key (:id picked) :session picked :create? false})
+
+          (= create :never)
+          {:error :no-match :message (no-match-message frequencies)}
+
+          :else
+          {:session-key nil :session nil :create? true :create-identity {}}))
+
       (describe-select? frequencies)
       (let [matches (matching-sessions frequencies all-sessions)]
         (cond
@@ -209,24 +228,14 @@
                               (:crew frequencies) (assoc :crew (:crew frequencies))
                               (:session-tags frequencies) (assoc :tags (:session-tags frequencies)))}))
 
-      (resume-select? frequencies)
-      (let [matches (matching-sessions {} all-sessions)]
-        (cond
-          (= create :always)
-          {:session-key     nil
-           :session         nil
-           :create?         true
-           :create-identity {}}
-
-          (seq matches)
-          (let [picked (pick-by-prefer matches (:prefer frequencies))]
-            {:session-key (:id picked) :session picked :create? false})
-
-          (= create :never)
-          {:error :no-match :message (no-match-message frequencies)}
-
-          :else
-          {:session-key nil :session nil :create? true :create-identity {}}))
-
       :else
       {:error :no-match :message "no session selected"}))))
+
+(defn behavioral-override
+  "Project :with-* override keys to behavioral-keys for create-with-resolved-behavior!."
+  [frequencies]
+  (cond-> {}
+    (:with-model frequencies) (assoc :model (:with-model frequencies))
+    (:with-crew frequencies) (assoc :crew (:with-crew frequencies))
+    (:with-effort frequencies) (assoc :effort (:with-effort frequencies))
+    (:with-context-mode frequencies) (assoc :context-mode (:with-context-mode frequencies))))

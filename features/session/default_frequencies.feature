@@ -1,4 +1,3 @@
-@wip
 Feature: Default frequencies select the session
   Every turn merges :defaults :frequencies underneath the frequencies the
   consumer supplied. The consumer wins. prompt-default is not a session id

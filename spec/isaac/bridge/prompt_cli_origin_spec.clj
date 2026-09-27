@@ -39,7 +39,7 @@
                                      {})]
       (with-out-str
         (should= 0 (sut/run (assoc base-opts :message "Hi"))))
-      (let [session (helper/get-session "/test/prompt" "prompt-default")]
+      (let [session (first (helper/list-sessions "/test/prompt"))]
         (should= {:kind :cli} (:origin session)))))
 
   (it "charge carries the cli origin"
