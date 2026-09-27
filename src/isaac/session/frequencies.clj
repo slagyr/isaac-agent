@@ -7,6 +7,7 @@
     [c3kit.apron.schema :as schema]
     [isaac.session.policy :as policy]
     [isaac.config.defaults :as defaults]
+    [isaac.config.loader :as config]
     [isaac.session.store.spi :as store]))
 
 (def create-modes #{:never :if-missing :always})
@@ -159,7 +160,7 @@
      {:session-key nil :session nil :create? true :create-identity {...}}  ; generated key
      {:error :no-match :message \"...\"}"
   ([frequencies session-store]
-   (resolve-session-targets frequencies session-store nil))
+   (resolve-session-targets frequencies session-store (config/snapshot "session frequencies resolver")))
   ([frequencies session-store cfg]
   (let [frequencies  (merge {:reach :one :prefer :recent :create :if-missing}
                             (defaults/frequencies-template cfg) frequencies)
