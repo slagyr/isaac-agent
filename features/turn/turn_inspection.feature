@@ -31,9 +31,9 @@ Feature: Turn inspection — turns show and the turn__get tool
       | state: finished       |
       | outcome: ok           |
       | origin.kind: cli      |
-      | created-at: #"\S+"    |
-      | started-at: #"\S+"    |
-      | finished-at: #"\S+"   |
+      | created-at: \S+ |
+      | started-at: \S+ |
+      | finished-at: \S+ |
     And the exit code is 0
 
   Scenario: a failed turn shows its outcome and reason
@@ -48,7 +48,7 @@ Feature: Turn inspection — turns show and the turn__get tool
     Then the stdout matches:
       | state: finished                     |
       | outcome: error                      |
-      | reason: #".*lamp oil spilled.*"     |
+      | reason:.*lamp oil spilled |
 
   Scenario: a queued turn has no start time until it runs
     Given the following model responses are queued:
@@ -60,13 +60,13 @@ Feature: Turn inspection — turns show and the turn__get tool
     When isaac is run with "turns show #turn-id"
     Then the stdout matches:
       | state: queued      |
-      | created-at: #"\S+" |
+      | created-at: \S+ |
     And the stdout does not contain "started-at: 2"
     When the turn queue ticks at "2026-03-01T18:00:00"
     And isaac is run with "turns show #turn-id"
     Then the stdout matches:
       | state: finished    |
-      | started-at: #"\S+" |
+      | started-at: \S+ |
 
   Scenario: a crew reads a turn with the turn__get tool
     Given the isaac EDN file "turns/tide-9.edn" exists with:
