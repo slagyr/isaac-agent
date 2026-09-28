@@ -27,11 +27,10 @@
   (keyword-set (or (:session-tag opts) (:tag opts))))
 
 (defn build-frequencies
-  "Build a frequencies map from parsed CLI options and per-tool defaults."
-  [opts & {:keys [default-create]
-           :or   {default-create :if-missing}}]
-  (cond-> {:reach  :one
-           :create (or (:create opts) default-create)}
+  "Build a frequencies map from only the parsed CLI options."
+  [opts]
+  (cond-> {}
+    (:create opts) (assoc :create (:create opts))
     (:session opts) (assoc :session [(:session opts)])
     (:crew opts) (assoc :crew (:crew opts))
     (has-session-tag? opts) (assoc :session-tags (session-tags-from opts))

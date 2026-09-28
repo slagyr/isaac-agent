@@ -2,6 +2,7 @@
   (:require
     [c3kit.apron.schema :as schema]
     [isaac.session.frequencies :as sut]
+    [isaac.config.loader :as config]
     [isaac.session.spec-helper :as helper]
     [isaac.session.store.spi :as store]
     [speclj.core :refer :all]))
@@ -72,6 +73,17 @@
         (should= ["bridge"] (mapv :id matches)))))
 
   (describe "resolve-session-targets"
+
+    (it "reads the current default frequencies on a two-argument call"
+      (helper/create-session! "/test" "harbor" {:crew "cordelia"})
+      (config/set-snapshot! {:defaults {:frequencies {:crew "cordelia"}}} "frequencies spec")
+      (should= "harbor" (:session-key (sut/resolve-session-targets {} (store/registered-store)))))
+
+    (it "lets configured create always override the built-in if-missing"
+      (helper/create-session! "/test" "harbor" {:crew "cordelia"})
+      (config/set-snapshot! {:defaults {:frequencies {:crew "cordelia" :create :always}}} "frequencies spec")
+      (should= true (:create? (sut/resolve-session-targets {} (store/registered-store)))))
+
 
     (it "resumes the default crew's existing session"
       (helper/create-session! "/test" "harbor" {:crew "cordelia"})
