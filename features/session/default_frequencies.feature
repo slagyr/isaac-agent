@@ -74,3 +74,12 @@ Feature: Default frequencies select the session
     And the stderr contains "no session"
     And the session count is 0
     And session "prompt-default" does not exist
+
+  @wip
+  Scenario: :reach is not a frequency — fan-out is gone (isaac-5gu1)
+    Given the isaac EDN file "config/isaac.edn" exists with:
+      | path                       | value |
+      | defaults.frequencies.reach | :one  |
+    When isaac is run with "config validate"
+    Then the stderr contains "reach"
+    And the exit code is 1

@@ -284,7 +284,7 @@ Feature: Prompt single-turn command
     Then the stderr contains "mutually exclusive"
     And the exit code is 1
 
-  # --prefer: the multi-match tiebreak for :reach :one (isaac-4e4b). Replaces the
+  # --prefer: the multi-match tiebreak (isaac-4e4b). Replaces the
   # confusingly-named --resume; --session stays the exact selector.
 
   Scenario: --prefer oldest picks the oldest of multiple matching sessions
