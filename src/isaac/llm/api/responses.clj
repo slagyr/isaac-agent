@@ -111,7 +111,12 @@
 
 (defn- ->codex-responses-request [request provider-cfg]
   (let [base  (->responses-request request provider-cfg)
-        base  (if (contains? base :instructions) base (assoc base :instructions ""))
+        ;; xAI rejects instructions together with previous_response_id, even
+        ;; when the value is "". Codex still wants the key on an unchained call.
+        base  (if (or (contains? base :instructions)
+                      (contains? base :previous_response_id))
+                base
+                (assoc base :instructions ""))
         level (effort/effort->string (:effort request))]
     (if level
       (assoc base :reasoning {:effort level :summary "auto"})
