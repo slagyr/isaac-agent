@@ -11,7 +11,8 @@
     [isaac.turn.queue :as queue]))
 
 (def option-spec
-  [["-h" "--help" "Show help"]])
+  [["-h" "--help" "Show help"]
+   [nil "--all" "Include finished turns"]])
 
 (defn- derive-root [opts]
   (root/default-root opts))
@@ -23,13 +24,19 @@
   {:id         (:id record)
    :session    (or (:session record) "")
    :resource-pools (format-resource-pools (:resource-pools record))
+   :input      (or (:input record) "")
+   :merged-into (or (:merged-into record) "")
+   :outcome    (if-let [outcome (:outcome record)] (name outcome) "")
    :state      (name (or (:state record) :held))})
 
 (defn- format-held [rows]
   (table/render {:columns [{:key :id         :header "ID"         :align :left}
                            {:key :session    :header "SESSION"    :align :left}
+                           {:key :input :header "INPUT" :align :left}
                            {:key :resource-pools :header "RESOURCE-POOLS" :align :left}
-                           {:key :state      :header "STATE"      :align :left}]
+                           {:key :state      :header "STATE"      :align :left}
+                           {:key :outcome :header "OUTCOME" :align :left}
+                           {:key :merged-into :header "MERGED-INTO" :align :left}]
                  :rows    rows
                  :zebra?  true
                  :color?  false}))
@@ -42,7 +49,7 @@
 (defn- run-list [opts]
   (with-queue-root opts
     (fn []
-      (let [rows (mapv held->row (queue/list-held))]
+      (let [rows (mapv held->row (if (:all opts) (queue/all-turns) (queue/list-held)))]
         (when (seq rows)
           (println (format-held rows)))
         0))))
@@ -54,7 +61,7 @@
       (fn []
         (if (queue/read-held id)
           (do
-            (queue/delete-held! id)
+            (queue/update-turn! id {:state :finished :outcome :dropped})
             (println (str "dropped " id))
             0)
           (do

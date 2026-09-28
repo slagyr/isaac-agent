@@ -25,7 +25,8 @@
     [isaac.session.store.spi :as store]
     [isaac.tool.builtin :as builtin]
     [isaac.tool.memory :as memory]
-    [isaac.resource-pool :as pool])
+    [isaac.resource-pool :as pool]
+    [isaac.turn.queue :as turn-queue])
   (:import (clojure.lang ExceptionInfo)))
 
 (defn- stderr-line! [text]
@@ -248,7 +249,14 @@
       :else
       (do
         (host/ensure-runtime! {:install! builtin/register-all!})
-        (let [result (bridge/dispatch!
+        (let [root* (root-of opts)
+              accepted (binding [turn-queue/*root* root*]
+                         (turn-queue/enqueue! (cond-> {:session session-key :input (:message opts)
+                                                       :state (if (:queue opts) :queued :running)
+                                                       :origin {:kind :cli}}
+                                                (:key opts) (assoc :key (:key opts)))))
+              result (when-not (or (:queue opts) (:already-accepted? accepted))
+                       (bridge/dispatch!
                        (assoc (charge/build (cond-> {:session-key           session-key
                                                      :input                 (:message opts)
                                                      :config                cfg
@@ -262,8 +270,20 @@
                                                     (seq ts-refs) (assoc :resource-pools ts-refs)))
                               :root (root-of opts)
                               :session-store session-store
-                              :now (memory/now)))]
+                              :now (memory/now)
+                              :turn-id (:id accepted))))]
+          (when (and (not (:queue opts)) (not (:already-accepted? accepted)) (not (:held result)))
+            (binding [turn-queue/*root* root*]
+              (turn-queue/update-turn! (:id accepted) {:state :finished
+                                                       :outcome (if (or (:error result) (:unavailable? result)
+                                                                        (get-in result [:response :error])) :error :ok)})))
           (cond
+            (:already-accepted? accepted)
+            (do (println (str "already accepted: " (:id accepted))) 0)
+
+            (:queue opts)
+            (do (println (str "queued: " (:id accepted))) 0)
+
             (:held result)
             (do
               (println (str "held: " (:id result)
@@ -337,6 +357,8 @@
 (def option-spec
   (concat
     [["-m" "--message TEXT" "Message to send (required)"]
+     [nil "--queue" "Accept without running"]
+     [nil "--key KEY" "Idempotency key"]
      ["-j" "--json" "Output result as JSON"]
      [nil "--usage" "Report this turn's token usage (stderr, or in the JSON result)"]
      [nil "--observer REF" "Submit a turn observer (repeatable); e.g. lookout or foreman:bean-work/bn-7"

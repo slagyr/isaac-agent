@@ -61,6 +61,7 @@
            :now now
            :from-queue? true
            :held-id (:id record)
+           :turn-id (:id record)
            :root (or (:root record) (nexus/get :root) (loader/root))
            :session-store (or (nexus/get-in [:sessions :store]) (store/registered-store)))))
 
@@ -89,10 +90,11 @@
               :held? (boolean (still-held? result))
               :error (:error result)
               :session (:session record))
-    (when (and (not (still-held? result))
-               (not (:error result)))
+    (when-not (still-held? result)
       (doseq [id (or (:held-ids record) [(:id record)])]
-        (queue/delete-held! id)))))
+        (queue/update-turn! id (cond-> {:state :finished :outcome (if (:error result) :error :ok)}
+                                 (not= id (:id record)) (assoc :merged-into (:id record))))
+        (queue/forget-live-comm! id)))))
 
 (defn- request-tick! []
   (loop []
@@ -123,7 +125,8 @@
                                     waiting-ids (set (mapcat #(map :id (mapcat identity (queue/waiting-groups %))) waiting-sessions))
                                     ordinary (remove #(contains? waiting-ids (:id %)) records)]
                                 (doseq [record ordinary]
-                                  (process-record! now record))
+                                  (when (queue/claim! (:id record))
+                                    (process-record! now record)))
                                 (doseq [session waiting-sessions
                                         :when (not (store/in-flight? (or (nexus/get-in [:sessions :store])
                                                                           (store/registered-store)) session))
@@ -131,7 +134,8 @@
                                   (let [record (coalesced-record records)]
                                     (when (> (count records) 1)
                                       (log/info :turn/coalesced :session session :key (:coalesce-key record) :count (count records)))
-                                    (process-record! now record))))
+                                    (when (queue/claim! (:id record))
+                                      (process-record! now record)))))
                               nil
                               (catch Throwable t t))
                  next-state (finish-tick!)]

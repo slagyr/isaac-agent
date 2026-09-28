@@ -1,4 +1,3 @@
-@wip
 Feature: Turn store — every turn has a durable record and a stable id
   Every submission is written to the TurnStore the moment it is accepted
   and gets a turn id that never changes: queued, held, waiting, running,

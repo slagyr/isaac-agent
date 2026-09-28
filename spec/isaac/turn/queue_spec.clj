@@ -15,7 +15,7 @@
     (nexus/-with-nexus {:root "/test/isaac" :fs (fs/mem-fs)}
       (example)))
 
-  (it "stores a held turn under turns/held"
+  (it "stores a held turn under turns"
     (sut/enqueue! {:id         "berth-1"
                    :session    "harbor"
                    :resource-pools [:night-watch]
@@ -29,9 +29,9 @@
              (select-keys (sut/read-held "berth-1")
                           [:id :session :resource-pools :input :state])))
 
-  (it "stores the held file at turns/held/<id>.edn"
+  (it "stores the held file at turns/<id>.edn"
     (sut/enqueue! {:id "berth-1" :session "harbor" :state :held})
-    (should (fs/exists? (nexus/get :fs) "/test/isaac/turns/held/berth-1.edn")))
+    (should (fs/exists? (nexus/get :fs) "/test/isaac/turns/berth-1.edn")))
 
   (it "lists held turns in submit order"
     (sut/enqueue! {:id "later" :session "quay" :created-at "2026-03-01T14:00:02Z"})

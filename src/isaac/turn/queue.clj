@@ -8,7 +8,8 @@
     [isaac.config.loader :as loader]
     [isaac.fs :as fs]
     [isaac.logger :as log]
-    [isaac.tool.memory :as memory])
+    [isaac.tool.memory :as memory]
+    [isaac.turn.store :as store])
   (:import
     (java.util UUID)))
 
@@ -25,7 +26,7 @@
   (or (fs/instance) (throw (ex-info "turn.queue requires :fs in system" {}))))
 
 (defn- held-dir []
-  (str (runtime-root) "/turns/held"))
+  (str (runtime-root) "/turns"))
 
 (defn- held-path [id]
   (str (held-dir) "/" id ".edn"))
@@ -68,7 +69,7 @@
         record (normalize-record (dissoc record :comm))
         path   (held-path (:id record))]
     (fs/mkdirs fs* (fs/parent path))
-    (fs/spit fs* path (write-edn record))
+    (store/submit! (store/file-store fs* (runtime-root)) record)
     (when comm
       (swap! live-comms* assoc (:id record) comm))
     (log/info :turn.queue/held
@@ -81,15 +82,16 @@
 
 (defn delete-held! [id]
   (forget-live-comm! id)
-  (fs/delete (filesystem) (held-path id)))
+  (store/update-turn! (store/file-store (filesystem) (runtime-root)) id {:state :finished :outcome :ok}))
 
 (defn list-held []
   (let [fs* (filesystem)
         dir (held-dir)]
     (if-let [children (fs/children fs* dir)]
       (->> children
+           (filter #(str/ends-with? % ".edn"))
            (map #(read-record (str dir "/" %)))
-           (remove nil?)
+           (filter #(contains? #{:queued :held :waiting-session} (:state %)))
            (sort-by :created-at)
            vec)
       [])))
@@ -112,3 +114,12 @@
                   (conj groups [record]))))
             []
             waiting)))
+
+(defn all-turns []
+  (store/list-turns (store/file-store (filesystem) (runtime-root))))
+
+(defn update-turn! [id attrs]
+  (store/update-turn! (store/file-store (filesystem) (runtime-root)) id attrs))
+
+(defn claim! [id]
+  (store/claim! (store/file-store (filesystem) (runtime-root)) id))
