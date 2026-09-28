@@ -35,6 +35,23 @@
           (should= 1 (count (queue/all-turns)))
           (should= :queued (:state (first (queue/all-turns))))))))
 
+  (it "preserves a caller-supplied origin through the durable turn store"
+    (let [origin {:kind :hail :thread-id "tidal-7" :data {:route ["quay" "beacon"]}}
+          request {:root "/isaac-state" :config {} :frequencies {:session "lamp-room"}
+                   :prompt "Light lamp" :origin origin}]
+      (with-redefs [sessions/registered-store (fn [] :sessions)
+                    frequencies/resolve-session-targets (fn [_ _ _] {:session-key "lamp-room"})]
+        (let [accepted (sut/submit! request)]
+          (should= origin (:origin accepted))
+          (should= origin (:origin (queue/read-held (:id accepted))))))))
+
+  (it "defaults an unnamed origin to submit"
+    (with-redefs [sessions/registered-store (fn [] :sessions)
+                  frequencies/resolve-session-targets (fn [_ _ _] {:session-key "lamp-room"})]
+      (should= {:kind :submit}
+               (:origin (sut/submit! {:root "/isaac-state" :config {}
+                                      :frequencies {:session "lamp-room"} :prompt "Light lamp"})))))
+
   (it "keeps a crew address unbound until admission"
     (let [request {:root "/isaac-state" :config {:resource-pools {}}
                    :frequencies {:crew "ketch" :prefer :oldest}

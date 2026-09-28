@@ -103,7 +103,8 @@
     (when-not (still-held? result)
       (doseq [id (or (:held-ids record) [(:id record)])]
         (queue/update-turn! id (cond-> {:state :finished :outcome (if (:error result) :error :ok)}
-                                 (not= id (:id record)) (assoc :merged-into (:id record))))
+                                 (not= id (:id record)) (assoc :merged-into (:id record))
+                                 (:error result) (assoc :reason (or (:message result) (name (:error result))))))
         (queue/forget-live-comm! id)))))
 
 (defn- request-tick! []

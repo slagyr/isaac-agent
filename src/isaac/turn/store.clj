@@ -4,7 +4,8 @@
     [clojure.edn :as edn]
     [clojure.pprint :as pprint]
     [clojure.string :as str]
-    [isaac.fs :as fs]))
+    [isaac.fs :as fs]
+    [isaac.tool.memory :as memory]))
 
 (defprotocol TurnStore
   (submit! [store record])
@@ -48,13 +49,15 @@
   (update-turn! [this id attrs]
     (locking lock
       (when-let [record (read-turn this id)]
-        (let [updated (merge record attrs)]
+        (let [updated (cond-> (merge record attrs)
+                        (and (= :finished (:state attrs)) (nil? (:finished-at record)))
+                        (assoc :finished-at (str (memory/now))))]
           (fs/spit fs (path root id) (write-edn updated))
           updated))))
   (claim! [this id]
     (locking lock
       (when (contains? #{:queued :held :waiting-session} (:state (read-turn this id)))
-        (update-turn! this id {:state :running})))))
+        (update-turn! this id {:state :running :started-at (str (memory/now))})))))
 
 (defn file-store [fs root]
   (->FileStore fs root (lock-for root)))
@@ -77,6 +80,6 @@
   (claim! [this id]
     (locking state
       (when (contains? #{:queued :held :waiting-session} (:state (read-turn this id)))
-        (update-turn! this id {:state :running})))))
+        (update-turn! this id {:state :running :started-at (str (memory/now))})))))
 
 (defn memory-store [] (->MemoryStore (atom {})))

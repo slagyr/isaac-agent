@@ -42,12 +42,26 @@
     (queue/update-turn! "berth-1" {:state :finished :outcome :ok})
     (let [output (with-out-str
                    (should= 0 (sut/run-fn {:_raw-args ["show" "berth-1"] :root "/test/isaac"})))]
-      (should= "id: berth-1\nsession: harbor\nstate: finished\noutcome: ok\n" output)))
+      (doseq [fragment ["id: berth-1" "session: harbor" "state: finished" "outcome: ok"
+                        "created-at: " "finished-at: "]]
+        (should (str/includes? output fragment)))))
 
   (it "reports an unknown turn id"
-    (let [output (with-out-str
-                   (should= 1 (sut/run-fn {:_raw-args ["show" "unknown"] :root "/test/isaac"})))]
+    (let [err (java.io.StringWriter.)
+          output (binding [*err* err]
+                   (should= 1 (sut/run-fn {:_raw-args ["show" "unknown"] :root "/test/isaac"}))
+                   (str err))]
       (should (str/includes? output "unknown"))))
+
+  (it "shows the full durable record including opaque origin and timings"
+    (queue/enqueue! {:id "tide-9" :session "harbor" :input "Leave harbor"
+                     :origin {:kind :hail :data {:route "quay"}} :state :queued})
+    (queue/claim! "tide-9")
+    (queue/update-turn! "tide-9" {:state :finished :outcome :error :reason "lamp oil spilled"})
+    (let [output (with-out-str (should= 0 (sut/run-fn {:_raw-args ["show" "tide-9"] :root "/test/isaac"})))]
+      (doseq [fragment ["input: Leave harbor" "origin.kind: hail" "origin.data: {:route \"quay\"}"
+                        "started-at: " "finished-at: " "reason: lamp oil spilled"]]
+        (should (str/includes? output fragment)))))
 
   (it "drops a held turn and prints dropped"
     (queue/enqueue! {:id "berth-1" :session "harbor"})

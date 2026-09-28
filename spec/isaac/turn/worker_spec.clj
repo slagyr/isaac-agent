@@ -55,6 +55,16 @@
       (should= "Leave harbor" (:input (first @ran)))
       (should= :ok (:outcome (queue/read-held "berth-1")))))
 
+  (it "records a failed wake reason and finish time"
+    (queue/enqueue! {:id "lamp-7" :session "harbor" :input "Trim lamp" :state :queued})
+    (with-redefs [bridge/dispatch! (fn [_] {:error :provider :message "lamp oil spilled"})]
+      (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")}))
+    (let [record (queue/read-held "lamp-7")]
+      (should= :error (:outcome record))
+      (should= "lamp oil spilled" (:reason record))
+      (should (:started-at record))
+      (should (:finished-at record))))
+
   (it "runs every held turn whose stack now passes, in submit order"
     (queue/enqueue! {:id "later" :session "quay" :input "three"
                      :resource-pools [] :created-at "2026-03-01T14:00:02Z"})

@@ -1,4 +1,3 @@
-@wip
 Feature: Turn inspection — turns show and the turn__get tool
   Every turn record answers "what was asked, who asked, and how did it
   end". The submitter supplies an opaque :origin map that Agent stores

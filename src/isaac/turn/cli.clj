@@ -85,16 +85,27 @@
             (println (str "held turn not found: " id))
             1))))))
 
+(defn- display-value [value]
+  (cond
+    (keyword? value) (name value)
+    (nil? value) ""
+    (string? value) value
+    :else (pr-str value)))
+
+(defn- print-record! [record]
+  (doseq [field [:id :session :frequencies :input :resource-pools :state :outcome
+                 :reason :created-at :started-at :finished-at :merged-into]
+          :when (contains? record field)]
+    (println (str (name field) ": " (display-value (get record field)))))
+  (doseq [[key value] (sort-by (comp str key) (:origin record))]
+    (println (str "origin." (name key) ": " (display-value value)))))
+
 (defn- run-show [opts id]
   (with-queue-root opts
     (fn []
       (if-let [record (queue/read-held id)]
-        (do
-          (doseq [field [:id :session :state :outcome]]
-            (let [value (get record field)]
-              (println (str (name field) ": " (if (keyword? value) (name value) (or value ""))))))
-          0)
-        (do (println (str "turn not found: " id)) 1)))))
+        (do (print-record! record) 0)
+        (do (binding [*out* *err*] (println (str "turn not found: " id))) 1)))))
 
 (defn- print-help! []
   (println (cli/command-help (cli/get-command "turns")))

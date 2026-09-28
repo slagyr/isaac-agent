@@ -12,14 +12,15 @@
     [isaac.tool.names :as names]
     [isaac.tool.session :as session]
     [isaac.tool.web-fetch :as web-fetch]
-    [isaac.tool.web-search :as web-search]))
+    [isaac.tool.web-search :as web-search]
+    [isaac.turn.tool :as turn]))
 
 ;; region ----- Registration -----
 
 (def ^:private ordered-built-in-tools
   ["fs__read" "fs__write" "fs__edit" "fs__multi_edit" "fs__grep" "fs__glob"
    "web__fetch" "web__search" "memory__write" "memory__get" "memory__search"
-   "exec__run" "session__info" "session__model" "skill__load" "skill__list"
+   "exec__run" "turn__get" "session__info" "session__model" "skill__load" "skill__list"
    "comm__send" "hail__send"])
 
 (def ^:private built-in-tool-specs
@@ -129,6 +130,12 @@
                                                  "timeout" {:type "integer" :description "Timeout in ms"}}
                                     :required   ["command"]}
                       :handler     #'exec/exec-tool}
+   "turn__get"      {:name        "turn__get"
+                      :description "Get a durable turn record by id"
+                      :parameters  {:type "object"
+                                    :properties {"id" {:type "string" :description "Turn id"}}
+                                    :required ["id"]}
+                      :handler     #'turn/get-tool}
    "session__info"   {:name        "session__info"
                       :description "Report the current session's crew, model, provider, origin, timing, context, and compaction count"
                       :parameters  {:type "object" :properties {}}
@@ -159,6 +166,7 @@
 (defn memory-get-tool-factory [_] (spec-for "memory__get"))
 (defn memory-search-tool-factory [_] (spec-for "memory__search"))
 (defn exec-tool-factory [_] (spec-for "exec__run"))
+(defn turn-get-tool-factory [_] (spec-for "turn__get"))
 (defn session-info-tool-factory [_] (spec-for "session__info"))
 (defn session-model-tool-factory [_] (spec-for "session__model"))
 

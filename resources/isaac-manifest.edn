@@ -1,5 +1,5 @@
 {:id :isaac.agent,
- :version "0.1.91",
+ :version "0.1.92",
  :builtin? true,
  :factory isaac.agent.module/create-module,
  :berths
@@ -149,6 +149,7 @@
   :memory/write
   {:factory isaac.tool.builtin/memory-write-tool-factory},
   :web/search {:factory isaac.tool.builtin/web-search-tool-factory},
+  :turn/get {:factory isaac.tool.builtin/turn-get-tool-factory},
   :session/info
   {:factory isaac.tool.builtin/session-info-tool-factory},
   :fs/write {:factory isaac.tool.builtin/write-tool-factory},
