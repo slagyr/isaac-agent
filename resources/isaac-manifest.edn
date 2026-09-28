@@ -1,5 +1,5 @@
 {:id :isaac.agent,
- :version "0.1.86",
+ :version "0.1.87",
  :builtin? true,
  :factory isaac.agent.module/create-module,
  :berths
@@ -64,15 +64,15 @@
                  :key-spec {:type :keyword},
                  :value-spec
                  {:type :map, :schema {:template {:type :map}}}}},
-                :turnstiles
+                :resource-pool-types
                 {:description
-                 "Named turnstile factories. Modules contribute by name; submitters reference names as data. Registration is not activation.",
+                 "Named resource pool type factories. Modules contribute by name; submitters reference names as data. Registration is not activation.",
                  :schema
                  {:type :map,
                   :key-spec {:type :keyword},
                   :value-spec
                   {:type :map,
-                   :factory isaac.turnstile/register-entry!,
+                   :factory isaac.resource-pool/register-entry!,
                    :schema
                    {:factory
                     {:type :symbol, :validations [:present?]}}}}},
@@ -224,6 +224,15 @@
     {:suspend-timeout-ms
      {:type :int,
       :description "Milliseconds to wait while suspending active turns"}}}},
+  :resource-pools
+  {:entity-dir "resource-pools"
+   :merge-root-entity? true
+   :schema {:type :map :key-spec {:type :string}
+            :value-spec {:type :map
+                         :schema {:type {:type :keyword}
+                                  :window {:type :string}
+                                  :name {:type :string}
+                                  :limit {:type :int}}}}},
   :providers
   {:entity-dir "providers",
    :merge-root-entity? true,
@@ -790,6 +799,7 @@
   :crew-model-aliases
   {:fn isaac.config.checks/check-crew-model-aliases},
   :manifest-refs {:fn isaac.config.checks/check-manifest-refs},
+  :resource-pools {:fn isaac.config.checks/check-resource-pools}
   :resolved-providers
   {:fn isaac.config.checks/check-resolved-providers}
   :tool-allow-tokens

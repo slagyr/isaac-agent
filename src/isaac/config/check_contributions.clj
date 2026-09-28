@@ -8,6 +8,7 @@
    :crew-broad-directories  {:fn 'isaac.config.checks/check-crew-broad-directories}
    :crew-model-aliases      {:fn 'isaac.config.checks/check-crew-model-aliases}
    :manifest-refs           {:fn 'isaac.config.checks/check-manifest-refs}
+   :resource-pools          {:fn 'isaac.config.checks/check-resource-pools}
    :resolved-providers      {:fn 'isaac.config.checks/check-resolved-providers}
    :session-policy          {:fn 'isaac.config.checks/check-session-policy}
    :tool-allow-tokens       {:fn 'isaac.config.checks/check-tool-allow-tokens}

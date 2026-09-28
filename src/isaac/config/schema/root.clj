@@ -80,7 +80,7 @@
   []
   nil)
 
-(def ^:private entity-collections #{:crew :hail :models :providers})
+(def ^:private entity-collections #{:crew :hail :models :providers :resource-pools})
 
 (defn- normalize-template-path [path-str]
   (let [segments (path/parse path-str)]

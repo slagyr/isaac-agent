@@ -3,6 +3,9 @@
     [clojure.string :as str]
     [gherclj.core :as g :refer [defgiven defwhen helper!]]
     [isaac.foundation.cli-steps :as fcli]
+    [isaac.foundation.fs-steps :as fsteps]
+    [isaac.config.api :as config]
+    [isaac.config.loader :as loader]
     [isaac.fs :as fs]
     [isaac.nexus :as nexus]
     [isaac.scheduler.runtime :as scheduler]
@@ -10,7 +13,7 @@
     [isaac.tool.memory :as memory]
     [isaac.turn.queue :as queue]
     [isaac.turn.worker :as worker]
-    [isaac.turnstile :as turnstile])
+    [isaac.resource-pool :as pool])
   (:import
     (java.time Instant)))
 
@@ -63,7 +66,7 @@
       (g/assoc! :held-id held-id))))
 
 (defn- ensure-wake-hook! []
-  (turnstile/set-wake-hook! worker/tick!))
+  (pool/set-wake-hook! worker/tick!))
 
 (defn turn-queue-ticks-at [iso]
   (ensure-wake-hook!)
@@ -78,6 +81,7 @@
             (binding [memory/*now* now
                       queue/*root* (root-dir)]
               (nexus/-with-nested-nexus {:root (root-dir) :fs (mem-fs)}
+                (config/dangerously-install-config! (g/get :feature-config) "feature: queue tick")
                 (worker/tick! {:now now})))))))))
 
 (defonce ^:private live-scheduler* (atom nil))
@@ -114,21 +118,25 @@
                     (swap! scripted-gates* assoc name fresh)
                     fresh))]
     (swap! scripted-gates* assoc-in [name :limit] n)
-    (reify turnstile/Turnstile
-      (admit? [_ _ctx]
+    (reify pool/ResourcePool
+      (try-acquire [_ _ctx]
         (if (false? @(:open? state))
-          {:status :hold :message (str name " closed")}
+          :busy
           (if (< @(:inflight state) (:limit state))
-            (do (swap! (:inflight state) inc) :pass)
-            {:status :hold :message (str name " full")})))
+            (do (swap! (:inflight state) inc) (pool/->ReleaseToken name))
+            :busy)))
       (release! [_ _token]
         (swap! (:inflight state) #(max 0 (dec %)))))))
 
-(defn register-admits-n-turnstile [name n]
+(defn register-admits-n-resource-pool [name n]
   (let [n (if (string? n) (parse-long n) n)]
-    (turnstile/register! (keyword name) (fn [_] (scripted-gate name n)))))
+    (pool/register! :scripted (fn [{:keys [name limit]}] (scripted-gate name limit)))
+    (fsteps/isaac-edn-file-exists
+      (str "config/resource-pools/" name ".edn")
+      {:headers ["path" "value"]
+       :rows [["type" ":scripted"] ["name" (pr-str name)] ["limit" (str n)]]})))
 
-(defn close-turnstile [name]
+(defn close-resource-pool [name]
   (let [state (or (get @scripted-gates* name)
                   (let [fresh {:open?     (atom false)
                                :inflight  (atom 0)
@@ -137,17 +145,20 @@
                     fresh))]
     (reset! (:open? state) false)))
 
-(defn open-turnstile [name]
+(defn open-resource-pool [name]
   (ensure-wake-hook!)
   (when-let [state (get @scripted-gates* name)]
     (reset! (:open? state) true)
-    (turnstile/release-all! [{:turnstile (scripted-gate name (:limit state))
-                              :token     (turnstile/->ReleaseToken "open")}])))
+    (session-steps/with-feature-config! "resource pool opened"
+      (fn []
+        (config/dangerously-install-config! (g/get :feature-config) "feature: pool opened")
+        (pool/release-all! [{:resource-pool (scripted-gate name (:limit state))
+                             :token (pool/->ReleaseToken "open")}])))))
 
-(defn user-sends-with-turnstiles [content key-str turnstiles]
+(defn user-sends-with-resource-pools [content key-str resource-pools]
   (ensure-wake-hook!)
   (session-steps/user-sends-on-session
-    content key-str (mapv turnstile/parse-ref (str/split turnstiles #",\s*"))))
+    content key-str (mapv keyword (str/split resource-pools #",\s*"))))
 
 (g/after-scenario
   (fn []
@@ -155,7 +166,7 @@
     (g/dissoc! :held-id)
     (shutdown-live-scheduler!)
     (g/dissoc! :scheduler)
-    (turnstile/set-wake-hook! nil)))
+    (pool/set-wake-hook! nil)))
 
 (defwhen #"the turn queue ticks at \"([^\"]+)\"" isaac.turn.queue-steps/turn-queue-ticks-at)
 
@@ -163,12 +174,12 @@
   isaac.turn.queue-steps/weather-sweep-started
   "Starts the turn worker on a live shared scheduler so its tasks can be read.")
 
-(defgiven #"a turnstile \"([^\"]+)\" is registered that admits (\d+) at a time"
-  isaac.turn.queue-steps/register-admits-n-turnstile)
+(defgiven #"a scripted resource pool \"([^\"]+)\" admits (\d+) turn at a time"
+  isaac.turn.queue-steps/register-admits-n-resource-pool)
 
-(defgiven #"turnstile \"([^\"]+)\" is closed" isaac.turn.queue-steps/close-turnstile)
+(defgiven #"resource pool \"([^\"]+)\" is closed" isaac.turn.queue-steps/close-resource-pool)
 
-(defwhen #"turnstile \"([^\"]+)\" is opened" isaac.turn.queue-steps/open-turnstile)
+(defwhen #"resource pool \"([^\"]+)\" is opened" isaac.turn.queue-steps/open-resource-pool)
 
-(defwhen #"the user sends \"(.+)\" on session \"([^\"]+)\" with turnstiles \"([^\"]+)\""
-  isaac.turn.queue-steps/user-sends-with-turnstiles)
+(defwhen #"the user sends \"(.+)\" on session \"([^\"]+)\" with resource pools \"([^\"]+)\""
+  isaac.turn.queue-steps/user-sends-with-resource-pools)

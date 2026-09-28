@@ -11,7 +11,7 @@
     [isaac.spec-helper :as helper]
     [isaac.turn.queue :as queue]
     [isaac.turn.worker :as sut]
-    [isaac.turnstile :as turnstile]
+    [isaac.resource-pool :as pool]
     [speclj.core :refer :all])
   (:import
     (java.time Instant)))
@@ -29,7 +29,7 @@
     (queue/enqueue! {:id         "berth-1"
                      :session    "harbor"
                      :input      "Leave harbor"
-                     :turnstiles [[:tide "22:00-06:00"]]
+                     :resource-pools [:night-watch]
                      :state      :held})
     (let [ran (atom [])]
       (with-redefs [bridge/dispatch! (fn [charge]
@@ -43,7 +43,7 @@
     (queue/enqueue! {:id         "berth-1"
                      :session    "harbor"
                      :input      "Leave harbor"
-                     :turnstiles [[:tide "22:00-06:00"]]
+                     :resource-pools [:night-watch]
                      :state      :held})
     (let [ran (atom [])]
       (with-redefs [bridge/dispatch! (fn [charge]
@@ -57,9 +57,9 @@
 
   (it "runs every held turn whose stack now passes, in submit order"
     (queue/enqueue! {:id "later" :session "quay" :input "three"
-                     :turnstiles [] :created-at "2026-03-01T14:00:02Z"})
+                     :resource-pools [] :created-at "2026-03-01T14:00:02Z"})
     (queue/enqueue! {:id "first" :session "jetty" :input "two"
-                     :turnstiles [] :created-at "2026-03-01T14:00:01Z"})
+                     :resource-pools [] :created-at "2026-03-01T14:00:01Z"})
     (let [ran (atom [])]
       (with-redefs [bridge/dispatch! (fn [charge]
                                        (swap! ran conj (:session-key charge))
@@ -69,7 +69,7 @@
       (should= [] (queue/list-held))))
 
   (it "runs a wake requested while another tick is dispatching"
-    (queue/enqueue! {:id "first" :session "jetty" :input "one" :turnstiles []})
+    (queue/enqueue! {:id "first" :session "jetty" :input "one" :resource-pools []})
     (let [started (promise)
           release (promise)
           ran     (atom [])]
@@ -81,7 +81,7 @@
                                        {})]
         (let [active-tick (future (sut/tick!))]
           @started
-          (queue/enqueue! {:id "second" :session "quay" :input "two" :turnstiles []})
+          (queue/enqueue! {:id "second" :session "quay" :input "two" :resource-pools []})
           (sut/tick!)
           (deliver release true)
           (deref active-tick 1000 ::timeout)))
@@ -102,7 +102,7 @@
     (queue/enqueue! {:id         "berth-1"
                      :session    "harbor"
                      :input      "Leave harbor"
-                     :turnstiles [[:tide "22:00-06:00"]]
+                     :resource-pools [:night-watch]
                      :state      :held})
     (with-redefs [bridge/dispatch! (fn [_]
                                      {:held true :id "berth-1" :reason :hold})]
@@ -113,7 +113,7 @@
     (queue/enqueue! {:id         "berth-1"
                      :session    "harbor"
                      :input      "Leave harbor"
-                     :turnstiles [[:tide "22:00-06:00"]]
+                     :resource-pools [:night-watch]
                      :state      :held})
     (let [seen (atom nil)
           cfg  {:defaults {:frequencies {:crew "main"} :crew {:model "echo"}}
@@ -145,7 +145,7 @@
     (queue/enqueue! {:id         "berth-1"
                      :session    "harbor"
                      :input      "Leave harbor"
-                     :turnstiles [[:tide "22:00-06:00"]]
+                     :resource-pools [:night-watch]
                      :state      :held})
     (let [seen (atom nil)]
       (with-redefs [loader/snapshot  (fn [_] nil)
@@ -171,7 +171,7 @@
             (should= [] (mapv :id (scheduler/list-tasks sched))))
           (finally
             (scheduler/stop! sched)
-            (turnstile/set-wake-hook! nil))))))
+            (pool/set-wake-hook! nil))))))
 
   (it "sweeps weather on its own tick"
     (let [swept (atom [])
@@ -193,16 +193,16 @@
       (should= [] @swept)))
 
   (it "does not wake parked turns on token release until start!"
-    (turnstile/set-wake-hook! nil)
+    (pool/set-wake-hook! nil)
     (let [ran (atom [])]
       (with-redefs [bridge/dispatch! (fn [charge]
                                        (swap! ran conj charge)
                                        {:content "should not run"})]
         (queue/enqueue! {:id "orphan" :session "harbor" :input "stay parked" :state :held})
-        (let [gate (reify turnstile/Turnstile
-                     (admit? [_ _] :pass)
+        (let [gate (reify pool/ResourcePool
+                     (try-acquire [_ _] (pool/->ReleaseToken "lease"))
                      (release! [_ _] nil))
-              {:keys [tokens]} (turnstile/admit-all! [gate] {})]
-          (turnstile/release-all! tokens)))
+              {:keys [leases]} (pool/acquire-all! [{:name :dock :pool gate}] {})]
+          (pool/release-all! leases)))
       (should= [] @ran)
       (should= "orphan" (:id (queue/read-held "orphan"))))))

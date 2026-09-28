@@ -16,27 +16,19 @@
 (defn- derive-root [opts]
   (root/default-root opts))
 
-(defn- format-turnstiles [refs]
-  (->> refs
-       (map (fn [ts-ref]
-              (cond
-                (sequential? ts-ref) (str (name (first ts-ref))
-                                          (when (seq (rest ts-ref))
-                                            (str ":" (str/join "/" (rest ts-ref)))))
-                (keyword? ts-ref) (name ts-ref)
-                :else (str ts-ref))))
-       (str/join " ")))
+(defn- format-resource-pools [names]
+  (str/join " " (map name names)))
 
 (defn- held->row [record]
   {:id         (:id record)
    :session    (or (:session record) "")
-   :turnstiles (format-turnstiles (:turnstiles record))
+   :resource-pools (format-resource-pools (:resource-pools record))
    :state      (name (or (:state record) :held))})
 
 (defn- format-held [rows]
   (table/render {:columns [{:key :id         :header "ID"         :align :left}
                            {:key :session    :header "SESSION"    :align :left}
-                           {:key :turnstiles :header "TURNSTILES" :align :left}
+                           {:key :resource-pools :header "RESOURCE-POOLS" :align :left}
                            {:key :state      :header "STATE"      :align :left}]
                  :rows    rows
                  :zebra?  true

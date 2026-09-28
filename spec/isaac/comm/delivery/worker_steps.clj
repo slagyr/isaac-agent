@@ -11,7 +11,7 @@
     [isaac.nexus :as nexus]
     [isaac.scheduler.runtime :as scheduler]
     [isaac.step-tables :as match]
-    [isaac.turnstile :as turnstile])
+    [isaac.resource-pool :as pool])
   (:import
     (java.time Instant)))
 
@@ -100,7 +100,7 @@
     (worker/stop! {:scheduler scheduler :task-id :delivery/tick})
     (scheduler/shutdown! scheduler)
     (reset! live-scheduler* nil))
-  (turnstile/set-wake-hook! nil))
+  (pool/set-wake-hook! nil))
 
 (defn isaac-system-started []
   (shutdown-live-scheduler!)

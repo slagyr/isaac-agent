@@ -27,7 +27,7 @@
     [isaac.slash.builtin :as slash-builtin]
     [isaac.slash.registry :as slash-registry]
     [isaac.turn.queue :as turn-queue]
-    [isaac.turnstile :as turnstile]))
+    [isaac.resource-pool :as pool]))
 
 ;; region ----- Helpers -----
 
@@ -60,7 +60,7 @@
   (let [record (binding [turn-queue/*root* (charge-root charge)]
                  (turn-queue/enqueue! {:session      (:session-key charge)
                                        :input        (:input charge)
-                                       :turnstiles   (:turnstiles charge)
+                                       :resource-pools   (:resource-pools charge)
                                        :crew         (:crew charge)
                                        :origin       (:origin charge)
                                        :cwd          (:cwd charge)
@@ -233,9 +233,9 @@
                 resolved
                 {:charge (assoc charge :observers (:observers resolved))})))))
 
-(defn- turnstile-refuse-message [decision]
+(defn- resource-pool-refuse-message [decision]
   (or (:message decision)
-      (str "turnstile refused: "
+      (str "resource pool refused: "
            (let [reason (:reason decision)]
              (cond
                (keyword? reason) (name reason)
@@ -249,18 +249,8 @@
         (when-let [sess (request-policy charge)]
           (policy/append-message! sess session-key {:role "user" :content input}))))))
 
-(defn- format-turnstile-refs [refs]
-  (->> refs
-       (map (fn [ts-ref]
-              (cond
-                (satisfies? turnstile/Turnstile ts-ref) nil
-                (sequential? ts-ref) (str (name (first ts-ref))
-                                          (when (seq (rest ts-ref))
-                                            (str ":" (str/join "/" (rest ts-ref)))))
-                (keyword? ts-ref) (name ts-ref)
-                :else (str ts-ref))))
-       (remove nil?)
-       vec))
+(defn- format-resource-pool-refs [names]
+  (mapv name names))
 
 (defn- charge-root [charge]
   (or (:root charge)
@@ -274,7 +264,7 @@
                  (turn-queue/enqueue!
                    (cond-> {:session    (:session-key charge)
                             :input      (:input charge)
-                            :turnstiles (:turnstiles charge)
+                            :resource-pools (:resource-pools charge)
                             :crew       (:crew charge)
                             :origin     (:origin charge)
                             :cwd        (:cwd charge)
@@ -284,45 +274,37 @@
                             :state      :held
                             :input-persisted? true}
                      (:held-id charge) (assoc :id (:held-id charge)))))
-        refs   (format-turnstile-refs (:turnstiles charge))
-        label  (or (first refs) "turnstile")]
+        refs   (format-resource-pool-refs (:resource-pools charge))
+        label  (or (first refs) "resource pool")]
     {:held    true
      :id      (:id record)
      :reason  :hold
      :message (or (:message decision) (str label " held"))
-     :turnstiles refs}))
+     :resource-pools refs}))
 
 (defn- maybe-log-gateless! [charge]
-  (when (and (empty? (:turnstiles charge))
-             (seq (turnstile/registered-names)))
-    (log/info :turnstile/gateless
+  (when (and (empty? (:resource-pools charge))
+             (seq (pool/registered-names)))
+    (log/info :pool/gateless
               :session (:session-key charge)
               :message "gateless turn in a registered worksite")))
 
-(defn- admit-charge-turnstiles [charge]
-  (let [refs (:turnstiles charge)]
-    (cond
-      (empty? refs)
-      (do (maybe-log-gateless! charge)
-          {:charge charge})
-
-      :else
-      (let [resolved (if (every? #(satisfies? turnstile/Turnstile %) refs)
-                       {:turnstiles refs}
-                       (turnstile/resolve-submitted refs))]
+(defn- admit-charge-resource-pools [charge]
+  (let [names (:resource-pools charge)]
+    (if (empty? names)
+      {:charge charge}
+      (let [resolved (pool/resolve-submitted (:config charge) names)]
         (if (:error resolved)
           resolved
-          (let [decision (turnstile/admit-all! (:turnstiles resolved)
-                                               {:session-key (:session-key charge)
-                                                :cwd         (:cwd charge)
-                                                :crew        (:crew charge)
-                                                :origin      (:origin charge)
-                                                :now         (or (:now charge) (memory/now))})]
+          (let [decision (pool/acquire-all! (:resource-pools resolved)
+                                            {:session-key (:session-key charge)
+                                             :cwd (:cwd charge)
+                                             :crew (:crew charge)
+                                             :origin (:origin charge)
+                                             :now (or (:now charge) (memory/now))})]
             (if (:error decision)
-              {:error   (:error decision)
-               :reason  (:reason decision)
-               :message (turnstile-refuse-message decision)}
-              {:charge (assoc charge :turnstile-tokens (:tokens decision))})))))))
+              decision
+              {:charge (assoc charge :pool-leases (:leases decision))})))))))
 
 (declare dispatch-matched-charge!)
 
@@ -345,7 +327,7 @@
            :message (:message obs-check)
            :ref     (:ref obs-check)}
           (let [charge   (or (:charge obs-check) charge)
-                ts-check (admit-charge-turnstiles charge)]
+                ts-check (admit-charge-resource-pools charge)]
             (cond
               (and (:error ts-check) (= :hold (:reason ts-check)))
               (park-held-charge! charge ts-check)
@@ -380,7 +362,8 @@
                                         (seq (turn-queue/waiting-groups session-key)))
                                   (isolate-cleanup! :drain-waiting-session
                                                     #((requiring-resolve 'isaac.turn.worker/tick!)))))))))
-                      (wait-for-session! charge)))
+                      (do (pool/release-all! (:pool-leases charge))
+                          (wait-for-session! (dissoc charge :pool-leases)))))
                   (turn/run-turn! (assoc charge :session-policy (request-policy charge)))))))))
       result)))
 

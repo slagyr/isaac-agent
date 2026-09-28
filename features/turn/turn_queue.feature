@@ -23,7 +23,6 @@ Feature: Turn-request queue — the waiting room in front of the resource pools
       | type   | :tide         |
       | window | "22:00-06:00" |
 
-  @wip
   Scenario: a tide pool hold parks the turn and the clock tick runs it
     Given the current time is "2026-03-01T14:00:00"
     And the following model responses are queued:
@@ -49,7 +48,6 @@ Feature: Turn-request queue — the waiting room in front of the resource pools
     When isaac is run with "turns list"
     Then the stdout does not contain "harbor"
 
-  @wip
   Scenario: a held turn survives a restart and still runs on wake
     Given the current time is "2026-03-01T14:00:00"
     And the following model responses are queued:
@@ -62,7 +60,6 @@ Feature: Turn-request queue — the waiting room in front of the resource pools
       | type    | message.role | message.content |
       | message | assistant    | Anchor up       |
 
-  @wip
   Scenario: a closed pool parks the turn and opening it wakes the queue
     Given a scripted resource pool "dock" admits 1 turn at a time
     And resource pool "dock" is closed
@@ -80,7 +77,6 @@ Feature: Turn-request queue — the waiting room in front of the resource pools
     When isaac is run with "turns list"
     Then the stdout does not contain "harbor"
 
-  @wip
   Scenario: a finished turn's release admits the next held turn in submit order
     Given a scripted resource pool "dock" admits 1 turn at a time
     And the following sessions exist:
@@ -107,7 +103,6 @@ Feature: Turn-request queue — the waiting room in front of the resource pools
       | type    | message.role | message.content |
       | message | assistant    | Third           |
 
-  @wip
   Scenario: turns drop evicts a held turn and it never runs
     Given the current time is "2026-03-01T14:00:00"
     And the following model responses are queued:

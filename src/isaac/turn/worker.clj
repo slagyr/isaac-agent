@@ -13,7 +13,7 @@
     [isaac.session.store.spi :as store]
     [isaac.tool.memory :as memory]
     [isaac.turn.queue :as queue]
-    [isaac.turnstile :as turnstile]))
+    [isaac.resource-pool :as pool]))
 
 (def default-tick-ms 10000)
 
@@ -24,7 +24,8 @@
 (defonce ^:private tick-state* (atom :idle))
 
 (defn- wake-config [record]
-  (or (loader/snapshot "turn-queue wake — resolve parked request against live config")
+  (or (let [snapshot (loader/snapshot "turn-queue wake — resolve parked request against live config")]
+        (when (seq snapshot) snapshot))
       (when-let [root (or (:root record) (nexus/get :root) (loader/root))]
         (try
           (loader/load-config! root (or (nexus/get :fs) (fs/instance))
@@ -46,7 +47,7 @@
                   (:crew record) (assoc :crew (:crew record))
                   (queue/live-comm (:id record)) (assoc :comm (queue/live-comm (:id record)))
                   (:observers record) (assoc :observers (:observers record))
-                  (:turnstiles record) (assoc :turnstiles (:turnstiles record))
+                  (:resource-pools record) (assoc :resource-pools (:resource-pools record))
                   (:cwd record) (assoc :cwd (:cwd record))
                   (:input-persisted? record) (assoc :input-persisted? true))
         built   (try
@@ -165,7 +166,7 @@
                          {:id      :turn/sweep-weather
                           :trigger {:kind :interval :ms sweep-tick-ms}
                           :handler (fn [_] (sweep-tick! {}))})
-    (turnstile/set-wake-hook! tick!)
+    (pool/set-wake-hook! tick!)
     {:scheduler      shared-scheduler
      :task-id        :turn.queue/tick
      :sweep-task-id  :turn/sweep-weather}))
@@ -175,4 +176,4 @@
     (scheduler/cancel! scheduler task-id)
     (when sweep-task-id
       (scheduler/cancel! scheduler sweep-task-id))
-    (turnstile/set-wake-hook! nil)))
+    (pool/set-wake-hook! nil)))

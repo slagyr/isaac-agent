@@ -10,7 +10,7 @@
     [isaac.nexus :as nexus]
     [isaac.scheduler.runtime :as scheduler]
     [isaac.spec-helper :as helper]
-    [isaac.turnstile :as turnstile]
+    [isaac.resource-pool :as pool]
     [speclj.core :refer :all])
   (:import
     (java.time Instant)))
@@ -194,7 +194,7 @@
             (sut/stop! handle))
           (finally
             (scheduler/stop! scheduler)
-            (turnstile/set-wake-hook! nil))))))
+            (pool/set-wake-hook! nil))))))
 
   (it "stop! cancels only the delivery tick"
     (nexus/-with-nexus {:root "/test/isaac" :fs (fs/mem-fs)}
@@ -207,5 +207,5 @@
             (should= [] (scheduler/list-tasks scheduler)))
           (finally
             (scheduler/stop! scheduler)
-            (turnstile/set-wake-hook! nil))))))
+            (pool/set-wake-hook! nil))))))
   )

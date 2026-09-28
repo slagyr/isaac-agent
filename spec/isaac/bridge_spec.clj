@@ -15,7 +15,7 @@
     [isaac.session.spec-helper :as helper]
     [isaac.nexus :as nexus]
     [isaac.tool.registry :as tool-registry]
-    [isaac.turnstile :as turnstile]
+    [isaac.resource-pool :as pool]
     [speclj.core :refer :all]))
 
 (defn- slash-charge
@@ -331,7 +331,7 @@
           (let [result (bridge/dispatch! {:charge/type    :charge
                                           :session-key    "testuser"
                                           :input          "hello"
-                                          :observers      [[:foghorn "xyz"]]
+                                          :observers      [:foghorn]
                                           :session-store  (store/registered-store)
                                           :comm           nil})]
             (should= :unknown-observer (:error result))
@@ -339,7 +339,7 @@
             (should (str/includes? (:message result) "unknown observer"))))
         (should-not @called?)))
 
-    (it "refuses unknown submitted turnstiles before running the turn"
+    (it "refuses unknown submitted resource-pools before running the turn"
       (let [called? (atom false)]
         (with-redefs [single-turn/run-turn! (fn [_]
                                               (reset! called? true)
@@ -347,31 +347,12 @@
           (let [result (bridge/dispatch! {:charge/type    :charge
                                           :session-key    "testuser"
                                           :input          "hello"
-                                          :turnstiles     [[:foghorn "xyz"]]
+                                          :resource-pools     [:foghorn]
                                           :session-store  (store/registered-store)
                                           :comm           nil})]
-            (should= :unknown-turnstile (:error result))
+            (should= :unknown-resource-pool (:error result))
             (should (str/includes? (:message result) "foghorn"))
-            (should (str/includes? (:message result) "unknown turnstile"))))
-        (should-not @called?)))
-
-    (it "refuses a turn whose turnstile returns {:refuse reason}"
-      (let [called? (atom false)
-            gate    (reify turnstile/Turnstile
-                      (admit? [_ _] {:refuse :member-locked})
-                      (release! [_ _]))]
-        (with-redefs [single-turn/run-turn! (fn [_]
-                                              (reset! called? true)
-                                              {:content "should not run"})]
-          (let [result (bridge/dispatch! {:charge/type    :charge
-                                          :session-key    "testuser"
-                                          :input          "hello"
-                                          :turnstiles     [gate]
-                                          :session-store  (store/registered-store)
-                                          :comm           nil})]
-            (should= :refused (:error result))
-            (should= :member-locked (:reason result))
-            (should (str/includes? (:message result) "member-locked"))))
+            (should (str/includes? (:message result) "unknown resource pool"))))
         (should-not @called?)))
 
     (it "parks a tide hold, names tide and the window, and does not run the turn"
@@ -384,15 +365,15 @@
                                           :session-key    "testuser"
                                           :input          "hello"
                                           :root           *root*
-                                          :turnstiles     [[:tide "22:00-06:00"]]
+                                          :config         {:resource-pools {"night-watch" {:type :tide :window "22:00-06:00"}}}
+                                          :resource-pools     [:night-watch]
                                           :now            (java.time.Instant/parse "2026-03-01T14:00:00Z")
                                           :session-store  (store/registered-store)
                                           :comm           nil})]
             (should (:held result))
             (should (string? (:id result)))
             (should= :hold (:reason result))
-            (should (str/includes? (:message result) "tide"))
-            (should (str/includes? (:message result) "22:00-06:00"))
+            (should (str/includes? (:message result) "night-watch"))
             (should-be-nil (:error result))))
         (should-not @called?)))
 

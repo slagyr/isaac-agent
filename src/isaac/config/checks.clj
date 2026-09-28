@@ -11,6 +11,7 @@
     [isaac.config.root :as root]
     [isaac.config.validation :as validation]
     [isaac.session.policy :as session-policy]
+    [isaac.resource-pool :as pool]
     [isaac.tool.fs-bounds :as fs-bounds]
     [isaac.tool.names :as names]))
 
@@ -18,7 +19,7 @@
   (schema-base/->id value))
 
 (def ^:private manifest-schema-kinds
-  [:isaac.agent/comm :isaac.agent/provider-template :isaac.agent/slash-commands :isaac.agent/tools :isaac.agent/turnstiles])
+  [:isaac.agent/comm :isaac.agent/provider-template :isaac.agent/slash-commands :isaac.agent/tools :isaac.agent/resource-pool-types])
 
 (defn- verify-manifest-schema-fragment [module-id field-schema]
   (try
@@ -266,3 +267,23 @@
                                          crews)))
                                raw-crews)]
     {:errors (vec (distinct (concat default-errors crew-errors))) :warnings []}))
+
+(defn check-resource-pools
+  "Validate named pool instances against registered and module-contributed types."
+  [{:keys [config module-index]}]
+  (pool/ensure-builtins!)
+  (let [known (into (pool/registered-names)
+                    (mapcat #(keys (get-in % [:manifest :isaac.agent/resource-pool-types])))
+                    (vals module-index))]
+    {:errors (vec
+               (mapcat (fn [[pool-name instance]]
+                         (let [path (str "resource-pools." (->id pool-name))
+                               type (:type instance)]
+                           (cond
+                             (not (contains? known type))
+                             [{:key path :value (str "unknown resource pool type " (pr-str type))}]
+                             (and (= :tide type) (not (pool/valid-window? (:window instance))))
+                             [{:key (str path ".window") :value "window must be HH:mm-HH:mm"}]
+                             :else [])))
+                       (:resource-pools config)))
+     :warnings []}))

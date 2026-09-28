@@ -1,4 +1,3 @@
-@wip
 Feature: Resource pools
   A resource pool admits a turn when it can lease the turn what it needs.
   Modules contribute pool TYPES through :isaac.agent/resource-pool-types;

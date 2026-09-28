@@ -12,7 +12,7 @@
     [isaac.session.spec-helper :as helper]
     [isaac.session.store.spi :as store]
     [isaac.tool.builtin :as builtin]
-    [isaac.turnstile :as turnstile]
+    [isaac.resource-pool :as pool]
     [speclj.core :refer :all]))
 
 (def crew-name marigold/captain)
@@ -290,8 +290,8 @@
             (should= 0 (sut/run (assoc base-opts :message "Hi" :observer ["lookout"])))))
         (should (str/includes? @seen-during "Land ho ahead"))))
 
-    (it "forwards --turnstile worksite:chart-room on the charge"
-      (turnstile/register! :worksite (fn [_] :worksite-impl))
+    (it "forwards configured --pool dock as a named instance"
+      (pool/register! :scripted (constantly :scripted-impl))
       (try
         (let [captured (atom nil)]
           (with-redefs [bridge/dispatch! (fn [charge]
@@ -299,25 +299,26 @@
                                            (comm/on-chatter (:comm charge) (:session-key charge) nil "Ok")
                                            {})]
             (with-out-str
-              (should= 0 (sut/run (assoc base-opts :message "Hi" :turnstile ["worksite:chart-room"])))))
-          (should= [[:worksite "chart-room"]] (:turnstiles @captured)))
-        (finally
-          (turnstile/unregister! :worksite))))
+              (should= 0 (sut/run (assoc base-opts :message "Hi" :pool ["dock"]
+                                               :config (assoc synthetic-config :resource-pools {"dock" {:type :scripted}}))))))
+          (should= [:dock] (:resource-pools @captured)))
+        (finally (pool/unregister! :scripted))))
 
-    (it "prints held: <id> (<turnstile> <reason>) and returns 0 when dispatch parks"
+    (it "prints held: <id> (<resource-pool> <reason>) and returns 0 when dispatch parks"
       (with-redefs [bridge/dispatch! (fn [_]
                                        {:held       true
                                         :id         "c62b1e28"
                                         :reason     :hold
                                         :message    "tide 22:00-06:00 held"
-                                        :turnstiles ["tide:22:00-06:00"]})]
+                                        :resource-pools ["tide:22:00-06:00"]})]
         (let [output (with-out-str
                        (should= 0 (sut/run (assoc base-opts :message "Leave harbor"
-                                                  :turnstile ["tide:22:00-06:00"]))))]
+                                                  :pool ["night-watch"]
+                                                  :config (assoc synthetic-config :resource-pools {"night-watch" {:type :tide :window "22:00-06:00"}})))))]
           (should (str/includes? output "held: c62b1e28"))
           (should (str/includes? output "tide 22:00-06:00")))))
 
-    (it "refuses unknown --turnstile names before dispatch"
+    (it "refuses unknown --resource-pool names before dispatch"
       (let [dispatched? (atom false)]
         (with-redefs [bridge/dispatch! (fn [_]
                                          (reset! dispatched? true)
@@ -325,9 +326,9 @@
           (let [err (java.io.StringWriter.)]
             (binding [*err* err]
               (with-out-str
-                (should= 1 (sut/run (assoc base-opts :message "Hi" :turnstile ["foghorn:xyz"])))))
+                (should= 1 (sut/run (assoc base-opts :message "Hi" :pool ["foghorn"])))))
             (should (str/includes? (str err) "foghorn"))
-            (should (str/includes? (str err) "unknown turnstile"))))
+            (should (str/includes? (str err) "unknown resource pool"))))
         (should-not @dispatched?)))
 
     (it "refuses unknown --observer names before dispatch"

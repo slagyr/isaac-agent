@@ -69,6 +69,11 @@
         (should= cfg (#'sut/loaded-config))
         (should= 2 @loads*))))
 
+  (it "keeps named resource pool instances when a feature turn normalizes config"
+    (let [cfg {:resource-pools {"dock" {:type :scripted :limit 1}}}]
+      (should= (:resource-pools cfg)
+               (:resource-pools (sut/normalize-feature-config cfg)))))
+
   (it "parses a tools.allow EDN vector as keywords, not a comma-split of the brackets"
     (should= [:exec/run] (#'ffs/parse-isaac-value "config/crew/main.edn" "tools.allow" "[:exec/run]"))
     (should= [:memory/*] (#'ffs/parse-isaac-value "config/crew/main.edn" "tools.allow" "[:memory/*]")))

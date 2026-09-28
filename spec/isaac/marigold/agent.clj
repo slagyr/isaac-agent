@@ -54,11 +54,11 @@
                                               :schema      {:type       :map
                                                             :key-spec   {:type :keyword}
                                                             :value-spec {:type :map}}}
-             :isaac.agent/turnstiles        {:description "Named turnstile factories."
+             :isaac.agent/resource-pool-types        {:description "Named resource-pool factories."
                                               :schema      {:type       :map
                                                             :key-spec   {:type :keyword}
                                                             :value-spec {:type    :map
-                                                                         :factory 'isaac.turnstile/register-entry!
+                                                                         :factory 'isaac.pool/register-entry!
                                                                          :schema  {:factory {:type :symbol :validations [:present?]}}}}}}
 
    :isaac.agent/llm-api {(keyword marigold/helm-api)   {:factory 'isaac.llm.api.grover/make}

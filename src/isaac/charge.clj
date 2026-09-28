@@ -39,7 +39,7 @@
             :origin            {:type :ignore :description "Inbound origin metadata"}
             :coalesce-key      {:type :string :description "Waiting-room grouping key"}
             :observers         {:type :ignore :description "Submitted per-turn observer refs (name or [name params])"}
-            :turnstiles        {:type :ignore :description "Submitted per-turn turnstile refs (name or [name params])"}
+            :resource-pools        {:type :ignore :description "Submitted per-turn resource-pool refs (name or [name params])"}
             :cycle             {:type :ignore :description "Optional per-charge :cycle map overlay (limit, checkpoint-every, prompts)"}
             :charge/type       {:type :keyword :description "Charge type marker (:charge)"}
             :charge/unresolved {:type :boolean :description "True when crew/model could not be resolved"}
@@ -133,7 +133,7 @@
    model) returns a charge marked :charge/unresolved with a :charge/reason
    keyword."
   [{:keys [session-key input comm crew config model model-ref model-override model-cfg
-           provider provider-cfg context-window soul soul-prepend guidance origin coalesce-key observers turnstiles cycle dispatch-error
+           provider provider-cfg context-window soul soul-prepend guidance origin coalesce-key observers resource-pools cycle dispatch-error
            context-mode-override]}]
   (let [config*         (or (when (map? config) config) (loader/snapshot "charge build fallback — no :config passed (entry seed)") {})
         ss*             (store/registered-store)
@@ -161,7 +161,7 @@
                                  :origin        origin}
                                 coalesce-key (assoc :coalesce-key coalesce-key)
                                 (seq observers) (assoc :observers observers)
-                                (seq turnstiles) (assoc :turnstiles turnstiles)
+                                (seq resource-pools) (assoc :resource-pools resource-pools)
                                 (some? cycle) (assoc :cycle cycle))]
     (cond (:error dispatch-error) (unresolved-charge base (:error dispatch-error))
           unknown? (unresolved-charge base :unknown-crew)

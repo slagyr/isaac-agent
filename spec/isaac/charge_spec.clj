@@ -242,13 +242,13 @@
                                  :observers   [:lookout [:foreman "bean-work" "bn-7"]]})]
           (should= [:lookout [:foreman "bean-work" "bn-7"]] (:observers charge)))))
 
-    (it "preserves submitted turnstile refs"
+    (it "preserves submitted resource-pool refs"
       (with-redefs [loader/snapshot              (fn [_] base-cfg)
                     session-ctx/resolve-behavior (fn [_ _] (stub-behavior "main" "You are Atticus." test-model-id 4096))]
         (let [charge (sut/build {:session-key "s1"
                                  :input       "hi"
-                                 :turnstiles  [:worksite [:worksite "chart-room"]]})]
-          (should= [:worksite [:worksite "chart-room"]] (:turnstiles charge)))))
+                                 :resource-pools  [:worksite [:worksite "chart-room"]]})]
+          (should= [:worksite [:worksite "chart-room"]] (:resource-pools charge)))))
 
     (it "preserves charge-level cycle map overlay"
       (with-redefs [loader/snapshot              (fn [_] base-cfg)

@@ -29,7 +29,7 @@
     [isaac.tool.names :as names]
     [isaac.tool.registry :as tool-registry]
     [isaac.turn.queue :as turn-queue]
-    [isaac.turnstile :as turnstile])
+    [isaac.resource-pool :as pool])
   (:import (clojure.lang ExceptionInfo)
            (java.nio.charset StandardCharsets)
            (java.time Instant)))
@@ -1882,7 +1882,7 @@
           (finish! (suspend/interrupt-result session-key))
           (finish! (record-exception! session-key t ctx))))
       (finally
-        (turnstile/release-all! (:turnstile-tokens charge))
+        (pool/release-all! (:pool-leases charge))
         (bridge/end-turn! session-key turn-id)))))
 
 ;; endregion ^^^^^ Public API ^^^^^

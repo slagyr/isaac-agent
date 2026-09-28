@@ -12,6 +12,19 @@
 
 (describe "config checks"
 
+  (context "resource pool instances"
+    (it "rejects an unknown type and a tide instance without its window"
+      (let [{:keys [errors]} (sut/check-resource-pools
+                              {:config {:resource-pools {"drydock" {:type :drydock}
+                                                        "dogwatch" {:type :tide}}}})]
+        (should= 2 (count errors))
+        (should (some #(and (re-find #"drydock" (:key %))
+                           (re-find #"unknown resource pool type" (:value %))) errors))
+        (should (some #(and (re-find #"dogwatch" (:key %))
+                           (re-find #"window" (:value %))) errors))))
+    )
+
+
   (context "check-comm-types"
 
     (it "rejects a comm type that no module contributes"

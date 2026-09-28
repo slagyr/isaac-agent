@@ -52,7 +52,7 @@
     [isaac.tool.memory :as memory]
     [isaac.spec-helper :as helper]
     [isaac.tool.registry :as tool-registry]
-    [isaac.turnstile :as turnstile]
+    [isaac.resource-pool :as pool]
     [isaac.turn.worker :as turn-worker]))
 
 (helper! isaac.session.session-steps)
@@ -84,7 +84,7 @@
     (bridge-cancel/clear!)
     (grover/reset-queue!)
     (grover/clear-own-tool-loop!)
-    (turnstile/set-wake-hook! nil)
+    (pool/set-wake-hook! nil)
     (alter-var-root #'sidecar-store/create-store (constantly real-sidecar-create-store))))
 
 ;; The foundation root setup (isaac.foundation.root-steps/initialize-root!)
@@ -116,7 +116,7 @@
       (remove-method comm-factory/create :telly))
     (tool-registry/clear!)
     (single-turn/clear-async-compactions!)
-    (turnstile/set-wake-hook! nil)
+    (pool/set-wake-hook! nil)
     (let [mem-store (memory-store/create-store abs-dir)]
       (store/register-store! mem-store)
       (alter-var-root #'sidecar-store/create-store (constantly (fn [& _] mem-store))))))
@@ -1222,20 +1222,25 @@
       (when-not (= ::pending outcome)
         (complete-turn! outcome)))))
 
+(defn normalize-feature-config [cfg]
+  ;; Foundation normalizes entity tables from the cached schema. Keep the
+  ;; already-loaded named pools even if that cache predates the pool descriptor.
+  (assoc (loader/normalize-config cfg) :resource-pools (:resource-pools cfg)))
+
 (defn user-sends-on-session
   ([content key-str]
    (user-sends-on-session content key-str nil nil nil))
-  ([content key-str turnstiles]
-   (user-sends-on-session content key-str turnstiles nil nil))
-  ([content key-str turnstiles crew-id]
-   (user-sends-on-session content key-str turnstiles crew-id nil))
-  ([content key-str turnstiles crew-id coalesce-key]
+  ([content key-str resource-pools]
+   (user-sends-on-session content key-str resource-pools nil nil))
+  ([content key-str resource-pools crew-id]
+   (user-sends-on-session content key-str resource-pools crew-id nil))
+  ([content key-str resource-pools crew-id coalesce-key]
    (-prepare-next-send!)
    (g/assoc! :current-key key-str)
    (grover/clear-provider-requests!)
    (isaac.llm.http/clear-outbound-requests!)
    (drive-dispatch/clear-last-request!)
-   (let [cfg           (loader/normalize-config (loaded-config))
+   (let [cfg           (normalize-feature-config (loaded-config))
          _             (config/dangerously-install-config! cfg "spec")
          _             (commit-feature-config!)
          agent-cfg     (current-agent-config)
@@ -1253,7 +1258,7 @@
                                 :comm           channel
                                 :crew           (or crew-id (active-crew-id))
                                 :config         cfg}
-                         (seq turnstiles) (assoc :turnstiles turnstiles)
+                         (seq resource-pools) (assoc :resource-pools resource-pools)
                          coalesce-key (assoc :coalesce-key coalesce-key))]
      (g/assoc! :channel-events events)
      (g/assoc! :memory-comm-events events)

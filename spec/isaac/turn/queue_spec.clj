@@ -18,16 +18,16 @@
   (it "stores a held turn under turns/held"
     (sut/enqueue! {:id         "berth-1"
                    :session    "harbor"
-                   :turnstiles [[:tide "22:00-06:00"]]
+                   :resource-pools [:night-watch]
                    :input      "Leave harbor"
                    :state      :held})
     (should= {:id         "berth-1"
               :session    "harbor"
-              :turnstiles [[:tide "22:00-06:00"]]
+              :resource-pools [:night-watch]
               :input      "Leave harbor"
               :state      :held}
              (select-keys (sut/read-held "berth-1")
-                          [:id :session :turnstiles :input :state])))
+                          [:id :session :resource-pools :input :state])))
 
   (it "stores the held file at turns/held/<id>.edn"
     (sut/enqueue! {:id "berth-1" :session "harbor" :state :held})

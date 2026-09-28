@@ -17,16 +17,16 @@
     (nexus/-with-nexus {:root "/test/isaac" :fs (fs/mem-fs)}
       (example)))
 
-  (it "lists held turns with session, turnstiles, and state"
+  (it "lists held turns with session, resource-pools, and state"
     (queue/enqueue! {:id         "berth-1"
                      :session    "harbor"
-                     :turnstiles [[:tide "22:00-06:00"]]
+                     :resource-pools [:night-watch]
                      :state      :held
                      :created-at "2026-03-01T14:00:00Z"})
     (let [output (with-out-str
                    (should= 0 (sut/run-fn {:_raw-args ["list"] :root "/test/isaac"})))]
       (should (str/includes? output "harbor"))
-      (should (str/includes? output "tide:22:00-06:00"))
+      (should (str/includes? output "night-watch"))
       (should (str/includes? output "held"))))
 
   (it "lists held turns in submit order"
