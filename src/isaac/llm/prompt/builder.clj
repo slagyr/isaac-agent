@@ -374,8 +374,9 @@
 
 (defn- build-messages
   "Compose the messages array: system prompt + history (or compacted summary + post-compaction)."
-  [soul boot-files rules-text skill-menu-text session-name crew nonce guidance origin transcript context-window filter-fn include-tool-batching-hint?]
-  (let [system-text (build-system-text soul boot-files rules-text skill-menu-text session-name crew nonce include-tool-batching-hint?)
+  [soul boot-files rules-text skill-menu-text session-name crew nonce guidance origin preamble transcript context-window filter-fn include-tool-batching-hint?]
+  (let [system-text (cond-> (build-system-text soul boot-files rules-text skill-menu-text session-name crew nonce include-tool-batching-hint?)
+                      (seq preamble) (str "\n\n" preamble))
         compaction  (find-last-compaction transcript)]
     (if compaction
       (let [preserved (when-let [first-kept-entry-id (:firstKeptEntryId compaction)]
@@ -433,9 +434,9 @@
      :tools          - vector of tool definitions (optional)
      :context-window - context window size for tool result truncation (optional)
      :filter-fn      - message filter function (default filter-messages)"
-  [{:keys [boot-files crew guidance model nonce origin rules-text session-name skill-menu-text soul transcript tools context-window filter-fn include-tool-batching-hint?]}]
+  [{:keys [boot-files crew guidance model nonce origin rules-text session-name skill-menu-text soul preamble transcript tools context-window filter-fn include-tool-batching-hint?]}]
   (let [include-hint? (if (nil? include-tool-batching-hint?) true include-tool-batching-hint?)
-        messages (build-messages soul boot-files rules-text skill-menu-text session-name crew nonce guidance origin transcript context-window (or filter-fn filter-messages) include-hint?)]
+        messages (build-messages soul boot-files rules-text skill-menu-text session-name crew nonce guidance origin preamble transcript context-window (or filter-fn filter-messages) include-hint?)]
     (cond-> {:model    model
              :messages messages}
       (seq tools) (assoc :tools (mapv llm-api/wrapped-function-tool tools)))))

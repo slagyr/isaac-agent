@@ -90,7 +90,8 @@
     (assoc result :content output :format (render/chunk-format chunk))))
 
 (defn- autonomous-origin? [origin]
-  (contains? #{:hail :cron} (:kind origin)))
+  (or (contains? #{:hail :cron} (:kind origin))
+      (= :hail (:source origin))))
 
 (defn- prompt-catalog-opts [ctx]
   {:config    (:config ctx)

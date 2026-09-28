@@ -97,7 +97,7 @@
                  :reason :created-at :started-at :finished-at :merged-into]
           :when (contains? record field)]
     (println (str (name field) ": " (display-value (get record field)))))
-  (doseq [[key value] (sort-by (comp str key) (:origin record))]
+  (doseq [[key value] (sort-by (fn [[k _]] [(case k :thread-id 0 :reply-to 1 2) (str k)]) (:origin record))]
     (println (str "origin." (name key) ": " (display-value value)))))
 
 (defn- run-show [opts id]

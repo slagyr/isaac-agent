@@ -654,6 +654,20 @@
         (should= {:kind :hail :hail-id "hail-1"} (:origin @seen))
         (should= "Autonomous hail; the user may not see your reply." (:guidance @seen))))
 
+    (it "passes a per-turn preamble through to the provider prompt builder"
+      (let [seen (atom nil)
+            provider (reify api/Api
+                       (chat [_ _] nil)
+                       (chat-stream [_ _ _] nil)
+                       (followup-messages [_ _ _ _ _] nil)
+                       (config [_] {})
+                       (display-name [_] "test")
+                       (format-tools [_ tools] tools)
+                       (build-prompt [_ opts] (reset! seen opts) {:model (:model opts) :messages []}))]
+        (sut/build-chat-request provider {:model "spark" :soul "You are Isaac."
+                                          :preamble "Bridge watch" :transcript []})
+        (should= "Bridge watch" (:preamble @seen))))
+
     (it "passes skill-menu-text through to the provider prompt builder"
       (let [seen     (atom nil)
             provider (reify api/Api

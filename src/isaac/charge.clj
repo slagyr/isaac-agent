@@ -35,6 +35,7 @@
             :cwd               {:type :string :description "Session working directory"}
             :soul              {:type :string :description "System prompt"}
             :nonce             {:type :string :description "Session-scoped trusted-block nonce"}
+            :preamble          {:type :string :description "Per-turn system prompt preamble"}
             :guidance          {:type :string :description "Per-turn trusted guidance injected into the current user turn"}
             :origin            {:type :ignore :description "Inbound origin metadata"}
             :key               {:type :string :description "Idempotent submission identity"}
@@ -134,7 +135,7 @@
    model) returns a charge marked :charge/unresolved with a :charge/reason
    keyword."
   [{:keys [session-key input comm crew config model model-ref model-override model-cfg
-           provider provider-cfg context-window soul soul-prepend guidance origin key coalesce-key observers resource-pools cycle dispatch-error
+           provider provider-cfg context-window soul soul-prepend preamble guidance origin key coalesce-key observers resource-pools cycle dispatch-error
            context-mode-override]}]
   (let [config*         (or (when (map? config) config) (loader/snapshot "charge build fallback — no :config passed (entry seed)") {})
         ss*             (store/registered-store)
@@ -159,6 +160,7 @@
                                  :models        (:models config*)
                                  :module-index  (:module-index config*)
                                  :guidance      guidance
+                                 :preamble      preamble
                                  :origin        origin}
                                 key (assoc :key key)
                                 coalesce-key (assoc :coalesce-key coalesce-key)

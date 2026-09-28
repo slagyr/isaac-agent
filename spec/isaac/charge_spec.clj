@@ -162,6 +162,12 @@
             (should= "Cordelia has the watch" (:soul charge))
             (should= first-mate-model (:model charge))))))
 
+    (it "passes a turn preamble into the charge without changing the crew soul"
+      (with-redefs [session-ctx/resolve-behavior (fn [& _] (stub-behavior "main" "You are Atticus." test-model-id 4096))]
+        (let [charge (sut/build {:session-key "s1" :input "hi" :preamble "Bridge watch"})]
+          (should= "Bridge watch" (:preamble charge))
+          (should= "You are Atticus." (:soul charge)))))
+
     (it "appends soul-prepend when provided"
       (with-redefs [loader/snapshot             (fn [_] {:defaults {:frequencies {:crew "main"}}
                                                          :crew     {"main" (crew-cfg marigold/captain test-model-id "Base.")}

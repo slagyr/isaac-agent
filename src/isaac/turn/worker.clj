@@ -12,6 +12,8 @@
     [isaac.scheduler.runtime :as scheduler]
     [isaac.session.store.spi :as store]
     [isaac.session.frequencies :as frequencies]
+    [isaac.session.context :as session-context]
+    [isaac.naming :as naming]
     [isaac.tool.memory :as memory]
     [isaac.turn.queue :as queue]
     [isaac.resource-pool :as pool]))
@@ -44,11 +46,29 @@
         target  (when-let [address (:frequencies record)]
                   (frequencies/resolve-session-targets address ss cfg
                     (set (store/in-flight-sessions ss))))
-        request (cond-> {:session-key (or (:session-key target) (:session record))
+        session-key (or (:session-key target)
+                        (when (and (:create? target) (not (:busy? target)))
+                          (let [name (if (= :sequential (get-in cfg [:sessions :naming-strategy]))
+                                       (naming/generate (store/make-naming-strategy
+                                                          cfg (or (nexus/get :root) (loader/root)) ss
+                                                          (or (nexus/get :fs) (fs/instance))))
+                                       (store/mint-name))]
+                            (session-context/create-with-resolved-behavior!
+                              name (merge {:config cfg :session-store ss
+                                           :origin (assoc (:origin record) :kind :hail)}
+                                          (:create-identity target)
+                                          (frequencies/behavioral-override (:frequencies record))))
+                            name))
+                        (:session record))
+        request (cond-> {:session-key session-key
                          :input       (:input record)
                          :now         now
                          :origin      (or (:origin record) {:kind :queue})
                          :config      cfg}
+                  (:preamble record) (assoc :preamble (:preamble record))
+                  (:cycle record) (assoc :cycle (:cycle record))
+                  (get-in record [:frequencies :with-crew]) (assoc :crew (get-in record [:frequencies :with-crew]))
+                  (get-in record [:frequencies :with-model]) (assoc :model-override (get-in record [:frequencies :with-model]))
                   (:crew record) (assoc :crew (:crew record))
                   (queue/live-comm (:id record)) (assoc :comm (queue/live-comm (:id record)))
                   (:observers record) (assoc :observers (:observers record))
@@ -100,7 +120,9 @@
               :held? (boolean (still-held? result))
               :error (:error result)
               :session (:session record))
-    (when-not (still-held? result)
+    (if (still-held? result)
+      (when (= :running (:state (queue/read-held (:id record))))
+        (queue/update-turn! (:id record) {:state :held}))
       (doseq [id (or (:held-ids record) [(:id record)])]
         (queue/update-turn! id (cond-> {:state :finished :outcome (if (:error result) :error :ok)}
                                  (not= id (:id record)) (assoc :merged-into (:id record))

@@ -118,6 +118,13 @@
         (should-contain turn-instructions/parallel-tool-calls-hint
                         (get-in p [:messages 0 :content]))))
 
+    (it "adds the turn preamble to the system prompt only for this turn"
+      (let [p (sut/build {:model "test" :soul "You are Isaac." :preamble "Bridge watch"
+                          :transcript sample-transcript})]
+        (should-contain "Bridge watch" (get-in p [:messages 0 :content]))
+        (should-not-contain "Bridge watch" (get-in (sut/build {:model "test" :soul "You are Isaac."
+                                                                :transcript sample-transcript}) [:messages 0 :content]))))
+
     (it "appends boot files to the system prompt when present"
       (let [p (sut/build {:model "test"
                           :soul "You are Isaac."

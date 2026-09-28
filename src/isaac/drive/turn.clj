@@ -1170,7 +1170,7 @@
 
 (defn- rebuild-chat-request [session-key ctx]
   (let [{:keys [provider allowed-tools effort boot-files rules-text skill-menu-text]} ctx
-        {:keys [crew guidance model module-index nonce origin soul context-mode]} (:charge ctx)
+        {:keys [crew guidance model module-index nonce origin preamble soul context-mode]} (:charge ctx)
         sess       (session-policy ctx)
         transcript (with-transcript-lock session-key #(policy/active-transcript sess session-key))
         transcript (if (= :reset context-mode)
@@ -1184,6 +1184,7 @@
                                   :model           model
                                   :nonce           nonce
                                   :origin          origin
+                                  :preamble        preamble
                                   :rules-text      rules-text
                                   :session-name    session-key
                                   :skill-menu-text skill-menu-text
@@ -1293,13 +1294,14 @@
 (defn- merge-allowed-tools [crew-tools auto-tools]
   (not-empty (into (set (or crew-tools [])) auto-tools)))
 
-(defn build-chat-request [p {:keys [boot-files crew effort guidance model nonce origin rules-text session-name skill-menu-text soul transcript tools]}]
+(defn build-chat-request [p {:keys [boot-files crew effort guidance model nonce origin preamble rules-text session-name skill-menu-text soul transcript tools]}]
   (let [prompt-out (api/build-prompt p {:boot-files      boot-files
                                         :crew            crew
                                         :guidance        guidance
                                         :model           model
                                         :nonce           nonce
                                         :origin          origin
+                                        :preamble        preamble
                                         :rules-text      rules-text
                                         :session-name    session-name
                                         :skill-menu-text skill-menu-text
@@ -1584,7 +1586,7 @@
   [session-key input ctx]
   (let [{:keys [provider allowed-tools effort boot-files rules-text skill-menu-text]} ctx
         charge        (:charge ctx)
-        {:keys [crew guidance model module-index nonce origin soul context-mode comm config crew-cfg cycle]} charge
+        {:keys [crew guidance model module-index nonce origin preamble soul context-mode comm config crew-cfg cycle]} charge
         cycle-cfg     (resolve-cycle {:cycle cycle :config config :crew crew :crew-cfg crew-cfg})
         cycle-budget  (:limit cycle-cfg)
         max-parallel  (resolve-max-parallel-tools {:config config :crew crew :crew-cfg crew-cfg})
@@ -1611,6 +1613,7 @@
                                                  :model           model
                                                  :nonce           nonce
                                                  :origin          origin
+                                                 :preamble        preamble
                                                  :rules-text      rules-text
                                                  :session-name    session-key
                                                  :skill-menu-text skill-menu-text
@@ -1800,7 +1803,7 @@
   [session-key input ctx]
   (let [{:keys [boot-files provider rules-text skill-menu-text allowed-tools]} ctx
         {:keys [crew comm compaction context-mode model soul context-window
-                guidance nonce origin module-index]} (:charge ctx)]
+                guidance nonce origin preamble module-index]} (:charge ctx)]
     (cond
       (bridge/cancelled? session-key)
       (suspend/interrupt-result session-key)
@@ -1825,6 +1828,7 @@
                                                                      :guidance        guidance
                                                                      :nonce           nonce
                                                                      :origin          origin
+                                                                     :preamble        preamble
                                                                      :module-index    module-index
                                                                      :allowed-tools   allowed-tools
                                                                      :config          (:config (:charge ctx))})]

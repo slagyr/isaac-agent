@@ -11,7 +11,7 @@
 
 (defn submit!
   "Accept one durable, keyed turn without running it. Returns its stable request record."
-  [{:keys [root config frequencies resource-pools observers prompt key origin]}]
+  [{:keys [root config frequencies resource-pools observers prompt preamble cycle id key origin]}]
   (let [cfg       (or config (loader/snapshot "turn submit"))
         pool-refs (mapv keyword resource-pools)
         pools     (pool/resolve-submitted cfg pool-refs)
@@ -31,5 +31,9 @@
     (binding [queue/*root* (or root (loader/root))]
       (queue/enqueue! (cond-> {:input prompt :key key :origin (or origin {:kind :submit})
                               :resource-pools pool-refs :observers observers :state :queued}
-                        (:session frequencies) (assoc :session (:session-key resolved))
+                        (some? id) (assoc :id id)
+                        (some? preamble) (assoc :preamble preamble)
+                        (some? cycle) (assoc :cycle cycle)
+                        (:session frequencies) (assoc :session (:session-key resolved)
+                                                      :frequencies frequencies)
                         (not (:session frequencies)) (assoc :frequencies frequencies))))))

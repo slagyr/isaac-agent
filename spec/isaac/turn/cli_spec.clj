@@ -63,6 +63,15 @@
                         "started-at: " "finished-at: " "reason: lamp oil spilled"]]
         (should (str/includes? output fragment)))))
 
+  (it "shows thread and reply-to before params so hail chains read in order"
+    (queue/enqueue! {:id "turn-1" :input "Resonance climbing" :origin {:source :hail
+                                                                           :thread-id "thread-7"
+                                                                           :reply-to "hail-42"
+                                                                           :params {:coil "secondary"}}})
+    (let [output (with-out-str (sut/run-fn {:_raw-args ["show" "turn-1"] :root "/test/isaac"}))]
+      (should (< (str/index-of output "origin.thread-id: thread-7")
+                 (str/index-of output "origin.reply-to: hail-42")))))
+
   (it "drops a held turn and prints dropped"
     (queue/enqueue! {:id "berth-1" :session "harbor"})
     (let [output (with-out-str

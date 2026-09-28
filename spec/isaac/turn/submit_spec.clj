@@ -35,6 +35,15 @@
           (should= 1 (count (queue/all-turns)))
           (should= :queued (:state (first (queue/all-turns))))))))
 
+  (it "keeps behavioral overrides on an explicitly addressed session"
+    (with-redefs [sessions/registered-store (fn [] :sessions)
+                  frequencies/resolve-session-targets (fn [_ _ _] {:session-key "engine-room"})]
+      (let [turn (sut/submit! {:root "/isaac-state" :config {}
+                               :frequencies {:session ["engine-room"] :with-crew "navigator"}
+                               :prompt "Check gauges"})]
+        (should= "engine-room" (:session turn))
+        (should= "navigator" (get-in turn [:frequencies :with-crew])))))
+
   (it "preserves a caller-supplied origin through the durable turn store"
     (let [origin {:kind :hail :thread-id "tidal-7" :data {:route ["quay" "beacon"]}}
           request {:root "/isaac-state" :config {} :frequencies {:session "lamp-room"}
@@ -45,12 +54,41 @@
           (should= origin (:origin accepted))
           (should= origin (:origin (queue/read-held (:id accepted))))))))
 
+  (it "preserves a generic turn preamble through durable submission"
+    (with-redefs [sessions/registered-store (fn [] :sessions)
+                  frequencies/resolve-session-targets (fn [_ _ _] {:session-key "lamp-room"})]
+      (let [accepted (sut/submit! {:root "/isaac-state" :config {} :frequencies {:session "lamp-room"}
+                                   :prompt "Light lamp" :preamble "Seawall metadata"})]
+        (should= "Seawall metadata" (:preamble accepted))
+        (should= "Seawall metadata" (:preamble (queue/read-held (:id accepted)))))))
+
+  (it "accepts a caller-provided turn id together with its preamble atomically"
+    (with-redefs [sessions/registered-store (fn [] :sessions)
+                  frequencies/resolve-session-targets (fn [_ _ _] {:session-key "lamp-room"})]
+      (let [accepted (sut/submit! {:root "/isaac-state" :config {} :frequencies {:session "lamp-room"}
+                                   :id "lamp-7" :prompt "Light lamp" :preamble "Hail id: lamp-7"
+                                   :origin {:thread-id "lamp-7"}})]
+        (should= "lamp-7" (:id accepted))
+        (should= "Hail id: lamp-7" (:preamble (queue/read-held "lamp-7"))))))
+
   (it "defaults an unnamed origin to submit"
     (with-redefs [sessions/registered-store (fn [] :sessions)
                   frequencies/resolve-session-targets (fn [_ _ _] {:session-key "lamp-room"})]
       (should= {:kind :submit}
                (:origin (sut/submit! {:root "/isaac-state" :config {}
                                       :frequencies {:session "lamp-room"} :prompt "Light lamp"})))))
+
+  (it "tag-addressed turns do not inherit the unrelated default crew"
+    (let [cfg {:defaults {:frequencies {:crew "main"}}}]
+      (with-redefs [sessions/registered-store (fn [] :sessions)
+                    frequencies/resolve-session-targets (fn [f _ got-cfg]
+                                                           (should= cfg got-cfg)
+                                                           (should= {:session-tags #{:project/warp} :create :never} f)
+                                                           {:session-key "engine-room"})]
+        (should= #{:project/warp}
+                 (get-in (sut/submit! {:root "/isaac-state" :config cfg
+                                       :frequencies {:session-tags #{:project/warp} :create :never}
+                                       :prompt "Seal leak"}) [:frequencies :session-tags])))))
 
   (it "keeps a crew address unbound until admission"
     (let [request {:root "/isaac-state" :config {:resource-pools {}}

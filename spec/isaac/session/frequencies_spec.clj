@@ -204,6 +204,13 @@
                                                 (store/registered-store))]
         (should= :no-match (:error result))))
 
+    (it "selects a tagged session without requiring the default crew"
+      (helper/create-session! "/test" "engine-room" {:crew "bartholomew" :tags #{:project/warp}})
+      (let [result (sut/resolve-session-targets {:session-tags #{:project/warp} :create :never}
+                                                (store/registered-store)
+                                                {:defaults {:frequencies {:crew "main"}}})]
+        (should= "engine-room" (:session-key result))))
+
     (it "selects by session-tags"
       (helper/create-session! "/test" "tagged" {:tags #{:project/chess}})
       (let [result (sut/resolve-session-targets {:session-tags #{:project/chess}

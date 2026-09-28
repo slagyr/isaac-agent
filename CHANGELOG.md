@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Agent accepts a generic per-turn `:preamble` through durable submission and charge construction, admits create-enabled/tagged hails with live session naming, retains explicit-session behavior and band cycle overrides, and preserves keyed requests across retries (isaac-ex4q).
+
 - TurnStore persists every accepted turn under `turns/<id>.edn`, retaining its stable id and outcome through queue, hold, wait, completion and restart. `prompt --queue` accepts without running, `--key` deduplicates, `turns show` inspects a record, and `turns list --all` includes finished and merged requests (isaac-70cr).
 
 - `isaac sessions set <id>.crew <crew>` relocates the session's whole directory (transcript, episodes, session.edn) to the new crew's folder instead of leaving it stranded under the old one — previously the record's `:crew` changed but the files didn't move, so the store resolved a fresh, empty folder at the new crew path and the next turn ran with no history. The relocation is atomic: it refuses (leaving the record unchanged) when the target crew folder already holds a non-empty session with the same id, naming both paths. `sessions list` now warns once (`:session/split-directory`) instead of silently picking a winner when a session id is found under two crew folders (isaac-2jjb).

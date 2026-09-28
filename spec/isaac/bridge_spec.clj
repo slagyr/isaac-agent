@@ -252,7 +252,7 @@
 
     (it "routes an unknown autonomous slash command through run-turn!"
       (let [captured (atom nil)
-            ctx      {:agent "main" :model "echo" :origin {:kind :hail}}]
+            ctx      {:agent "main" :model "echo" :origin {:source :hail}}]
         (with-redefs [single-turn/run-turn! (fn [charge*]
                                               (reset! captured charge*)
                                               {:content "delivered"})]

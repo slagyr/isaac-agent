@@ -157,7 +157,9 @@
    (resolve-session-targets frequencies session-store cfg #{}))
   ([frequencies session-store cfg busy]
   (let [frequencies  (merge {:prefer :recent :create :if-missing}
-                            (defaults/frequencies-template cfg) frequencies)
+                            (cond-> (defaults/frequencies-template cfg)
+                              (some #(contains? frequencies %) [:session :session-tags :crew])
+                              (dissoc :crew)) frequencies)
         create       (:create frequencies)
         sess         (policy/wrap session-store)
         all-sessions (policy/list-sessions sess)]

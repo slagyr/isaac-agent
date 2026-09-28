@@ -39,6 +39,74 @@
       (should= 1 (count @ran))
       (should= "berth-1" (:id (queue/read-held "berth-1")))))
 
+  (it "keeps a request held when its selected session is already in flight"
+    (queue/enqueue! {:id "berth-1" :frequencies {:session-tags #{:project/warp} :create :never}
+                     :input "Seal leak"})
+    (with-redefs [store/registered-store (fn [] :sessions)
+                  store/in-flight-sessions (fn [_] #{"engine-room"})
+                  isaac.session.frequencies/resolve-session-targets
+                  (fn [_ _ _ busy]
+                    (should= #{"engine-room"} busy)
+                    {:busy? true})
+                  bridge/dispatch! (fn [_] (throw (ex-info "should not dispatch" {})))]
+      (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")}))
+    (should= :held (:state (queue/read-held "berth-1"))))
+
+  (it "creates a session for a create-enabled hail at admission with its tags and origin"
+    (queue/enqueue! {:id "coil-1" :frequencies {:session-tags #{:project/warp}
+                                                  :create :if-missing :with-crew "bartholomew"}
+                     :origin {:source :hail} :input "Seal leak"})
+    (let [opened (atom nil)]
+      (with-redefs [loader/snapshot (fn [_] {:crew {"bartholomew" {:model "grover"}}})
+                    store/registered-store (fn [] :sessions)
+                    isaac.session.frequencies/resolve-session-targets
+                    (fn [_ _ _ _] {:create? true :create-identity {:tags #{:project/warp}}})
+                    store/mint-name (fn [] "session-1")
+                    isaac.session.context/create-with-resolved-behavior!
+                    (fn [name opts] (reset! opened [name opts]) {:id name})
+                    charge/build identity
+                    bridge/dispatch! (fn [_] {})]
+        (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")}))
+      (should= "session-1" (first @opened))
+      (should= #{:project/warp} (get-in @opened [1 :tags]))
+      (should= "bartholomew" (get-in @opened [1 :crew]))
+      (should= {:source :hail :kind :hail} (get-in @opened [1 :origin]))))
+
+  (it "passes the submitted cycle override to the charge at admission"
+    (queue/enqueue! {:id "coil-1" :session "coil-work" :input "Seal leak"
+                     :cycle {:limit 1 :checkpoint-every 1}})
+    (let [seen (atom nil)]
+      (with-redefs [charge/build (fn [request] (reset! seen request) request)
+                    bridge/dispatch! (fn [_] {})]
+        (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")}))
+      (should= {:limit 1 :checkpoint-every 1} (:cycle @seen))))
+
+  (it "uses sequential session naming when the loaded configuration requests it"
+    (queue/enqueue! {:id "coil-2" :frequencies {:session-tags #{:project/warp} :create :if-missing
+                                                   :with-crew "bartholomew"}
+                     :origin {:source :hail} :input "Seal leak"})
+    (let [opened (atom nil)]
+      (with-redefs [loader/snapshot (fn [_] {:sessions {:naming-strategy :sequential}
+                                            :crew {"bartholomew" {:model "grover"}}})
+                    store/registered-store (fn [] :sessions)
+                    isaac.session.frequencies/resolve-session-targets
+                    (fn [_ _ _ _] {:create? true :create-identity {:tags #{:project/warp}}})
+                    isaac.session.context/create-with-resolved-behavior!
+                    (fn [name _] (reset! opened name) {:id name})
+                    charge/build identity
+                    bridge/dispatch! (fn [_] {})]
+        (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")}))
+      (should= "session-1" @opened)))
+
+  (it "passes a submitted preamble to the charge at admission"
+    (queue/enqueue! {:id "berth-1" :session "harbor" :input "Leave harbor"
+                     :preamble "Bridge watch instructions"})
+    (let [seen (atom nil)]
+      (with-redefs [charge/build (fn [request] (reset! seen request) request)
+                    bridge/dispatch! (fn [_] {})]
+        (sut/tick! {:now (Instant/parse "2026-03-01T23:30:00Z")}))
+      (should= "Bridge watch instructions" (:preamble @seen))))
+
   (it "runs a held turn whose stack now passes and drops it"
     (queue/enqueue! {:id         "berth-1"
                      :session    "harbor"
