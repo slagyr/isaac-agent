@@ -1,4 +1,3 @@
-@wip
 Feature: Session selection at admission
   A turn addressed by crew or tags is held WITHOUT a session. At each
   wake Agent re-resolves its frequencies: the matching sessions, minus

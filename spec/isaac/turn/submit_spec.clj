@@ -35,6 +35,17 @@
           (should= 1 (count (queue/all-turns)))
           (should= :queued (:state (first (queue/all-turns))))))))
 
+  (it "keeps a crew address unbound until admission"
+    (let [request {:root "/isaac-state" :config {:resource-pools {}}
+                   :frequencies {:crew "ketch" :prefer :oldest}
+                   :prompt "Status?" :key "watch/ketch/status"}]
+      (with-redefs [sessions/registered-store (fn [] :sessions)
+                    frequencies/resolve-session-targets (fn [_ _ _]
+                                                           {:session-key "mooring"})]
+        (let [accepted (sut/submit! request)]
+          (should-be-nil (:session accepted))
+          (should= (:frequencies request) (:frequencies accepted))))))
+
   (it "keeps observer references durable when a turn is held by its resource pool"
     (let [record (queue/enqueue! {:session "lamp-room" :observers [[:foreman "watch" "beacon"]]
                                    :resource-pools [:dock] :input "Light lamp" :key "watch/beacon/tide/tend"})

@@ -642,7 +642,9 @@
     (let [result (deref turn-future 30000 ::timeout)]
       (when (= ::timeout result)
         (throw (ex-info "turn did not complete within 30 seconds" {})))
-      (complete-turn! result))))
+      (complete-turn! result)
+      (g/update! :turn-futures-by-session
+                 (fn [futures] (into {} (remove (fn [[_ f]] (= f turn-future)) futures)))))))
 
 (defn -drain-parked-turn!
   "Release Grover wait-gates and cancel so a parked send cannot leak into
@@ -1287,7 +1289,9 @@
      (let [result (deref turn-future 50 ::pending)]
          (if (= ::pending result)
            (do
-             (g/assoc! :turn-future turn-future)
+             (g/update! :turn-futures-by-session (fnil assoc {}) key-str turn-future)
+             (when-not existing-turn-future
+               (g/assoc! :turn-future turn-future))
              (helper/await-condition
                (fn []
                  (or (realized? turn-future)
@@ -1371,13 +1375,19 @@
   (g/should= [] (logbook/recorded-calls)))
 
 (defn turn-ends-on-session [key-str]
-  (when-let [turn-future (g/get :turn-future)]
+  (when-let [turn-future (or (g/get-in [:turn-futures-by-session key-str])
+                             (g/get :turn-future))]
     (helper/await-condition #(or (realized? turn-future)
                                  (grover/waiting? key-str)))
     (when (and (not (realized? turn-future))
                (grover/waiting? key-str))
       (grover/release-wait! key-str))
-    (await-turn!)))
+    (let [result (deref turn-future 30000 ::timeout)]
+      (when (= ::timeout result)
+        (throw (ex-info "turn did not complete within 30 seconds" {})))
+      (g/update! :turn-futures-by-session dissoc key-str)
+      (when (= turn-future (g/get :turn-future))
+        (complete-turn! result)))))
 
 (defn session-in-flight-status [key-str expected]
   (g/should= (= "true" expected) (store/in-flight? (session-store) key-str)))
@@ -1682,7 +1692,8 @@
   (g/should (single-turn/async-compaction-in-flight? key-str)))
 
 (defn- session-transcript-matching* [transcript-fn key-str table]
-  (await-turn!)
+  (when-not (seq (g/get :turn-futures-by-session))
+    (await-turn!))
   (await-acp-turn!)
   (let [table (normalize-transcript-table table)
         transcript (with-feature-fs #(transcript-fn key-str))
@@ -1713,7 +1724,8 @@
   (session-transcript-matching* get-chronicle-transcript key-str table))
 
 (defn session-transcript-not-matching [key-str table]
-  (await-turn!)
+  (when-not (seq (g/get :turn-futures-by-session))
+    (await-turn!))
   (await-acp-turn!)
   (let [table                  (normalize-transcript-table table)
         transcript             (with-feature-fs #(get-transcript key-str))

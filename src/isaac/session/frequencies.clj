@@ -113,7 +113,7 @@
        vec))
 
 (defn- pick-by-prefer [sessions prefer]
-  (let [sorted (sort-by :updated-at sessions)]
+  (let [sorted (sort-by (juxt :updated-at :id) sessions)]
     (case (or prefer :recent)
       :oldest (first sorted)
       :recent (last sorted))))
@@ -162,6 +162,8 @@
   ([frequencies session-store]
    (resolve-session-targets frequencies session-store (config/snapshot "session frequencies resolver")))
   ([frequencies session-store cfg]
+   (resolve-session-targets frequencies session-store cfg #{}))
+  ([frequencies session-store cfg busy]
   (let [frequencies  (merge {:reach :one :prefer :recent :create :if-missing}
                             (defaults/frequencies-template cfg) frequencies)
         create       (:create frequencies)
@@ -194,8 +196,9 @@
            :create-identity {}}
 
           (seq matches)
-          (let [picked (pick-by-prefer matches (:prefer frequencies))]
-            {:session-key (:id picked) :session picked :create? false})
+          (if-let [picked (pick-by-prefer (remove #(contains? busy (:id %)) matches) (:prefer frequencies))]
+            {:session-key (:id picked) :session picked :create? false}
+            {:busy? true})
 
           (= create :never)
           {:error :no-match :message (no-match-message frequencies)}
@@ -215,8 +218,9 @@
                               (:session-tags frequencies) (assoc :tags (:session-tags frequencies)))}
 
           (seq matches)
-          (let [picked (pick-by-prefer matches (:prefer frequencies))]
-            {:session-key (:id picked) :session picked :create? false})
+          (if-let [picked (pick-by-prefer (remove #(contains? busy (:id %)) matches) (:prefer frequencies))]
+            {:session-key (:id picked) :session picked :create? false}
+            {:busy? true})
 
           (= create :never)
           {:error :no-match :message (no-match-message frequencies)}

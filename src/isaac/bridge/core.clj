@@ -373,7 +373,8 @@
                               ;; turn releases it; avoid a bridge → worker load cycle.
                               (when-let [root (charge-root charge)]
                                 (when (binding [turn-queue/*root* root]
-                                        (seq (turn-queue/waiting-groups session-key)))
+                                        (or (some :frequencies (turn-queue/list-held))
+                                             (seq (turn-queue/waiting-groups session-key))))
                                   (isolate-cleanup! :drain-waiting-session
                                                     #((requiring-resolve 'isaac.turn.worker/tick!)))))))))
                       (do (pool/release-all! (:pool-leases charge))

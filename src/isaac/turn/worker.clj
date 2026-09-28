@@ -11,6 +11,7 @@
     [isaac.nexus :as nexus]
     [isaac.scheduler.runtime :as scheduler]
     [isaac.session.store.spi :as store]
+    [isaac.session.frequencies :as frequencies]
     [isaac.tool.memory :as memory]
     [isaac.turn.queue :as queue]
     [isaac.resource-pool :as pool]))
@@ -39,7 +40,11 @@
 
 (defn- wake-charge [record now]
   (let [cfg     (wake-config record)
-        request (cond-> {:session-key (:session record)
+        ss      (or (nexus/get-in [:sessions :store]) (store/registered-store))
+        target  (when-let [address (:frequencies record)]
+                  (frequencies/resolve-session-targets address ss cfg
+                    (set (store/in-flight-sessions ss))))
+        request (cond-> {:session-key (or (:session-key target) (:session record))
                          :input       (:input record)
                          :now         now
                          :origin      (or (:origin record) {:kind :queue})
@@ -59,6 +64,7 @@
                               :error (.getMessage t))
                     (assoc request :charge/type :charge)))]
     (assoc built
+           :address-busy? (:busy? target)
            :now now
            :from-queue? true
            :held-id (:id record)
@@ -80,7 +86,10 @@
 
 (defn- process-record! [now record]
   (let [result (try
-                 (bridge/dispatch! (wake-charge record now))
+                 (let [charge (wake-charge record now)]
+                   (if (:address-busy? charge)
+                     {:held true}
+                     (bridge/dispatch! charge)))
                  (catch Throwable t
                    (log/warn :turn.queue/wake-failed
                              :id (:id record)

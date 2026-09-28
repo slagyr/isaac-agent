@@ -172,8 +172,10 @@
                        :session-store session-store}))
 
 (defn- resolve-target [opts _override cfg session-store]
-  (session-frequencies/resolve-session-targets
-    (frequencies-cli/build-frequencies opts) session-store cfg))
+  (let [frequencies (frequencies-cli/build-frequencies opts)]
+    (session-frequencies/resolve-session-targets
+      frequencies session-store cfg
+      (if (:session frequencies) #{} (set (store/in-flight-sessions session-store))))))
 
 (defn- refuse-crew-collision!
   "Refuse --session when an explicit --crew disagrees with the stored crew.
@@ -272,7 +274,8 @@
                               :session-store session-store
                               :now (memory/now)
                               :turn-id (:id accepted))))]
-          (when (and (not (:queue opts)) (not (:already-accepted? accepted)) (not (:held result)))
+          (when (and (not (:queue opts)) (not (:already-accepted? accepted)) (not (:held result))
+                     (not= :waiting-session (:reason result)))
             (binding [turn-queue/*root* root*]
               (turn-queue/update-turn! (:id accepted) {:state :finished
                                                        :outcome (if (or (:error result) (:unavailable? result)
@@ -283,6 +286,9 @@
 
             (:queue opts)
             (do (println (str "queued: " (:id accepted))) 0)
+
+            (= :waiting-session (:reason result))
+            (do (println (str "held: " (:held-id result))) 0)
 
             (:held result)
             (do
@@ -340,8 +346,24 @@
                 session-store (store/registered-store)
                 override      (frequencies-cli/build-override opts)
                 target        (resolve-target opts override cfg session-store)]
-            (if (:error target)
+            (cond
+              (:error target)
               (do (print-error! (:message target)) 1)
+
+              (:busy? target)
+              (let [refs (mapv keyword (or (:pool opts) []))
+                    check (pool/resolve-submitted cfg refs)]
+                (if (:error check)
+                  (do (print-error! (:message check)) 1)
+                  (let [accepted (binding [turn-queue/*root* root]
+                                   (turn-queue/enqueue! {:input (:message opts)
+                                                         :frequencies (frequencies-cli/build-frequencies opts)
+                                                         :resource-pools refs
+                                                         :origin {:kind :cli} :state :held}))]
+                    (println (str "held: " (:id accepted)))
+                    0)))
+
+              :else
               (try
                 (let [session-key (ensure-session! target override opts cfg session-store)
                       session     (or (when-let [sess (prompt-policy opts override cfg session-store)]

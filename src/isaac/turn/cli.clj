@@ -20,18 +20,29 @@
 (defn- format-resource-pools [names]
   (str/join " " (map name names)))
 
+(defn- target-label [record]
+  (let [{:keys [crew session-tags session]} (:frequencies record)]
+    (cond
+      (:session record) (:session record)
+      (seq session) (first session)
+      crew (str "crew " crew)
+      (seq session-tags) (str "tags " (str/join " " (map name session-tags)))
+      :else "")))
+
 (defn- held->row [record]
   {:id         (:id record)
+   :target     (target-label record)
    :session    (or (:session record) "")
    :resource-pools (format-resource-pools (:resource-pools record))
    :input      (or (:input record) "")
    :merged-into (or (:merged-into record) "")
    :outcome    (if-let [outcome (:outcome record)] (name outcome) "")
-   :state      (name (or (:state record) :held))})
+   :state      (name (if (= :waiting-session (:state record)) :held (or (:state record) :held)))})
 
 (defn- format-held [rows]
   (table/render {:columns [{:key :id         :header "ID"         :align :left}
                            {:key :session    :header "SESSION"    :align :left}
+                           {:key :target     :header "TARGET"     :align :left}
                            {:key :input :header "INPUT" :align :left}
                            {:key :resource-pools :header "RESOURCE-POOLS" :align :left}
                            {:key :state      :header "STATE"      :align :left}
@@ -49,11 +60,12 @@
 (defn- run-list [opts]
   (with-queue-root opts
     (fn []
-      (let [rows (mapv held->row (if (:all opts) (queue/all-turns) (queue/list-held)))]
+      (let [records (if (:all opts) (queue/all-turns) (queue/list-held))
+            rows (mapv held->row records)]
         (when (seq rows)
           (println (format-held rows))
-          (doseq [{:keys [id state merged-into]} rows]
-            (when (= "waiting-session" state)
+          (doseq [{:keys [id state merged-into]} records]
+            (when (= :waiting-session state)
               (println (str "waiting: " id)))
             (when (seq merged-into)
               (println (str "merged-into: " merged-into)))))

@@ -26,9 +26,10 @@
     (when error
       (throw (ex-info (or (:message pools) (:message resolved) (:message obs) (name error))
                       {:reason error})))
-    (when-not (:session-key resolved)
+    (when (and (:session frequencies) (not (:session-key resolved)))
       (throw (ex-info "turn submission requires an existing session" {:frequencies frequencies})))
     (binding [queue/*root* (or root (loader/root))]
-      (queue/enqueue! {:session (:session-key resolved)
-                       :input prompt :key key :origin {:kind :foreman}
-                       :resource-pools pool-refs :observers observers :state :queued}))))
+      (queue/enqueue! (cond-> {:input prompt :key key :origin {:kind :foreman}
+                              :resource-pools pool-refs :observers observers :state :queued}
+                        (:session frequencies) (assoc :session (:session-key resolved))
+                        (not (:session frequencies)) (assoc :frequencies frequencies))))))
