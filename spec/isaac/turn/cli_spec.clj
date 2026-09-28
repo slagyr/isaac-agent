@@ -37,9 +37,21 @@
       (should (< (str/index-of output "jetty")
                  (str/index-of output "quay")))))
 
+  (it "shows the durable id, session, state and outcome after completion"
+    (queue/enqueue! {:id "berth-1" :session "harbor" :state :queued})
+    (queue/update-turn! "berth-1" {:state :finished :outcome :ok})
+    (let [output (with-out-str
+                   (should= 0 (sut/run-fn {:_raw-args ["show" "berth-1"] :root "/test/isaac"})))]
+      (should= "id: berth-1\nsession: harbor\nstate: finished\noutcome: ok\n" output)))
+
+  (it "reports an unknown turn id"
+    (let [output (with-out-str
+                   (should= 1 (sut/run-fn {:_raw-args ["show" "unknown"] :root "/test/isaac"})))]
+      (should (str/includes? output "unknown"))))
+
   (it "drops a held turn and prints dropped"
     (queue/enqueue! {:id "berth-1" :session "harbor"})
     (let [output (with-out-str
                    (should= 0 (sut/run-fn {:_raw-args ["drop" "berth-1"] :root "/test/isaac"})))]
       (should (str/includes? output "dropped"))
-      (should-be-nil (queue/read-held "berth-1")))))
+      (should= :dropped (:outcome (queue/read-held "berth-1"))))))

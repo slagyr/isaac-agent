@@ -36,9 +36,9 @@
     (f)))
 
 (defn- interpolate-held [s]
-  (if-let [held-id (g/get :held-id)]
-    (str/replace (str s) "#held-id" held-id)
-    s))
+  (cond-> (str s)
+    (g/get :held-id) (str/replace "#held-id" (g/get :held-id))
+    (g/get :turn-id) (str/replace "#turn-id" (g/get :turn-id))))
 
 (defonce ^:private parse-argv-wrapped?
   (do
@@ -57,8 +57,10 @@
 (fcli/register-isaac-run-postflight!
   (fn []
     (when-let [output (g/get :output)]
-      (when-let [[_ id] (re-find #"held:\s+([a-z0-9-]+)" output)]
-        (g/assoc! :held-id id)))))
+      (when-let [[_ id] (re-find #"(?:held|waiting):\s+([a-z0-9-]+)" output)]
+        (g/assoc! :held-id id))
+      (when-let [[_ id] (re-find #"queued:\s+([a-z0-9-]+)" output)]
+        (g/assoc! :turn-id id)))))
 
 (fcli/register-isaac-run-preflight!
   (fn []
@@ -164,6 +166,7 @@
   (fn []
     (reset! scripted-gates* {})
     (g/dissoc! :held-id)
+    (g/dissoc! :turn-id)
     (shutdown-live-scheduler!)
     (g/dissoc! :scheduler)
     (pool/set-wake-hook! nil)))

@@ -16,6 +16,7 @@
     [isaac.nexus :as nexus]
     [isaac.tool.registry :as tool-registry]
     [isaac.resource-pool :as pool]
+    [isaac.turn.queue :as turn-queue]
     [speclj.core :refer :all]))
 
 (defn- slash-charge
@@ -387,6 +388,18 @@
                              :session-store  session-store
                              :comm           nil})
           (should= false (store/in-flight? session-store "testuser")))))
+
+    (it "records a comm turn before dispatch even when it runs immediately"
+      (let [session-store (store/registered-store)]
+        (with-redefs [single-turn/run-turn! (fn [_] {:content "Done"})]
+          (bridge/dispatch! {:charge/type :charge :session-key "testuser"
+                             :input "one" :root *root* :session-store session-store}))
+        (let [turns (binding [turn-queue/*root* *root*]
+                      (turn-queue/all-turns))]
+          (should= 1 (count turns))
+          (should= "one" (:input (first turns)))
+          (should= :finished (:state (first turns)))
+          (should= :ok (:outcome (first turns))))))
 
     (it "queues dispatch when the session is already in flight"
       (let [session-store (store/registered-store)]

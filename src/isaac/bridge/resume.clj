@@ -178,6 +178,13 @@
                     :cfg           cfg
                     :window-ms     window-ms
                     :now-ms        now-ms}
+        ;; A process can die after claiming a request but before creating a
+        ;; session marker. Requeue that exact record for the normal worker.
+        _          (binding [queue/*root* root]
+                     (doseq [record (queue/all-turns)
+                             :when (and (= :running (:state record))
+                                        (not (some #(= (:session record) (:session-id %)) markers)))]
+                       (queue/update-turn! (:id record) {:state :queued})))
         summary    (reduce (fn [acc marker]
                              (merge-with + acc (or (resume-marker! opts marker) {})))
                            {:markers  (count markers)

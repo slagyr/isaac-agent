@@ -41,7 +41,7 @@
   (it "drops a held turn so it is no longer listed"
     (sut/enqueue! {:id "berth-1" :session "harbor"})
     (sut/delete-held! "berth-1")
-    (should-be-nil (sut/read-held "berth-1"))
+    (should= :ok (:outcome (sut/read-held "berth-1")))
     (should= [] (sut/list-held)))
 
   (it "groups consecutive waiting records with the same coalesce key"

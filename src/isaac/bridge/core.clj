@@ -68,7 +68,8 @@
                                        :comm         (:comm charge)
                                        :coalesce-key (:coalesce-key charge)
                                        :reason       :waiting-session
-                                       :state        :waiting-session}))]
+                                       :state        :waiting-session
+                                       :id           (:turn-id charge)}))]
     (log/info :turn/waiting :session (:session-key charge) :held-id (:id record) :key (:coalesce-key charge))
     {:dispatched? false :reason :waiting-session :held-id (:id record)}))
 
@@ -273,7 +274,7 @@
                             :reason     :hold
                             :state      :held
                             :input-persisted? true}
-                     (:held-id charge) (assoc :id (:held-id charge)))))
+                     (or (:held-id charge) (:turn-id charge)) (assoc :id (or (:held-id charge) (:turn-id charge))))))
         refs   (format-resource-pool-refs (:resource-pools charge))
         label  (or (first refs) "resource pool")]
     {:held    true
@@ -367,15 +368,37 @@
                   (turn/run-turn! (assoc charge :session-policy (request-policy charge)))))))))
       result)))
 
+(defn- dispatch-recorded! [charge]
+  (if (or (:turn-id charge) (:from-queue? charge) (charge/slash? charge))
+    (dispatch-charge! charge)
+    (let [root (charge-root charge)
+          record (binding [turn-queue/*root* root]
+                   (turn-queue/enqueue! {:session (:session-key charge)
+                                         :input (:input charge)
+                                         :origin (:origin charge)
+                                         :state :running}))]
+      (try
+        (let [result (dispatch-charge! (assoc charge :turn-id (:id record)))]
+          (when-not (or (:held result) (= :waiting-session (:reason result)))
+            (binding [turn-queue/*root* root]
+              (turn-queue/update-turn! (:id record)
+                                       {:state :finished
+                                        :outcome (if (:error result) :error :ok)})))
+          result)
+        (catch Throwable t
+          (binding [turn-queue/*root* root]
+            (turn-queue/update-turn! (:id record) {:state :finished :outcome :error}))
+          (throw t))))))
+
 (defn dispatch!
   "Comm-facing entry point. Accepts a charge (built via charge/build) or a
    request map (which gets passed through charge/build). Slash commands are
    handled here; normal turns delegate to run-turn!. Bridge -> drive only."
   ([input]
     (if (charge/charge? input)
-      (dispatch-charge! (ensure-session! input))
+      (dispatch-recorded! (ensure-session! input))
       (let [request (ensure-session! (merge (nexus/necho) input))]
-        (dispatch-charge! (charge/build request)))))
+        (dispatch-recorded! (charge/build request)))))
   ([_root request]
     ;; Two-arg form is a back-compat shim — root now lives on the
     ;; config snapshot, which downstream readers consult directly.

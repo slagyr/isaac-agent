@@ -39,6 +39,17 @@
       (should= 0 (:requeued entry))
       (should= 0 (:dropped entry))))
 
+  (it "requeues a crashed running turn under its original id when no marker exists"
+    (helper/create-session! test-root "logbook")
+    (queue/enqueue! {:id "tide-9" :session "logbook" :input "Leave harbor" :state :running})
+    (sut/resume-interrupted-turns! {:session-store (store/registered-store)
+                                    :root test-root :cfg {}
+                                    :now (Instant/parse "2026-04-21T10:00:00Z")})
+    (let [turns (binding [queue/*root* test-root] (queue/list-held))]
+      (should= 1 (count turns))
+      (should= "tide-9" (:id (first turns)))
+      (should= :queued (:state (first turns)))))
+
   (it "enqueues an interrupted comm turn on the turn queue instead of driving it on the scan thread"
     (helper/create-session! test-root "logbook")
     (store/record-turn-marker! (store/registered-store) "logbook"

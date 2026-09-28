@@ -69,13 +69,13 @@
         record (normalize-record (dissoc record :comm))
         path   (held-path (:id record))]
     (fs/mkdirs fs* (fs/parent path))
-    (store/submit! (store/file-store fs* (runtime-root)) record)
-    (when comm
-      (swap! live-comms* assoc (:id record) comm))
-    (log/info :turn.queue/held
-              :id (:id record)
-              :session (:session record))
-    record))
+    (let [accepted (store/submit! (store/file-store fs* (runtime-root)) record)]
+      (when comm
+        (swap! live-comms* assoc (:id accepted) comm))
+      (log/info :turn.queue/held
+                :id (:id accepted)
+                :session (:session accepted))
+      accepted)))
 
 (defn read-held [id]
   (read-record (held-path id)))

@@ -11,6 +11,13 @@
       (should= "one" (:id (sut/submit! store {:id "two" :key "tide" :state :queued})))
       (should= 1 (count (sut/list-turns store)))))
 
+  (it "returns the accepted file record rather than the attempted duplicate"
+    (let [fs* (fs/mem-fs)
+          store (sut/file-store fs* "/test/isaac")]
+      (sut/submit! store {:id "one" :key "tide" :state :queued})
+      (should= {:id "one" :key "tide" :state :queued :already-accepted? true}
+               (sut/submit! store {:id "two" :key "tide" :state :queued}))))
+
   (it "allows exactly one concurrent claim on a queued file record"
     (let [store (sut/file-store (fs/mem-fs) "/test/isaac")]
       (sut/submit! store {:id "one" :state :queued})

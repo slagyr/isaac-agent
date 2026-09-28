@@ -51,7 +51,12 @@
     (fn []
       (let [rows (mapv held->row (if (:all opts) (queue/all-turns) (queue/list-held)))]
         (when (seq rows)
-          (println (format-held rows)))
+          (println (format-held rows))
+          (doseq [{:keys [id state merged-into]} rows]
+            (when (= "waiting-session" state)
+              (println (str "waiting: " id)))
+            (when (seq merged-into)
+              (println (str "merged-into: " merged-into)))))
         0))))
 
 (defn- run-drop [opts id]
@@ -68,6 +73,17 @@
             (println (str "held turn not found: " id))
             1))))))
 
+(defn- run-show [opts id]
+  (with-queue-root opts
+    (fn []
+      (if-let [record (queue/read-held id)]
+        (do
+          (doseq [field [:id :session :state :outcome]]
+            (let [value (get record field)]
+              (println (str (name field) ": " (if (keyword? value) (name value) (or value ""))))))
+          0)
+        (do (println (str "turn not found: " id)) 1)))))
+
 (defn- print-help! []
   (println (cli/command-help (cli/get-command "turns")))
   0)
@@ -82,6 +98,13 @@
           (:help options) (print-help!)
           (seq errors)    (do (doseq [e errors] (println e)) 1)
           :else           (run-list (merge (dissoc opts :_raw-args) options))))
+
+      (= "show" subcmd)
+      (let [{:keys [options arguments errors]} (tools-cli/parse-opts (rest raw-args) option-spec)]
+        (cond
+          (:help options) (print-help!)
+          (seq errors)    (do (doseq [e errors] (println e)) 1)
+          :else           (run-show (merge (dissoc opts :_raw-args) options) (first arguments))))
 
       (= "drop" subcmd)
       (let [{:keys [options arguments errors]} (tools-cli/parse-opts (rest raw-args) option-spec)]
@@ -110,5 +133,6 @@
   option-spec)
 
 (defmethod cli-api/subcommands :turns [_id]
-  [{:name "list" :summary "List held turn requests"}
+  [{:name "show" :summary "Show one durable turn record"}
+   {:name "list" :summary "List held turn requests"}
    {:name "drop" :summary "Drop a held turn request by id"}])

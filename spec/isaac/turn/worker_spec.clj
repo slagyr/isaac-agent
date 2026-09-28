@@ -53,7 +53,7 @@
       (should= 1 (count @ran))
       (should= "harbor" (:session-key (first @ran)))
       (should= "Leave harbor" (:input (first @ran)))
-      (should-be-nil (queue/read-held "berth-1"))))
+      (should= :ok (:outcome (queue/read-held "berth-1")))))
 
   (it "runs every held turn whose stack now passes, in submit order"
     (queue/enqueue! {:id "later" :session "quay" :input "three"
