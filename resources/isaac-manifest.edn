@@ -232,7 +232,8 @@
                          :schema {:type {:type :keyword}
                                   :window {:type :string}
                                   :name {:type :string}
-                                  :limit {:type :int}}}}},
+                                  :limit {:type :int}
+                                  :members {:type :seq :spec {:type :string}}}}}},
   :providers
   {:entity-dir "providers",
    :merge-root-entity? true,

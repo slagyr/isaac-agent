@@ -12,6 +12,16 @@
 
 (describe "config checks"
 
+  (it "preserves member paths when loading a worksite resource pool"
+    (let [mem (fs/mem-fs)]
+      (nexus/-with-nested-nexus {:fs mem :root "/tmp/npmp"}
+        (fs/mkdirs mem "/tmp/npmp/config")
+        (fs/spit mem "/tmp/npmp/config/isaac.edn"
+                 "{:resource-pools {\"decks\" {:type :worksite :members [\"/decks/galley\"]}}}")
+        (should= ["/decks/galley"]
+                 (get-in (:config (loader/load-config-result {:root "/tmp/npmp" :fs mem}))
+                         [:resource-pools "decks" :members])))))
+
   (context "resource pool instances"
     (it "rejects an unknown type and a tide instance without its window"
       (let [{:keys [errors]} (sut/check-resource-pools
