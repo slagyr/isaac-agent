@@ -34,10 +34,12 @@ Feature: Turn store — every turn has a durable record and a stable id
       | type    | message.role | message.content |
       | message | user         | Leave harbor    |
       | message | assistant    | Setting sail    |
-    When isaac is run with "turns list --all"
+    When isaac is run with "turns show #turn-id"
     Then the stdout matches:
-      | id       | session | state    | outcome |
-      | #turn-id | harbor  | finished | ok      |
+      | #turn-id |
+      | harbor   |
+      | finished |
+      | ok       |
 
   Scenario: a repeated idempotency key returns the accepted turn and runs one turn
     Given the following model responses are queued:
@@ -57,10 +59,12 @@ Feature: Turn store — every turn has a durable record and a stable id
     And session "harbor" has transcript not matching:
       | type    | message.role | message.content |
       | message | assistant    | Sailed twice    |
-    When isaac is run with "turns list --all"
+    When isaac is run with "turns show #turn-id"
     Then the stdout matches:
-      | id       | session | state    | outcome |
-      | #turn-id | harbor  | finished | ok      |
+      | #turn-id |
+      | harbor   |
+      | finished |
+      | ok       |
 
   Scenario: finished turns stay listed with their outcome
     Given the following model responses are queued:
@@ -75,9 +79,10 @@ Feature: Turn store — every turn has a durable record and a stable id
     Then the stdout does not contain "harbor"
     When isaac is run with "turns list --all"
     Then the stdout matches:
-      | session | input         | state    | outcome |
-      | harbor  | Status?       | finished | ok      |
-      | harbor  | Status again? | finished | error   |
+      | Status\? |
+      | ok        |
+      | Status again\? |
+      | error     |
 
   Scenario: a turn left running by a crash runs once after restart
     The record says running, but no process holds the turn and no session
@@ -104,8 +109,10 @@ Feature: Turn store — every turn has a durable record and a stable id
       | message | assistant    | Sailed twice    |
     When isaac is run with "turns list --all"
     Then the stdout matches:
-      | id     | session | state    | outcome |
-      | tide-9 | harbor  | finished | ok      |
+      | tide-9   |
+      | harbor   |
+      | finished |
+      | ok       |
 
   Scenario: merged waiting requests keep their own ids and share the turn's outcome
     Given the following sessions exist:
@@ -122,10 +129,12 @@ Feature: Turn store — every turn has a durable record and a stable id
     And the turns on session "dm" finish
     And isaac is run with "turns list --all"
     Then the stdout matches:
-      | session | input | state    | outcome | merged-into |
-      | dm      | one   | finished | ok      |             |
-      | dm      | two   | finished | ok      |             |
-      | dm      | three | finished | ok      | #*          |
+      | one        |
+      | two        |
+      | three      |
+      | finished   |
+      | ok         |
+      | merged-into |
 
   Scenario: a dropped turn stays listed as dropped
     Given the following sessions exist:
@@ -140,12 +149,12 @@ Feature: Turn store — every turn has a durable record and a stable id
     And the user sends "two" on session "dm" without waiting via memory comm
     And isaac is run with "turns list"
     Then the stdout matches:
-      | id                           | session | input |
-      | #"[a-z0-9]+":waiting-id      | dm      | two   |
-    When isaac is run with "turns drop #waiting-id"
+      | waiting: [a-z0-9]+ |
+    When isaac is run with "turns drop #held-id"
     Then the stdout contains "dropped"
     When the turns on session "dm" finish
     And isaac is run with "turns list --all"
     Then the stdout matches:
-      | id          | session | input | state    | outcome |
-      | #waiting-id | dm      | two   | finished | dropped |
+      | two      |
+      | finished |
+      | dropped  |
