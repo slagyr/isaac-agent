@@ -1923,6 +1923,13 @@
         result  (match/match-object table request)]
     (g/should= [] (:failures result))))
 
+(defn llm-request-n-lacks-path [n path]
+  (await-turn!)
+  (let [idx     (dec (long (if (string? n) (parse-long n) n)))
+        request (nth (vec (grover/requests)) idx nil)]
+    (g/should-not-be-nil request)
+    (g/should= nil (get request (keyword path)))))
+
 (defn last-llm-request-has-no-effort []
   (await-turn!)
   (g/should-not (contains? (g/get :llm-request) :effort)))
@@ -2475,6 +2482,11 @@
 
 (defthen #"LLM request (\d+) matches:" isaac.session.session-steps/llm-request-n-matches
   "1-based indexed LLM request match (grover twin of 'outbound HTTP request N matches:').")
+
+(defthen #"LLM request (\d+) has no ([^\s]+)"
+  isaac.session.session-steps/llm-request-n-lacks-path
+  "1-based absence check on a Grover chat request. Use for keys the drive
+   must not forward, such as previous-response-id on a model fallback.")
 
 (defthen "the last LLM request has no effort" isaac.session.session-steps/last-llm-request-has-no-effort
   "Awaits the turn, then asserts that the LLM request map has no :effort key.")
