@@ -1,5 +1,5 @@
 {:id :isaac.agent,
- :version "0.1.90",
+ :version "0.1.91",
  :builtin? true,
  :factory isaac.agent.module/create-module,
  :berths
@@ -741,13 +741,9 @@
      :crew
      {:type :string,
       :description "Sessions whose :crew matches this id"},
-     :reach
-     {:type :keyword,
-      :description "How many sessions to target",
-      :validations [[:one-of? :one :all]]},
      :prefer
      {:type :keyword,
-      :description "Multi-match tiebreak when :reach is :one",
+      :description "Multi-match tiebreak",
       :validations [[:one-of? :recent :oldest]]},
      :create
      {:type :keyword,
@@ -791,7 +787,8 @@
  {:chronicle {:factory isaac.session.policy.chronicle/create}}
 
  :isaac.config/check
- {:comm-reserved-schema
+ {:default-frequencies {:fn isaac.config.checks/check-default-frequencies}
+  :comm-reserved-schema
   {:fn isaac.config.checks/check-comm-reserved-schema},
   :comm-types
   {:fn isaac.config.checks/check-comm-types},

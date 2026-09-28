@@ -14,10 +14,8 @@
 
 (def prefer-modes #{:recent :oldest})
 
-(def reach-modes #{:one :all})
-
 (def frequencies-keys
-  #{:session :session-tags :crew :reach :prefer :create
+  #{:session :session-tags :crew :prefer :create
     :with-crew :with-model :with-effort :with-context-mode})
 
 (def frequencies-schema
@@ -35,14 +33,9 @@
    {:type        :string
     :description "Sessions whose :crew matches this id"}
 
-   :reach
-   {:type        :keyword
-    :description "How many sessions to target (:one or :all)"
-    :validations [[:one-of? :one :all]]}
-
    :prefer
    {:type        :keyword
-    :description "Multi-match tiebreak when :reach is :one (:recent or :oldest)"
+    :description "Multi-match tiebreak (:recent or :oldest)"
     :validations [[:one-of? :recent :oldest]]}
 
    :create
@@ -148,7 +141,6 @@
      :session            — exact session id(s); first is used
      :session-tags       — tag set (AND)
      :crew               — crew id
-     :reach              — :one (sync tools; default)
      :prefer             — :recent | :oldest; multi-match tiebreak when :reach :one (default :recent)
      :resume             — select across all sessions (--resume); mutually exclusive with describe flags
      :create             — :never | :if-missing | :always (default :if-missing)
@@ -164,7 +156,7 @@
   ([frequencies session-store cfg]
    (resolve-session-targets frequencies session-store cfg #{}))
   ([frequencies session-store cfg busy]
-  (let [frequencies  (merge {:reach :one :prefer :recent :create :if-missing}
+  (let [frequencies  (merge {:prefer :recent :create :if-missing}
                             (defaults/frequencies-template cfg) frequencies)
         create       (:create frequencies)
         sess         (policy/wrap session-store)

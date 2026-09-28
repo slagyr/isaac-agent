@@ -12,6 +12,11 @@
 
 (describe "config checks"
 
+  (it "rejects reach in default frequencies"
+    (should= [{:key "defaults.frequencies.reach" :value "unknown frequency :reach"}]
+             (:errors (sut/check-default-frequencies
+                        {:config {:defaults {:frequencies {:crew "main" :reach :one}}}}))))
+
   (it "preserves member paths when loading a worksite resource pool"
     (let [mem (fs/mem-fs)]
       (nexus/-with-nested-nexus {:fs mem :root "/tmp/npmp"}

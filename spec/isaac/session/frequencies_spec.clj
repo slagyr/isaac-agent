@@ -17,7 +17,6 @@
       (should= {:session          ["bridge"]
                 :session-tags     [:wip :project/chess]
                 :crew             "ketch"
-                :reach            :one
                 :prefer           :recent
                 :create           :if-missing
                 :with-crew        "main"
@@ -28,8 +27,7 @@
                  {:session          ["bridge"]
                   :session-tags     [:wip :project/chess]
                   :crew             "ketch"
-                  :reach            :one
-                  :prefer           :recent
+                    :prefer           :recent
                   :create           :if-missing
                   :with-crew        "main"
                   :with-model       "grover"
@@ -44,9 +42,9 @@
       (should-throw clojure.lang.ExceptionInfo
                     (sut/conform-frequencies! {:prefer :sideways})))
 
-    (it "rejects :reach outside #{:one :all}"
+    (it "rejects :reach as an unknown frequency"
       (should-throw clojure.lang.ExceptionInfo
-                    (sut/conform-frequencies! {:reach :many})))
+                    (sut/conform-frequencies! {:reach :one})))
 
     (it "rejects an unrecognized key"
       (should-throw clojure.lang.ExceptionInfo

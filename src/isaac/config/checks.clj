@@ -84,6 +84,16 @@
        (map ->id)
        set))
 
+(defn check-default-frequencies
+  [{:keys [config result]}]
+  (let [frequencies (or (get-in result [:root :defaults :frequencies])
+                        (get-in config [:defaults :frequencies]))]
+    {:errors (vec (for [key (keys frequencies)
+                        :when (not (contains? @(requiring-resolve 'isaac.session.frequencies/frequencies-keys) key))]
+                    {:key (str "defaults.frequencies." (name key))
+                     :value (str "unknown frequency " key)}))
+     :warnings []}))
+
 (defn check-comm-types
   [{:keys [config module-index]}]
   (let [known (into (contributed-comm-types module-index)

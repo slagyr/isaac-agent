@@ -75,7 +75,6 @@ Feature: Default frequencies select the session
     And the session count is 0
     And session "prompt-default" does not exist
 
-  @wip
   Scenario: :reach is not a frequency — fan-out is gone (isaac-5gu1)
     Given the isaac EDN file "config/isaac.edn" exists with:
       | path                       | value |

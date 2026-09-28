@@ -14,7 +14,7 @@
 ;; --- frequencies: session selection -----------------------------------------
 
 (defn frequencies-template
-  "Default session selection fields (:crew, :reach, …)."
+  "Default session selection fields (:crew, :prefer, …)."
   [cfg]
   (get-in cfg [:defaults :frequencies]))
 
