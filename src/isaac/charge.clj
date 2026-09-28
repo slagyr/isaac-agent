@@ -37,6 +37,7 @@
             :nonce             {:type :string :description "Session-scoped trusted-block nonce"}
             :guidance          {:type :string :description "Per-turn trusted guidance injected into the current user turn"}
             :origin            {:type :ignore :description "Inbound origin metadata"}
+            :key               {:type :string :description "Idempotent submission identity"}
             :coalesce-key      {:type :string :description "Waiting-room grouping key"}
             :observers         {:type :ignore :description "Submitted per-turn observer refs (name or [name params])"}
             :resource-pools        {:type :ignore :description "Submitted per-turn resource-pool refs (name or [name params])"}
@@ -133,7 +134,7 @@
    model) returns a charge marked :charge/unresolved with a :charge/reason
    keyword."
   [{:keys [session-key input comm crew config model model-ref model-override model-cfg
-           provider provider-cfg context-window soul soul-prepend guidance origin coalesce-key observers resource-pools cycle dispatch-error
+           provider provider-cfg context-window soul soul-prepend guidance origin key coalesce-key observers resource-pools cycle dispatch-error
            context-mode-override]}]
   (let [config*         (or (when (map? config) config) (loader/snapshot "charge build fallback — no :config passed (entry seed)") {})
         ss*             (store/registered-store)
@@ -159,6 +160,7 @@
                                  :module-index  (:module-index config*)
                                  :guidance      guidance
                                  :origin        origin}
+                                key (assoc :key key)
                                 coalesce-key (assoc :coalesce-key coalesce-key)
                                 (seq observers) (assoc :observers observers)
                                 (seq resource-pools) (assoc :resource-pools resource-pools)

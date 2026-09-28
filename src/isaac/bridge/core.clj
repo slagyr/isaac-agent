@@ -64,7 +64,8 @@
                                        :crew         (:crew charge)
                                        :origin       (:origin charge)
                                        :cwd          (:cwd charge)
-                                       :observers    (:observers charge)
+                                       :observers    (or (:observer-refs charge) (:observers charge))
+                                       :key          (:key charge)
                                        :comm         (:comm charge)
                                        :coalesce-key (:coalesce-key charge)
                                        :reason       :waiting-session
@@ -235,7 +236,7 @@
       :else (let [resolved (observer/resolve-submitted refs)]
               (if (:error resolved)
                 resolved
-                {:charge (assoc charge :observers (:observers resolved))})))))
+                {:charge (assoc charge :observer-refs refs :observers (:observers resolved))})))))
 
 (defn- resource-pool-refuse-message [decision]
   (or (:message decision)
@@ -268,16 +269,22 @@
                  (turn-queue/enqueue!
                    (cond-> {:session    (:session-key charge)
                             :input      (:input charge)
+                            :key        (:key charge)
                             :resource-pools (:resource-pools charge)
                             :crew       (:crew charge)
                             :origin     (:origin charge)
                             :cwd        (:cwd charge)
-                            :observers  (:observers charge)
+                            :observers  (or (:observer-refs charge) (:observers charge))
                             :message    (:message decision)
                             :reason     :hold
                             :state      :held
                             :input-persisted? true}
                      (or (:held-id charge) (:turn-id charge)) (assoc :id (or (:held-id charge) (:turn-id charge))))))
+        _      (when (:turn-id charge)
+                 (binding [turn-queue/*root* (charge-root charge)]
+                   (turn-queue/update-turn! (:id record)
+                                            (assoc (select-keys record [:reason :message :observers :key
+                                                                  :input-persisted? :cwd :crew]) :state :held))))
         refs   (format-resource-pool-refs (:resource-pools charge))
         label  (or (first refs) "resource pool")]
     {:held    true

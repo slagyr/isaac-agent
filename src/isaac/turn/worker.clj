@@ -48,6 +48,7 @@
                   (queue/live-comm (:id record)) (assoc :comm (queue/live-comm (:id record)))
                   (:observers record) (assoc :observers (:observers record))
                   (:resource-pools record) (assoc :resource-pools (:resource-pools record))
+                  (:key record) (assoc :key (:key record))
                   (:cwd record) (assoc :cwd (:cwd record))
                   (:input-persisted? record) (assoc :input-persisted? true))
         built   (try
