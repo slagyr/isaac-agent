@@ -1691,9 +1691,19 @@
   (await-turn!)
   (g/should (single-turn/async-compaction-in-flight? key-str)))
 
+(defn- await-transcript-turn! [key-str]
+  (if-let [turn-future (g/get-in [:turn-futures-by-session key-str])]
+    (if (= turn-future (g/get :turn-future))
+      (await-turn!)
+      (let [result (deref turn-future 30000 ::timeout)]
+        (when (= ::timeout result)
+          (throw (ex-info "turn did not complete within 30 seconds" {:session key-str})))
+        (g/update! :turn-futures-by-session dissoc key-str)))
+    (when-not (seq (g/get :turn-futures-by-session))
+      (await-turn!))))
+
 (defn- session-transcript-matching* [transcript-fn key-str table]
-  (when-not (seq (g/get :turn-futures-by-session))
-    (await-turn!))
+  (await-transcript-turn! key-str)
   (await-acp-turn!)
   (let [table (normalize-transcript-table table)
         transcript (with-feature-fs #(transcript-fn key-str))
@@ -1724,6 +1734,7 @@
   (session-transcript-matching* get-chronicle-transcript key-str table))
 
 (defn session-transcript-not-matching [key-str table]
+  ;; A negative assertion may inspect a turn while it is intentionally wait-gated.
   (when-not (seq (g/get :turn-futures-by-session))
     (await-turn!))
   (await-acp-turn!)

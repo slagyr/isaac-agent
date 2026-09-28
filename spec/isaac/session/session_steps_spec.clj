@@ -43,6 +43,37 @@
                  500.0)))
     (should= {:ok true} (g/get :llm-result)))
 
+  (it "awaits an active session's turn before matching its transcript"
+    (let [turn (future {:output "done" :request {} :result {:ok true}})]
+      (g/assoc! :turn-future turn)
+      (g/assoc! :turn-futures-by-session {"fence-test" turn})
+      (with-redefs [sut/get-transcript (fn [_]
+                                        (should-be-nil (g/get-in [:turn-futures-by-session "fence-test"]))
+                                        [{:type "message" :message {:role "assistant" :content "done"}}])]
+        (sut/session-transcript-matching "fence-test"
+          {:headers ["type" "message.role" "message.content"]
+           :rows [["message" "assistant" "done"]]}))))
+
+  (it "waits for the requested session without draining a different in-flight turn"
+    (let [release (promise)
+          other   (promise)
+          turn    (future (deref release) {:output "done" :request {} :result {:ok true}})]
+      (g/assoc! :turn-future other)
+      (g/assoc! :turn-futures-by-session {"fence-test" turn "other" other})
+      (with-redefs [sut/get-transcript (fn [_]
+                                        (should-be-nil (g/get-in [:turn-futures-by-session "fence-test"]))
+                                        [{:type "message" :message {:role "assistant" :content "done"}}])]
+        (let [assertion (future
+                          (sut/session-transcript-matching "fence-test"
+                            {:headers ["type" "message.role" "message.content"]
+                             :rows [["message" "assistant" "done"]]}))]
+          (try
+            (deliver release true)
+            @assertion
+            (should= other (g/get :turn-future))
+            (finally
+              (deliver other {:output "" :request {} :result {:ok true}})))))))
+
   (it "awaits an in-flight turn before reading prompt tools"
     (g/assoc! :turn-future (future {:output  ""
                                     :request {:tools [{:name "fs__read"}]}
