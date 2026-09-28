@@ -25,8 +25,11 @@
 (defn unregister! [name]
   (swap! factories* dissoc (keyword name)))
 
+(defonce ^:private released-ids* (atom #{}))
+
 (defn clear! []
-  (reset! factories* {}))
+  (reset! factories* {})
+  (reset! released-ids* #{}))
 
 (defn resolve
   "Construct a configured named instance; factory registration alone never leases."
@@ -124,9 +127,11 @@
                   :error (.getMessage t)
                   :ex-class (.getName (class t)))))))
 
-(defn- release-one! [{:keys [resource-pool token]}]
+(defn- release-one! [{:keys [resource-pool token release-id]}]
   (try
-    (release! resource-pool token)
+    (when (or (nil? release-id)
+              (not (contains? (first (swap-vals! released-ids* conj release-id)) release-id)))
+      (release! resource-pool (or token {:release-id release-id})))
     (catch Throwable t
       (log/warn :pool/release-failed
                 :error (.getMessage t)
@@ -142,6 +147,11 @@
   (release-acquired! tokens)
   (nudge-wake!))
 
+(defn- receipt [lease]
+  (if (instance? ReleaseToken lease)
+    {:bindings {} :release-id (str (java.util.UUID/randomUUID)) :token lease}
+    lease))
+
 (defn acquire-all!
   "Acquire in request order without waiting. A busy instance gives back all
    prior leases in reverse order; release on completion wakes the queue."
@@ -152,5 +162,14 @@
         (if (= :busy lease)
           (do (release-acquired! acquired)
               {:error :busy :reason :hold :message (str (clojure.core/name name) " busy") :leases []})
-          (recur (rest remaining) (conj acquired {:resource-pool pool :token lease}))))
+          (let [{:keys [bindings release-id token]} (receipt lease)
+                acquired-lease {:name name :resource-pool pool :token (or token lease)
+                                :release-id release-id :bindings (or bindings {})}
+                unknown (seq (remove #{:session/cwd} (keys bindings)))]
+            (if unknown
+              (do (release-acquired! (conj acquired acquired-lease))
+                  {:error :unknown-binding
+                   :message (str "unknown binding: " (first unknown))
+                   :leases []})
+              (recur (rest remaining) (conj acquired acquired-lease))))))
       {:leases acquired})))

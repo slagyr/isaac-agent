@@ -6,6 +6,7 @@
     [isaac.fs :as fs]
     [isaac.logger :as log]
     [isaac.nexus :as nexus]
+    [isaac.resource-pool :as pool]
     [isaac.session.spec-helper :as helper]
     [isaac.session.store.spi :as store]
     [isaac.spec-helper :as foundation-helper]
@@ -73,6 +74,23 @@
       (should= 1 (:requeued entry))
       (should= 0 (:dropped entry)))
     (should= nil (store/get-turn-marker (store/registered-store) "logbook")))
+
+  (it "returns the orphaned dock lease before requeueing the interrupted turn"
+    (helper/create-session! test-root "logbook")
+    (let [released (atom [])]
+      (pool/register! :scripted (fn [_] (reify pool/ResourcePool
+                                          (try-acquire [_ _] :busy)
+                                          (release! [_ receipt] (swap! released conj receipt)))))
+      (store/record-turn-marker! (store/registered-store) "logbook"
+                                 {:source :comm :session-id "logbook"
+                                  :started-at "2026-04-21T09:59:30Z"
+                                  :leases [{:pool "dock" :release-id "lease-7"}]})
+      (sut/resume-interrupted-turns! {:session-store (store/registered-store)
+                                      :root test-root :now (Instant/parse "2026-04-21T10:00:00Z")
+                                      :cfg {:resource-pools {"dock" {:type :scripted}}}})
+      (should= [{:release-id "lease-7"}] @released)
+      (should= [:dock] (:resource-pools (first (binding [queue/*root* test-root] (queue/list-held)))))
+      (pool/unregister! :scripted)))
 
   (it "enqueues a weather-suspended turn whose retry-at has passed and clears its marker"
     (helper/create-session! test-root "trash-can")

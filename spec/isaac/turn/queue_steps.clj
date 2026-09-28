@@ -116,7 +116,9 @@
   (let [state (or (get @scripted-gates* name)
                   (let [fresh {:open?     (atom true)
                                :inflight  (atom 0)
-                               :limit     n}]
+                               :limit     n
+                               :bindings (atom {})
+                               :leases (atom #{})}]
                     (swap! scripted-gates* assoc name fresh)
                     fresh))]
     (swap! scripted-gates* assoc-in [name :limit] n)
@@ -125,18 +127,37 @@
         (if (false? @(:open? state))
           :busy
           (if (< @(:inflight state) (:limit state))
-            (do (swap! (:inflight state) inc) (pool/->ReleaseToken name))
+            (do (swap! (:inflight state) inc) (let [id (str (java.util.UUID/randomUUID))]
+                  (swap! (:leases state) conj id)
+                  {:bindings @(:bindings state) :release-id id}))
             :busy)))
-      (release! [_ _token]
-        (swap! (:inflight state) #(max 0 (dec %)))))))
+      (release! [_ token]
+        (let [id (or (:release-id token) (:id token))]
+          (when (contains? @(:leases state) id)
+            (swap! (:leases state) disj id)
+            (swap! (:inflight state) dec)))))))
 
 (defn register-admits-n-resource-pool [name n]
   (let [n (if (string? n) (parse-long n) n)]
     (pool/register! :scripted (fn [{:keys [name limit]}] (scripted-gate name limit)))
+    (scripted-gate name n)
     (fsteps/isaac-edn-file-exists
       (str "config/resource-pools/" name ".edn")
       {:headers ["path" "value"]
        :rows [["type" ":scripted"] ["name" (pr-str name)] ["limit" (str n)]]})))
+
+(defn scripted-pool-binds [name table]
+  (register-admits-n-resource-pool name 1)
+  (let [state (get @scripted-gates* name)]
+    (reset! (:bindings state)
+            (into {} (map (fn [[key value]] [(keyword key) (if (= key "session/cwd")
+                                             (str (root-dir) "/" value) value)]) (:rows table))))))
+
+(defn scripted-pool-has-lease [name id]
+  (register-admits-n-resource-pool name 1)
+  (let [state (get @scripted-gates* name)]
+    (swap! (:leases state) conj id)
+    (swap! (:inflight state) inc)))
 
 (defn close-resource-pool [name]
   (let [state (or (get @scripted-gates* name)
@@ -186,3 +207,6 @@
 
 (defwhen #"the user sends \"(.+)\" on session \"([^\"]+)\" with resource pools \"([^\"]+)\""
   isaac.turn.queue-steps/user-sends-with-resource-pools)
+
+(defgiven #"a scripted resource pool \"([^\"]+)\" binds:" isaac.turn.queue-steps/scripted-pool-binds)
+(defgiven #"resource pool \"([^\"]+)\" has lease \"([^\"]+)\" out" isaac.turn.queue-steps/scripted-pool-has-lease)

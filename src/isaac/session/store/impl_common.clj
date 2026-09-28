@@ -1127,6 +1127,7 @@
                           :parentId  parent-id
                           :timestamp now
                           :message   normalized-msg
+                          :cwd       (:cwd message)
                           :tokens    (:tokens normalized-msg)}]
     (append-entry! root id transcript-entry fs)
     (update-entry-fn root identifier

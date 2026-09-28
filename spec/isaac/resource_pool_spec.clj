@@ -66,6 +66,24 @@
       (should= ["crane" "dock"] (mapv (comp :id second) (filter #(= :release (first %)) @events)))
       (should= 1 @wakes)))
 
+  (it "returns bindings with a release id and releases the same id only once"
+    (let [events (atom [])
+          gate (recording-pool events {:bindings {:session/cwd "target/slip-a"} :release-id "lease-7"})
+          lease (first (:leases (sut/acquire-all! [{:name :slip :pool gate}] {})))]
+      (should= {:session/cwd "target/slip-a"} (:bindings lease))
+      (should= "lease-7" (:release-id lease))
+      (sut/release-all! [lease])
+      (sut/release-all! [lease])
+      (should= 1 (count (filter #(= :release (first %)) @events)))))
+
+  (it "rejects unknown bindings and returns all acquired leases"
+    (let [events (atom [])
+          result (sut/acquire-all! [{:name :slip :pool (recording-pool events
+                                                {:bindings {:session/model "bad"} :release-id "lease-8"})}] {})]
+      (should= :unknown-binding (:error result))
+      (should-contain "session/model" (:message result))
+      (should= 1 (count (filter #(= :release (first %)) @events)))))
+
   (it "a throwing release cannot prevent another lease being released"
     (let [released? (atom false)
           boom (reify sut/ResourcePool

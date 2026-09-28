@@ -327,6 +327,7 @@
                           :parentId  parent-id
                           :timestamp now
                           :message   normalized-msg
+                          :cwd       (:cwd message)
                           :tokens    (:tokens normalized-msg)}]
       (swap! state (fn [s]
                      (-> s

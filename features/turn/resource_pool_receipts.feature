@@ -1,4 +1,3 @@
-@wip
 Feature: Resource pool receipts
   A pool that leases a turn what it needs hands back a RECEIPT: bindings
   plus a release id. Bindings shape the turn before it runs — for now the

@@ -203,7 +203,10 @@
    they re-resolve at resume."
   [charge]
   {:source     (marker-source charge)
-   :started-at (System/currentTimeMillis)})
+   :started-at (System/currentTimeMillis)
+   :leases (mapv (fn [{:keys [name release-id]}]
+                   {:pool (clojure.core/name name) :release-id release-id})
+                 (:pool-leases charge))})
 
 (defn record-turn-marker!
   "The bridge is the single writer of durable turn markers (isaac-7li9). Callers
@@ -248,7 +251,7 @@
     (when-let [session-key (:session-key charge)]
       (when-let [input (:input charge)]
         (when-let [sess (request-policy charge)]
-          (policy/append-message! sess session-key {:role "user" :content input}))))))
+          (policy/append-message! sess session-key {:role "user" :content input :cwd (:cwd charge)}))))))
 
 (defn- format-resource-pool-refs [names]
   (mapv name names))
@@ -305,7 +308,10 @@
                                              :now (or (:now charge) (memory/now))})]
             (if (:error decision)
               decision
-              {:charge (assoc charge :pool-leases (:leases decision))})))))))
+              {:charge (-> charge
+                           (assoc :pool-leases (:leases decision))
+                           (assoc :cwd (or (some (comp :session/cwd :bindings) (:leases decision))
+                                           (:cwd charge))))})))))))
 
 (declare dispatch-matched-charge!)
 

@@ -1413,7 +1413,7 @@
     (fn []
       (let [store (session-store)
             root  (root-dir)
-            cfg   (loader/normalize-config (loaded-config))]
+            cfg   (normalize-feature-config (loaded-config))]
         (config/dangerously-install-config! cfg "feature resume")
         (load-disk-turn-markers! store root)
         (bridge-resume/resume-interrupted-turns!
@@ -2012,9 +2012,10 @@
 
 (defn- marker-get [marker path]
   (reduce (fn [current segment]
-            (when (map? current)
-              (or (get current (keyword segment))
-                  (get current segment))))
+            (let [[_ key index] (re-matches #"([^\[]+)(?:\[(\d+)\])?" segment)
+                  value (when (map? current)
+                          (or (get current (keyword key)) (get current key)))]
+              (if index (get value (parse-long index)) value)))
           marker
           (str/split path #"\.")))
 
@@ -2510,7 +2511,7 @@
     (fn []
       (let [now   (java.time.Instant/parse iso)
             store (session-store)
-            cfg   (loader/normalize-config (loaded-config))]
+            cfg   (normalize-feature-config (loaded-config))]
         (g/assoc! :current-time now)
         (config/dangerously-install-config! cfg "weather sweep")
         (with-current-time

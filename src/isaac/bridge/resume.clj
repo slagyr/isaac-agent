@@ -5,6 +5,7 @@
     [isaac.fs :as fs]
     [isaac.logger :as log]
     [isaac.nexus :as nexus]
+    [isaac.resource-pool :as pool]
     [isaac.session.policy :as policy]
     [isaac.session.store.impl-common :as store-common]
     [isaac.session.store.spi :as store]
@@ -98,7 +99,8 @@
       (queue/enqueue! {:session session-id
                        :input   resume-note
                        :origin  {:kind :resume :source (:source marker)}
-                       :root    root}))
+                       :root    root
+                       :resource-pools (mapv (comp keyword :pool) (:leases marker))}))
     true
     (catch Throwable t
       (log/warn :resume/enqueue-failed
@@ -110,6 +112,11 @@
   (store/clear-turn-marker! session-store session-id)
   (when root
     (store-common/clear-turn-marker!* root session-id (filesystem))))
+
+(defn- release-orphaned-leases! [cfg marker]
+  (doseq [{:keys [pool release-id]} (:leases marker)]
+    (when-let [instance (pool/resolve cfg pool)]
+      (pool/release-all! [{:resource-pool instance :release-id release-id}]))))
 
 (defn- resume-marker!
   [{:keys [session-store root cfg window-ms now-ms] :as opts} marker]
@@ -185,6 +192,8 @@
                              :when (and (= :running (:state record))
                                         (not (some #(= (:session record) (:session-id %)) markers)))]
                        (queue/update-turn! (:id record) {:state :queued})))
+        _          (doseq [marker markers]
+                     (release-orphaned-leases! cfg marker))
         summary    (reduce (fn [acc marker]
                              (merge-with + acc (or (resume-marker! opts marker) {})))
                            {:markers  (count markers)
