@@ -55,6 +55,9 @@
 (defn enable-delay! []
   (reset! delay-enabled* true))
 
+(defn disable-delay! []
+  (reset! delay-enabled* false))
+
 (defn set-delay-ms! [delay-ms]
   (reset! delay-enabled* (pos? delay-ms)))
 

@@ -43,4 +43,12 @@
     (sut/delete-held! "berth-1")
     (should-be-nil (sut/read-held "berth-1"))
     (should= [] (sut/list-held)))
+
+  (it "groups consecutive waiting records with the same coalesce key"
+    (doseq [record [{:id "one" :session "harbor" :input "one" :state :waiting-session :coalesce-key "T1" :created-at "2026-03-01T14:00:01Z"}
+                    {:id "two" :session "harbor" :input "two" :state :waiting-session :coalesce-key "T1" :created-at "2026-03-01T14:00:02Z"}
+                    {:id "three" :session "harbor" :input "three" :state :waiting-session :created-at "2026-03-01T14:00:03Z"}]]
+      (sut/enqueue! record))
+    (should= [["one" "two"] ["three"]]
+             (mapv (comp (partial mapv :id)) (sut/waiting-groups "harbor"))))
   )

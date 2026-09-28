@@ -7,7 +7,6 @@ Feature: A busy session queues its next messages; same-thread prompts consolidat
   Background:
     Given default Grover setup
 
-  @wip
   Scenario: a message that arrives while the session's turn runs waits and runs next (isaac-xoqn)
     Given the following sessions exist:
       | name | crew |
@@ -30,7 +29,6 @@ Feature: A busy session queues its next messages; same-thread prompts consolidat
       | level | event         | session |
       | :info | :turn/waiting | dm      |
 
-  @wip
   Scenario: waiting messages with the same coalesce key run as one turn (isaac-xoqn)
     Given the following sessions exist:
       | name | crew |

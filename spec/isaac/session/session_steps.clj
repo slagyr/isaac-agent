@@ -52,7 +52,8 @@
     [isaac.tool.memory :as memory]
     [isaac.spec-helper :as helper]
     [isaac.tool.registry :as tool-registry]
-    [isaac.turnstile :as turnstile]))
+    [isaac.turnstile :as turnstile]
+    [isaac.turn.worker :as turn-worker]))
 
 (helper! isaac.session.session-steps)
 
@@ -785,6 +786,8 @@
 
 (defn responses-queued [table]
   (grover/reset-queue!)
+  (when (g/get :llm-delay-enabled?)
+    (grover/enable-delay!))
   (let [responses (queued-responses table)
         pending   (g/get :pending-grover-responses)]
     (grover/enqueue! (into (vec pending) responses))
@@ -805,6 +808,7 @@
   (g/assoc! :cycle-limit-loops n))
 
 (defn llm-response-delayed [_seconds]
+  (g/assoc! :llm-delay-enabled? true)
   (grover/enable-delay!))
 
 (defn llm-throws-exception [message]
@@ -939,10 +943,11 @@
   (g/should-be-nil (with-feature-fs #(get-session session-name))))
 
 (defn session-is-in-flight [session-name]
-  (let [session-store (session-store)]
-    (g/should (store/mark-in-flight! session-store session-name))
-    (store/record-turn-marker! session-store session-name
-                               {:source :feature :session-id session-name})))
+  (let [session-store (session-store)
+        session-id    (#'store/name->id session-name)]
+    (g/should (store/mark-in-flight! session-store session-id))
+    (store/record-turn-marker! session-store session-id
+                               {:source :feature :session-id session-id})))
 
 (defn session-matches [key-str table]
   (await-turn!)
@@ -1219,10 +1224,12 @@
 
 (defn user-sends-on-session
   ([content key-str]
-   (user-sends-on-session content key-str nil))
+   (user-sends-on-session content key-str nil nil nil))
   ([content key-str turnstiles]
-   (user-sends-on-session content key-str turnstiles nil))
+   (user-sends-on-session content key-str turnstiles nil nil))
   ([content key-str turnstiles crew-id]
+   (user-sends-on-session content key-str turnstiles crew-id nil))
+  ([content key-str turnstiles crew-id coalesce-key]
    (-prepare-next-send!)
    (g/assoc! :current-key key-str)
    (grover/clear-provider-requests!)
@@ -1246,7 +1253,8 @@
                                 :comm           channel
                                 :crew           (or crew-id (active-crew-id))
                                 :config         cfg}
-                         (seq turnstiles) (assoc :turnstiles turnstiles))]
+                         (seq turnstiles) (assoc :turnstiles turnstiles)
+                         coalesce-key (assoc :coalesce-key coalesce-key))]
      (g/assoc! :channel-events events)
      (g/assoc! :memory-comm-events events)
      (let [existing-turn-future (g/get :turn-future)
@@ -1270,7 +1278,8 @@
                                      :request (or (drive-dispatch/last-request)
                                                   (grover/last-request))
                                      :result  @result}))]
-       (let [result (deref turn-future 50 ::pending)]
+       (g/update! :turn-futures (fnil conj []) turn-future)
+     (let [result (deref turn-future 50 ::pending)]
          (if (= ::pending result)
            (do
              (g/assoc! :turn-future turn-future)
@@ -2194,6 +2203,15 @@
   "Sets :effective-history-offset to the byte position after the indexed transcript
    line (0 = session header). Exercises read-transcript-from-offset without a turn.")
 
+(defwhen #"the user sends \"(.+)\" on session \"([^\"]+)\" without waiting via memory comm"
+  isaac.session.session-steps/user-sends-on-session-without-waiting)
+
+(defwhen #"the user sends \"(.+)\" on session \"([^\"]+)\" with coalesce key \"([^\"]+)\" without waiting via memory comm"
+  isaac.session.session-steps/user-sends-on-session-with-coalesce-key)
+
+(defwhen #"the turns on session \"([^\"]+)\" finish"
+  isaac.session.session-steps/turns-on-session-finish)
+
 (defwhen #"the user sends \"(.+)\" on session \"([^\"]+)\"$" isaac.session.session-steps/user-sends-on-session
   "Drives a full turn via single-turn/run-turn! (in-memory,
    bypasses ACP/HTTP). Runs in a background future; waits 50ms and calls
@@ -2204,6 +2222,32 @@
 
 (defn user-sends-on-session-as-crew [content key-str crew]
   (user-sends-on-session content key-str nil crew))
+
+(defn user-sends-on-session-without-waiting [content key-str]
+  (user-sends-on-session content key-str)
+  ;; The first asynchronous send must own the in-flight marker before the
+  ;; next test action enters the bridge; Grover's promise is a deterministic
+  ;; seam, not a timed wait.
+  (when (= 1 (count (or (g/get :turn-futures) [])))
+    (grover/await-delay-start)
+    (grover/disable-delay!)))
+
+(defn user-sends-on-session-with-coalesce-key [content key-str coalesce-key]
+  (user-sends-on-session content key-str nil nil coalesce-key)
+  (when (= 1 (count (or (g/get :turn-futures) [])))
+    (grover/await-delay-start)
+    (grover/disable-delay!)))
+
+(defn turns-on-session-finish [key-str]
+  (grover/release-delay!)
+  (doseq [turn-future (or (g/get :turn-futures) [])]
+    (when (and (not (realized? turn-future)) (grover/waiting? key-str))
+      (grover/release-wait! key-str))
+    (let [result (deref turn-future 30000 ::timeout)]
+      (when (= ::timeout result)
+        (throw (ex-info "turn did not complete within 30 seconds" {})))))
+  (g/dissoc! :turn-futures)
+  (turn-worker/tick!))
 
 (defwhen #"the user sends \"(.+)\" on session \"([^\"]+)\" as crew \"([^\"]+)\""
   isaac.session.session-steps/user-sends-on-session-as-crew

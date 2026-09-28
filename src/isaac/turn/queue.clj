@@ -93,3 +93,22 @@
            (sort-by :created-at)
            vec)
       [])))
+
+
+(defn waiting-groups
+  "Waiting requests for one session, coalesced by their non-nil grouping key.
+   Groups retain the first request's arrival position; requests with no key each
+   remain a separate group."
+  [session]
+  (let [waiting (filter #(and (= session (:session %))
+                              (= :waiting-session (:state %)))
+                        (list-held))]
+    (reduce (fn [groups record]
+              (let [key (:coalesce-key record)]
+                (if key
+                  (if-let [i (first (keep-indexed #(when (= key (:coalesce-key (first %2))) %1) groups))]
+                    (update groups i conj record)
+                    (conj groups [record]))
+                  (conj groups [record]))))
+            []
+            waiting)))
