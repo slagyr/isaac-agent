@@ -230,6 +230,19 @@
             (should= ["session" "message" "compaction"] (mapv :type transcript))
             (should= "Second" (get-in (nth transcript 1) [:message :content])))))))
 
+  (describe "rotate-transcript!"
+    (it "keeps the previous conversation in the chronicle and resets the active tally"
+      (let [s (sut/create-store)]
+        (store/open-session! s "chat" {:crew "main" :history-retention :prune})
+        (store/append-message! s "chat" {:role "user" :content "First"})
+        (store/update-session! s "chat" {:last-input-tokens 900 :tally-after-id "old"})
+        (store/rotate-transcript! s "chat")
+        (should= [] (store/active-transcript s "chat"))
+        (should= "First" (get-in (last (store/chronicle-transcript s "chat")) [:message :content 0 :text]))
+        (should= 0 (:last-input-tokens (store/get-session s "chat")))
+        (should-be-nil (:tally-after-id (store/get-session s "chat")))))
+    )
+
   (describe "splice-compaction!"
 
     (it "splices compaction entries into the transcript under prune"

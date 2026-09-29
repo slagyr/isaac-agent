@@ -1814,6 +1814,8 @@
           blocked
           (do
             (log/info :drive/turn-accepted {:session session-key :crew crew})
+            (with-transcript-lock session-key
+              #(policy/prepare-turn! (session-policy ctx) session-key input))
             (let [compact-result (check-compaction! ctx session-key {:boot-files      boot-files
                                                                      :rules-text      rules-text
                                                                      :skill-menu-text skill-menu-text

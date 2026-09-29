@@ -73,6 +73,7 @@
   (append-checkpoint! [_ name checkpoint]
     (record! :append-checkpoint! name nil)
     (policy/append-checkpoint! inner name checkpoint))
+  (prepare-turn! [_ name input] (policy/prepare-turn! inner name input))
   (splice-compaction! [_ name compaction]
     (record! :splice-compaction! name nil)
     (policy/splice-compaction! inner name compaction))

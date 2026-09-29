@@ -433,6 +433,29 @@
         (append-transcript-line! root id entry))
       entry))
 
+  (rotate-transcript! [_ name]
+    (let [id         (c/session-id name)
+          transcript (get-in @state [:transcripts id] [])
+          n          (or (get-in @state [:sessions id :segment]) 0)
+          now        (now-iso)]
+      (swap! state (fn [s]
+                     (-> s
+                         (update-in [:frozen id] (fnil conj []) transcript)
+                         (assoc-in [:transcripts id] [])
+                         (update-in [:sessions id]
+                                    #(-> %
+                                         (assoc :segment (inc n) :updated-at now
+                                                :last-input-tokens 0 :last-output-tokens 0
+                                                :tally-after-id nil))))))
+      (when root
+        (let [fs*  (fs/instance)
+              loc  (c/locate-session root id fs*)
+              crew (get-in @state [:sessions id :crew])]
+          (c/write-ednl! fs* (c/frozen-transcript-path root (or crew (:crew loc)) id n) transcript)
+          (persist-transcript! root id [])
+          (persist-entry! root (get-in @state [:sessions id]) nil)))
+      true))
+
   (splice-compaction! [_ name {:keys [compactedEntryIds firstKeptEntryId summary tokensBefore turnRequest]}]
     (let [id         (c/session-id name)
           transcript (get-in @state [:transcripts id] [])

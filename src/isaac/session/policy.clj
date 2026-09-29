@@ -36,6 +36,8 @@
   (append-compaction! [this name compaction])
   (append-reckoning! [this name reckoning])
   (append-checkpoint! [this name checkpoint])
+  (prepare-turn! [this name input]
+    "Prepare the transcript before the turn's compaction check. Returns a cold-open action or nil.")
   (splice-compaction! [this name compaction])
   (truncate-after-compaction! [this name])
   (record-turn-marker! [this session-id marker])

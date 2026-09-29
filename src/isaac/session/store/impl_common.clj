@@ -1270,6 +1270,20 @@
      :last-output-tokens 0
      :tally-after-id     (:id (last entries))}))
 
+(defn rotate-transcript! [get-session-fn update-entry-fn now-fn root identifier fs]
+  (let [entry      (get-session-fn root identifier fs)
+        id         (:id entry)
+        transcript (read-transcript-raw root id fs)
+        n          (or (:segment entry) 0)
+        dir        (session-dir-for root id fs)]
+    (write-ednl! fs (str dir "/" n ".ednl") transcript)
+    (write-ednl! fs (str dir "/current.ednl") [])
+    (update-entry-fn root identifier
+                     #(assoc % :segment (inc n) :updated-at (now-fn)
+                             :last-input-tokens 0 :last-output-tokens 0 :tally-after-id nil)
+                     fs)
+    true))
+
 (defn splice-compaction! [get-session-fn update-entry-fn now-fn root identifier {:keys [compactedEntryIds firstKeptEntryId summary tokensBefore turnRequest]} fs]
   (let [entry      (get-session-fn root identifier fs)
         id         (:id entry)
