@@ -291,6 +291,14 @@
                                   cursor (assoc :tally-after-id cursor)))))
     prompt-tokens))
 
+(defn- declared-gauge-tokens
+  "A driver that can tell its first request from the turn's spend names that
+   prompt size here. Absent, or not a positive number, the response's own
+   prompt size stays the gauge (isaac-6ef2)."
+  [result]
+  (let [n (:gauge-prompt-tokens result)]
+    (when (and (number? n) (pos? n)) n)))
+
 (defn- store-response! [ctx session-key result {:keys [model provider]}]
   (let [sess              (session-policy ctx)
         turn-tokens       (extract-tokens result)
@@ -301,7 +309,9 @@
         stop-reason       (get-in result [:response :stop-reason])
         session-entry     (or (policy/get-session sess session-key) {})
         turn-input-tokens (:input-tokens turn-tokens 0)
-        prompt-tokens     (or (provider-prompt-tokens ctx session-key result) 0)
+        prompt-tokens     (or (declared-gauge-tokens result)
+                              (provider-prompt-tokens ctx session-key result)
+                              0)
         output-tokens     (:output-tokens turn-tokens 0)
         cache-read        (:cache-read turn-tokens)
         cache-write       (:cache-write turn-tokens)]

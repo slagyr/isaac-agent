@@ -271,6 +271,38 @@
         (let [session (helper/get-session test-dir "stateful-declared")]
           (should= 150000 (:last-input-tokens session))
           (should-be-nil (first (filter #(= :session/stamp-implausible (:event %)) @log/captured-logs))))))
+
+    (it "stamps a declared gauge and leaves the response usage as turn spend (isaac-6ef2)"
+      ;; claude-code's last cycle is not the next Isaac request. The driver
+      ;; names the first cycle; the response keeps the last cycle's own usage.
+      (helper/create-session! test-dir "first-cycle")
+      (sut/process-response! "first-cycle"
+                             {:usage               {:requests 2 :prompt-tokens 580 :output-tokens 7}
+                              :gauge-prompt-tokens 260
+                              :response            {:content     "Done"
+                                                    :model       "echo"
+                                                    :tool-calls  []
+                                                    :stop-reason :end-turn
+                                                    :usage       {:prompt-tokens 320 :output-tokens 7
+                                                                  :cache-read-tokens 60}}}
+                             {:model "echo" :provider "claude-code"})
+      (let [assistant (-> (helper/get-transcript test-dir "first-cycle") last :message)
+            session   (helper/get-session test-dir "first-cycle")]
+        (should= 580 (get-in assistant [:usage :prompt-tokens]))
+        (should= 580 (:turn-input-tokens session))
+        (should= 260 (:last-input-tokens session))))
+
+    (it "ignores a zero gauge and keeps the response prompt size (isaac-6ef2)"
+      (helper/create-session! test-dir "zero-gauge")
+      (sut/process-response! "zero-gauge"
+                             {:usage               {:requests 1 :prompt-tokens 123 :output-tokens 7}
+                              :gauge-prompt-tokens 0
+                              :response            {:content "Done" :model "echo" :tool-calls []
+                                                    :stop-reason :end-turn
+                                                    :usage {:prompt-tokens 123 :output-tokens 7}}}
+                             {:model "echo" :provider "claude-code"})
+      (let [session (helper/get-session test-dir "zero-gauge")]
+        (should= 123 (:last-input-tokens session))))
     )
 
   (describe "keep-cycle-usage! (isaac-ewxh)"

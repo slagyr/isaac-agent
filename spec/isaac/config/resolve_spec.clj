@@ -111,6 +111,17 @@
                    (select-keys (get-in ctx [:provider :cfg]) [:api :context-window :module-index]))
           (should= 64000 (:context-window ctx))))))
 
+  (describe "resolve-crew"
+
+    #_{:clj-kondo/ignore [:unresolved-symbol]}
+    (around [example] (nexus/-with-nested-nexus {:fs (fs/mem-fs)} (example)))
+
+    (it "ignores a legacy string at :defaults :crew and returns the named crew"
+      (should= {:model "sonnet"}
+               (sut/resolve-crew {:defaults {:crew "main"}
+                                  :crew     {"thinker" {:model "sonnet"}}}
+                                 "thinker"))))
+
   (describe "resolve-crew-context"
 
     #_{:clj-kondo/ignore [:unresolved-symbol]}

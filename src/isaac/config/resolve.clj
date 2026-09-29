@@ -82,13 +82,19 @@
       (:context-window ctx)
       32768))
 
+(defn- map-template
+  "A :defaults entity template is a map of fields. A legacy string there is the
+   old default id, not a template, and must not crash the merge."
+  [value]
+  (when (map? value) value))
+
 (defn resolve-crew
   "The crew entity under the :defaults :crew template: every crew behaves as if
    it had set the template's fields, and its own values outrank them."
   [cfg crew-id]
   (let [cfg     (loader/normalize-config cfg)
         crew-id (->id crew-id)]
-    (merge (defaults/crew-template cfg)
+    (merge (map-template (defaults/crew-template cfg))
            (get-in cfg [:crew crew-id] {}))))
 
 (def default-history-retention :retain)
