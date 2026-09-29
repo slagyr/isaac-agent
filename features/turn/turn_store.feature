@@ -157,3 +157,16 @@ Feature: Turn store — every turn has a durable record and a stable id
       | two      |
       | finished |
       | dropped  |
+
+  @wip
+  Scenario: a queued turn runs on the server's own tick — nobody ticks it by hand (isaac-2lc4)
+    Boots the real runner (scheduler + components) the way `isaac server`
+    does. The queue ticks every 10 seconds; 15 covers one real tick.
+    Given the Isaac runner is started
+    And the following model responses are queued:
+      | type | content      | model |
+      | text | Setting sail | echo  |
+    When isaac is run with "prompt --queue --session harbor -m 'Leave harbor'"
+    Then within 15 seconds session "harbor" has transcript matching:
+      | type    | message.role | message.content |
+      | message | assistant    | Setting sail    |
