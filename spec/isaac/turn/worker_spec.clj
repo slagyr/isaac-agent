@@ -176,6 +176,34 @@
         (sut/tick!))
       (should= 2 @calls)))
 
+  (it "does not wedge the tick loop forever when a coalesced wake arrives during a failing pass (isaac-2lc4)"
+    ;; A wake (interval fire, or the resource-pool release hook) that lands
+    ;; while a tick is already running is coalesced: request-tick! moves
+    ;; :running -> :pending instead of dropping it, and the running tick's
+    ;; finish-tick! picks that up as one more owed pass. Before isaac-2lc4,
+    ;; a pass that threw re-raised immediately without taking that owed
+    ;; pass, stranding tick-state* off :idle — every later tick (scheduled
+    ;; or wake-hook) then no-ops forever, exactly like the production
+    ;; turn-queue going silent after one bad pass. Simulate the coalesced
+    ;; wake by calling tick! recursively from inside queue/list-held, from
+    ;; the still-:running first pass, then let that first pass throw.
+    (let [calls (atom 0)]
+      (with-redefs [queue/list-held (fn []
+                                     (let [n (swap! calls inc)]
+                                       (when (= 1 n)
+                                         (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")})
+                                         (throw (ex-info "broken queue" {})))
+                                       []))]
+        (should-throw Exception "broken queue"
+                      (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")})))
+      ;; The coalesced pass (owed because of the nested wake) must have run
+      ;; as part of draining back to :idle, not been abandoned.
+      (should= 2 @calls)
+      ;; And the mechanism must still be live for the next call — not wedged.
+      (with-redefs [queue/list-held (fn [] (swap! calls inc) [])]
+        (sut/tick! {:now (Instant/parse "2026-03-01T18:00:10Z")}))
+      (should= 3 @calls)))
+
   (it "does not drop a held turn that parks again on wake"
     (queue/enqueue! {:id         "berth-1"
                      :session    "harbor"

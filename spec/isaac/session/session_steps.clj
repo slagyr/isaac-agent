@@ -1702,7 +1702,12 @@
     (when-not (seq (g/get :turn-futures-by-session))
       (await-turn!))))
 
-(defn- session-transcript-matching* [transcript-fn key-str table]
+(defn- transcript-matching-failures
+  "Pure(ish) check: awaits any in-process turn machinery, then returns the
+   list of table-vs-transcript mismatches (empty when it matches). Shared by
+   the synchronous assertion and the polling 'within N seconds' variant so
+   both use exactly one matching implementation."
+  [transcript-fn key-str table]
   (await-transcript-turn! key-str)
   (await-acp-turn!)
   (let [table (normalize-transcript-table table)
@@ -1722,9 +1727,24 @@
          result       (if explicit-idx?
                        (match/match-entries table transcript)
                        (transcript-match-result table transcript))]
-     (g/should= [] (:failures result))))
+     (:failures result)))
+
+(defn- session-transcript-matching* [transcript-fn key-str table]
+  (g/should= [] (transcript-matching-failures transcript-fn key-str table)))
 
 (defn session-transcript-matching [key-str table]
+  (session-transcript-matching* get-transcript key-str table))
+
+(defn within-seconds-session-transcript-matching
+  "Polls the transcript every 1ms, up to n seconds, until it matches the
+   table — for turns that finish on a background scheduler tick rather than
+   one this process awaited directly (e.g. the production turn-queue tick,
+   isaac-2lc4). Asserts once more after the wait so a genuine timeout raises
+   the real mismatch instead of a generic 'condition never became true'."
+  [n key-str table]
+  (helper/await-condition
+    #(empty? (transcript-matching-failures get-transcript key-str table))
+    (* 1000 n))
   (session-transcript-matching* get-transcript key-str table))
 
 (defn session-active-transcript-matching [key-str table]
@@ -2373,6 +2393,14 @@
    skips 'session' header entries and uses a column-aware matcher that
    includes compaction summaries unless a 'summary' column is present.
    Use '#index' in any row to force strict positional match.")
+
+(defthen "within {n:int} seconds session {key:string} has transcript matching:"
+  isaac.session.session-steps/within-seconds-session-transcript-matching
+  "Like 'session {key} has transcript matching:' but polls up to n seconds
+   instead of awaiting a specific in-process turn-future — for a turn that
+   finishes on a live background scheduler tick (e.g. the production
+   turn-queue, isaac-2lc4) rather than one this process is holding a future
+   for. Times out with the real mismatch, not a generic timeout error.")
 
 (defthen "session {key:string} has chronicle matching:" isaac.session.session-steps/session-chronicle-transcript-matching
   "Matches against the full chronicle (frozen segments + current). Use

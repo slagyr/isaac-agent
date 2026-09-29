@@ -145,37 +145,49 @@
         (= :running state) (if (compare-and-set! tick-state* :running :idle) :idle (recur))
         :else              :idle))))
 
+(defn- run-one-pass! [now]
+  (let [records (queue/list-held)
+        waiting-sessions (distinct (map :session (filter #(= :waiting-session (:state %)) records)))
+        waiting-ids (set (mapcat #(map :id (mapcat identity (queue/waiting-groups %))) waiting-sessions))
+        ordinary (remove #(contains? waiting-ids (:id %)) records)]
+    (doseq [record ordinary]
+      (when (queue/claim! (:id record))
+        (process-record! now record)))
+    (doseq [session waiting-sessions
+            :when (not (store/in-flight? (or (nexus/get-in [:sessions :store])
+                                              (store/registered-store)) session))
+            records (queue/waiting-groups session)]
+      (let [record (coalesced-record records)]
+        (when (> (count records) 1)
+          (log/info :turn/coalesced :session session :key (:coalesce-key record) :count (count records)))
+        (when (queue/claim! (:id record))
+          (process-record! now record))))))
+
 (defn tick!
   ([] (tick! {}))
   ([{:keys [now]}]
    (let [now (or now (memory/now))]
      (when (= :run (request-tick!))
        (binding [queue/*root* (or queue/*root* (nexus/get :root) (loader/root))]
-         (loop []
+         ;; A pass that throws must not abandon a coalesced wake that arrived
+         ;; while it ran: finish-tick! can still hand back :run (another pass
+         ;; owed), and re-throwing immediately would leave tick-state* stuck
+         ;; at :running forever — every later tick (interval or wake-hook)
+         ;; then CASes :running->:pending and no-ops for good, silently
+         ;; disabling the queue until a process restart (isaac-2lc4). Keep
+         ;; looping until finish-tick! actually returns to :idle, then
+         ;; surface the last failure, if any.
+         (loop [pending-failure nil]
            (let [failure    (try
-                              (let [records (queue/list-held)
-                                    waiting-sessions (distinct (map :session (filter #(= :waiting-session (:state %)) records)))
-                                    waiting-ids (set (mapcat #(map :id (mapcat identity (queue/waiting-groups %))) waiting-sessions))
-                                    ordinary (remove #(contains? waiting-ids (:id %)) records)]
-                                (doseq [record ordinary]
-                                  (when (queue/claim! (:id record))
-                                    (process-record! now record)))
-                                (doseq [session waiting-sessions
-                                        :when (not (store/in-flight? (or (nexus/get-in [:sessions :store])
-                                                                          (store/registered-store)) session))
-                                        records (queue/waiting-groups session)]
-                                  (let [record (coalesced-record records)]
-                                    (when (> (count records) 1)
-                                      (log/info :turn/coalesced :session session :key (:coalesce-key record) :count (count records)))
-                                    (when (queue/claim! (:id record))
-                                      (process-record! now record)))))
+                              (run-one-pass! now)
                               nil
                               (catch Throwable t t))
-                 next-state (finish-tick!)]
-             (when failure
-               (throw failure))
-             (when (= :run next-state)
-               (recur)))))))))
+                 next-state (finish-tick!)
+                 failure    (or failure pending-failure)]
+             (if (= :run next-state)
+               (recur failure)
+               (when failure
+                 (throw failure))))))))))
 
 (defn sweep-tick!
   "One weather sweep: re-drive the turns parked on provider weather whose

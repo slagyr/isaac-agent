@@ -158,7 +158,6 @@ Feature: Turn store — every turn has a durable record and a stable id
       | finished |
       | dropped  |
 
-  @wip
   Scenario: a queued turn runs on the server's own tick — nobody ticks it by hand (isaac-2lc4)
     Boots the real runner (scheduler + components) the way `isaac server`
     does. The queue ticks every 10 seconds; 15 covers one real tick.
