@@ -475,7 +475,11 @@ Feature: Config Command
 
   # ----- Schema -----
 
+  @wip
   Scenario: config schema prints the root schema with title, fields, and guidance
+    The Try: examples are generated from the loaded schema (isaac-foundation
+    config_schema.feature): the first leaf root field, the first dynamic-key
+    table and its .value, then --tree.
     When isaac is run with "config schema"
     Then the stdout matches:
       | pattern                                |
@@ -485,9 +489,10 @@ Feature: Config Command
       | models\s+.*\[models\]                  |
       | providers\s+.*\[providers\]            |
       | Try:                                   |
-      | isaac config schema crew               |
-      | isaac config schema providers\.value   |
-      | isaac config schema crew\.value\.model |
+      | isaac config schema hot-reload         |
+      | (?m)^\s*isaac config schema comms$     |
+      | isaac config schema comms\.value       |
+      | isaac config schema --tree             |
     And the exit code is 0
 
   Scenario: config schema --tree expands every named sub-schema
