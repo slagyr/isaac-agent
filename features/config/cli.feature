@@ -475,7 +475,6 @@ Feature: Config Command
 
   # ----- Schema -----
 
-  @wip
   Scenario: config schema prints the root schema with title, fields, and guidance
     The Try: examples are generated from the loaded schema (isaac-foundation
     config_schema.feature): the first leaf root field, the first dynamic-key
