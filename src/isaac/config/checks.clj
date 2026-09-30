@@ -126,8 +126,17 @@
         {:key   (str "crew." crew-id ".tools.directories")
          :value (str "grants a parent of the user home (" directory ") — use :cwd for the session workspace")}))))
 
+(defn known-crew-ids
+  "Crew member ids known to this config. Contributed to foundation's
+   :isaac.config/validation-ref berth as :crew-exists?'s :known fn — foundation
+   names no other module's concept (isaac-h2oo)."
+  [config]
+  (->> (keys (:crew config)) (keep ->id) distinct sort vec))
+
 (defn known-model-ids+aliases
-  "Model ids plus each registered model's provider :model string."
+  "Model ids plus each registered model's provider :model string. Contributed
+   to foundation's :isaac.config/validation-ref berth as :model-exists?'s
+   :known fn (isaac-h2oo)."
   [config]
   (let [models (:models config)]
     (->> (concat (keys models)
@@ -162,12 +171,6 @@
                             :value     "references undefined model"
                             :bad-value (->id defaults-model)}]))))
      :warnings []}))
-
-(defonce ^:private model-exists-override
-  (when-let [vlex (try (requiring-resolve 'isaac.config.validation-lexicon/known-model-ids)
-                       (catch Throwable _ nil))]
-    (alter-var-root vlex (constantly known-model-ids+aliases))
-    true))
 
 (defn check-crew-broad-directories
   [{:keys [config root]}]

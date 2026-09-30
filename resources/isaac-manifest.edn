@@ -820,4 +820,12 @@
   :session-policy
   {:fn isaac.config.checks/check-session-policy}
   :retired-cycle-limit
-  {:fn isaac.config.checks/check-retired-cycle-limit}}}
+  {:fn isaac.config.checks/check-retired-cycle-limit}}
+
+ :isaac.config/validation-ref
+ {:crew-exists?
+  {:known   isaac.config.checks/known-crew-ids
+   :message "references undefined crew"}
+  :model-exists?
+  {:known   isaac.config.checks/known-model-ids+aliases
+   :message "references undefined model"}}}
