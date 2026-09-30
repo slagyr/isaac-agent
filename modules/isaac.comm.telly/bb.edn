@@ -19,6 +19,6 @@
                                                 (map (fn [f] (.getPath f)))
                                                 (filter (fn [p] (clojure.string/ends-with? p ".feature")))
                                                 sort))]
-                        (apply main/-main (concat ["-s" "isaac.features.steps.*"]
+                        (apply main/-main (concat ["-s" "isaac.agent.features.steps.*"]
                                                   ["-t" "~slow" "-t" "~wip"]
                                                   feature-args)))}}}

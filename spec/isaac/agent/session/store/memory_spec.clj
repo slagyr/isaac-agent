@@ -1,0 +1,300 @@
+(ns isaac.agent.session.store.memory-spec
+  (:require
+    [isaac.foundation.fs :as fs]
+    [isaac.foundation.marigold :as marigold]
+    [isaac.foundation.nexus :as nexus]
+    [isaac.agent.session.store.spi :as store]
+    [isaac.agent.session.store.impl-common :as c]
+    [isaac.agent.session.store.memory :as sut]
+    [speclj.core :refer :all]))
+
+(describe "MemorySessionStore"
+
+  (around [example] (nexus/-with-nested-nexus {:fs (fs/mem-fs)} (example)))
+
+  (describe "repair-transcript!"
+
+    (it "truncates a torn trailing line on disk and in memory"
+      (let [root "/test/memory-torn"
+            s    (sut/create-store root)
+            path (c/current-transcript-path root "main" "torn")
+            mem  (fs/instance)]
+        (store/open-session! s "torn" {:crew "main"})
+        (store/append-message! s "torn" {:role "user" :content "Begin"})
+        (fs/spit mem path (str (fs/slurp mem path) "{:type \"mess"))
+        (should (store/repair-transcript! s "torn"))
+        (should= ["Begin"] (->> (store/get-transcript s "torn")
+                                (filter #(= "message" (:type %)))
+                                (map #(get-in % [:message :content 0 :text]))))
+        (should-not (store/repair-transcript! s "torn"))))
+
+    (it "is a no-op without a root"
+      (let [s (sut/create-store)]
+        (store/open-session! s "torn" {:crew "main"})
+        (should-not (store/repair-transcript! s "torn")))))
+
+  (describe "open-session!"
+
+    (it "creates a session with transcript metadata"
+      (let [s     (sut/create-store)
+            entry (store/open-session! s "friday-debug" {:crew "main"})]
+        (should= "friday-debug" (:id entry))
+        (should-not (contains? entry :session-file))
+        (should= {:kind :cli} (:origin entry))
+        (should= :retain (:history-retention entry))
+        (should= 0 (:compaction-count entry))
+        (should= 1 (count (store/get-transcript s "friday-debug")))))
+
+    (it "reuses an existing session"
+      (let [s     (sut/create-store)
+            first (store/open-session! s "friday-debug" {:crew "main"})
+            again (store/open-session! s "friday-debug" {:crew "main"})]
+        (should= (:sessionId first) (:sessionId again))))
+
+    (it "resolves retention from the passed :config"
+      #_{:clj-kondo/ignore [:invalid-arity]}
+      (let [s     (sut/create-store "/tmp/isaac")
+            entry (store/open-session! s "friday-debug"
+                                       {:crew "main" :config {:defaults {:provider {:history-retention :prune}}}})]
+        (should= :prune (:history-retention entry))))
+
+    (it "stamps :session-policy :chronicle by default"
+      (let [s     (sut/create-store)
+            entry (store/open-session! s "harbor-log" {:crew "main"})]
+        (should= :chronicle (:session-policy entry))))
+
+    (it "stamps an explicit :session-policy"
+      (let [s     (sut/create-store)
+            entry (store/open-session! s "lantern-room" {:crew "cordelia" :session-policy :episodes})]
+        (should= :episodes (:session-policy entry))
+        (should= "cordelia" (:crew entry))))
+
+    (it "refuses an id that already belongs to another crew"
+      (let [s (sut/create-store)]
+        (store/open-session! s "lantern-room" {:crew "cordelia"})
+        (try
+          (store/open-session! s "lantern-room" {:crew "main"})
+          (should-fail "expected crew collision")
+          (catch clojure.lang.ExceptionInfo e
+            (should (re-find #"belongs to crew cordelia" (ex-message e)))
+            (should= :crew-collision (:reason (ex-data e)))))
+        (should= "cordelia" (:crew (store/get-session s "lantern-room")))))
+
+    (it "reuses an existing session when crew is omitted"
+      (let [s (sut/create-store)]
+        (store/open-session! s "trash-can" {:crew "oscar"})
+        (let [again (store/open-session! s "trash-can" {})]
+          (should= "oscar" (:crew again))
+          (should= "trash-can" (:id again)))))
+
+    (it "mints a fresh name for a blank identifier instead of colliding with the literal 'session'"
+      (let [s (sut/create-store "/blank-id-root")]
+        (store/register-store! s)
+        (store/open-session! s "session" {:crew "main"})
+        (let [entry (store/open-session! s "" {:crew "oscar"})]
+          (should-not= "session" (:id entry))
+          (should= "oscar" (:crew entry)))))
+
+    (it "hydrates a session that exists on disk but not in the memory atom"
+      (let [root "/hydrate-root"
+            first (sut/create-store root)
+            _     (store/open-session! first "lantern-room" {:crew "cordelia" :session-policy :episodes})
+            second (sut/create-store root)
+            entry  (store/get-session second "lantern-room")]
+        (should= "lantern-room" (:id entry))
+        (should= "cordelia" (:crew entry))
+        (should= :episodes (:session-policy entry))))
+    )
+
+  (describe "rename-session!"
+
+    (it "moves the nested directory so the old id cannot hydrate from disk"
+      (let [root "/rename-root"
+            s    (sut/create-store root)
+            fs*  (fs/instance)]
+        (store/open-session! s "joe" {:crew "main" :tags #{:wip}})
+        (store/rename-session! s "joe" "skipper")
+        (should-be-nil (store/get-session s "joe"))
+        (should= "skipper" (:id (store/get-session s "skipper")))
+        (should-not (fs/exists? fs* (c/session-edn-path root "main" "joe")))
+        (should (fs/exists? fs* (c/session-edn-path root "main" "skipper")))
+        (let [fresh (sut/create-store root)]
+          (should-be-nil (store/get-session fresh "joe"))
+          (should= "skipper" (:id (store/get-session fresh "skipper")))
+          (should= #{:wip} (:tags (store/get-session fresh "skipper"))))))
+    )
+
+  (describe "append-message!"
+
+    (it "appends transcript messages with parent links"
+      (let [s (sut/create-store)]
+        (store/open-session! s "chat" {:crew "main"})
+        (store/append-message! s "chat" {:role "user" :content "Hello"})
+        (store/append-message! s "chat" {:role "assistant" :content "Hi"})
+        (let [transcript (store/get-transcript s "chat")
+              header     (nth transcript 0)
+              user-msg   (nth transcript 1)
+              asst-msg   (nth transcript 2)]
+          (should= (:id header) (:parentId user-msg))
+          (should= (:id user-msg) (:parentId asst-msg))
+          (should= [{:type "text" :text "Hello"}] (get-in user-msg [:message :content])))))
+
+    (it "updates last-channel and last-to metadata"
+      (let [s (sut/create-store)]
+        (store/open-session! s "chat" {:crew "main"})
+        (store/append-message! s "chat" {:role "user" :content "Hello" :channel marigold/longwave :to marigold/captain})
+        (let [entry (store/get-session s "chat")]
+          (should= marigold/longwave (:last-channel entry))
+          (should= marigold/captain (:last-to entry))))))
+
+  (describe "update-session!"
+
+    (it "merges compaction state"
+      (let [s (sut/create-store)]
+        (store/open-session! s "chat" {:crew "main"})
+        (store/update-session! s "chat" {:compaction {:strategy :slinky :threshold 80}})
+        (store/update-session! s "chat" {:compaction {:tail 40}})
+        (should= {:strategy :slinky :threshold 80 :tail 40}
+                 (:compaction (store/get-session s "chat")))))
+
+    (it "kebabizes legacy :createdAt and :chatType on write"
+      (let [s (sut/create-store)]
+        (store/open-session! s "chat" {:crew "main"})
+        (store/update-session! s "chat" {:createdAt "2026-04-28T10:00:00" :chatType "direct"})
+        (let [entry (store/get-session s "chat")]
+          (should= "2026-04-28T10:00:00" (:created-at entry))
+          (should= "direct" (:chat-type entry))
+          (should-not (contains? entry :createdAt))
+          (should-not (contains? entry :chatType)))))
+
+    (it "persists session.edn so last-input-tokens survive a disk read"
+      (let [root "/mem-persist"
+            s    (sut/create-store root)]
+        (store/open-session! s "lantern-room" {:crew "cordelia"})
+        (store/update-session! s "lantern-room" {:last-input-tokens 85 :model "beta"})
+        (let [path (c/session-edn-path root "cordelia" "lantern-room")
+              edn  (read-string (fs/slurp (fs/instance) path))]
+          (should= 85 (:last-input-tokens edn))
+          (should= "beta" (:model edn))))))
+
+  (describe "drop-orphan-toolcalls"
+
+    (it "returns the original transcript when there are no orphan tool calls"
+      (let [transcript [{:type "session" :id "session"}
+                        {:type "message"
+                         :id "tool-call"
+                         :parentId "session"
+                         :message {:role "assistant"
+                                   :content [{:type "toolCall" :id "tc-1" :name "search" :arguments {}}]}}
+                        {:type "message"
+                         :id "tool-result"
+                         :parentId "tool-call"
+                         :message {:role "toolResult" :toolCallId "tc-1" :content "ok"}}]]
+        (should= transcript (c/drop-orphan-toolcalls transcript))))
+
+    (it "removes orphan tool calls and reparents later entries"
+      (let [transcript [{:type "session" :id "session"}
+                        {:type "message"
+                         :id "orphan-call"
+                         :parentId "session"
+                         :message {:role "assistant"
+                                   :content [{:type "toolCall" :id "tc-orphan" :name "search" :arguments {}}]}}
+                        {:type "message"
+                         :id "followup"
+                         :parentId "orphan-call"
+                         :message {:role "assistant" :content "continuing"}}
+                        {:type "message"
+                         :id "kept-call"
+                         :parentId "followup"
+                         :message {:role "assistant"
+                                   :content [{:type "toolCall" :id "tc-kept" :name "fetch" :arguments {}}]}}
+                        {:type "message"
+                         :id "kept-result"
+                         :parentId "kept-call"
+                         :message {:role "toolResult" :toolCallId "tc-kept" :content "ok"}}]
+            result     (c/drop-orphan-toolcalls transcript)]
+        (should= ["session" "followup" "kept-call" "kept-result"] (mapv :id result))
+        (should= "session" (:parentId (nth result 1)))
+        (should= "followup" (:parentId (nth result 2))))))
+
+  (describe "append-compaction! and truncate-after-compaction!"
+
+    (it "appends compaction entries and truncates old messages"
+      (let [s (sut/create-store)]
+        (store/open-session! s "chat" {:crew "main"})
+        (store/append-message! s "chat" {:role "user" :content "First"})
+        (let [kept (store/append-message! s "chat" {:role "assistant" :content "Second"})]
+          (store/append-compaction! s "chat" {:summary "Summary" :firstKeptEntryId (:id kept) :tokensBefore 10})
+          (store/truncate-after-compaction! s "chat")
+          (let [transcript (store/get-transcript s "chat")]
+            (should= ["session" "message" "compaction"] (mapv :type transcript))
+            (should= "Second" (get-in (nth transcript 1) [:message :content])))))))
+
+  (describe "rotate-transcript!"
+    (it "keeps the previous conversation in the chronicle and resets the active tally"
+      (let [s (sut/create-store)]
+        (store/open-session! s "chat" {:crew "main" :history-retention :prune})
+        (store/append-message! s "chat" {:role "user" :content "First"})
+        (store/update-session! s "chat" {:last-input-tokens 900 :tally-after-id "old"})
+        (store/rotate-transcript! s "chat")
+        (should= [] (store/active-transcript s "chat"))
+        (should= "First" (get-in (last (store/chronicle-transcript s "chat")) [:message :content 0 :text]))
+        (should= 0 (:last-input-tokens (store/get-session s "chat")))
+        (should-be-nil (:tally-after-id (store/get-session s "chat")))))
+    )
+
+  (describe "splice-compaction!"
+
+    (it "splices compaction entries into the transcript under prune"
+      (let [s (sut/create-store)]
+        (store/open-session! s "chat" {:crew "main" :history-retention :prune})
+        (let [m1 (store/append-message! s "chat" {:role "user" :content "First"})
+              m2 (store/append-message! s "chat" {:role "assistant" :content "Second"})
+              m3 (store/append-message! s "chat" {:role "user" :content "Third"})]
+           (store/splice-compaction! s "chat" {:summary "Summary"
+                                                :firstKeptEntryId (:id m3)
+                                                :tokensBefore 20
+                                                :compactedEntryIds [(:id m1) (:id m2)]})
+          (let [transcript (store/get-transcript s "chat")]
+            (should= ["compaction" "message"] (mapv :type transcript))
+            (should= (:id m3) (:id (nth transcript 1)))))))
+
+    (it "retains compacted entries physically by default while exposing only the active view"
+      (let [s (sut/create-store)]
+        (store/open-session! s "chat" {:crew "main"})
+        (let [m1 (store/append-message! s "chat" {:role "user" :content "First"})
+              m2 (store/append-message! s "chat" {:role "assistant" :content "Second"})
+              m3 (store/append-message! s "chat" {:role "user" :content "Third"})]
+          (store/splice-compaction! s "chat" {:summary "Summary"
+                                                :firstKeptEntryId (:id m3)
+                                                :tokensBefore 20
+                                                :compactedEntryIds [(:id m1) (:id m2)]})
+          (let [transcript (store/get-transcript s "chat")
+                active     (store/active-transcript s "chat")
+                session    (store/get-session s "chat")]
+            (should= ["compaction" "message"] (mapv :type transcript))
+            (should= transcript active)
+            (should= 1 (:segment session))))))
+
+    (it "chronicle-transcript concatenates the frozen compacted prefix then compacted current"
+      (let [s (sut/create-store)]
+        (store/open-session! s "chat" {:crew "main"})
+        (let [m1 (store/append-message! s "chat" {:role "user" :content "First"})
+              m2 (store/append-message! s "chat" {:role "assistant" :content "Second"})
+              m3 (store/append-message! s "chat" {:role "user" :content "Third"})]
+          (store/splice-compaction! s "chat" {:summary "Summary"
+                                              :firstKeptEntryId (:id m3)
+                                              :tokensBefore 20
+                                              :compactedEntryIds [(:id m1) (:id m2)]})
+          (let [chronicle (store/chronicle-transcript s "chat")
+                types     (mapv :type chronicle)]
+            ;; retain freezes only the compacted prefix (header + discarded
+            ;; messages). Kept tail lives only in the new current, so
+            ;; chronicle is a unique timeline.
+            (should= ["session" "message" "message" "compaction" "message"] types)
+            (should= 5 (count chronicle))
+            (should= (:id m1) (:id (nth chronicle 1)))
+            (should= (:id m2) (:id (nth chronicle 2)))
+            (should= (:id m3) (:id (last chronicle)))))))
+
+  ))

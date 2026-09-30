@@ -4,11 +4,11 @@
     [clojure.string :as str]
     [gherclj.core :as g :refer [defgiven defwhen defthen helper!]]
     [isaac.foundation.cli-steps :as fcli]
-    [isaac.fs :as fs]
-    [isaac.llm.api.openai.shared :as openai-shared]
-    [isaac.llm.auth.device-code :as device-code]
-    [isaac.llm.auth.store :as auth-store]
-    [isaac.nexus :as nexus]))
+    [isaac.foundation.fs :as fs]
+    [isaac.agent.llm.api.openai.shared :as openai-shared]
+    [isaac.agent.llm.auth.device-code :as device-code]
+    [isaac.agent.llm.auth.store :as auth-store]
+    [isaac.foundation.nexus :as nexus]))
 
 (defn- stubbed-device-code-login? []
   (not= false (g/get :oauth-device-code-stub)))

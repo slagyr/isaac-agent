@@ -1,6 +1,6 @@
 {:id      :isaac.comm.telly
  :version "0.1.0"
- :factory isaac.module.protocol/module
+ :factory isaac.foundation.module.protocol/module
 
  ;; Phase 8 of the berth epic (isaac-qqgv) moved comm contributions to
  ;; the :isaac.agent/comm berth; isaac-deds settled that name and moved

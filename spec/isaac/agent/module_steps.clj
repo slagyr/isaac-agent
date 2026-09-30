@@ -2,16 +2,16 @@
   (:require
     [clojure.string :as str]
     [gherclj.core :as g :refer [defthen defwhen helper!]]
-    [isaac.bridge.status :as bridge]
-    [isaac.config.loader :as loader]
+    [isaac.agent.bridge.status :as bridge]
+    [isaac.foundation.config.loader :as loader]
     [isaac.agent.config.runtime :as runtime]
     [isaac.foundation.cli-steps :as fcli]
-    [isaac.fs :as fs]
-    [isaac.module.loader :as module-loader]
-    [isaac.nexus :as nexus]
-    [isaac.session.session-steps :as session-steps]
-    [isaac.slash.registry :as slash-registry]
-    [isaac.tool.memory :as memory]))
+    [isaac.foundation.fs :as fs]
+    [isaac.foundation.module.loader :as module-loader]
+    [isaac.foundation.nexus :as nexus]
+    [isaac.agent.session.session-steps :as session-steps]
+    [isaac.agent.slash.registry :as slash-registry]
+    [isaac.agent.tool.memory :as memory]))
 
 (helper! isaac.agent.module-steps)
 

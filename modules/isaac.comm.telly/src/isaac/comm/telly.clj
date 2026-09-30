@@ -1,10 +1,10 @@
 (ns isaac.comm.telly
   (:require
     [c3kit.apron.env :as c3env]
-    [isaac.api :as api]
-    [isaac.comm.factory :as factory]
-    [isaac.comm.protocol :as comm]
-    [isaac.logger :as log]))
+    [isaac.agent.api :as api]
+    [isaac.agent.comm.factory :as factory]
+    [isaac.agent.comm.protocol :as comm]
+    [isaac.foundation.logger :as log]))
 
 (when (= "true" (c3env/env "ISAAC_TELLY_FAIL_ON_LOAD"))
   (throw (ex-info "telly load failed"

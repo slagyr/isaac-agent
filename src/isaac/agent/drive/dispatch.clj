@@ -1,0 +1,120 @@
+(ns isaac.agent.drive.dispatch
+  (:require
+    [c3kit.apron.schema :as schema]
+    [isaac.agent.attention :as attention]
+    [isaac.foundation.config.loader :as loader]
+    [isaac.agent.drive.provider-wall :as provider-wall]
+    [isaac.agent.llm.api.protocol :as api]
+    [isaac.agent.llm.registry :as registry]
+    [isaac.agent.llm.tool-loop :as tool-loop]
+    [isaac.foundation.logger :as log]))
+
+(def built-in-providers registry/built-in-providers)
+
+(defonce ^:private last-request* (atom nil))
+(defonce ^:private last-result* (atom nil))
+(defonce ^:private results* (atom []))
+
+(defn last-request []
+  @last-request*)
+
+(defn last-result []
+  @last-result*)
+
+(defn results []
+  @results*)
+
+(defn clear-last-request! []
+  (reset! last-request* nil)
+  (reset! last-result* nil)
+  (reset! results* []))
+
+(defn- response-preview [result]
+  (cond-> {}
+    (string? (:content result)) (assoc :content-chars (count (:content result)))
+    (:tool-calls result) (assoc :tool-calls-count (count (:tool-calls result)))))
+
+(defn- contract-error [provider result]
+  (let [validated (if (:error result)
+                    (api/validate-error result)
+                    (api/validate-response result))]
+    (when (schema/error? validated)
+      (let [messages (schema/message-map validated)]
+        (log/error :chat/provider-contract-violated :provider provider :errors messages)
+        {:error :provider-contract :message (pr-str messages)}))))
+
+(defn- validate-provider-result [provider result]
+  (if (:unavailable? result)
+    result
+    (or (contract-error provider result) result)))
+
+(defn- broken-provider-error? [result]
+  (contains? #{:api-error :llm-error} (:error result)))
+
+(defn- result-message [result]
+  (or (:message result)
+      (let [body       (:body result)
+            body-error (:error body)]
+        (cond
+          (map? body-error) (or (:message body-error) (str body-error))
+          (string? body-error) body-error))))
+
+(defn- request-session [p request]
+  (or (:session-key request)
+      (:session request)
+      (:session-name request)
+      (get (api/config p) :session-key)))
+
+(defn- maybe-notify-broken! [p provider request result]
+  (when (and (broken-provider-error? result)
+             (nil? (provider-wall/classify result (loader/snapshot "dispatch broken-provider") provider)))
+    (attention/maybe-notify-provider-broken!
+      (loader/snapshot "dispatch broken-provider")
+      {:provider provider
+       :model    (or (:model request) (:model result))
+       :session  (request-session p request)
+       ;; The diagnosis, not just the transcript: an operator reading the
+       ;; alert must learn why the provider broke without opening the log
+       ;; (isaac-9af8).
+       :error    (:error result)
+       :status   (:status result)
+       :message  (result-message result)})))
+
+(defn- log-dispatch-result [p provider request result error-event response-event]
+  (reset! last-result* result)
+  (swap! results* conj result)
+  (if (:error result)
+    (do
+      (log/error error-event :provider provider :error (:error result) :status (:status result))
+      (maybe-notify-broken! p provider request result))
+    (log/debug response-event (merge {:provider provider :model (:model result)}
+                                     (response-preview result))))
+  result)
+
+(defn dispatch-chat [p request]
+  (let [name (api/display-name p)]
+    (reset! last-request* request)
+    (log/debug :chat/request :provider name :model (:model request))
+    (log-dispatch-result p name request (validate-provider-result name (api/chat p request))
+                         :chat/error :chat/response)))
+
+(defn dispatch-chat-stream [p request on-chunk]
+  (let [name (api/display-name p)]
+    (reset! last-request* request)
+    (log/debug :chat/stream-request :provider name :model (:model request))
+    (log-dispatch-result p name request (validate-provider-result name (api/chat-stream p request on-chunk))
+                         :chat/stream-error :chat/stream-response)))
+
+(defn dispatch-chat-with-tools
+  "Run a tool-call loop for this api. Composed from Api/chat
+   and Api/followup-messages."
+  [p request tool-fn]
+  (let [name (api/display-name p)]
+    (reset! last-request* request)
+    (log/debug :chat/request-with-tools :provider name :model (:model request))
+    (log-dispatch-result p name request
+                         (tool-loop/run #(validate-provider-result name (api/chat p %))
+                                        #(api/followup-messages p %1 %2 %3 %4)
+                                        request
+                                        tool-fn)
+                         :chat/error :chat/response)))

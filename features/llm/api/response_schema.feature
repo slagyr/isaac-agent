@@ -1,6 +1,6 @@
 Feature: The provider response schema (isaac-g71i)
 
-  The schema in isaac.llm.api.protocol is the seam between the drive and the
+  The schema in isaac.agent.llm.api.protocol is the seam between the drive and the
   provider adapters: it defines everything the drive needs from a model
   response, and everything an adapter must provide. Adapters translate their
   own wire format into it — the drive reads only schema fields, never

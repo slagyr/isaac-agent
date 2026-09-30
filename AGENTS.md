@@ -156,7 +156,7 @@ bb lint                     # lint all of src/ and spec/ (~1-2s)
 
 ### No Fixed Sleeps in Specs
 
-Use `(isaac.spec-helper/await-condition pred)` instead of `Thread/sleep` —
+Use `(isaac.agent.spec-helper/await-condition pred)` instead of `Thread/sleep` —
 polls every 1ms for up to 1 second. See the
 [tdd skill](https://raw.githubusercontent.com/slagyr/agent-lib/main/skills/tdd/SKILL.md#polling-instead-of-sleeping)
 for the general pattern. `app_spec.clj` "preserves the previous config

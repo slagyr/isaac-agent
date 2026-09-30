@@ -207,7 +207,7 @@ this with a straight face in production logs.
 
 **What it is.** A frequencies map is the one shape every caller builds to
 say "this session," or "a session like this," plus a handful of per-turn
-overrides. `isaac.session.frequencies` owns conforming, matching, and
+overrides. `isaac.agent.frequencies` owns conforming, matching, and
 resolving it; nothing else in Isaac re-implements session selection. The
 CLI (`isaac prompt` and friends), hail, cron, `defaults.frequencies`, ACP,
 and every comm all build the same map and hand it here — each of those

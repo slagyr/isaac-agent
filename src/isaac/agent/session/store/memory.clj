@@ -1,0 +1,576 @@
+(ns isaac.agent.session.store.memory
+  (:require
+    [clojure.string :as str]
+    [isaac.foundation.config.loader :as loader]
+    [isaac.agent.config.resolve :as resolve]
+    [isaac.foundation.fs :as fs]
+    [isaac.foundation.logger :as log]
+    [isaac.foundation.naming :as naming]
+    [isaac.agent.session.schema :as session-schema]
+    [isaac.agent.session.store.impl-common :as c]
+    [isaac.agent.session.store.spi :as store]
+    [isaac.agent.tool.memory :as memory])
+  (:import
+    (java.time ZoneOffset)
+    (java.time.format DateTimeFormatter)))
+
+;; region ----- Helpers -----
+
+(def ^:private ts-formatter
+  (DateTimeFormatter/ofPattern "yyyy-MM-dd'T'HH:mm:ss"))
+
+(defn- now-iso []
+  (.format ts-formatter (.atOffset (memory/now) ZoneOffset/UTC)))
+
+
+(defn- get-val [m k]
+  (or (get m k) (get m (name k))))
+
+(defn- persist-entry! [root entry transcript]
+  (when (and root entry)
+    (let [fs*  (fs/instance)
+          id   (:id entry)
+          crew (:crew entry)]
+      (c/mkdirs*! fs* (c/session-dir root crew id))
+      (c/atomic-spit! fs* (c/session-edn-path root crew id)
+                      (c/write-edn (dissoc entry :session-file :effective-history-offset)))
+      (c/upsert-index-row! fs* root id {:crew           crew
+                                        :session-policy (or (:session-policy entry) :chronicle)
+                                        :updated-at     (:updated-at entry)
+                                        :id             id})
+      (when transcript
+        (c/write-transcript! root crew id transcript fs*)))))
+
+(defn- persist-transcript! [root entry-or-id entries]
+  (when (and root entry-or-id)
+    (let [id   (if (map? entry-or-id) (:id entry-or-id) entry-or-id)
+          fs*  (fs/instance)
+          loc  (c/locate-session root id fs*)
+          crew (or (when (map? entry-or-id) (:crew entry-or-id))
+                   (:crew loc))]
+      (c/write-transcript! root crew id entries fs*))))
+
+(defn- append-transcript-line! [root session-id entry]
+  (when (and root session-id)
+    (c/append-entry! root session-id entry (fs/instance))))
+
+(defn- effective-config [passed-config]
+  (or passed-config
+      (loader/snapshot "session store config — ambient fallback when caller passes no :config")
+      {}))
+
+(defn- resolve-policy [opts]
+  (or (:session-policy opts)
+      (when-let [raw (:session-store opts)]
+        (if (keyword? raw) raw (keyword raw)))
+      (when-let [crew (:crew opts)]
+        (when-let [raw (get-in (effective-config (:config opts)) [:crew crew :session-policy])]
+          (if (keyword? raw) raw (keyword raw))))
+      :chronicle))
+
+(defn- keywordize-policy [entry]
+  (cond-> entry
+    (and (contains? entry :session-policy) (string? (:session-policy entry)))
+    (update :session-policy keyword)))
+
+(defn- read-disk-session [root id]
+  (when root
+    (let [fs* (fs/instance)]
+      (when-let [loc (c/locate-session root id fs*)]
+        (let [path (str (or (:dir loc) (c/session-dir root (:crew loc) id)) "/session.edn")]
+          (when (fs/exists? fs* path)
+            (try
+              (let [raw (c/read-edn-line (fs/slurp fs* path))]
+                (when (map? raw)
+                  (-> raw c/keywordize-map keywordize-policy
+                      (assoc :id (or (:id raw) id)))))
+              (catch Exception _ nil))))))))
+
+(defn- ensure-hydrated!
+  "Load a session that exists on disk into the memory atom. Returns the entry or nil."
+  [root state id]
+  (or (get-in @state [:sessions id])
+      (when-let [entry (read-disk-session root id)]
+        (let [transcript (c/read-transcript-raw root id (fs/instance))]
+          (swap! state #(-> %
+                            (assoc-in [:sessions id] entry)
+                            (assoc-in [:transcripts id] (vec transcript))))
+          entry))))
+
+(defn- hydrate-all! [root state]
+  (when root
+    (doseq [id (keys (c/scan-session-dirs (fs/instance) root))]
+      (ensure-hydrated! root state id))))
+
+;; endregion
+
+;; region ----- MemorySessionStore -----
+;;
+;; state atom shape: {:sessions   {id entry}
+;;                    :transcripts {id [transcript-entries]}}
+;;
+;; Transcript entries match the file store wire format exactly so that
+;; specs using get-transcript can check :type, :message, :id etc. without
+;; modification.
+
+(deftype MemorySessionStore [root state]
+  store/SessionStore
+
+  (open-session! [_ name opts]
+    (let [explicit-crew (when-let [c (:crew opts)]
+                          (let [s (str c)]
+                            (when-not (str/blank? s) s)))
+          opts      (c/entry-defaults opts)
+          retention (resolve/resolve-history-retention (effective-config (:config opts))
+                                                       (:crew opts)
+                                                       (:history-retention opts))
+          ;; A blank identifier ("") must not survive to session-id, whose
+          ;; blank fallback resolves to the literal id "session" and can
+          ;; collide with an unrelated session (isaac-j95x) — treat it the
+          ;; same as nil.
+          name      (if (c/blank-identifier? name)
+                      (when root
+                        (naming/generate (store/ensure-naming-strategy! root (fs/instance))))
+                      name)
+          id        (c/session-id (or name "session"))
+          existing  (or (get-in @state [:sessions id])
+                        (ensure-hydrated! root state id))]
+      (when (and existing explicit-crew)
+        (let [have-crew (str (:crew existing))]
+          (when (not= explicit-crew have-crew)
+            (throw (ex-info (str "session " id " belongs to crew " have-crew)
+                            {:reason :crew-collision :id id
+                             :crew have-crew :wanted-crew explicit-crew})))))
+      (cond
+        (and existing (some? name) (not= name (:name existing)))
+        (throw (ex-info (str "session already exists: " id)
+                        {:name name :session-id id}))
+
+        existing
+        (do
+          (log/info :session/opened :sessionId id)
+          existing)
+
+        :else
+        (let [now          (now-iso)
+              header-id    (c/new-id)
+              header       {:type      "session"
+                            :id        header-id
+                            :timestamp now
+                            :version   3
+                            :cwd       (or (:cwd opts) (System/getProperty "user.dir"))}
+              policy       (resolve-policy opts)
+              entry        {:id                id
+                            :key               id
+                            :name              (or name id)
+                            :nonce             (or (:nonce opts) (c/new-nonce))
+                            :created-at        now
+                            :updated-at        now
+                            :crew              (:crew opts)
+                            :session-policy    policy
+                            :tags              (or (:tags opts) #{})
+                            :channel           (:channel opts)
+                            :chat-type         (:chat-type opts)
+                            :cwd               (or (:cwd opts) (System/getProperty "user.dir"))
+                            :origin            (or (:origin opts) {:kind :cli})
+                            :history-retention retention
+                            :compaction-count  0
+                            :segment           0
+                            :input-tokens      0
+                            :turn-input-tokens 0
+                            :last-input-tokens  0
+                            :last-output-tokens 0
+                            :output-tokens      0
+                            :total-tokens       0}]
+          (swap! state #(-> %
+                            (assoc-in [:sessions id] entry)
+                            (assoc-in [:transcripts id] [header])))
+          (when root
+            (persist-entry! root entry [header]))
+          (log/info :session/created :sessionId id)
+          entry))))
+
+  (delete-session! [_ name]
+    (let [id   (c/session-id name)
+          entry (get-in @state [:sessions id])]
+      (when entry
+        (swap! state #(-> %
+                          (update :sessions dissoc id)
+                          (update :transcripts dissoc id)
+                          (update :frozen dissoc id)))
+        (when root
+          (let [fs*  (fs/instance)
+                crew (:crew entry)]
+            (c/delete-tree! fs* (c/session-dir root crew id))
+            (c/delete-tree! fs* (c/session-dir root id))
+            (c/write-index! fs* root (dissoc (c/read-index fs* root) id))))
+        true)))
+
+  (rename-session! [this old-name new-name]
+    (let [old-id (c/session-id old-name)
+          new-id (c/session-id new-name)
+          entry  (get-in @state [:sessions old-id])]
+      (cond
+        (nil? entry)
+        nil
+
+        (store/in-flight? this old-id)
+        (throw (ex-info (str "cannot rename in-flight session '" old-name
+                             "': a turn is in progress. Wait for it to finish or cancel it first.")
+                        {:reason :in-flight :old-id old-id :new-id new-id}))
+
+        (get-in @state [:sessions new-id])
+        (throw (ex-info (str "cannot rename to '" new-name
+                             "': a session with that key already exists.")
+                        {:reason :collision :old-id old-id :new-id new-id}))
+
+        (= old-id new-id)
+        entry
+
+        :else
+        (let [renamed (-> entry
+                          (assoc :id new-id
+                                 :key new-id
+                                 :name (or new-name new-id)
+                                 :updated-at (now-iso)))
+              transcript (get-in @state [:transcripts old-id] [])
+              frozen     (get-in @state [:frozen old-id])]
+          (swap! state #(cond-> %
+                          true (update :sessions dissoc old-id)
+                          true (assoc-in [:sessions new-id] renamed)
+                          true (update :transcripts dissoc old-id)
+                          true (assoc-in [:transcripts new-id] transcript)
+                          frozen (update :frozen dissoc old-id)
+                          frozen (assoc-in [:frozen new-id] frozen)))
+          (when root
+            (let [fs*  (fs/instance)
+                  crew (:crew renamed)]
+              (c/move-tree! fs* (c/session-dir root crew old-id) (c/session-dir root crew new-id))
+              (c/move-tree! fs* (c/session-dir root old-id) (c/session-dir root new-id))
+              ;; Rewrite session.edn so scan-session-dirs keys the moved
+              ;; tree by new-id. Leaving :id as old-id lets hydrate revive
+              ;; the source after the directory move.
+              (persist-entry! root renamed nil)
+              (c/write-index! fs* root (-> (c/read-index fs* root)
+                                           (dissoc old-id)
+                                           (assoc new-id {:crew           crew
+                                                          :session-policy (or (:session-policy renamed) :chronicle)
+                                                          :updated-at     (:updated-at renamed)
+                                                          :id             new-id})))))
+          renamed))))
+
+  (list-sessions [_]
+    (hydrate-all! root state)
+    (->> (vals (:sessions @state)) (sort-by :id) vec))
+
+  (list-sessions-by-agent [_ agent]
+    (hydrate-all! root state)
+    (->> (vals (:sessions @state))
+         (sort-by :id)
+         (filter #(= agent (:crew %)))
+         vec))
+
+  (most-recent-session [_]
+    (hydrate-all! root state)
+    (->> (vals (:sessions @state)) (sort-by :updated-at) last))
+
+  (get-session [_ name]
+    (let [id (c/session-id name)]
+      (ensure-hydrated! root state id)))
+
+  (get-transcript [_ name]
+    (let [id (c/session-id name)]
+      (when (ensure-hydrated! root state id)
+        (get-in @state [:transcripts id] []))))
+
+  (active-transcript [_ name]
+    (let [id (c/session-id name)]
+      (when (ensure-hydrated! root state id)
+        (get-in @state [:transcripts id] []))))
+
+  (chronicle-transcript [_ name]
+    (let [id (c/session-id name)]
+      (when (ensure-hydrated! root state id)
+        (vec (concat (mapcat identity (get-in @state [:frozen id] []))
+                     (get-in @state [:transcripts id] []))))))
+
+  (update-session! [_ name updates]
+    (let [id (c/session-id name)]
+      (swap! state update-in [:sessions id]
+             (fn [entry]
+               (let [updates (-> updates
+                                 session-schema/kebabize-legacy-keys
+                                 (as-> u
+                                   (if-let [compaction (:compaction u)]
+                                     (assoc u :compaction (merge (or (:compaction entry) {}) compaction))
+                                     u)))]
+                 (merge entry updates))))
+      (let [updated (get-in @state [:sessions id])]
+        (when root
+          (persist-entry! root updated nil))
+        updated)))
+
+  (append-message! [_ name message]
+    (let [id             (c/session-id name)
+          transcript     (get-in @state [:transcripts id] [])
+          parent-id      (c/last-entry-id transcript)
+          msg-id         (c/new-id)
+          now            (now-iso)
+          session        (get-in @state [:sessions id])
+          resolved-agent (or (:crew message)
+                             (when (#{"assistant" "error" "toolResult"} (:role message)) (:crew session)))
+          normalized-msg (c/stamp-message-tokens
+                           (c/normalize-message (cond-> message
+                                                 resolved-agent (assoc :crew resolved-agent))))
+          entry          {:type      "message"
+                          :id        msg-id
+                          :parentId  parent-id
+                          :timestamp now
+                          :message   normalized-msg
+                          :cwd       (:cwd message)
+                          :tokens    (:tokens normalized-msg)}]
+      (swap! state (fn [s]
+                     (-> s
+                         (update-in [:transcripts id] (fnil conj []) entry)
+                         (update-in [:sessions id]
+                                    (fn [sess]
+                                      (cond-> (assoc sess :updated-at now)
+                                        (get-val message :channel) (assoc :last-channel (get-val message :channel))
+                                        (get-val message :to)      (assoc :last-to (get-val message :to))
+                                        resolved-agent             (assoc :crew resolved-agent)))))))
+      (when root
+        (append-transcript-line! root id entry)
+        (when-let [sess (get-in @state [:sessions id])]
+          (c/upsert-index-row! (fs/instance) root id
+                               {:crew           (:crew sess)
+                                :session-policy (or (:session-policy sess) :chronicle)
+                                :updated-at     now
+                                :id             id})))
+      entry))
+
+  (append-error! [_ name error-entry]
+    (let [id        (c/session-id name)
+          transcript (get-in @state [:transcripts id] [])
+          parent-id (c/last-entry-id transcript)
+          error-id  (c/new-id)
+          now       (now-iso)
+          entry     (cond-> {:type      "error"
+                              :id        error-id
+                              :parentId  parent-id
+                              :timestamp now
+                              :content   (:content error-entry)
+                              :error     (:error error-entry)
+                              :model     (:model error-entry)
+                              :provider  (:provider error-entry)}
+                      (:ex-class error-entry) (assoc :ex-class (:ex-class error-entry)))]
+      (swap! state (fn [s]
+                     (-> s
+                         (update-in [:transcripts id] (fnil conj []) entry)
+                         (assoc-in [:sessions id :updated-at] now))))
+      (when root
+        (append-transcript-line! root id entry))
+      entry))
+
+  (append-reckoning! [_ name {:keys [text]}]
+    (let [id         (c/session-id name)
+          transcript (get-in @state [:transcripts id] [])
+          parent-id  (c/last-entry-id transcript)
+          rec-id     (c/new-id)
+          now        (now-iso)
+          entry      {:type      "reckoning"
+                      :id        rec-id
+                      :parentId  parent-id
+                      :timestamp now
+                      :text      text}]
+      (swap! state (fn [s]
+                     (-> s
+                         (update-in [:transcripts id] (fnil conj []) entry)
+                         (assoc-in [:sessions id :updated-at] now))))
+      (when root
+        (append-transcript-line! root id entry))
+      entry))
+
+  (append-checkpoint! [_ name {:keys [cycle]}]
+    (let [id         (c/session-id name)
+          transcript (get-in @state [:transcripts id] [])
+          parent-id  (c/last-entry-id transcript)
+          ckpt-id    (c/new-id)
+          now        (now-iso)
+          entry      {:type      "checkpoint"
+                      :id        ckpt-id
+                      :parentId  parent-id
+                      :timestamp now
+                      :cycle     cycle}]
+      (swap! state (fn [s]
+                     (-> s
+                         (update-in [:transcripts id] (fnil conj []) entry)
+                         (assoc-in [:sessions id :updated-at] now))))
+      (when root
+        (append-transcript-line! root id entry))
+      entry))
+
+  (append-compaction! [_ name {:keys [summary firstKeptEntryId tokensBefore turnRequest]}]
+    (let [id            (c/session-id name)
+          transcript    (get-in @state [:transcripts id] [])
+          parent-id     (c/last-entry-id transcript)
+          compaction-id (c/new-id)
+          now           (now-iso)
+          entry         (cond-> {:type             "compaction"
+                                 :id               compaction-id
+                                 :parentId         parent-id
+                                 :timestamp        now
+                                 :summary          summary
+                                 :firstKeptEntryId firstKeptEntryId
+                                 :tokensBefore     tokensBefore
+                                 :tokens           (or (c/compaction-tokens {:summary summary :turnRequest turnRequest}) 0)}
+                          turnRequest (assoc :turnRequest turnRequest))]
+      (swap! state (fn [s]
+                     (-> s
+                         (update-in [:transcripts id] (fnil conj []) entry)
+                         (update-in [:sessions id]
+                                    #(-> % (assoc :updated-at now) (update :compaction-count inc))))))
+      (when root
+        (append-transcript-line! root id entry))
+      entry))
+
+  (rotate-transcript! [_ name]
+    (let [id         (c/session-id name)
+          transcript (get-in @state [:transcripts id] [])
+          n          (or (get-in @state [:sessions id :segment]) 0)
+          now        (now-iso)]
+      (swap! state (fn [s]
+                     (-> s
+                         (update-in [:frozen id] (fnil conj []) transcript)
+                         (assoc-in [:transcripts id] [])
+                         (update-in [:sessions id]
+                                    #(-> %
+                                         (assoc :segment (inc n) :updated-at now
+                                                :last-input-tokens 0 :last-output-tokens 0
+                                                :tally-after-id nil))))))
+      (when root
+        (let [fs*  (fs/instance)
+              loc  (c/locate-session root id fs*)
+              crew (get-in @state [:sessions id :crew])]
+          (c/write-ednl! fs* (c/frozen-transcript-path root (or crew (:crew loc)) id n) transcript)
+          (persist-transcript! root id [])
+          (persist-entry! root (get-in @state [:sessions id]) nil)))
+      true))
+
+  (splice-compaction! [_ name {:keys [compactedEntryIds firstKeptEntryId summary tokensBefore turnRequest]}]
+    (let [id         (c/session-id name)
+          transcript (get-in @state [:transcripts id] [])
+          retention  (or (get-in @state [:sessions id :history-retention]) resolve/default-history-retention)
+          now        (now-iso)
+          [compaction-entry new-current] (c/compacted-current transcript compactedEntryIds firstKeptEntryId summary tokensBefore now turnRequest)
+          prefix     (c/frozen-segment transcript new-current)
+          n          (or (get-in @state [:sessions id :segment]) 0)
+          tally      (c/restart-tally-fields new-current)]
+      (swap! state (fn [s]
+                     (cond-> s
+                       (= :retain retention)
+                       (update-in [:frozen id] (fnil conj []) prefix)
+                       true
+                       (assoc-in [:transcripts id] new-current)
+                       true
+                       (update-in [:sessions id]
+                                  #(-> %
+                                       (assoc :updated-at now)
+                                       (merge tally)
+                                       (cond-> (= :retain retention) (assoc :segment (inc n)))
+                                       (dissoc :effective-history-offset :session-file)
+                                       (update :compaction-count inc))))))
+      (when root
+        (when (= :retain retention)
+          (let [fs*  (fs/instance)
+                loc  (c/locate-session root id fs*)
+                crew (or (get-in @state [:sessions id :crew]) (:crew loc))]
+            (c/write-ednl! fs* (c/frozen-transcript-path root crew id n) prefix)))
+        (persist-transcript! root id new-current))
+      compaction-entry))
+
+  (truncate-after-compaction! [_ name]
+    (let [id         (c/session-id name)
+          transcript (get-in @state [:transcripts id] [])
+          compaction (->> transcript (filter #(= "compaction" (:type %))) last)]
+      (when compaction
+        (let [first-kept-id  (:firstKeptEntryId compaction)
+              compaction-id  (:id compaction)
+              removed-ids    (loop [remaining transcript ids #{}]
+                               (if (empty? remaining)
+                                 ids
+                                 (let [e (first remaining)]
+                                   (cond
+                                     (= (:id e) compaction-id)                       ids
+                                     (and first-kept-id (= (:id e) first-kept-id))   ids
+                                     (= "message" (:type e))                         (recur (rest remaining) (conj ids (:id e)))
+                                     :else                                            (recur (rest remaining) ids)))))
+              remap          (loop [remaining transcript last-kept nil mapping {}]
+                               (if (empty? remaining)
+                                 mapping
+                                 (let [e (first remaining)]
+                                   (if (contains? removed-ids (:id e))
+                                     (recur (rest remaining) last-kept (assoc mapping (:id e) last-kept))
+                                     (recur (rest remaining) (:id e) mapping)))))
+              new-transcript (into []
+                                   (keep (fn [e]
+                                           (when-not (contains? removed-ids (:id e))
+                                             (if-let [new-parent (get remap (:parentId e))]
+                                               (assoc e :parentId new-parent)
+                                               e))))
+                                   transcript)]
+          (swap! state assoc-in [:transcripts id] new-transcript)
+          (when root
+            (persist-transcript! root id new-transcript))))))
+
+  (record-turn-marker! [_ session-id marker]
+    (swap! state assoc-in [:turn-markers (str session-id)]
+           (assoc marker :session-id (str session-id))))
+  (clear-turn-marker! [_ session-id]
+    (swap! state update :turn-markers dissoc (str session-id)))
+  (get-turn-marker [_ session-id]
+    (get-in @state [:turn-markers (str session-id)]))
+  (turn-markers [_]
+    (vec (vals (:turn-markers @state))))
+  (default-session [_ crew _opts]
+    (let [crew-id (when crew (if (keyword? crew) (name crew) (str crew)))
+          recent  (or (when crew-id
+                        (last (sort-by :updated-at
+                                       (filter #(= crew-id (:crew %))
+                                               (vals (:sessions @state))))))
+                      (->> (vals (:sessions @state)) (sort-by :updated-at) last))]
+      (:id recent)))
+  (repair-transcript! [_ session-id]
+    (let [id (c/session-id session-id)]
+      (when-let [entries (when root (c/repair-torn-transcript!* root id (fs/instance)))]
+        (swap! state assoc-in [:transcripts id] (vec entries))
+        true)))
+  (request-cancel! [_ session-id]
+    (let [id (str session-id)]
+      (if-let [marker (get-in @state [:turn-markers id])]
+        (do
+          (swap! state assoc-in [:turn-markers id] (assoc marker :cancelled true :session-id id))
+          (when root
+            (c/request-cancel!* root id (fs/instance)))
+          true)
+        false))))
+
+;; endregion
+
+(defn replace-transcript!
+  "Test/resume helper: replace the in-memory transcript wholesale."
+  [^MemorySessionStore store session-id entries]
+  (let [id (c/session-id session-id)]
+    (swap! (.-state store) assoc-in [:transcripts id] (vec entries))
+    (when-let [root (.-root store)]
+      (persist-transcript! root id (vec entries)))))
+
+(defn create-store
+  ([]
+   (create-store nil))
+  ([root]
+   (->MemorySessionStore root (atom {:sessions {} :transcripts {}}))))
+
+(defn store-state [^MemorySessionStore store]
+  @(.-state store))
+
+(store/register-factory! :memory #'create-store)

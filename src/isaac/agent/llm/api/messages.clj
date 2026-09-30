@@ -1,0 +1,254 @@
+(ns isaac.agent.llm.api.messages
+  (:require
+    [clojure.string :as str]
+    [isaac.agent.llm.api.protocol :as api]
+    [isaac.agent.llm.api.openai.shared :as shared]
+    [isaac.agent.effort :as effort]
+    [isaac.agent.llm.followup :as followup]
+    [isaac.agent.llm.http :as llm-http]
+    [isaac.agent.llm.prompt.builder :as builder]))
+
+;; region ----- Auth -----
+
+(defn- missing-auth-error [provider-name config]
+  (shared/api-key-missing-error provider-name config "anthropic"))
+
+(defn- auth-headers [provider-name config]
+  {"x-api-key"         (shared/resolve-api-key provider-name config)
+   "anthropic-version" "2023-06-01"
+   "content-type"      "application/json"})
+
+;; endregion ^^^^^ Auth ^^^^^
+
+;; region ----- Prompt Building -----
+
+(defn- build-system [system-text]
+  [{:type          "text"
+    :text          system-text
+    :cache_control {:type "ephemeral"}}])
+
+(defn- extract-messages [transcript nonce guidance origin]
+  (->> (builder/build-transcript-messages transcript nil builder/filter-messages-anthropic nonce guidance origin)
+       (mapv #(select-keys % [:role :content]))))
+
+(defn- penultimate-user-index [messages]
+  (let [user-indices (->> messages
+                          (map-indexed vector)
+                          (filter #(= "user" (:role (second %))))
+                          (map first))]
+    (when (>= (count user-indices) 2)
+      (nth user-indices (- (count user-indices) 2)))))
+
+(defn- apply-cache-breakpoints [messages]
+  (if-let [idx (penultimate-user-index messages)]
+    (update messages idx
+            (fn [msg]
+              (let [content (:content msg)]
+                (cond
+                  (and (string? content) (not (str/blank? content)))
+                  (assoc msg :content [{:type          "text"
+                                        :text          content
+                                        :cache_control {:type "ephemeral"}}])
+
+                  (vector? content)
+                  (let [last-idx (dec (count content))]
+                    (assoc msg :content
+                           (update content last-idx
+                                   #(assoc % :cache_control {:type "ephemeral"}))))
+
+                  :else msg))))
+    messages))
+
+(defn build-tools
+  "Format tool definitions into Anthropic Messages-API shape."
+  [tools]
+  (when (seq tools)
+    (mapv (fn [tool]
+            {:name         (:name tool)
+             :description  (:description tool)
+             :input_schema (:parameters tool)})
+          tools)))
+
+(defn build
+  "Build an Anthropic Messages API request body."
+  [{:keys [boot-files crew guidance model nonce origin rules-text session-name skill-menu-text soul transcript tools max-tokens]
+     :or   {max-tokens 16000}}]
+  (let [system-text (builder/build-system-text soul boot-files rules-text skill-menu-text session-name crew nonce)
+        messages    (-> (extract-messages transcript nonce guidance origin)
+                      vec
+                      apply-cache-breakpoints)]
+    (cond-> {:model      model
+              :max-tokens max-tokens
+              :system     (build-system system-text)
+              :messages   messages}
+      (seq tools) (assoc :tools (build-tools tools)))))
+
+;; endregion ^^^^^ Prompt Building ^^^^^
+
+;; region ----- SSE Event Processing -----
+
+(defn process-sse-event
+  "Accumulate an Anthropic SSE event into the running state."
+  [data accumulated]
+  (case (:type data)
+    "content_block_delta"
+    (update accumulated :content str (get-in data [:delta :text]))
+
+    "message_delta"
+    (cond-> (update accumulated :usage merge (:usage data))
+      (:stop_reason data) (assoc :stop-reason-wire (:stop_reason data)))
+
+    "message_start"
+    (assoc accumulated
+      :model (get-in data [:message :model])
+      :usage (get-in data [:message :usage]))
+
+    ;; Other events: pass through
+    accumulated))
+
+;; endregion ^^^^^ SSE Event Processing ^^^^^
+
+;; region ----- Response Parsing -----
+
+(defn- extract-text [content-blocks]
+  (->> content-blocks
+       (filter #(= "text" (:type %)))
+       (map :text)
+       (str/join "")))
+
+(defn- extract-tool-calls [content-blocks]
+  (->> content-blocks
+       (filter #(= "tool_use" (:type %)))
+       (mapv (fn [block]
+               {:id        (or (:id block) (str (java.util.UUID/randomUUID)))
+                :name      (:name block)
+                :arguments (or (:input block) {})}))))
+
+(defn- parse-usage [usage]
+  (let [cache-read  (or (:cache_read_input_tokens usage) 0)
+        cache-write (or (:cache_creation_input_tokens usage) 0)]
+    {:prompt-tokens      (+ (or (:input_tokens usage) 0) cache-read cache-write)
+     :output-tokens      (or (:output_tokens usage) 0)
+     :cache-read-tokens  cache-read
+     :cache-write-tokens cache-write}))
+
+(defn- stop-reason [wire]
+  (case wire
+    "end_turn" :end-turn
+    "stop_sequence" :end-turn
+    "tool_use" :tool-use
+    "max_tokens" :max-tokens
+    "refusal" :refused
+    :other))
+
+;; endregion ^^^^^ Response Parsing ^^^^^
+
+;; region ----- Effort Translation -----
+
+(defn- apply-effort-to-body [request]
+  (let [effort (:effort request)
+        body   (cond-> (dissoc request :effort :max-tokens)
+                 (:max-tokens request) (assoc :max_tokens (:max-tokens request)))]
+    (if-let [level (effort/effort->adaptive-level effort)]
+      (assoc body
+        :thinking      {:type "adaptive"}
+        :output_config {:effort level})
+      body)))
+
+;; endregion ^^^^^ Effort Translation ^^^^^
+
+;; region ----- Public API -----
+
+(defn- http-opts [config]
+  (cond-> {}
+    (:session-key config)            (assoc :session-key (:session-key config))
+    (:simulate-provider config)      (assoc :simulate-provider (:simulate-provider config))
+    (:timeout config)                (assoc :timeout (:timeout config))
+    (:stream-idle-timeout-ms config) (assoc :stream-idle-timeout-ms (:stream-idle-timeout-ms config))
+    (:retry-after-ms config)         (assoc :retry-after-ms (:retry-after-ms config))))
+
+(defn chat
+  "Send a non-streaming Messages API request."
+  [request provider-name cfg]
+  (let [url      (str (or (:base-url cfg) "https://api.anthropic.com") "/v1/messages")
+        auth-err (missing-auth-error provider-name cfg)]
+    (if auth-err
+      auth-err
+      (let [headers (auth-headers provider-name cfg)
+            body    (apply-effort-to-body request)
+            resp    (llm-http/post-json! url headers body (http-opts cfg))]
+        (if (:error resp)
+          (api/normalize-error resp)
+          (let [content (:content resp)
+                tools   (extract-tool-calls content)]
+            {:content     (extract-text content)
+             :model       (:model resp)
+             :tool-calls  tools
+             :stop-reason (stop-reason (:stop_reason resp))
+             :usage       (parse-usage (:usage resp))
+             :_headers    headers}))))))
+
+(defn chat-stream
+  "Send a streaming Messages API request via SSE."
+  [request on-chunk provider-name cfg]
+  (let [url      (str (or (:base-url cfg) "https://api.anthropic.com") "/v1/messages")
+        auth-err (missing-auth-error provider-name cfg)]
+    (if auth-err
+      auth-err
+      (let [headers (auth-headers provider-name cfg)
+            body    (-> request apply-effort-to-body (assoc :stream true))
+            initial  {:role "assistant" :content "" :usage {}}
+            result   (llm-http/post-sse! url headers body
+                                         (fn [chunk]
+                                           (when-let [text (get-in chunk [:delta :text])]
+                                             (on-chunk {:text-delta text}))
+                                           (when-let [thinking (get-in chunk [:delta :thinking])]
+                                             (on-chunk {:reasoning-delta thinking})))
+                                         process-sse-event initial (http-opts cfg))]
+        (if (:error result)
+          (api/normalize-error result)
+          {:content     (:content result)
+           :model       (:model result)
+           :tool-calls  []
+           :stop-reason (stop-reason (:stop-reason-wire result))
+           :usage       (parse-usage (:usage result))
+           :_headers    headers})))))
+
+(defn followup-messages
+  "Build the next iteration's :messages vector for the Anthropic Messages API.
+   Pairs tool_use blocks (in an assistant message) with tool_result blocks
+   (in a single user message)."
+  [request _response tool-calls tool-results]
+  (let [assistant-msg {:role    "assistant"
+                       :content (mapv (fn [tc]
+                                        {:type  "tool_use"
+                                         :id    (:id tc)
+                                         :name  (:name tc)
+                                         :input (:arguments tc)})
+                                      tool-calls)}
+        tool-result   {:role    "user"
+                       :content (followup/map-tool-results tool-calls tool-results
+                                                           (fn [tc result]
+                                                             {:type        "tool_result"
+                                                              :tool_use_id (:id tc)
+                                                              :content     (if (str/blank? (str result))
+                                                                              "(empty)"
+                                                                              result)}))}]
+    (followup/append-followup-messages request assistant-msg [tool-result])))
+
+(deftype MessagesAPI [provider-name cfg]
+  api/Api
+  (chat [_ req] (chat req provider-name cfg))
+  (chat-stream [_ req on-chunk] (chat-stream req on-chunk provider-name cfg))
+  (followup-messages [_ req resp tcs trs] (followup-messages req resp tcs trs))
+  (config [_] cfg)
+  (display-name [_] provider-name)
+  (format-tools [_ tools] (build-tools tools))
+  (build-prompt [_ opts] (build opts)))
+
+(defn make [name cfg]
+  (->MessagesAPI name (cond-> cfg
+                         (not (contains? cfg :stream-supports-tool-calls))
+                         (assoc :stream-supports-tool-calls false))))
+
+;; endregion ^^^^^ Public API ^^^^^

@@ -1,7 +1,7 @@
 {:id       :isaac.agent.schema-comms
  :version  "0.0.0"
  :builtin? true
- :factory  isaac.module.protocol/module
+ :factory  isaac.foundation.module.protocol/module
  :description "Test-only :comms config schema so agent CI matches the server-owned :comms shape without pulling isaac-http onto the classpath. The :isaac.agent/comm berth itself is declared by isaac-agent's real manifest (isaac-deds)."
 
  :isaac.config/schema
@@ -11,7 +11,7 @@
                    :key-spec    {:type :id}
                    :value-spec  {:name           :comm
                                  :type           :map
-                                 :factory        isaac.comm.factory/create!
+                                 :factory        isaac.agent.comm.factory/create!
                                  :dynamic-schema {:berth :isaac.agent/comm :path [:extra-schema]}
                                  :schema         {:type {:type         :id
                                                          :options-from :comms

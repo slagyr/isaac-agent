@@ -1,0 +1,320 @@
+(ns isaac.agent.config.checks-spec
+  (:require
+    [isaac.agent.comm.registry :as comm-registry]
+    [isaac.agent.config.checks :as sut]
+    [isaac.foundation.config.loader :as loader]
+    [isaac.foundation.config.root :as root]
+    [isaac.foundation.fs :as fs]
+    [isaac.foundation.marigold :as marigold]
+    [isaac.agent.marigold.agent :as marigold.agent]
+    [isaac.foundation.nexus :as nexus]
+    [speclj.core :refer [describe context it should should=]]))
+
+(describe "config checks"
+
+  (it "rejects reach in default frequencies"
+    (should= [{:key "defaults.frequencies.reach" :value "unknown frequency :reach"}]
+             (:errors (sut/check-default-frequencies
+                        {:config {:defaults {:frequencies {:crew "main" :reach :one}}}}))))
+
+  (it "preserves member paths when loading a worksite resource pool"
+    (let [mem (fs/mem-fs)]
+      (nexus/-with-nested-nexus {:fs mem :root "/tmp/npmp"}
+        (fs/mkdirs mem "/tmp/npmp/config")
+        (fs/spit mem "/tmp/npmp/config/isaac.edn"
+                 "{:resource-pools {\"decks\" {:type :worksite :members [\"/decks/galley\"]}}}")
+        (should= ["/decks/galley"]
+                 (get-in (:config (loader/load-config-result {:root "/tmp/npmp" :fs mem}))
+                         [:resource-pools "decks" :members])))))
+
+  (context "resource pool instances"
+    (it "rejects an unknown type and a tide instance without its window"
+      (let [{:keys [errors]} (sut/check-resource-pools
+                              {:config {:resource-pools {"drydock" {:type :drydock}
+                                                        "dogwatch" {:type :tide}}}})]
+        (should= 2 (count errors))
+        (should (some #(and (re-find #"drydock" (:key %))
+                           (re-find #"unknown resource pool type" (:value %))) errors))
+        (should (some #(and (re-find #"dogwatch" (:key %))
+                           (re-find #"window" (:value %))) errors))))
+    )
+
+
+  (context "check-comm-types"
+
+    (it "rejects a comm type that no module contributes"
+      (let [{:keys [errors]} (sut/check-comm-types
+                               {:config {:comms {:bigbird {:type :unknown-type}}}
+                                :module-index {}})]
+        (should= [{:key   "comms.bigbird"
+                   :path  "comms.bigbird"
+                   :value "unknown :type \"unknown-type\""}]
+                 errors)))
+
+    (it "accepts a comm type contributed by a module"
+      (let [{:keys [errors]} (sut/check-comm-types
+                               {:config {:comms {:bert {:type :telly}}}
+                                :module-index
+                                {:isaac.comm.telly
+                                 {:manifest {:isaac.agent/comm {:telly {}}}}}})]
+        (should= [] errors)))
+
+    (it "accepts a comm type registered programmatically"
+      (binding [comm-registry/*registry* (atom (comm-registry/fresh-registry))]
+        (comm-registry/register-factory! :embedded (constantly ::comm))
+        (let [{:keys [errors]} (sut/check-comm-types
+                                 {:config {:comms {:bert {:type :embedded}}}
+                                  :module-index {}})]
+          (should= [] errors))))
+
+    (it "does not accept a comm type contributed under a retired berth key"
+      (let [{:keys [errors]} (sut/check-comm-types
+                               {:config {:comms {:bert {:type :telly}}}
+                                :module-index
+                                {:isaac.comm.telly
+                                 {:manifest {:isaac.http/comm {:telly {}}}}}})]
+        (should= [{:key   "comms.bert"
+                   :path  "comms.bert"
+                   :value "unknown :type \"telly\""}]
+                 errors)))
+    )
+
+  (context "check-crew-model-aliases"
+
+    (it "accepts a crew model that matches an existing model's provider string"
+      (let [{:keys [errors]} (sut/check-crew-model-aliases
+                               {:config {:crew   {"cordelia" {:model "echo"}}
+                                         :models {"grover" {:model "echo" :provider "grover"}}}})]
+        (should= [] errors)))
+
+    (it "rejects a crew model that is neither a model id nor a provider model string"
+      (let [{:keys [errors]} (sut/check-crew-model-aliases
+                               {:config {:crew   {"cordelia" {:model "ghost"}}
+                                         :models {"grover" {:model "echo" :provider "grover"}}}})]
+        (should= [{:key       "crew.cordelia.model"
+                   :value     "references undefined model"
+                   :bad-value "ghost"}]
+                 (mapv #(select-keys % [:key :value :bad-value]) errors))))
+
+    (it "load-config accepts a crew model that matches an existing model's provider string"
+      (let [fs* (fs/mem-fs)]
+        (nexus/-with-nested-nexus {:fs fs*}
+          (marigold.agent/with-real-manifest
+            (marigold/write-config! {:defaults {:frequencies {:crew "main"} :crew {:model "grover"}}})
+            (marigold/write-model! "grover" {:model "echo" :provider "grover" :context-window 32768})
+            (marigold/write-crew! "main" {:model "grover" :soul "You are Atticus."})
+            (marigold/write-crew! "cordelia" {:model "echo" :soul "You are Cordelia." :session-policy :episodes})
+            (marigold/write-provider! "grover" {})
+            (let [result (loader/load-config-result {:root marigold/root :fs fs*})
+                  model-errors (filter #(= "crew.cordelia.model" (:key %)) (:errors result))]
+              (should= [] (mapv #(select-keys % [:key :value :bad-value]) model-errors))
+              (should= "echo" (get-in result [:config :crew "cordelia" :model])))))))
+
+    (it "load-config still rejects a crew model that matches no registered model"
+      (let [fs* (fs/mem-fs)]
+        (nexus/-with-nested-nexus {:fs fs*}
+          (marigold.agent/with-real-manifest
+            (marigold/write-config! {:defaults {:frequencies {:crew "main"} :crew {:model "grover"}}})
+            (marigold/write-model! "grover" {:model "echo" :provider "grover" :context-window 32768})
+            (marigold/write-crew! "main" {:model "grover" :soul "You are Atticus."})
+            (marigold/write-crew! "cordelia" {:model "ghost" :soul "You are Cordelia."})
+            (marigold/write-provider! "grover" {})
+            (let [result (loader/load-config-result {:root marigold/root :fs fs*})
+                  model-errors (filter #(= "crew.cordelia.model" (:key %)) (:errors result))]
+              (should= {:key       "crew.cordelia.model"
+                        :value     "references undefined model"
+                        :bad-value "ghost"}
+                       (select-keys (first model-errors) [:key :value :bad-value]))
+              (should (seq model-errors))))))))
+
+  (describe "check-crew-broad-directories"
+
+    (it "warns when a crew directory equals the user home"
+      (binding [root/*user-home* "/tmp/isaac-home"]
+        (let [{:keys [warnings]} (sut/check-crew-broad-directories
+                                   {:config {:root "/tmp/isaac-home"
+                                             :crew {:scrapper {:tools {:directories {:allow ["/tmp/isaac-home"]}}}}}
+                                    :root   "/tmp/isaac-home/.isaac/config"})]
+          (should= 1 (count warnings))
+          (should (re-find #"user home" (:value (first warnings)))))))
+
+    (it "skips every broad-directory warning for an acknowledged crew"
+      (binding [root/*user-home* "/tmp/isaac-home"]
+        (let [{:keys [warnings]} (sut/check-crew-broad-directories
+                                   {:config {:root "/tmp/isaac-home"
+                                             :crew {:scrapper {:tools {:directories {:allow ["/tmp/isaac-home"]
+                                                                                     :acknowledge-broad? true}}}}}
+                                    :root   "/tmp/isaac-home/.isaac/config"})]
+          (should= [] warnings))))
+
+    (it "warns when a crew directory includes the Isaac state root"
+      (let [{:keys [warnings]} (sut/check-crew-broad-directories
+                                 {:config {:root "/srv/isaac-state"
+                                           :crew {:scrapper {:tools {:directories {:allow ["/srv/isaac-state"]}}}}}
+                                  :root   "/srv/isaac-state/config"})]
+        (should= 1 (count warnings))
+        (should (re-find #"Isaac state directory" (:value (first warnings))))
+        (should (re-find #":cwd" (:value (first warnings)))))))
+
+  (context "check-tool-allow-tokens"
+
+    (it "rejects an unqualified allow token"
+      (let [{:keys [errors]} (sut/check-tool-allow-tokens
+                               {:config {:crew {"main" {:tools {:allow [:read]}}}}})]
+        (should= 1 (count errors))
+        (should= "crew.main.tools.allow[0]" (:key (first errors)))
+        (should (re-find #"namespace" (:value (first errors))))))
+
+    (it "accepts namespaced allow tokens and a namespace glob"
+      (let [{:keys [errors]} (sut/check-tool-allow-tokens
+                               {:config {:crew {"main" {:tools {:allow [:fs/read :fs/*]}}}}})]
+        (should= [] errors)))
+
+    (it "accepts :all as the exempt policy token (the list, not a list item)"
+      (let [{:keys [errors]} (sut/check-tool-allow-tokens
+                               {:config {:crew {"main" {:tools {:allow :all}}}}})]
+        (should= [] errors)))
+
+    (it "rejects multiple unqualified tokens that are not :all"
+      (let [{:keys [errors]} (sut/check-tool-allow-tokens
+                               {:config {:crew {"main" {:tools {:allow [:nope :linear]}}}}})]
+        (should= ["crew.main.tools.allow[0]" "crew.main.tools.allow[1]"]
+                 (mapv :key errors))
+        (should (every? #(re-find #"namespace" (:value %)) errors))))
+
+    (it "load-config rejects an unqualified allow token with a path-anchored namespace error"
+      (let [fs*  (fs/mem-fs)
+            root "/tmp/isaac-allow-ns-load"]
+        (nexus/-with-nested-nexus {:fs fs*}
+          (marigold.agent/with-real-manifest
+            (fs/mkdirs fs* (str root "/config"))
+            (fs/spit fs* (str root "/config/isaac.edn")
+                     (pr-str {:crew {:main {:tools {:allow [:read]}}}}))
+            (let [result (loader/load-config-result {:root root :fs fs*})
+                  hits   (filter #(= "crew.main.tools.allow[0]" (:key %)) (:errors result))]
+              (should (seq hits))
+              (should (re-find #"namespace" (:value (first hits)))))))))
+
+    (it "load-config accepts namespaced allow tokens and a namespace glob"
+      (let [fs*  (fs/mem-fs)
+            root "/tmp/isaac-allow-ok-load"]
+        (nexus/-with-nested-nexus {:fs fs*}
+          (marigold.agent/with-real-manifest
+            (fs/mkdirs fs* (str root "/config"))
+            (fs/spit fs* (str root "/config/isaac.edn")
+                     (pr-str {:crew {:main {:tools {:allow [:fs/read :fs/*]}}}}))
+            (let [result (loader/load-config-result {:root root :fs fs*})
+                  allow  (get-in result [:config :crew "main" :tools :allow])]
+              (should= [] (filter #(re-find #"allow" (str (:key %))) (:errors result)))
+              (should= [:fs/read :fs/*] allow)))))))
+
+    (it "rejects [:all] as a list item — :all is the list"
+      (let [{:keys [errors]} (sut/check-tool-allow-tokens
+                               {:config {:crew {"main" {:tools {:allow [:all]}}}}})]
+        (should= 1 (count errors))
+        (should= "crew.main.tools.allow" (:key (first errors)))
+        (should (re-find #":all" (:value (first errors))))))
+
+    (it "rejects [:all] on the crew tool defaults"
+      (let [{:keys [errors]} (sut/check-tool-allow-tokens
+                               {:config {:defaults {:crew {:tools {:allow [:all]}}}}})]
+        (should= 1 (count errors))
+        (should= "defaults.crew.tools.allow" (:key (first errors)))
+        (should (re-find #":all" (:value (first errors))))))
+
+    (it "accepts :allow :all as the policy keyword in the crew tool defaults"
+      (let [{:keys [errors]} (sut/check-tool-allow-tokens
+                               {:config {:defaults {:crew {:tools {:allow :all :deny [:exec/run]}}}}})]
+        (should= [] errors)))
+
+    (it "rejects an unqualified deny token"
+      (let [{:keys [errors]} (sut/check-tool-allow-tokens
+                               {:config {:crew {"main" {:tools {:deny [:read]}}}}})]
+        (should= 1 (count errors))
+        (should= "crew.main.tools.deny[0]" (:key (first errors)))
+        (should (re-find #"namespace" (:value (first errors))))))
+
+    (it "accepts crew :deny :all then :allow of a namespaced family"
+      (let [{:keys [errors]} (sut/check-tool-allow-tokens
+                               {:config {:crew {"main" {:tools {:deny :all :allow [:memory/*]}}}}})]
+        (should= [] errors)))
+
+    (it "load-config rejects [:all] on tools.allow with a path-anchored :all error"
+      (let [fs*  (fs/mem-fs)
+            root "/tmp/isaac-allow-all-vec"]
+        (nexus/-with-nested-nexus {:fs fs*}
+          (marigold.agent/with-real-manifest
+            (fs/mkdirs fs* (str root "/config"))
+            (fs/spit fs* (str root "/config/isaac.edn")
+                     (pr-str {:tools {:allow [:all]}}))
+            (let [result (loader/load-config-result {:root root :fs fs*})
+                  hits   (filter #(= "tools.allow" (:key %)) (:errors result))]
+              (should (seq hits))
+              (should (re-find #":all" (:value (first hits)))))))))
+
+  (context "check-session-policy"
+
+    (it "rejects an unknown session policy with the planted ledger/chronicle message"
+      (require 'isaac.agent.session.policy.chronicle)
+      (let [{:keys [errors]} (sut/check-session-policy
+                               {:config {:crew {"cordelia" {:session-policy :ledger}}}})]
+        (should= 1 (count errors))
+        (should= "crew.cordelia.session-policy" (:key (first errors)))
+        (should (re-find #"references undefined session policy \(got \"ledger\"\); known: chronicle"
+                         (:value (first errors))))))
+
+    (it "accepts a crew with no session-policy (chronicle default)"
+      (let [{:keys [errors]} (sut/check-session-policy
+                               {:config {:crew {"main" {:model "echo"}}}})]
+        (should= [] errors)))
+
+    (it "accepts a registered session policy"
+      (require 'isaac.agent.session.policy.chronicle)
+      (let [{:keys [errors]} (sut/check-session-policy
+                               {:config {:crew {"cordelia" {:session-policy :chronicle}}}})]
+        (should= [] errors)))
+
+    (it "accepts a session policy contributed by a module without registering a factory"
+      (let [{:keys [errors]} (sut/check-session-policy
+                               {:config {:crew {"cordelia" {:session-policy :lantern}}}
+                                :module-index
+                                {:isaac.session.lantern
+                                 {:manifest {:isaac.agent/session-policy {:lantern {}}}}}})]
+        (should= [] errors)))
+
+    (it "rejects an unknown policy and names the module-contributed set"
+      (require 'isaac.agent.session.policy.chronicle)
+      (let [{:keys [errors]} (sut/check-session-policy
+                               {:config {:crew {"cordelia" {:session-policy :ledger}}}
+                                :module-index
+                                {:isaac.session.lantern
+                                 {:manifest {:isaac.agent/session-policy {:lantern {}}}}}})]
+        (should= 1 (count errors))
+        (should= "crew.cordelia.session-policy" (:key (first errors)))
+        (should (re-find #"references undefined session policy \(got \"ledger\"\); known: chronicle, lantern"
+                         (:value (first errors)))))))
+
+  (context "check-retired-cycle-limit"
+
+    (it "rejects a crew :cycle-limit and names :cycle {:limit}"
+      (let [{:keys [errors]} (sut/check-retired-cycle-limit
+                               {:config {:crew {"main" {:cycle-limit 120}}}})]
+        (should= 1 (count errors))
+        (should= "crew.main.cycle-limit" (:key (first errors)))
+        (should (re-find #":cycle \{:limit" (:value (first errors))))))
+
+    (it "load-config rejects a crew :cycle-limit inlined in isaac.edn"
+      (let [fs*  (fs/mem-fs)
+            root "/tmp/isaac-retired-cycle-limit"]
+        (nexus/-with-nested-nexus {:fs fs*}
+          (marigold.agent/with-real-manifest
+            (fs/mkdirs fs* (str root "/config"))
+            (fs/spit fs* (str root "/config/isaac.edn")
+                     (pr-str {:defaults  {:frequencies {:crew :main} :crew {:model :local}}
+                              :crew      {:main {:cycle-limit 120}}
+                              :models    {:local {:model "llama3.3:1b" :provider :anthropic}}
+                              :providers {:anthropic {}}}))
+            (let [result (loader/load-config-result {:root root :fs fs*})
+                  hits   (filter #(= "crew.main.cycle-limit" (:key %)) (:errors result))]
+              (should (seq hits))
+              (should (re-find #":cycle \{:limit" (:value (first hits)))))))))))

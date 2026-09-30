@@ -11,7 +11,7 @@
                  :key-spec {:type :keyword},
                  :value-spec
                  {:type :map,
-                  :factory isaac.tool.registry/register-tool-entry!,
+                  :factory isaac.agent.tool.registry/register-tool-entry!,
                   :schema
                   {:factory
                    {:type :symbol, :validations [:present?]}}}}},
@@ -34,7 +34,7 @@
                  :key-spec {:type :keyword},
                  :value-spec
                  {:type :map,
-                  :factory isaac.llm.api.protocol/register-api-entry!,
+                  :factory isaac.agent.llm.api.protocol/register-api-entry!,
                   :schema
                   {:factory
                    {:type :symbol, :validations [:present?]}}}}},
@@ -46,7 +46,7 @@
                  :key-spec {:type :keyword},
                  :value-spec
                  {:type :map,
-                  :factory isaac.slash.registry/register-slash-entry!,
+                  :factory isaac.agent.slash.registry/register-slash-entry!,
                   :schema
                   {:factory
                    {:type :symbol, :validations [:present?]}}}}},
@@ -73,7 +73,7 @@
                   :key-spec {:type :keyword},
                   :value-spec
                   {:type :map,
-                   :factory isaac.resource-pool/register-entry!,
+                   :factory isaac.agent.resource-pool/register-entry!,
                    :schema
                    {:factory
                     {:type :symbol, :validations [:present?]}}}}},
@@ -85,14 +85,14 @@
                  :key-spec {:type :keyword},
                  :value-spec
                  {:type :map,
-                  :factory isaac.session.policy/register-entry!,
+                  :factory isaac.agent.session.policy/register-entry!,
                   :schema
                   {:factory
                    {:type :symbol, :validations [:present?]}}}}}
                :comm
-               {:description "Communication channels (Discord, iMessage, ACP, …). Manifest contributions name available impls and carry the impl's :namespace (whose load implements isaac.comm.factory/create for that :type) plus its :extra-schema (extension fields composed into [:comms] slots of that :type). User-instantiated comm slots in the [:comms] config slot also count toward this berth, so `[:registered-in? :isaac.agent/comm [:comms]]` accepts both manifest impl ids (the common :type values) and slot ids. :register-fn wires each live slot into comm-registry so the delivery worker can send outbound replies.",
-                :register-fn   isaac.comm.registry/register-instance!
-                :deregister-fn isaac.comm.registry/deregister-instance!
+               {:description "Communication channels (Discord, iMessage, ACP, …). Manifest contributions name available impls and carry the impl's :namespace (whose load implements isaac.agent.comm.factory/create for that :type) plus its :extra-schema (extension fields composed into [:comms] slots of that :type). User-instantiated comm slots in the [:comms] config slot also count toward this berth, so `[:registered-in? :isaac.agent/comm [:comms]]` accepts both manifest impl ids (the common :type values) and slot ids. :register-fn wires each live slot into comm-registry so the delivery worker can send outbound replies.",
+                :register-fn   isaac.agent.comm.registry/register-instance!
+                :deregister-fn isaac.agent.comm.registry/deregister-instance!
                 :schema      {:type       :map
                               :key-spec   {:type :keyword}
                               :value-spec {:type    :map
@@ -110,57 +110,57 @@
  {:auth
   {:usage "auth <subcommand> [options]",
    :summary "Manage authentication credentials",
-   :namespace isaac.llm.auth.cli
+   :namespace isaac.agent.llm.auth.cli
    :hosted true},
   :crew
   {:usage "crew [subcommand] [options]",
    :summary "Manage configured crew members",
-   :namespace isaac.crew.cli
+   :namespace isaac.agent.crew.cli
    :hosted true},
   :prompt
   {:usage "prompt -m <message> [options]",
    :summary "Run a single prompt turn and exit",
-   :namespace isaac.bridge.prompt-cli
+   :namespace isaac.agent.bridge.prompt-cli
    :hosted true},
   :turns
   {:usage "turns [subcommand] [options]",
    :summary "Inspect and evict held turn requests",
-   :namespace isaac.turn.cli
+   :namespace isaac.agent.turn.cli
    :hosted true},
   :sessions
   {:usage "sessions [subcommand] [options]",
    :summary "Manage stored conversation sessions",
-   :namespace isaac.session.cli
+   :namespace isaac.agent.session.cli
    :hosted true}},
  :isaac.agent/llm-api
- {:messages {:factory isaac.llm.api.messages/make},
-  :grover {:factory isaac.llm.api.grover/make},
-  :ollama {:factory isaac.llm.api.ollama/make},
-  :chat-completions {:factory isaac.llm.api.chat-completions/make},
-  :responses {:factory isaac.llm.api.responses/make}},
+ {:messages {:factory isaac.agent.llm.api.messages/make},
+  :grover {:factory isaac.agent.llm.api.grover/make},
+  :ollama {:factory isaac.agent.llm.api.ollama/make},
+  :chat-completions {:factory isaac.agent.llm.api.chat-completions/make},
+  :responses {:factory isaac.agent.llm.api.responses/make}},
  :isaac.agent/tools
- {:web/fetch {:factory isaac.tool.builtin/web-fetch-tool-factory},
-  :fs/read {:factory isaac.tool.builtin/read-tool-factory},
-  :exec/run {:factory isaac.tool.builtin/exec-tool-factory},
+ {:web/fetch {:factory isaac.agent.tool.builtin/web-fetch-tool-factory},
+  :fs/read {:factory isaac.agent.tool.builtin/read-tool-factory},
+  :exec/run {:factory isaac.agent.tool.builtin/exec-tool-factory},
   :session/model
-  {:factory isaac.tool.builtin/session-model-tool-factory},
-  :fs/grep {:factory isaac.tool.builtin/grep-tool-factory},
-  :fs/edit {:factory isaac.tool.builtin/edit-tool-factory},
-  :fs/multi_edit {:factory isaac.tool.builtin/multi-edit-tool-factory},
+  {:factory isaac.agent.tool.builtin/session-model-tool-factory},
+  :fs/grep {:factory isaac.agent.tool.builtin/grep-tool-factory},
+  :fs/edit {:factory isaac.agent.tool.builtin/edit-tool-factory},
+  :fs/multi_edit {:factory isaac.agent.tool.builtin/multi-edit-tool-factory},
   :memory/write
-  {:factory isaac.tool.builtin/memory-write-tool-factory},
-  :web/search {:factory isaac.tool.builtin/web-search-tool-factory},
-  :turn/get {:factory isaac.tool.builtin/turn-get-tool-factory},
+  {:factory isaac.agent.tool.builtin/memory-write-tool-factory},
+  :web/search {:factory isaac.agent.tool.builtin/web-search-tool-factory},
+  :turn/get {:factory isaac.agent.tool.builtin/turn-get-tool-factory},
   :session/info
-  {:factory isaac.tool.builtin/session-info-tool-factory},
-  :fs/write {:factory isaac.tool.builtin/write-tool-factory},
-  :fs/glob {:factory isaac.tool.builtin/glob-tool-factory},
+  {:factory isaac.agent.tool.builtin/session-info-tool-factory},
+  :fs/write {:factory isaac.agent.tool.builtin/write-tool-factory},
+  :fs/glob {:factory isaac.agent.tool.builtin/glob-tool-factory},
   :memory/search
-  {:factory isaac.tool.builtin/memory-search-tool-factory},
-  :skill/load {:factory isaac.tool.skill/load-skill-tool-factory},
-  :skill/list {:factory isaac.tool.skill/list-skills-tool-factory},
-  :memory/get {:factory isaac.tool.builtin/memory-get-tool-factory},
-  :comm/send {:factory isaac.tool.comm-send/comm-send-tool-factory}},
+  {:factory isaac.agent.tool.builtin/memory-search-tool-factory},
+  :skill/load {:factory isaac.agent.tool.skill/load-skill-tool-factory},
+  :skill/list {:factory isaac.agent.tool.skill/list-skills-tool-factory},
+  :memory/get {:factory isaac.agent.tool.builtin/memory-get-tool-factory},
+  :comm/send {:factory isaac.agent.tool.comm-send/comm-send-tool-factory}},
  :isaac.agent/provider-template
  {:anthropic
   {:template
@@ -211,11 +211,11 @@
             :flow :oidc-device-code
             :scope "api:access offline_access"}}}},
  :isaac.agent/slash-commands
- {:crew {:factory isaac.slash.builtin/crew-command},
-  :cwd {:factory isaac.slash.builtin/cwd-command},
-  :effort {:factory isaac.slash.builtin/effort-command},
-  :model {:factory isaac.slash.builtin/model-command},
-  :status {:factory isaac.slash.builtin/status-command}},
+ {:crew {:factory isaac.agent.slash.builtin/crew-command},
+  :cwd {:factory isaac.agent.slash.builtin/cwd-command},
+  :effort {:factory isaac.agent.slash.builtin/effort-command},
+  :model {:factory isaac.agent.slash.builtin/model-command},
+  :status {:factory isaac.agent.slash.builtin/status-command}},
  :isaac.config/schema
  {:bridge
   {:schema
@@ -822,7 +822,7 @@
             :key-spec    {:type :id}
             :value-spec  {:name           :comm
                           :type           :map
-                          :factory        isaac.comm.factory/create!
+                          :factory        isaac.agent.comm.factory/create!
                           :dynamic-schema {:berth :isaac.agent/comm :path [:extra-schema]}
                           :schema         {:type {:type         :id
                                                   :options-from :comms
@@ -833,33 +833,33 @@
                                                   :validations [:crew-exists?]}}}}}}
 
  :isaac.agent/session-policy
- {:chronicle {:factory isaac.session.policy.chronicle/create}}
+ {:chronicle {:factory isaac.agent.session.policy.chronicle/create}}
 
  :isaac.config/check
- {:default-frequencies {:fn isaac.config.checks/check-default-frequencies}
+ {:default-frequencies {:fn isaac.agent.config.checks/check-default-frequencies}
   :comm-reserved-schema
-  {:fn isaac.config.checks/check-comm-reserved-schema},
+  {:fn isaac.agent.config.checks/check-comm-reserved-schema},
   :comm-types
-  {:fn isaac.config.checks/check-comm-types},
+  {:fn isaac.agent.config.checks/check-comm-types},
   :crew-broad-directories
-  {:fn isaac.config.checks/check-crew-broad-directories},
+  {:fn isaac.agent.config.checks/check-crew-broad-directories},
   :crew-model-aliases
-  {:fn isaac.config.checks/check-crew-model-aliases},
-  :manifest-refs {:fn isaac.config.checks/check-manifest-refs},
-  :resource-pools {:fn isaac.config.checks/check-resource-pools}
+  {:fn isaac.agent.config.checks/check-crew-model-aliases},
+  :manifest-refs {:fn isaac.agent.config.checks/check-manifest-refs},
+  :resource-pools {:fn isaac.agent.config.checks/check-resource-pools}
   :resolved-providers
-  {:fn isaac.config.checks/check-resolved-providers}
+  {:fn isaac.agent.config.checks/check-resolved-providers}
   :tool-allow-tokens
-  {:fn isaac.config.checks/check-tool-allow-tokens}
+  {:fn isaac.agent.config.checks/check-tool-allow-tokens}
   :session-policy
-  {:fn isaac.config.checks/check-session-policy}
+  {:fn isaac.agent.config.checks/check-session-policy}
   :retired-cycle-limit
-  {:fn isaac.config.checks/check-retired-cycle-limit}}
+  {:fn isaac.agent.config.checks/check-retired-cycle-limit}}
 
  :isaac.config/validation-ref
  {:crew-exists?
-  {:known   isaac.config.checks/known-crew-ids
+  {:known   isaac.agent.config.checks/known-crew-ids
    :message "references undefined crew"}
   :model-exists?
-  {:known   isaac.config.checks/known-model-ids+aliases
+  {:known   isaac.agent.config.checks/known-model-ids+aliases
    :message "references undefined model"}}}

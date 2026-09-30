@@ -1,0 +1,188 @@
+(ns isaac.agent.charge
+  (:refer-clojure :exclude [agent])
+  (:require
+    [clojure.string :as str]
+    [isaac.agent.bridge.cancellation :as cancellation]
+    [isaac.agent.config.defaults :as defaults]
+    [isaac.foundation.config.loader :as loader]
+    [isaac.agent.config.resolve :as resolve]
+    [isaac.agent.llm.provider :as llm-provider]
+    [isaac.foundation.nexus :as nexus]
+    [isaac.agent.session.context :as session-ctx]
+    [isaac.agent.session.policy :as policy]
+    [isaac.agent.session.store.spi :as store]))
+
+(def charge-schema
+  {:name   :charge
+   :type   :map
+   :schema {:session-key       {:type :string :description "Session identifier"}
+            :input             {:type :string :description "User input string"}
+            :comm              {:type :ignore :description "Communication channel"}
+            :config            {:type :ignore :description "Config snapshot for this charge"}
+            :crew              {:type :string :description "Resolved crew/agent id"}
+            :crew-members      {:type :ignore :description "Full crew config map (all members)"}
+            :models            {:type :ignore :description "All configured models map"}
+            :module-index      {:type :ignore :description "Module index map"}
+            :context-window    {:type :long :description "Context window token limit"}
+            :model             {:type :string :description "Resolved model id"}
+            :model-cfg         {:type :ignore :description "Model configuration map"}
+            :provider          {:type :ignore :description "Resolved LLM provider Api instance"}
+            :provider-cfg      {:type :ignore :description "Provider configuration map"}
+            :crew-cfg          {:type :ignore :description "Resolved crew configuration map"}
+            :compaction        {:type :ignore :description "Resolved compaction policy map"}
+            :context-mode      {:type :keyword :description "Compaction/prompt-building mode (:full or :reset)"}
+            :effort            {:type :long :description "Resolved per-turn effort budget"}
+            :cwd               {:type :string :description "Session working directory"}
+            :soul              {:type :string :description "System prompt"}
+            :nonce             {:type :string :description "Session-scoped trusted-block nonce"}
+            :preamble          {:type :string :description "Per-turn system prompt preamble"}
+            :guidance          {:type :string :description "Per-turn trusted guidance injected into the current user turn"}
+            :origin            {:type :ignore :description "Inbound origin metadata"}
+            :key               {:type :string :description "Idempotent submission identity"}
+            :coalesce-key      {:type :string :description "Waiting-room grouping key"}
+            :observers         {:type :ignore :description "Submitted per-turn observer refs (name or [name params])"}
+            :resource-pools        {:type :ignore :description "Submitted per-turn resource-pool refs (name or [name params])"}
+            :cycle             {:type :ignore :description "Optional per-charge :cycle map overlay (limit, checkpoint-every, prompts)"}
+            :charge/type       {:type :keyword :description "Charge type marker (:charge)"}
+            :charge/unresolved {:type :boolean :description "True when crew/model could not be resolved"}
+            :charge/reason     {:type :keyword :description "Reason for unresolved charge"}}})
+
+;; region ----- Predicates -----
+
+(defn charge? [x]
+  (= :charge (:charge/type x)))
+
+(defn slash?
+  "True when the charge carries a slash-command input."
+  [charge]
+  (and (string? (:input charge))
+       (str/starts-with? (:input charge) "/")))
+
+(defn unresolved?
+  "True when the charge could not be fully resolved (unknown crew, no model, etc.)."
+  [charge]
+  (true? (:charge/unresolved charge)))
+
+(defn cancelled?
+  "True when the session has been cancelled via the bridge cancellation registry."
+  [charge]
+  (cancellation/cancelled? (:session-key charge)))
+
+;; endregion ^^^^^ Predicates ^^^^^
+
+;; region ----- Accessors -----
+
+(defn channel
+  "Returns the comm channel for the charge."
+  [charge]
+  (:comm charge))
+
+(defn agent
+  "Returns the resolved crew/agent id."
+  [charge]
+  (:crew charge))
+
+(defn transcript
+  "Returns the active session transcript through the charge's session policy."
+  [charge]
+  (when-let [sess (policy/for-request charge)]
+    (policy/active-transcript sess (:session-key charge))))
+
+;; endregion ^^^^^ Accessors ^^^^^
+
+;; region ----- Construction -----
+
+(defn- ensure-provider [provider cfg]
+  (cond
+    (nil? provider) nil
+    (string? provider) (let [prov-cfg     (resolve/resolve-provider cfg provider)
+                             enriched-cfg (merge (select-keys (defaults/provider-template cfg)
+                                                              [:stream-idle-timeout-ms])
+                                                 (or prov-cfg {})
+                                                 {:providers    (:providers cfg)
+                                                  :module-index (:module-index cfg)})]
+                         (llm-provider/make-provider provider enriched-cfg))
+    :else provider))
+
+(defn- unresolved-charge [base reason]
+  (assoc base
+    :charge/type :charge
+    :charge/unresolved true
+    :charge/reason reason))
+
+(defn- session-model-override [session-entry]
+  (session-ctx/normalize-model-ref (:model session-entry)))
+
+(defn- behavior-opts
+  "Opts for resolve-behavior: crew plus explicit model/context-mode overrides only.
+   Resolved provider model ids from the request's :model are omitted so a
+   stale dispatch-time model cannot pin behavior across config reload."
+  [crew-id {:keys [model-override model-ref context-mode-override]} session-entry]
+  (let [session-model (session-model-override session-entry)]
+    (cond-> {:crew crew-id}
+      model-override (assoc :model (session-ctx/normalize-model-ref model-override))
+      model-ref (assoc :model (session-ctx/normalize-model-ref model-ref))
+      (and (nil? model-override) (nil? model-ref) session-model)
+      (assoc :model session-model)
+      context-mode-override (assoc :context-mode context-mode-override))))
+
+(defn build
+  "Build a charge from a request map.
+
+   Reads from the global config snapshot and resolves the crew's full agent
+   context (soul, model, model-cfg, provider, context-window, compaction,
+   context-mode, effort). On resolution failure (unknown crew error or no
+   model) returns a charge marked :charge/unresolved with a :charge/reason
+   keyword."
+  [{:keys [session-key input comm crew config model model-ref model-override model-cfg
+           provider provider-cfg context-window soul soul-prepend preamble guidance origin key coalesce-key observers resource-pools cycle dispatch-error
+           context-mode-override]}]
+  (let [config*         (or (when (map? config) config) (loader/snapshot "charge build fallback — no :config passed (entry seed)") {})
+        ss*             (store/registered-store)
+        session-entry   (when (and ss* session-key (satisfies? store/SessionStore ss*))
+                          (store/get-session ss* session-key))
+        crew-id         (or crew (:crew session-entry) (defaults/crew-id config*))
+        known-crews     (or (:crew config*) {})
+        unknown?        (and crew-id (not (contains? known-crews crew-id)))
+        session-context (delay (session-ctx/resolve-behavior session-key
+                                                             (behavior-opts crew-id
+                                                                            {:model-override         model-override
+                                                                             :model-ref              model-ref
+                                                                             :context-mode-override  context-mode-override}
+                                                                            session-entry)))
+        model*          (delay (or model (get-in @session-context [:model-cfg :model]) (:model @session-context)))
+        base            (cond-> {:session-key   session-key
+                                 :input         input
+                                 :comm          comm
+                                 :config        config*
+                                 :crew          crew-id
+                                 :crew-members  known-crews
+                                 :models        (:models config*)
+                                 :module-index  (:module-index config*)
+                                 :guidance      guidance
+                                 :preamble      preamble
+                                 :origin        origin}
+                                key (assoc :key key)
+                                coalesce-key (assoc :coalesce-key coalesce-key)
+                                (seq observers) (assoc :observers observers)
+                                (seq resource-pools) (assoc :resource-pools resource-pools)
+                                (some? cycle) (assoc :cycle cycle))]
+    (cond (:error dispatch-error) (unresolved-charge base (:error dispatch-error))
+          unknown? (unresolved-charge base :unknown-crew)
+          (nil? @model*) (unresolved-charge base :no-model)
+          :else (merge base {:charge/type    :charge
+                             :crew-cfg       (:crew-cfg @session-context)
+                             :context-window (or context-window (:context-window @session-context))
+                             :context-mode   (:context-mode @session-context)
+                             :compaction     (:compaction @session-context)
+                             :effort         (:effort @session-context)
+                             :cwd            (:cwd @session-context)
+                             :model          @model*
+                             :model-cfg      (or model-cfg (:model-cfg @session-context))
+                             :nonce          (:nonce @session-context)
+                             :provider       (ensure-provider (or provider (:provider @session-context)) config*)
+                             :provider-cfg   (or provider-cfg (:provider-cfg @session-context))
+                             :soul           (or soul (cond-> (:soul @session-context)
+                                                              soul-prepend (str "\n\n" soul-prepend)))}))))
+
+;; endregion ^^^^^ Construction ^^^^^

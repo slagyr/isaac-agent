@@ -1,0 +1,383 @@
+(ns isaac.agent.comm.comm-steps
+  (:require
+    [clojure.edn :as edn]
+     [clojure.string :as str]
+    [gherclj.core :as g :refer [defgiven defthen defwhen helper!]]
+    [isaac.agent.bridge.cancellation :as bridge-cancel]
+    [isaac.agent.bridge.core :as bridge]
+    [isaac.agent.comm.memory :as memory-comm]
+    [isaac.foundation.config.api :as config]
+    [isaac.foundation.config.loader :as loader]
+    [isaac.agent.config.resolve :as resolve]
+    [isaac.agent.drive.dispatch :as drive-dispatch]
+    [isaac.agent.llm.provider :as llm-provider]
+    [isaac.agent.step-tables :as match]
+    [isaac.foundation.fs :as fs]
+    [isaac.agent.llm.api.grover :as grover]
+    [isaac.agent.llm.http :as llm-http]
+    [isaac.agent.session.store.spi :as store]
+    [isaac.agent.session.store.sidecar :as sidecar-store]
+    [isaac.foundation.nexus :as nexus]
+    [isaac.agent.spec-helper :as helper]
+    [isaac.agent.tool.memory :as memory]))
+
+(helper! isaac.agent.comm.comm-steps)
+
+(defn- root []
+  (g/get :root))
+
+(defn- mem-fs []
+  (or (g/get :mem-fs) (nexus/get :fs) (fs/real-fs)))
+
+(defn- with-feature-fs [f]
+  (nexus/-with-nested-nexus {:fs (mem-fs)}
+    (f)))
+
+(defn- session-store []
+  (or (store/registered-store)
+      (sidecar-store/create-store (root))))
+
+(defn- get-session [session-key]
+  (store/get-session (session-store) session-key))
+
+(defn- with-current-time [f]
+  (if-let [current-time (g/get :current-time)]
+    (binding [memory/*now* current-time]
+      (f))
+    (f)))
+
+(defn- stub-http-success-response [url body]
+  (cond
+    (str/ends-with? url "/chat/completions")
+    {:choices [{:message {:role "assistant" :content "stubbed"}}]
+     :model   (:model body)
+     :usage   {:prompt_tokens 0 :completion_tokens 0}}
+
+    (str/ends-with? url "/v1/messages")
+    {:content [{:type "text" :text "stubbed"}]
+     :model   (:model body)
+     :usage   {:input_tokens 0 :output_tokens 0}}
+
+    (str/ends-with? url "/responses")
+    {:output [{:type "message"
+               :content [{:type "output_text" :text "stubbed"}]}]
+     :model  (:model body)
+     :usage  {:input_tokens 0 :output_tokens 0}}
+
+    :else
+    {:message {:role "assistant" :content "stubbed"}
+     :model   (:model body)
+     :usage   {:input_tokens 0 :output_tokens 0}}))
+
+(defn- connection-refused [url]
+  {:error :connection-refused :message (str "Could not connect to " url)})
+
+(defn- with-llm-http-stub [captured* f]
+  (case (g/get :llm-http-stub)
+    :success
+    (with-redefs [llm-http/post-json! (fn [url headers body & _]
+                                        (swap! captured* conj {:body body :headers headers :stream false :url url})
+                                        (stub-http-success-response url body))
+                  llm-http/post-sse! (fn [url headers body on-chunk process-event initial & _]
+                                       (swap! captured* conj {:body body :headers headers :stream true :url url})
+                                       (let [result (stub-http-success-response url body)]
+                                         (on-chunk result)
+                                         (process-event result initial)))
+                  llm-http/post-ndjson-stream! (fn [url headers body on-chunk & _]
+                                                 (swap! captured* conj {:body body :headers headers :stream true :url url})
+                                                 (let [chunk {:message {:content "stubbed"} :done true}]
+                                                   (on-chunk chunk)
+                                                   chunk))]
+      (f))
+
+    :connection-refused
+    (with-redefs [llm-http/post-json! (fn [url headers body & _]
+                                        (swap! captured* conj {:body body :headers headers :stream false :url url})
+                                        (connection-refused url))
+                  llm-http/post-sse! (fn [url headers body _on-chunk _process-event _initial & _]
+                                       (swap! captured* conj {:body body :headers headers :stream true :url url})
+                                       (connection-refused url))
+                  llm-http/post-ndjson-stream! (fn [url headers body _on-chunk & _]
+                                                 (swap! captured* conj {:body body :headers headers :stream true :url url})
+                                                 (connection-refused url))]
+      (f))
+
+    (f)))
+
+(defn- channel-send-opts [key-str channel]
+  (let [cfg        (with-feature-fs #(:config (loader/load-config-result {:root (root) :fs (or (g/get :mem-fs) (nexus/get :fs) (fs/real-fs))})))
+        agents     (or (:crew cfg) {})
+        models     (:models cfg)
+        agent-id   (or (:crew (with-feature-fs #(get-session key-str)))
+                       (:agent (with-feature-fs #(get-session key-str)))
+                       (get-in cfg [:defaults :frequencies :crew])
+                       "main")
+        agent-cfg  (get agents agent-id)
+        model-id   (:model agent-cfg)
+        model-cfg  (or (get models model-id)
+                       (when-let [provider-id (:provider agent-cfg)]
+                         {:model model-id :provider provider-id}))
+        provider   (:provider model-cfg)
+        prov-cfg   (merge (or (resolve/resolve-provider cfg provider) {})
+                          (or (get (g/get :provider-configs) provider) {})
+                          {:module-index (:module-index cfg)})]
+    {:origin         {:kind :memory}
+     :model          (:model model-cfg)
+     :crew-members   agents
+     :models         models
+     :soul           (:soul agent-cfg)
+     :provider       (when provider (llm-provider/make-provider provider prov-cfg))
+     :context-window (:context-window model-cfg)
+     :comm           channel}))
+
+(defn- record-memory-turn! [events captured* result output]
+  (let [outbound-requests (or (seq @captured*)
+                              (seq (llm-http/outbound-requests))
+                              (seq (grover/provider-requests)))
+        outbound-requests (some-> outbound-requests vec)
+        grover-request    (some-> (grover/last-request) (hash-map :body))]
+    (g/assoc! :llm-result result)
+    (g/assoc! :llm-request (or (drive-dispatch/last-request)
+                               (grover/last-request)))
+    (g/assoc! :provider-request (or (last outbound-requests)
+                                    (grover/last-provider-request)
+                                    grover-request))
+    (g/assoc! :outbound-http-requests outbound-requests)
+    (g/assoc! :outbound-http-request (or (first outbound-requests)
+                                         (grover/last-provider-request)
+                                         grover-request))
+    ;; the atom, not a snapshot: a turn that parks a continuation on the turn
+    ;; queue (isaac-xpkf) keeps sending on this channel after this step returns
+    (g/assoc! :memory-comm-events events)
+    (g/assoc! :channel-events events)
+    (g/assoc! :output output)))
+
+(defn- run-memory-dispatch! [root* cfg opts captured* content key-str]
+  (let [result (atom nil)
+        output (with-out-str
+                 (with-feature-fs
+                   (fn []
+                     (with-current-time
+                       (fn []
+                         (with-llm-http-stub
+                           captured*
+                           (fn []
+                             (try
+                               (config/dangerously-install-config! cfg "spec")
+                               (reset! result (bridge/dispatch! root*
+                                                                (assoc opts :input content :session-key key-str)))
+                               (catch Exception e
+                                 (reset! result {:error :exception :message (.getMessage e)}))))))))))]
+    [@result output]))
+
+(defn user-sends-via-memory-channel [content key-str]
+  (grover/clear-provider-requests!)
+  (llm-http/clear-outbound-requests!)
+  (drive-dispatch/clear-last-request!)
+  (let [events    (atom [])
+        captured* (atom [])
+        channel   (memory-comm/channel events (g/get :memory-comm-exhaustion-policy))
+        cfg       (with-feature-fs #(:config (loader/load-config-result {:root (root) :fs (or (g/get :mem-fs) (nexus/get :fs) (fs/real-fs))})))
+        existing  (with-feature-fs #(get-session key-str))
+        crew      (or (:crew existing) (:agent existing) (get-in cfg [:defaults :frequencies :crew]) "main")
+        _         (with-feature-fs #(store/open-session! (session-store) key-str {:crew crew}))
+        opts      (channel-send-opts key-str channel)
+        armed     (g/get :cancel-after-n-tool-calls)]
+    (g/assoc! :current-key key-str)
+    (g/assoc! :channel-events events)
+    (g/assoc! :memory-comm-events events)
+    (if armed
+      (let [turn-future (future (run-memory-dispatch! (root) cfg opts captured* content key-str))]
+        (g/assoc! :turn-future turn-future)
+        (helper/await-condition
+          (fn []
+            (or (realized? turn-future)
+                (<= (:n armed) (->> @events
+                                    (filter (fn [e] (= "tool-call" (:event e))))
+                                    count))))
+          5000)
+        (when-not (realized? turn-future)
+          (bridge-cancel/cancel! key-str)
+          (g/dissoc! :cancel-after-n-tool-calls))
+        (let [outcome (deref turn-future 30000 ::timeout)]
+          (when (= ::timeout outcome)
+            (throw (ex-info "turn did not complete within 30 seconds" {})))
+          (g/dissoc! :turn-future)
+          (record-memory-turn! events captured* (first outcome) (second outcome))))
+      (let [[result output] (run-memory-dispatch! (root) cfg opts captured* content key-str)]
+        (record-memory-turn! events captured* result output)))))
+
+(defn users-send-via-memory-channel-simultaneously [content first-key second-key]
+  (grover/clear-provider-requests!)
+  (llm-http/clear-outbound-requests!)
+  (drive-dispatch/clear-last-request!)
+  (let [cfg (with-feature-fs #(:config (loader/load-config-result {:root (root) :fs (mem-fs)})))
+        send (fn [key-str]
+               (let [events    (atom [])
+                     captured* (atom [])
+                     channel   (memory-comm/channel events)
+                     existing  (with-feature-fs #(get-session key-str))
+                     crew      (or (:crew existing) (:agent existing)
+                                   (get-in cfg [:defaults :frequencies :crew]) "main")]
+                 (with-feature-fs #(store/open-session! (session-store) key-str {:crew crew}))
+                 (future (run-memory-dispatch! (root) cfg (channel-send-opts key-str channel)
+                                               captured* content key-str))))]
+    (g/assoc! :current-key first-key)
+    (let [first-turn  (send first-key)
+          second-turn (send second-key)]
+      (doseq [turn [first-turn second-turn]]
+        (let [[result output] (deref turn 30000 ::timeout)]
+          (when (= ::timeout result)
+            (throw (ex-info "turn did not complete within 30 seconds" {})))
+          (when (:error result)
+            (throw (ex-info "simultaneous memory turn failed" result))))))))
+
+(defn- normalize-event [event]
+  (cond-> event
+    (get-in event [:tool :name]) (assoc :tool-name (get-in event [:tool :name]))
+    (:cycle event) (assoc :cycle (str (:cycle event)))
+    (keyword? (:kind event)) (assoc :kind (subs (str (:kind event)) 1))
+    (keyword? (:outcome event)) (assoc :outcome (name (:outcome event)))
+    (keyword? (:error event)) (assoc :error (str (:error event)))))
+
+(defn- event-matches-row? [event headers row-map]
+  (every? (fn [header]
+            (let [expected (get row-map header)]
+              (if (or (nil? expected) (str/blank? (str expected)))
+                true
+                (let [actual (or (match/get-path event header)
+                                 (get event (keyword header))
+                                 (get event header))]
+                  (boolean (:match (match/match-value expected actual)))))))
+          headers))
+
+(defn memory-channel-events-match [table]
+  ;; user-sends-on-session parks the turn after 50ms when still running; this matcher is often the first Then.
+  (when-let [turn-future (g/get :turn-future)]
+    (let [result (deref turn-future 30000 ::timeout)]
+      (when (= ::timeout result)
+        (throw (ex-info "turn did not complete within 30 seconds" {})))))
+  (let [events*  (g/get :memory-comm-events)
+        events   (mapv normalize-event
+                       (if (instance? clojure.lang.IDeref events*) @events* events*))
+        headers  (:headers table)
+        expected (map (fn [row] (zipmap headers row)) (:rows table))]
+    (loop [remaining events
+           expected  expected]
+      (if (empty? expected)
+        (g/should true)
+        (if-let [event (first remaining)]
+          (if (event-matches-row? event headers (first expected))
+            (recur (rest remaining) (rest expected))
+            (recur (rest remaining) expected))
+          (g/should false))))))
+
+
+(defn grover-records-zero-provider-requests []
+  (g/should= [] (grover/provider-requests)))
+
+(defn memory-comm-answers-on-exhaustion [policy]
+  (let [normalized (keyword (str/replace (str policy) #"^:" ""))]
+    (g/assoc! :memory-comm-exhaustion-policy normalized)))
+
+(defgiven "the memory comm answers {policy:keyword} on exhaustion"
+  isaac.agent.comm.comm-steps/memory-comm-answers-on-exhaustion
+  "Sets the memory comm's on-exhausted reply (:stop or :wrap-up) for the next turn.")
+
+(defwhen "the user sends \"{content:string}\" on session \"{key:string}\" via memory comm" isaac.agent.comm.comm-steps/user-sends-via-memory-channel)
+
+(defwhen "the user sends \"{content:string}\" on sessions \"{first-key:string}\" and \"{second-key:string}\" at the same time via memory comm"
+  isaac.agent.comm.comm-steps/users-send-via-memory-channel-simultaneously)
+
+
+(defthen "grover records zero provider requests" isaac.agent.comm.comm-steps/grover-records-zero-provider-requests)
+
+(defthen "the memory comm has events matching:" isaac.agent.comm.comm-steps/memory-channel-events-match
+  "Reads :memory-comm-events captured by the preceding 'via memory
+   comm' When step. Matches rows as an in-order subsequence — extra
+   events between matched rows are allowed.")
+
+(defn last-llm-request-does-not-contain [needle]
+  (let [req  (or (g/get :llm-request) (drive-dispatch/last-request) (grover/last-request))
+        text (pr-str req)]
+    (g/should-not (str/includes? text needle))))
+
+(defthen "the LLM request does not contain {needle:string}"
+  isaac.agent.comm.comm-steps/last-llm-request-does-not-contain
+  "Absence assert on the last outbound LLM request (pr-str of the map).")
+
+(defthen "the last LLM request does not contain {needle:string}"
+  isaac.agent.comm.comm-steps/last-llm-request-does-not-contain
+  "Absence assert on the last outbound LLM request (pr-str of the map).")
+
+(defn- skip-row? [value]
+  (str/blank? (str value)))
+
+(defn- parse-contains-value [value]
+  (when (str/starts-with? (str/trim value) "contains ")
+    (->> (re-seq #"\"([^\"]+)\"" (subs (str/trim value) 9))
+         (map second)
+         vec)))
+
+(defn- parse-edn-value [value]
+  (cond
+    (re-matches #"-?\d+" value) (parse-long value)
+    (= "true" (str/lower-case value)) true
+    (= "false" (str/lower-case value)) false
+    (or (str/starts-with? value "[")
+        (str/starts-with? value "{")
+        (str/starts-with? value ":")
+        (str/starts-with? value "\"")
+        (str/starts-with? value "#"))
+    (edn/read-string value)
+    :else value))
+
+(defn- get-path [data path]
+  (reduce (fn [current segment]
+            (cond
+              (nil? current) nil
+              (map? current) (or (get current (keyword segment))
+                                 (get current segment))
+              :else nil))
+          data
+          (str/split path #"\.")))
+
+(defn- root-relative-path [path]
+  (if (str/starts-with? path "/")
+    path
+    (str (root) "/" path)))
+
+(defn- assert-edn-contains [data table]
+  (doseq [row (:rows table)]
+    (let [row-map (zipmap (:headers table) row)
+          path    (get row-map "path")
+          value   (get row-map "value")]
+      (when-not (skip-row? value)
+        (let [actual (get-path data path)]
+          (if-let [parts (parse-contains-value value)]
+            (doseq [part parts]
+              (g/should (str/includes? (str actual) part)))
+            (g/should= (parse-edn-value value) actual)))))))
+
+(defn newest-file-in-edn-contains [dir-path table]
+  (when-let [turn-future (g/get :turn-future)]
+    (let [result (deref turn-future 30000 ::timeout)]
+      (when (= ::timeout result)
+        (throw (ex-info "turn did not complete within 30 seconds" {})))))
+  (let [expanded (root-relative-path dir-path)
+        fs*      (mem-fs)
+        children (when (fs/exists? fs* expanded) (fs/children fs* expanded))]
+    (g/should (seq children))
+    (let [newest    (->> children
+                         (map (fn [name]
+                                (let [path (str expanded "/" name)]
+                                  {:name name :path path :mtime (or (fs/modified fs* path) 0)})))
+                         (sort-by :mtime)
+                         last)
+          data      (edn/read-string (fs/slurp fs* (:path newest)))]
+      (assert-edn-contains data table))))
+
+(defthen #"the newest file in \"([^\"]+)\" EDN contains:"
+  isaac.agent.comm.comm-steps/newest-file-in-edn-contains
+  "Asserts the most recently written file in a directory (by fs/modified stamp)
+   is EDN matching path|value rows. Same table dialect as 'the only file in'.")

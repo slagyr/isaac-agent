@@ -1,0 +1,15 @@
+(ns isaac.agent.comm.registry-spec
+  (:require
+    [isaac.agent.comm.registry :as sut]
+    [speclj.core :refer :all]))
+
+(describe "comm registry"
+
+  (around [it]
+    (binding [sut/*registry* (atom (sut/fresh-registry))]
+      (it)))
+
+  (it "registers and returns a factory"
+    (let [factory (fn [_] ::instance)]
+      (sut/register-factory! "telly" factory)
+      (should= factory (sut/factory-for :telly)))))

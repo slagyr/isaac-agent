@@ -1,0 +1,74 @@
+(ns isaac.agent.frequencies-cli-spec
+  (:require
+    [isaac.agent.frequencies-cli :as sut]
+    [speclj.core :refer :all]))
+
+(describe "session frequencies CLI"
+
+  (describe "validate-frequencies-options"
+
+    (it "accepts --session combined with --crew"
+      (should= [] (sut/validate-frequencies-options {:session "bridge" :crew "main"})))
+
+    (it "rejects --session combined with --session-tag"
+      (let [errors (sut/validate-frequencies-options {:session "bridge" :session-tag ["wip"]})]
+        (should (pos? (count errors)))))
+
+    (it "accepts --session combined with --create"
+      (should= [] (sut/validate-frequencies-options {:session "bridge" :create :always})))
+
+    (it "accepts describe flags together"
+      (should= [] (sut/validate-frequencies-options {:crew "ketch" :session-tag ["wip"]})))
+
+    (it "rejects --resume combined with --session"
+      (let [errors (sut/validate-frequencies-options {:resume true :session "bridge"})]
+        (should (pos? (count errors)))))
+
+    (it "rejects invalid --create values"
+      (let [errors (sut/validate-frequencies-options {:crew "ketch" :create :sometimes})]
+        (should (pos? (count errors)))))
+
+    (it "rejects invalid --prefer values"
+      (let [errors (sut/validate-frequencies-options {:crew "ketch" :prefer "sideways"})]
+        (should= ["--prefer must be recent or oldest"] errors)))
+
+    (it "accepts --prefer recent and oldest"
+      (should= [] (sut/validate-frequencies-options {:crew "ketch" :prefer "oldest"}))
+      (should= [] (sut/validate-frequencies-options {:session "foo" :prefer "recent"}))))
+
+  (describe "build-frequencies"
+
+    (it "maps CLI options without inventing a session"
+      (let [frequencies (sut/build-frequencies {:crew "ketch"})]
+        (should= "ketch" (:crew frequencies))
+        (should-not (contains? frequencies :create))
+        (should-not (contains? frequencies :reach))
+        (should-not (contains? frequencies :default-session-key))))
+
+    (it "includes create only when explicitly passed"
+      (should= {:create :never} (sut/build-frequencies {:create :never})))
+
+    (it "normalizes session-tags to keywords"
+      (let [frequencies (sut/build-frequencies {:session-tag ["project/chess" "wip"]})]
+        (should= #{:project/chess :wip} (:session-tags frequencies))))
+
+    (it "parses --create never|if-missing|always"
+      (should= :never (sut/parse-create "never"))
+      (should= :if-missing (sut/parse-create "if-missing"))
+      (should= :always (sut/parse-create "always")))
+
+    (it "maps --prefer and --resume into the frequencies map"
+      (let [frequencies (sut/build-frequencies {:crew "ketch" :prefer "oldest" :resume true})]
+        (should= :oldest (:prefer frequencies))
+        (should (true? (:resume frequencies))))))
+
+  (describe "build-override"
+
+    (it "maps --with-* flags to :with-* keys on the frequencies map"
+      (let [override (sut/build-override {:with-model "opus" :with-crew "ketch" :with-effort 3})]
+        (should= "opus" (:with-model override))
+        (should= "ketch" (:with-crew override))
+        (should= 3 (:with-effort override))))
+
+    (it "accepts legacy -M/--model as a model override"
+      (should= "opus" (:with-model (sut/build-override {:model "opus"}))))))

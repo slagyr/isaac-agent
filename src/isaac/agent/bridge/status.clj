@@ -1,0 +1,156 @@
+(ns isaac.agent.bridge.status
+  (:require
+    [clojure.string :as str]
+    [isaac.agent.config.defaults :as defaults]
+    [isaac.agent.llm.api.protocol :as api]
+    [isaac.foundation.nexus :as nexus]
+    [isaac.agent.session.policy :as policy]
+    [isaac.agent.session.store.spi :as store]
+    [isaac.agent.tool.names :as names]
+    [isaac.agent.tool.registry :as tool-registry]))
+
+;; region ----- Helpers -----
+
+(defn- turn-count [transcript]
+  (count (filter #(= "message" (:type %)) transcript)))
+
+(defn ctx-provider-name [ctx]
+  (let [p (:provider ctx)]
+    (cond
+      (string? p) p
+      (some? p)   (api/display-name p)
+      :else       nil)))
+
+(defn- summarize-soul [ctx]
+  (let [soul    (or (:soul ctx) "")
+        source  (if (> (count (remove str/blank? (str/split (str/trim soul) #"\s+"))) 4)
+                  soul
+                  (or (:boot-files ctx) soul ""))
+        text   (-> source
+                   (str/replace #"(?m)^#+\s.*$" "")
+                   (str/replace #"\[([^\]]+)\]\([^)]+\)" "$1")
+                   (str/replace #"`" "")
+                   (str/replace #"\s+" " ")
+                   str/trim)
+        words  (->> (str/split text #"\s+")
+                    (remove str/blank?)
+                    vec)]
+    (cond
+      (empty? words)
+      ""
+
+      (<= (count words) 8)
+      (str/join " " words)
+
+      :else
+      (str (str/join " " (take 8 words)) " ..."))))
+
+;; endregion ^^^^^ Helpers ^^^^^
+
+;; region ----- Public API -----
+
+(defn- session-store
+  ([ctx-or-root]
+    (cond
+      (map? ctx-or-root)
+      (or (:session-store ctx-or-root) (nexus/get-in [:sessions :store]))
+
+      :else
+      (store/create ctx-or-root))))
+
+(defn- ->tool-name [t]
+  (or (names/wire-name t)
+      (if (keyword? t) (name t) (str t))))
+
+(defn session-allowed-tools
+  "The tool allow-list for the session's crew, as a set of tool names, or nil
+   when the crew declares none. Prefers an explicit :allowed-tools already
+   resolved by a caller (the sessions CLI path), else runs the four-step
+   cascade (isaac-da0r) over registered tools."
+  [ctx]
+  (or (some->> (:allowed-tools ctx) (map ->tool-name) set)
+      (let [crew         (or (:crew-cfg ctx)
+                             (get (:crew-members ctx) (:crew ctx)))
+            global-tools (defaults/tools (:config ctx))
+            crew-tools   (:tools crew)
+            registered   (map :name (tool-registry/all-tools))
+            allowed      (->> registered
+                              (filter #(names/cascade-allowed? global-tools crew-tools %))
+                              set)]
+        (when (or (seq allowed) (some? global-tools) (contains? crew :tools))
+          allowed))))
+
+(defn- session-tool-count
+  "Count the tools the session's crew can actually use: the process registry
+   filtered by the crew's allow-list — the same view the turn/prompt code uses
+   for that crew. Falls back to the whole registry when the crew declares no
+   allow-list. In lightweight CLI paths the caller must first activate the
+   allow-listed tools (see session/cli run-show) so they are in the registry
+   (isaac-wczf)."
+  [ctx]
+  (if-let [allowed (session-allowed-tools ctx)]
+    (count (tool-registry/all-tools allowed))
+    (count (tool-registry/all-tools))))
+
+(defn- status-data* [session-store session-key ctx]
+  (let [entry          (store/get-session session-store session-key)
+        cfg            (or (when (map? (:config ctx)) (:config ctx))
+                           (some-> (nexus/get :config) deref)
+                           {})
+        sess           (policy/for-crew (or (:crew ctx) (:crew entry)) cfg session-store)
+        transcript     (or (policy/get-transcript sess session-key) [])
+        turns          (turn-count transcript)
+        tokens         (or (:last-input-tokens entry) 0)
+        context-window (or (:context-window ctx) 32768)
+        context-pct    (if (pos? context-window)
+                         (int (Math/round (* 100.0 (/ tokens context-window))))
+                         0)]
+    {:crew           (:crew ctx)
+     :boot-files     (:boot-files ctx)
+     :soul           (:soul ctx)
+     :model          (or (get-in ctx [:model-cfg :model])
+                         (:model ctx))
+     :provider       (ctx-provider-name ctx)
+     :tags           (or (:tags entry) #{})
+     :session-key    session-key
+     :session-file   (when (:id entry) (str (:id entry) "/current.ednl"))
+     :turns          turns
+     :compactions    (or (:compaction-count entry) 0)
+     :tokens         tokens
+     :context-window context-window
+     :context-pct    context-pct
+     :tool-count     (session-tool-count ctx)
+     :cwd            (or (:cwd entry) (System/getProperty "user.dir"))}))
+
+(defn status-data
+  "Gather session and model info for the /status command."
+  ([session-key ctx]
+   (let [ctx (merge (nexus/necho) ctx)]
+     (status-data* (session-store ctx) session-key ctx)))
+  ([root session-key ctx]
+   (status-data* (session-store root) session-key ctx)))
+
+(defn format-status
+  "Format status data as plain aligned text (no markdown fences)."
+  [data]
+  (let [label-width 12
+        line        (fn [label value]
+                      (format (str "%-" label-width "s %s") label value))]
+    (str/join "\n"
+              ["Session Status"
+               (apply str (repeat 22 "─"))
+               (line "Crew"        (:crew data))
+               (line "Model"       (str (:model data) " (" (:provider data) ")"))
+               (line "Session"     (:session-key data))
+               (line "Tags"        (pr-str (:tags data)))
+               (line "File"        (:session-file data))
+               (line "Turns"       (:turns data))
+               (line "Compactions" (:compactions data))
+               (line "Context"     (str (format "%,d" (:tokens data)) " / "
+                                         (format "%,d" (:context-window data)) " ("
+                                         (:context-pct data) "%)"))
+               (line "Soul"        (str "\"" (summarize-soul data) "\""))
+               (line "Tools"       (:tool-count data))
+               (line "CWD"         (:cwd data))])))
+
+;; endregion ^^^^^ Public API ^^^^^

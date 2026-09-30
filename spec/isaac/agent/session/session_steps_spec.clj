@@ -1,0 +1,290 @@
+(ns isaac.agent.session.session-steps-spec
+  (:require
+    [gherclj.core :as g]
+    [isaac.agent.bridge.cancellation :as bridge]
+    [isaac.foundation.config.config-steps :as config-steps]
+    [isaac.foundation.config.loader :as loader]
+    [isaac.agent.drive.turn :as single-turn]
+    [isaac.foundation.fs-steps :as ffs]
+    [isaac.foundation.root-steps :as froot]
+    [isaac.foundation.fs :as fs]
+    [isaac.agent.llm.api.grover :as grover]
+    [isaac.foundation.nexus :as nexus]
+    [isaac.agent.session.session-steps :as sut]
+    [isaac.agent.session.store.sidecar :as sidecar-store]
+    [isaac.agent.tool.builtin :as builtin]
+    [isaac.agent.tool.registry :as registry]
+    [speclj.core :refer [around describe it should should-be-nil should-not should-not-be-nil should-throw should=]]))
+
+(describe "session feature steps"
+
+  #_{:clj-kondo/ignore [:invalid-arity]}
+  (around [it]
+    (let [create-store (var-get #'sidecar-store/create-store)]
+      (g/reset!)
+      (grover/reset-queue!)
+      (nexus/reset!)
+      (try
+        (nexus/-with-nexus {:fs (fs/mem-fs)}
+          (it))
+        (finally
+          (alter-var-root #'sidecar-store/create-store (constantly create-store))
+          (grover/reset-queue!)
+          (nexus/reset!)
+          (g/reset!)))))
+
+  (it "parks every later send before releasing the running turn to drain its waiting room"
+    (let [first-turn  (promise)
+          second-turn (promise)
+          released    (promise)]
+      (g/assoc! :turn-futures [first-turn second-turn])
+      (with-redefs [grover/release-delay! (fn [] (deliver released true) (deliver first-turn {:result :ok}))
+                    grover/waiting? (constantly false)
+                    isaac.agent.turn.worker/tick! (fn [] nil)
+                    isaac.agent.turn.worker/await-idle! (fn [] nil)]
+        (let [finishing (future (sut/turns-on-session-finish "bridge"))]
+          (try
+            (should= ::pending (deref released 100 ::pending))
+            (deliver second-turn {:result :held})
+            (should= true (deref released 1000 ::pending))
+            (should= nil (deref finishing 1000 ::pending))
+            (finally
+              (deliver first-turn {:result :ok})
+              (deliver second-turn {:result :held})))))))
+
+  (it "does not wait for a Grover gate after a turn already completed"
+    (g/assoc! :turn-future (future {:output "done"
+                                    :request {:id :request}
+                                    :result  {:ok true}}))
+    (let [started-at (System/nanoTime)]
+      (sut/turn-ends-on-session "bridge")
+      (should (< (/ (- (System/nanoTime) started-at) 1000000.0)
+                 500.0)))
+    (should= {:ok true} (g/get :llm-result)))
+
+  (it "awaits an active session's turn before matching its transcript"
+    (let [turn (future {:output "done" :request {} :result {:ok true}})]
+      (g/assoc! :turn-future turn)
+      (g/assoc! :turn-futures-by-session {"fence-test" turn})
+      (with-redefs [sut/get-transcript (fn [_]
+                                        (should-be-nil (g/get-in [:turn-futures-by-session "fence-test"]))
+                                        [{:type "message" :message {:role "assistant" :content "done"}}])]
+        (sut/session-transcript-matching "fence-test"
+          {:headers ["type" "message.role" "message.content"]
+           :rows [["message" "assistant" "done"]]}))))
+
+  (it "waits for the requested session without draining a different in-flight turn"
+    (let [release (promise)
+          other   (promise)
+          turn    (future (deref release) {:output "done" :request {} :result {:ok true}})]
+      (g/assoc! :turn-future other)
+      (g/assoc! :turn-futures-by-session {"fence-test" turn "other" other})
+      (with-redefs [sut/get-transcript (fn [_]
+                                        (should-be-nil (g/get-in [:turn-futures-by-session "fence-test"]))
+                                        [{:type "message" :message {:role "assistant" :content "done"}}])]
+        (let [assertion (future
+                          (sut/session-transcript-matching "fence-test"
+                            {:headers ["type" "message.role" "message.content"]
+                             :rows [["message" "assistant" "done"]]}))]
+          (try
+            (deliver release true)
+            @assertion
+            (should= other (g/get :turn-future))
+            (finally
+              (deliver other {:output "" :request {} :result {:ok true}})))))))
+
+  (it "awaits an in-flight turn before reading prompt tools"
+    (g/assoc! :turn-future (future {:output  ""
+                                    :request {:tools [{:name "fs__read"}]}
+                                    :result  {:ok true}}))
+    (sut/prompt-has-tools {:headers ["name"]
+                           :rows    [["fs__read"]]})
+    (should= {:tools [{:name "fs__read"}]} (g/get :llm-request)))
+
+  (it "reuses loaded config until a feature fixture changes it"
+    (let [loads* (atom 0)
+          cfg    {:defaults {:frequencies {:crew "main"}}
+                  :crew     {"main" {}}
+                  :models   {}
+                  :providers {}}]
+      (g/assoc! :root "/target/test-state")
+      (g/assoc! :mem-fs (nexus/get :fs))
+      (with-redefs [loader/load-config-result (fn [_]
+                                                (swap! loads* inc)
+                                                {:config cfg})]
+        (should= cfg (#'sut/loaded-config))
+        (should= cfg (#'sut/loaded-config))
+        (should= 1 @loads*)
+        (ffs/file-exists-with "config/crew/main.edn" "{:model :grover}")
+        (should= cfg (#'sut/loaded-config))
+        (should= 2 @loads*))))
+
+  (it "keeps named resource pool instances when a feature turn normalizes config"
+    (let [cfg {:resource-pools {"dock" {:type :scripted :limit 1}}}]
+      (should= (:resource-pools cfg)
+               (:resource-pools (sut/normalize-feature-config cfg)))))
+
+  (it "parses a tools.allow EDN vector as keywords, not a comma-split of the brackets"
+    (should= [:exec/run] (#'ffs/parse-isaac-value "config/crew/main.edn" "tools.allow" "[:exec/run]"))
+    (should= [:memory/*] (#'ffs/parse-isaac-value "config/crew/main.edn" "tools.allow" "[:memory/*]")))
+
+  (it "keeps hyphenated scene-id vectors as strings, not EDN numbers"
+    (should= ["2026-03-01-1000-s1x1"]
+             (#'ffs/parse-isaac-value
+               "episodes/cordelia/2026-03-01-1000-ab12/episode.edn"
+               "scene-ids"
+               "[2026-03-01-1000-s1x1]")))
+
+  (it "matches a validation error value against a #\"...\" table cell"
+    (should (#'config-steps/row-matches?
+              {:key "tools.allow" :value ":all is the list, not a list item — use :allow :all, never [:all]"}
+              {"key" "tools.allow" "value" "#\":all\""})))
+
+  (it "enriches an Isaac root fixture with defaults.crew.tools.max-parallel 4"
+    (froot/in-memory-state "target/test-state")
+    (should= 4 (get-in (#'sut/loaded-config) [:defaults :crew :tools :max-parallel])))
+
+  (it "parks a waiting send only after the turn has started"
+    (sut/default-grover-setup)
+    (sut/sessions-exist {:headers ["name"] :rows [["longwave"]]})
+    (sut/responses-queued {:headers ["type" "content" "model" "wait"]
+                           :rows    [["text" "ok" "echo" "true"]]})
+    (sut/user-sends-on-session "check the beacon" "longwave")
+    (should-not-be-nil (g/get :turn-future))
+    (should (some #(= "turn-start" (:event %)) @(g/get :channel-events)))
+    (sut/turn-ends-on-session "longwave"))
+
+  (it "arms mid-loop cancellation before the send starts"
+    (sut/turn-cancelled-after-n-tool-calls "cancel" 1)
+    (should= {:session "cancel" :n 1} (g/get :cancel-after-n-tool-calls)))
+
+  (it "completes a non-waiting prior turn before starting the next send"
+    (let [prior (future {:output "done" :request {:id :first} :result {:ok true}})]
+      (g/assoc! :current-key "greenhouse")
+      (g/assoc! :turn-future prior)
+      @prior
+      (sut/-prepare-next-send!)
+      (should-be-nil (g/get :turn-future))
+      (should= {:ok true} (g/get :llm-result))))
+
+  (it "records each immediate send so later turns can compare chat requests"
+    (sut/default-grover-setup)
+    (sut/sessions-exist {:headers ["name"] :rows [["greenhouse"]]})
+    (sut/responses-queued {:headers ["type" "content" "model"]
+                           :rows    [["text" "Nominal." "echo"]
+                                     ["text" "Still." "echo"]]})
+    (sut/user-sends-on-session "Status?" "greenhouse")
+    (sut/user-sends-on-session "And now?" "greenhouse")
+    (sut/await-turn!)
+    (should= 2 (count (get (g/get :chat-requests-by-session) "greenhouse"))))
+
+  (it "materializes grover as a configured provider on a seeded Isaac root"
+    (froot/in-memory-state "target/test-state")
+    (sut/ensure-grover-provider-files!)
+    (let [cfg (#'sut/loaded-config)]
+      (should= "echo" (get-in cfg [:models "grover" :model]))
+      (should (contains? (or (:providers cfg) {}) "grover"))))
+
+  (it "finishes a fast send so later steps can read the turn result without an extra await"
+    (sut/default-grover-setup)
+    (sut/sessions-exist {:headers ["name"] :rows [["trash-can"]]})
+    (sut/responses-queued {:headers ["type" "status" "message"]
+                           :rows    [["http-error" "400" "not supported"]]})
+    (sut/user-sends-on-session "knock knock" "trash-can")
+    (should-be-nil (g/get :turn-future))
+    (should= :api-error (:error (g/get :llm-result))))
+
+  (it "leaves an in-flight delayed send parked so a later cancel can still fire"
+    (sut/default-grover-setup)
+    (sut/sessions-exist {:headers ["name"] :rows [["cancel-test"]]})
+    (sut/llm-response-delayed 30)
+    (sut/user-sends-on-session "think hard" "cancel-test")
+    (should-not-be-nil (g/get :turn-future))
+    (should-not (realized? (g/get :turn-future)))
+    (sut/turn-cancelled "cancel-test")
+    (should= "cancelled" (:stopReason (g/get :llm-result))))
+
+  (it "does not drain an in-flight wait-gated send before a second dispatch"
+    (sut/default-grover-setup)
+    (sut/sessions-exist {:headers ["name"] :rows [["s1"]]})
+    (sut/responses-queued {:headers ["type" "content" "model" "wait"]
+                           :rows    [["text" "first" "echo" "true"]]})
+    (sut/user-sends-on-session "hi" "s1")
+    (let [first-future (g/get :turn-future)
+          started-at   (System/nanoTime)]
+      (should-not-be-nil first-future)
+      (sut/user-sends-on-session "go again" "s1")
+      (should (< (/ (- (System/nanoTime) started-at) 1000000.0) 2000.0))
+      (should= first-future (g/get :turn-future)))
+    (sut/turn-ends-on-session "s1"))
+
+  (it "drains a parked wait-gated send so the next scenario starts with an empty queue"
+    (sut/default-grover-setup)
+    (sut/sessions-exist {:headers ["name"] :rows [["parked"]]})
+    (sut/responses-queued {:headers ["type" "content" "model" "wait"]
+                           :rows    [["text" "still thinking" "echo" "true"]]})
+    (sut/user-sends-on-session "think" "parked")
+    (let [leaked (g/get :turn-future)]
+      (should-not-be-nil leaked)
+      (should-not (realized? leaked))
+      (should (grover/waiting? "parked"))
+      (sut/-drain-parked-turn!)
+      (should (realized? leaked))
+      (should-be-nil (g/get :turn-future))
+      (should-not (grover/waiting? "parked"))))
+
+  (it "cancels a turn that cannot stop cooperatively before forgetting it"
+    (let [blocked (promise)
+          turn    (future @blocked)]
+      (g/assoc! :turn-future turn)
+      (with-redefs [grover/release-wait! (constantly nil)]
+        (sut/-drain-parked-turn!))
+      (should (future-cancelled? turn))
+      (should-be-nil (g/get :turn-future))))
+
+  (it "observes cancellation after a live turn clears its durable marker"
+    (let [turn (promise)]
+      (g/assoc! :current-key "cancel-test")
+      (g/assoc! :turn-future turn)
+      (bridge/cancel! "cancel-test")
+      (sut/turn-marker-matches "cancel-test" {:rows [["cancelled" "true"]]})
+      (deliver turn true)))
+
+  (it "awaits the current turn before counting directory files"
+    (let [turn (future {:output "done" :request {:id :done} :result {:ok true}})]
+      (g/assoc! :turn-future turn)
+      @turn
+      (with-redefs [fs/exists?  (constantly true)
+                    fs/children (fn [_ _]
+                                  (should-be-nil (g/get :turn-future))
+                                  ["attention.edn"])]
+        (ffs/directory-has-exactly-n-files "/pending" "1"))))
+
+  (it "awaits the current session's compaction before checking a file"
+    (g/assoc! :current-key "tea-ledger")
+    (g/assoc! :root "/test/isaac")
+    (let [calls (atom [])]
+      (with-redefs [single-turn/await-async-compaction! #(swap! calls conj %)
+                    fs/slurp                            (fn [_ _]
+                                                          (should= ["tea-ledger"] @calls)
+                                                          "remember tea")]
+        (nexus/register! [:root] "/test/isaac")
+        (sut/then-file-contains "crew/main/memory/2026-04-21.md" "remember tea"))
+      (should= ["tea-ledger"] @calls)))
+
+  (it "parks a slow tool-loop send so a later cancel can still fire"
+    (sut/default-grover-setup)
+    (registry/clear!)
+    (builtin/register-all!)
+    (sut/crew-tool-allow "main" "exec/run")
+    (sut/sessions-exist {:headers ["name"] :rows [["cancel-test"]]})
+    (sut/responses-queued {:headers ["type" "tool_call" "arguments" "content" "wait"]
+                           :rows    [["tool_call" "exec__run" "{\"command\": \"sleep 0.05\"}" "" ""]
+                                     ["text" "" "" "Should never appear" "true"]]})
+    (sut/user-sends-on-session "do stuff" "cancel-test")
+    (should-not-be-nil (g/get :turn-future))
+    (should-not (realized? (g/get :turn-future)))
+    (sut/turn-cancelled-after-n-tool-calls "cancel-test" 1)
+    (should= "cancelled" (:stopReason (g/get :llm-result))))
+  )
+

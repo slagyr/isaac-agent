@@ -8,7 +8,7 @@ Feature: Broken-provider attention
   chatgpt rejected every model for a day; four silent heartbeat mornings,
   every health hook, and an episode seal retrying every 30 s. (isaac-9xtv)
 
-  One seam: every provider call passes through isaac.drive.dispatch, which
+  One seam: every provider call passes through isaac.agent.drive.dispatch, which
   asks provider-wall to classify the result and posts attention for what is
   left. Posts are throttled per provider (one hour); the repost after the
   hour carries the number of failures it swallowed.

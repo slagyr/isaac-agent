@@ -12,11 +12,11 @@
    #"addShutdownHook"])
 
 (def ^:private hosted-cli
-  ["src/isaac/session/cli.clj"
-   "src/isaac/bridge/prompt_cli.clj"
-   "src/isaac/llm/auth/cli.clj"
-   "src/isaac/crew/cli.clj"
-   "src/isaac/turn/cli.clj"])
+  ["src/isaac/agent/session/cli.clj"
+   "src/isaac/agent/bridge/prompt_cli.clj"
+   "src/isaac/agent/llm/auth/cli.clj"
+   "src/isaac/agent/crew/cli.clj"
+   "src/isaac/agent/turn/cli.clj"])
 
 (defn lint!
   ([] (lint! nil))

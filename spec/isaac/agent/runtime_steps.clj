@@ -1,6 +1,6 @@
 (ns isaac.agent.runtime-steps
   "Extends the foundation 'the Isaac runner is started' step (which boots
-   the real isaac.runner — scheduler + components — the way `isaac server`
+   the real isaac.foundation.runner — scheduler + components — the way `isaac server`
    does) so isaac-agent's own features get the real Agent module in the
    boot's :module-index.
 
@@ -21,7 +21,7 @@
     [clojure.edn :as edn]
     [clojure.java.io :as io]
     [gherclj.core :as g :refer [helper!]]
-    [isaac.component.runtime-steps :as runtime-steps]))
+    [isaac.foundation.component.runtime-steps :as runtime-steps]))
 
 (helper! isaac.agent.runtime-steps)
 

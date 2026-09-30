@@ -1,0 +1,380 @@
+(ns isaac.agent.tool.file-spec
+  (:require
+    [clojure.java.io :as io]
+    [clojure.string :as str]
+    [isaac.foundation.config.api :as config]
+    [isaac.foundation.fs :as fs]
+    [isaac.foundation.marigold :as marigold]
+    [isaac.agent.spec-helper :as helper]
+    [isaac.agent.session.spec-helper :as store-helper]
+    [isaac.foundation.nexus :as nexus]
+    [isaac.agent.tool.file :as sut]
+    [isaac.agent.tool.support :as support]
+    [speclj.core :refer :all]))
+
+(def ^:private crew-name marigold/captain)
+(def ^:private default-session-key "atticus-session")
+
+(describe "File tools"
+
+  (before (support/clean!))
+
+  #_{:clj-kondo/ignore [:unresolved-symbol]}
+  (around [example]
+    (store-helper/with-memory-store
+      (nexus/-with-nested-nexus {:root support/test-dir :fs (fs/real-fs)}
+        (config/dangerously-install-config! nil "spec")
+        (example))))
+
+  (describe "read"
+
+    (it "returns file contents with line-number prefixes"
+      (support/write-file! "hello.txt" "Hello, world!")
+      (let [result (sut/read-tool {"file_path" (str support/test-dir "/hello.txt")})]
+        (should= "1: Hello, world!" (:result result))
+        (should-be-nil (:isError result))))
+
+    (it "returns multi-line file contents"
+      (support/write-file! "multi.txt" "line one\nline two\nline three")
+      (let [result (sut/read-tool {"file_path" (str support/test-dir "/multi.txt")})]
+        (should (str/includes? (:result result) "line one"))
+        (should (str/includes? (:result result) "line three"))))
+
+    (it "returns error for missing file"
+      (let [result (sut/read-tool {"file_path" (str support/test-dir "/no-such-file.txt")})]
+        (should (:isError result))
+        (should (re-find #"not found" (:error result)))))
+
+    (it "uses the installed runtime fs without binding a thread-local fs"
+      (let [mem  (fs/mem-fs)
+            path (str support/test-dir "/runtime-fs.txt")]
+        (fs/spit mem path "runtime fs")
+        (nexus/-with-nexus {:root support/test-dir :fs mem}
+          (let [result (sut/read-tool {"file_path" path})]
+            (should= "1: runtime fs" (:result result))))))
+
+    (it "lists directory contents"
+      (.mkdirs (io/file (str support/test-dir "/mydir")))
+      (support/write-file! "mydir/a.txt" "a")
+      (support/write-file! "mydir/b.txt" "b")
+      (let [result (sut/read-tool {"file_path" (str support/test-dir "/mydir")})]
+        (should (str/includes? (:result result) "a.txt"))
+        (should (str/includes? (:result result) "b.txt"))))
+
+    (it "respects offset to skip leading lines"
+      (support/write-file! "numbered.txt" (str/join "\n" (map #(str "line " %) (range 1 21))))
+      (let [result (sut/read-tool {"file_path" (str support/test-dir "/numbered.txt") "offset" 10})]
+        (should-not (str/includes? (:result result) "line 9"))
+        (should (str/includes? (:result result) "line 10"))))
+
+    (it "respects limit to cap returned lines"
+      (support/write-file! "numbered.txt" (str/join "\n" (map #(str "line " %) (range 1 21))))
+      (let [result (sut/read-tool {"file_path" (str support/test-dir "/numbered.txt") "offset" 10 "limit" 5})]
+        (should (str/includes? (:result result) "line 10"))
+        (should (str/includes? (:result result) "line 14"))
+        (should-not (str/includes? (:result result) "line 15"))))
+
+    (it "allows reading within the crew quarters when :quarters is granted"
+      (let [root   support/test-dir
+            quarters    (str root "/crew/" crew-name)
+            session-key default-session-key]
+        (store-helper/create-session! root session-key {:crew crew-name :cwd "/work/project"})
+        (.mkdirs (io/file quarters))
+        (spit (str quarters "/notes.txt") "hello")
+        (let [result (helper/with-config {:defaults {:crew {:tools {:directories {:allow [:quarters]}}}}
+                                          :crew {crew-name {:tools {:allow [:fs/read]}}}
+                                          :models {} :providers {}}
+                       (sut/read-tool {"file_path"   (str quarters "/notes.txt")
+                                        "session_key" session-key}))]
+          (should= "1: hello" (:result result)))))
+
+    (it "allows reading within explicit whitelisted directories"
+      (let [root   support/test-dir
+            session-key default-session-key
+            whitelisted (str support/test-dir "/playground")]
+        (store-helper/create-session! root session-key {:crew crew-name :cwd "/work/project"})
+        (.mkdirs (io/file whitelisted))
+        (spit (str whitelisted "/data.txt") "hello")
+        (config/dangerously-install-config! {:defaults {}
+                                             :crew {crew-name {:tools {:allow [:fs/read]
+                                                                       :directories {:allow [whitelisted]}}}}
+                                             :models {}
+                                             :providers {}} "spec")
+        (let [result (sut/read-tool {"file_path"   (str whitelisted "/data.txt")
+                                     "session_key" session-key})]
+          (should= "1: hello" (:result result)))))
+
+    (it "rejects reading outside allowed directories"
+      (let [root   support/test-dir
+            session-key default-session-key]
+        (store-helper/create-session! root session-key {:crew crew-name :cwd "/work/project"})
+        (let [result (helper/with-config {:defaults {} :crew {crew-name {:tools {:allow [:fs/read]}}} :models {} :providers {}}
+                       (sut/read-tool {"file_path"   "/etc/passwd"
+                                        "session_key" session-key}))]
+          (should (:isError result))
+          (should (re-find #"path outside allowed directories" (:error result))))))
+
+    (it "allows reading in session cwd only with :cwd opt in"
+      (let [root        support/test-dir
+            session-key "cwd-opt-in-session"
+            cwd         (str support/test-dir "/project")]
+        (store-helper/create-session! root session-key {:crew crew-name :cwd cwd})
+        (.mkdirs (io/file cwd))
+        (spit (str cwd "/hello.txt") "hi there")
+        (config/dangerously-install-config! {:defaults {}
+                                             :crew {crew-name {:tools {:allow [:fs/read]
+                                                                       :directories {:allow [:cwd]}}}}
+                                             :models {}
+                                             :providers {}} "spec")
+        (let [result (sut/read-tool {"file_path"   (str cwd "/hello.txt")
+                                     "session_key" session-key})]
+          (should= "1: hi there" (:result result)))))
+
+    (it "rejects reading the session role workspace without a directory grant"
+      (let [root   support/test-dir
+            session-key default-session-key
+            cwd         (str support/test-dir "/project")]
+        (store-helper/create-session! root session-key {:crew crew-name :cwd cwd})
+        (.mkdirs (io/file cwd))
+        (spit (str cwd "/hello.txt") "hi there")
+        (let [result (helper/with-config {:defaults {} :crew {crew-name {:tools {:allow [:fs/read]}}} :models {} :providers {}}
+                       (sut/read-tool {"file_path"   (str cwd "/hello.txt")
+                                        "session_key" session-key}))]
+          (should (:isError result))
+          (should (re-find #"path outside allowed directories" (:error result))))))
+
+    (it "rejects path traversal that escapes the quarters"
+      (let [root   support/test-dir
+            session-key default-session-key
+            quarters    (str root "/crew/" crew-name)]
+        (store-helper/create-session! root session-key {:crew crew-name :cwd "/work/project"})
+        (let [result (helper/with-config {:defaults {} :crew {crew-name {:tools {:allow [:fs/read]}}} :models {} :providers {}}
+                       (sut/read-tool {"file_path"   (str quarters "/../../etc/passwd")
+                                        "session_key" session-key}))]
+          (should (:isError result))
+          (should (re-find #"path outside allowed directories" (:error result))))))
+
+    (it "rejects reading the config directory"
+      (let [root   support/test-dir
+            session-key default-session-key]
+        (store-helper/create-session! root session-key {:crew crew-name :cwd "/work/project"})
+        (let [result (helper/with-config {:defaults {} :crew {crew-name {:tools {:allow [:fs/read]}}} :models {} :providers {}}
+                       (sut/read-tool {"file_path"   (str root "/config/crew/" crew-name ".edn")
+                                       "session_key" session-key}))]
+          (should (:isError result))
+          (should (re-find #"path outside allowed directories" (:error result)))))))
+
+  (describe "write"
+
+    (it "creates a new file with the given content"
+      (let [path   (str support/test-dir "/new.txt")
+            result (sut/write-tool {"file_path" path "content" "hello world"})]
+        (should-be-nil (:isError result))
+        (should= "hello world" (slurp path))))
+
+    (it "overwrites an existing file"
+      (support/write-file! "existing.txt" "old content")
+      (sut/write-tool {"file_path" (str support/test-dir "/existing.txt") "content" "new content"})
+      (should= "new content" (support/read-file "existing.txt")))
+
+    (it "creates parent directories if needed"
+      (let [path   (str support/test-dir "/sub/dir/file.txt")
+            result (sut/write-tool {"file_path" path "content" "deep"})]
+        (should-be-nil (:isError result))
+        (should= "deep" (slurp path))))
+
+    (it "returns a success message"
+      (let [result (sut/write-tool {"file_path" (str support/test-dir "/ok.txt") "content" "ok"})]
+        (should (string? (:result result)))))
+
+    (it "returns the numbered file contents, not a receipt"
+      (let [result (sut/write-tool {"file_path" (str support/test-dir "/ok.txt") "content" "hello\nworld"})]
+        (should-be-nil (:isError result))
+        (should= "1: hello\n2: world" (:result result))
+        (should-not (str/includes? (:result result) "wrote "))))
+
+    (it "auto-creates the crew quarters on first use"
+      (let [root   support/test-dir
+            session-key default-session-key
+            path        (str root "/crew/" crew-name "/new.txt")]
+        (store-helper/create-session! root session-key {:crew crew-name :cwd "/work/project"})
+        (let [result (helper/with-config {:defaults {:crew {:tools {:directories {:allow [:quarters]}}}}
+                                          :crew {crew-name {:tools {:allow [:fs/write]}}}
+                                          :models {} :providers {}}
+                       (sut/write-tool {"file_path"   path
+                                        "content"     "hello"
+                                        "session_key" session-key}))]
+          (should= "hello" (slurp path))
+          (should (string? (:result result))))))
+
+    (it "rejects writes outside allowed directories"
+      (let [root   support/test-dir
+            session-key default-session-key
+            result      (helper/with-config {:defaults {} :crew {crew-name {:tools {:allow [:fs/write]}}} :models {} :providers {}}
+                          (do
+                            (store-helper/create-session! root session-key {:crew crew-name :cwd "/work/project"})
+                            (sut/write-tool {"file_path"   "/tmp/evil.txt"
+                                             "content"     "evil"
+                                             "session_key" session-key
+                                             "state_dir"   root})))]
+        (should (:isError result))
+        (should (re-find #"path outside allowed directories" (:error result))))))
+
+  (describe "edit"
+
+    (it "replaces matching text"
+      (support/write-file! "code.txt" "foo = 1\nbar = 2")
+      (let [result (sut/edit-tool {"file_path"  (str support/test-dir "/code.txt")
+                                   "old_string" "foo = 1"
+                                   "new_string" "foo = 42"})]
+        (should-be-nil (:isError result))
+        (should= "foo = 42\nbar = 2" (support/read-file "code.txt"))))
+
+    (it "returns the numbered region around the replacement, not a receipt"
+      (support/write-file! "code.txt" "alpha\nbeta\nfoo = 1\ngamma\ndelta\nepsilon")
+      (let [result (sut/edit-tool {"file_path"  (str support/test-dir "/code.txt")
+                                   "old_string" "foo = 1"
+                                   "new_string" "foo = 42"})]
+        (should-be-nil (:isError result))
+        (should= (str "1: alpha\n2: beta\n3: foo = 42\n4: gamma\n5: delta")
+                 (:result result))
+        (should-not (str/includes? (:result result) "epsilon"))
+        (should-not (str/includes? (:result result) "edited "))))
+
+    (it "returns error when string not found"
+      (support/write-file! "code.txt" "foo = 1")
+      (let [result (sut/edit-tool {"file_path"  (str support/test-dir "/code.txt")
+                                   "old_string" "not here"
+                                   "new_string" "replacement"})]
+        (should (:isError result))
+        (should (re-find #"not found" (:error result)))))
+
+    (it "returns error when multiple matches and replace_all not set"
+      (support/write-file! "code.txt" "x = 1\nx = 1\nx = 1")
+      (let [result (sut/edit-tool {"file_path"  (str support/test-dir "/code.txt")
+                                   "old_string" "x = 1"
+                                   "new_string" "x = 2"})]
+        (should (:isError result))
+        (should (re-find #"multiple" (:error result)))))
+
+    (it "replaces all occurrences when replace_all is true"
+      (support/write-file! "code.txt" "x = 1\ny = 2\nx = 1")
+      (let [result (sut/edit-tool {"file_path"   (str support/test-dir "/code.txt")
+                                   "old_string"  "x = 1"
+                                   "new_string"  "x = 99"
+                                   "replace_all" true})]
+        (should-be-nil (:isError result))
+        (should= "x = 99\ny = 2\nx = 99" (support/read-file "code.txt"))))
+
+    (it "returns error for missing file"
+      (let [result (sut/edit-tool {"file_path"  (str support/test-dir "/missing.txt")
+                                   "old_string" "x"
+                                   "new_string" "y"})]
+        (should (:isError result)))))
+
+  (describe "multi_edit"
+
+    (it "applies edits across two files"
+      (support/write-file! "a.txt" "alpha")
+      (support/write-file! "b.txt" "beta")
+      (let [result (sut/multi-edit-tool {"edits" [{"file_path"  (str support/test-dir "/a.txt")
+                                                  "old_string" "alpha"
+                                                  "new_string" "ALPHA"}
+                                                 {"file_path"  (str support/test-dir "/b.txt")
+                                                  "old_string" "beta"
+                                                  "new_string" "BETA"}]})]
+        (should-be-nil (:isError result))
+        (should= "ALPHA" (support/read-file "a.txt"))
+        (should= "BETA" (support/read-file "b.txt"))
+        (should (str/includes? (:result result) "1: ALPHA"))
+        (should (str/includes? (:result result) "1: BETA"))))
+
+    (it "aborts when a later entry does not match"
+      (support/write-file! "a.txt" "keep-me")
+      (let [result (sut/multi-edit-tool {"edits" [{"file_path"  (str support/test-dir "/a.txt")
+                                                  "old_string" "keep-me"
+                                                  "new_string" "changed"}
+                                                 {"file_path"  (str support/test-dir "/a.txt")
+                                                  "old_string" "missing"
+                                                  "new_string" "nope"}]})]
+        (should (:isError result))
+        (should (re-find #"edit entry 2" (:error result)))
+        (should= "keep-me" (support/read-file "a.txt"))))
+
+    (it "applies sequential edits in one file against evolving content"
+      (support/write-file! "seq.txt" "foo bar")
+      (let [result (sut/multi-edit-tool {"edits" [{"file_path"  (str support/test-dir "/seq.txt")
+                                                  "old_string" "foo"
+                                                  "new_string" "FOO"}
+                                                 {"file_path"  (str support/test-dir "/seq.txt")
+                                                  "old_string" "FOO bar"
+                                                  "new_string" "done"}]})]
+        (should-be-nil (:isError result))
+        (should= "done" (support/read-file "seq.txt"))))
+
+    (it "honors replace_all on one entry"
+      (support/write-file! "all.txt" "x\nx")
+      (let [result (sut/multi-edit-tool {"edits" [{"file_path"   (str support/test-dir "/all.txt")
+                                                  "old_string"  "x"
+                                                  "new_string"  "y"
+                                                  "replace_all" true}]})]
+        (should-be-nil (:isError result))
+        (should= "y\ny" (support/read-file "all.txt"))))
+
+    (it "fails when old_string is ambiguous without replace_all"
+      (support/write-file! "dup.txt" "z\nz")
+      (let [result (sut/multi-edit-tool {"edits" [{"file_path"  (str support/test-dir "/dup.txt")
+                                                  "old_string" "z"
+                                                  "new_string" "w"}]})]
+        (should (:isError result))
+        (should (re-find #"multiple" (:error result))))))
+
+  #_{:clj-kondo/ignore [:unresolved-symbol]}
+  (describe "path resolution against session cwd"
+
+    (with session-key "res-session")
+    (with cwd (str support/test-dir "/crew/" crew-name "/workspace"))
+
+    (before
+      (.mkdirs (io/file @cwd))
+      (store-helper/create-session! support/test-dir @session-key {:crew crew-name :cwd @cwd}))
+
+    (it "read resolves '.' to session cwd"
+      (spit (str @cwd "/marker.txt") "found")
+      (let [result (helper/with-config {:defaults {:crew {:tools {:directories {:allow [:cwd]}}}}
+                                        :crew {} :models {} :providers {}}
+                     (sut/read-tool {"file_path" "." "session_key" @session-key}))]
+        (should-be-nil (:isError result))
+        (should (str/includes? (:result result) "marker.txt"))))
+
+    (it "read resolves an empty file_path to session cwd"
+      (spit (str @cwd "/marker.txt") "found")
+      (let [result (helper/with-config {:defaults {:crew {:tools {:directories {:allow [:cwd]}}}}
+                                        :crew {} :models {} :providers {}}
+                     (sut/read-tool {"file_path" "" "session_key" @session-key}))]
+        (should-be-nil (:isError result))
+        (should (str/includes? (:result result) "marker.txt"))))
+
+    (it "read resolves a relative file_path against session cwd"
+      (spit (str @cwd "/hello.txt") "relative content")
+      (let [result (helper/with-config {:defaults {:crew {:tools {:directories {:allow [:cwd]}}}}
+                                        :crew {} :models {} :providers {}}
+                     (sut/read-tool {"file_path" "hello.txt" "session_key" @session-key}))]
+        (should-be-nil (:isError result))
+        (should (str/includes? (:result result) "relative content"))))
+
+    (it "write resolves a relative file_path against session cwd"
+      (let [result (helper/with-config {:defaults {:crew {:tools {:directories {:allow [:cwd]}}}}
+                                        :crew {} :models {} :providers {}}
+                     (sut/write-tool {"file_path" "out.txt" "content" "written" "session_key" @session-key}))]
+        (should-be-nil (:isError result))
+        (should= "written" (slurp (str @cwd "/out.txt")))))
+
+    (it "edit resolves a relative file_path against session cwd"
+      (spit (str @cwd "/target.txt") "original")
+      (let [result (helper/with-config {:defaults {:crew {:tools {:directories {:allow [:cwd]}}}}
+                                        :crew {} :models {} :providers {}}
+                     (sut/edit-tool {"file_path" "target.txt" "old_string" "original"
+                                     "new_string" "updated" "session_key" @session-key}))]
+        (should-be-nil (:isError result))
+        (should= "updated" (slurp (str @cwd "/target.txt")))))))

@@ -1,0 +1,148 @@
+(ns isaac.agent.comm.delivery.worker-steps
+  (:require
+    [clojure.edn :as edn]
+    [clojure.string :as str]
+    [gherclj.core :as g :refer [defgiven defthen defwhen helper!]]
+    [isaac.agent.comm.delivery.queue :as queue]
+    [isaac.agent.comm.delivery.worker :as worker]
+    [isaac.agent.comm.protocol :as comm]
+    [isaac.agent.comm.registry :as comm-registry]
+    [isaac.foundation.fs :as fs]
+    [isaac.foundation.nexus :as nexus]
+    [isaac.foundation.scheduler.runtime :as scheduler]
+    [isaac.agent.step-tables :as match]
+    [isaac.agent.resource-pool :as pool])
+  (:import
+    (java.time Instant)))
+
+(helper! isaac.agent.comm.delivery.worker-steps)
+
+(defn- root-dir []
+  (or (g/get :runtime-root-dir) (g/get :root)))
+
+(defn- mem-fs []
+  (or (g/get :mem-fs) (nexus/get :fs) (fs/real-fs)))
+
+(defn- with-feature-fs [f]
+  (nexus/-with-nested-nexus {:fs (mem-fs)}
+    (f)))
+
+(defn- parse-cell [value]
+  (cond
+    (nil? value) nil
+    (re-matches #"-?\d+" value) (parse-long value)
+    (= "true" (str/lower-case value)) true
+    (= "false" (str/lower-case value)) false
+    (or (str/starts-with? value "[")
+        (str/starts-with? value "{")
+        (str/starts-with? value ":")
+        (str/starts-with? value "\"")) (edn/read-string value)
+    :else value))
+
+(deftype StubComm [])
+
+(extend StubComm
+  comm/Comm
+  (merge comm/defaults
+         {:send!
+          (fn [_ record]
+            (g/update! :stub-comm-calls #(conj (or % []) record))
+            (or (g/get :stub-comm-result) {:ok true}))}))
+
+(def ^:private default-stub-comm-names
+  #{"stub" "longwave" "skybeam" "logbook"})
+
+(defn- stub-comm-instances []
+  (into {}
+        (map (fn [name] [name (->StubComm)]))
+        (or (g/get :stub-comm-names) default-stub-comm-names)))
+
+(defn- with-stub-comm
+  "Tick against the stub comms, layered over any comm the scenario has
+   registered for real - a module's own feature (gchat's comm__send, say)
+   drives its live comm through this same step (isaac-baf1)."
+  [f]
+  (let [live (:instances @comm-registry/*registry*)]
+    (binding [comm-registry/*registry* (atom (assoc (comm-registry/fresh-registry)
+                                                    :instances (merge live (stub-comm-instances))))]
+      (f))))
+
+(defn comm-stub-returns [_comm-name table]
+  (let [headers (:headers table)
+        row     (first (:rows table))
+        result  (into {} (map #(vector (keyword %1) (parse-cell %2)) headers row))]
+    (g/assoc! :stub-comm-result result)
+    (g/dissoc! :stub-comm-calls)))
+
+(defn comm-stub-was-called-with [_comm-name table]
+  (let [calls  (or (g/get :stub-comm-calls) [])
+        result (match/match-entries table calls)]
+    (g/should= [] (:failures result))))
+
+(defn delivery-worker-ticks []
+  (with-feature-fs
+    (fn []
+      (with-stub-comm
+        #(nexus/-with-nexus {:root (root-dir) :fs (mem-fs)}
+           (worker/tick! {}))))))
+
+(defn delivery-worker-ticks-at [iso]
+  (with-feature-fs
+    (fn []
+      (with-stub-comm
+        #(nexus/-with-nexus {:root (root-dir) :fs (mem-fs)}
+           (worker/tick! {:now (Instant/parse iso)}))))))
+
+(defonce ^:private live-scheduler* (atom nil))
+
+(defn- shutdown-live-scheduler! []
+  (when-let [scheduler @live-scheduler*]
+    (worker/stop! {:scheduler scheduler :task-id :delivery/tick})
+    (scheduler/shutdown! scheduler)
+    (reset! live-scheduler* nil))
+  (pool/set-wake-hook! nil))
+
+(defn isaac-system-started []
+  (shutdown-live-scheduler!)
+  (let [clock     (fn [] (Instant/parse "2026-04-21T10:00:00Z"))
+        scheduler (-> (scheduler/create {:clock clock}) scheduler/start!)]
+    (nexus/register! [:scheduler] scheduler)
+    (worker/start! {:tick-ms worker/default-tick-ms})
+    (reset! live-scheduler* scheduler)
+    (g/assoc! :scheduler scheduler)))
+
+(defn scheduled-tasks-include [table]
+  (let [tasks   (mapv #(assoc % :id (if-let [ns (namespace (:id %))]
+                                     (str ns "/" (name (:id %)))
+                                     (name (:id %))))
+                      (scheduler/list-tasks (g/get :scheduler)))
+        result  (match/match-entries table tasks)]
+    (g/should= [] (:failures result))))
+
+(g/before-scenario
+  (fn []
+    (shutdown-live-scheduler!)))
+
+(g/after-scenario
+  (fn []
+    (shutdown-live-scheduler!)
+    (g/dissoc! :scheduler)))
+
+(defwhen "the delivery worker ticks" isaac.agent.comm.delivery.worker-steps/delivery-worker-ticks)
+
+(defwhen #"the delivery worker ticks at \"([^\"]+)\"" isaac.agent.comm.delivery.worker-steps/delivery-worker-ticks-at)
+
+(defwhen "the comm delivery system is started" isaac.agent.comm.delivery.worker-steps/isaac-system-started)
+
+(defgiven #"the comm \"([^\"]+)\" returns:" isaac.agent.comm.delivery.worker-steps/comm-stub-returns)
+
+(defthen #"the comm \"([^\"]+)\" was called with:" isaac.agent.comm.delivery.worker-steps/comm-stub-was-called-with)
+
+(defn delivery-queue-is-empty []
+  (with-feature-fs
+    (fn []
+      (g/should= [] (queue/list-pending)))))
+
+(defthen "the delivery queue is empty" isaac.agent.comm.delivery.worker-steps/delivery-queue-is-empty)
+
+(defthen "the delivery scheduled tasks include:" isaac.agent.comm.delivery.worker-steps/scheduled-tasks-include)

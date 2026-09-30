@@ -2,14 +2,14 @@
   (:require
     [clojure.edn :as edn]
     [isaac.agent.component]
-    [isaac.bridge.resume :as resume]
-    [isaac.bridge.suspend :as suspend]
-    [isaac.comm.delivery.worker :as delivery]
-    [isaac.component.factory :as component-factory]
-    [isaac.component.protocol :as component]
-    [isaac.nexus :as nexus]
-    [isaac.session.store.spi :as store]
-    [isaac.turn.worker :as turn]
+    [isaac.agent.bridge.resume :as resume]
+    [isaac.agent.bridge.suspend :as suspend]
+    [isaac.agent.comm.delivery.worker :as delivery]
+    [isaac.foundation.component.factory :as component-factory]
+    [isaac.foundation.component.protocol :as component]
+    [isaac.foundation.nexus :as nexus]
+    [isaac.agent.session.store.spi :as store]
+    [isaac.agent.turn.worker :as turn]
     [speclj.core :refer :all]))
 
 (describe "agent components"

@@ -24,8 +24,8 @@
     (should comm-berth))
 
   (it "wires live comms into the comm registry"
-    (should= 'isaac.comm.registry/register-instance!   (:register-fn comm-berth))
-    (should= 'isaac.comm.registry/deregister-instance! (:deregister-fn comm-berth)))
+    (should= 'isaac.agent.comm.registry/register-instance!   (:register-fn comm-berth))
+    (should= 'isaac.agent.comm.registry/deregister-instance! (:deregister-fn comm-berth)))
 
   (it "requires each contribution to name its implementing namespace"
     (let [schema (get-in comm-berth [:schema :value-spec :schema])]
@@ -53,7 +53,7 @@
     (should comms-table))
 
   (it "instantiates slots through its own comm factory"
-    (should= 'isaac.comm.factory/create!
+    (should= 'isaac.agent.comm.factory/create!
              (get-in comms-table [:schema :value-spec :factory])))
 
   (it "composes extra-schema from its own comm berth"

@@ -1,0 +1,422 @@
+(ns isaac.agent.bridge.core
+  "Bridge dispatches charges and slash commands.
+
+  Reply layering: core formatters and slash :message strings are plain text at
+  ground level. Fixed-width slash output (e.g. /status) is tagged as
+  :preformatted in on-chatter so markdown comms can fence it; CLI and LLM
+  paths stay raw. See isaac.agent.comm.render."
+  (:require
+    [clojure.string :as str]
+    [isaac.agent.bridge.status :as status]
+    [isaac.agent.bridge.suspend :as suspend]
+    [isaac.agent.comm.render :as render]
+    [isaac.agent.charge :as charge]
+    [isaac.agent.comm.protocol :as comm]
+    [isaac.agent.config.defaults :as defaults]
+    [isaac.foundation.config.loader :as loader]
+    [isaac.agent.drive.observer :as observer]
+    [isaac.agent.drive.turn :as turn]
+    [isaac.foundation.fs :as fs]
+    [isaac.foundation.logger :as log]
+    [isaac.agent.tool.memory :as memory]
+    [isaac.foundation.nexus :as nexus]
+    [isaac.agent.prompt.catalog :as prompt-catalog]
+    [isaac.agent.session.context :as session-ctx]
+    [isaac.agent.session.policy :as policy]
+    [isaac.agent.session.store.spi :as store]
+    [isaac.agent.slash.builtin :as slash-builtin]
+    [isaac.agent.slash.registry :as slash-registry]
+    [isaac.agent.turn.queue :as turn-queue]
+    [isaac.agent.resource-pool :as pool]))
+
+;; region ----- Helpers -----
+
+(declare charge-root)
+
+(defn resolve-session-cwd
+  "Resolves session cwd from the cascade: explicit override > crew > channel default.
+   explicit-cwd: user-specified override (highest priority).
+   crew-cfg: crew config map; may contain :cwd.
+   channel-default: the channel's automatic fallback (lowest priority)."
+  [explicit-cwd crew-cfg channel-default]
+  (or explicit-cwd (:cwd crew-cfg) channel-default))
+
+(defn- unknown-session-crew-message [session-key crew-id origin]
+  (let [kind (:kind origin)]
+    (str "unknown crew on session " session-key ": " crew-id
+         (cond
+           (= :cli kind)                      "\npass --crew to override"
+           (contains? #{:webhook :cron} kind) nil
+           :else                              "\nsend /crew <name> to change crew"))))
+
+(defn- no-model-message [crew-id]
+  (str "no model configured for crew: " crew-id))
+
+(defn- reject-turn [session-key crew-id reason message]
+  (log/warn :drive/turn-rejected :session session-key :crew crew-id :reason reason)
+  {:error reason :message message})
+
+(defn- wait-for-session! [charge]
+  (let [record (binding [turn-queue/*root* (charge-root charge)]
+                 (turn-queue/enqueue! {:session      (:session-key charge)
+                                       :input        (:input charge)
+                                       :resource-pools   (:resource-pools charge)
+                                       :crew         (:crew charge)
+                                       :origin       (:origin charge)
+                                       :cwd          (:cwd charge)
+                                       :observers    (or (:observer-refs charge) (:observers charge))
+                                       :key          (:key charge)
+                                       :comm         (:comm charge)
+                                       :coalesce-key (:coalesce-key charge)
+                                       :reason       :waiting-session
+                                       :state        :waiting-session
+                                       :id           (:turn-id charge)}))]
+    (log/info :turn/waiting :session (:session-key charge) :held-id (:id record) :key (:coalesce-key charge))
+    {:dispatched? false :reason :waiting-session :held-id (:id record)}))
+
+(defn- reply-chunk [result]
+  (if (contains? result :data)
+    (render/preformatted-chunk (status/format-status (:data result)))
+    (:message result)))
+
+(defn- reply-result [session-key ch result]
+  (let [chunk  (reply-chunk result)
+        output (render/chunk-text chunk)]
+    (when ch
+      (comm/on-chatter ch session-key nil chunk)
+      (comm/on-turn-end ch session-key (assoc result
+                                              :content output
+                                              :format  (render/chunk-format chunk))))
+    (assoc result :content output :format (render/chunk-format chunk))))
+
+(defn- autonomous-origin? [origin]
+  (or (contains? #{:hail :cron} (:kind origin))
+      (= :hail (:source origin))))
+
+(defn- prompt-catalog-opts [ctx]
+  {:config    (:config ctx)
+   :cwd       (:cwd ctx)
+   :fs        (or (nexus/get :fs) (fs/instance))
+   :root (or (get-in ctx [:config :root])
+                  (:root ctx)
+                  (nexus/get :root))})
+
+(defn- unknown-command-result [name args]
+  {:type    :command
+   :command :unknown
+   :message (str "unknown command: "
+                 (if (str/blank? args)
+                   (str "/" name)
+                   name))})
+
+(defn- request-policy [request]
+  (or (policy/for-request request)
+      (when-let [ss (or (:session-store request) (nexus/get-in [:sessions :store]))]
+        (policy/wrap ss))))
+
+(defn- ensure-session! [request]
+  (let [session-store* (or (:session-store request) (nexus/get-in [:sessions :store]))
+        cfg            (or (when (map? (:config request)) (:config request)) (loader/snapshot "turn dispatch entry — falls back to ambient config when charge carries none") {})
+        crew-id        (or (:crew request) (defaults/crew-id cfg))
+        crew-cfg       (get (:crew cfg) crew-id)
+        session-key    (:session-key request)
+        resolved-cwd   (resolve-session-cwd (:cwd request) crew-cfg nil)
+        _              (policy/refuse-policy-mismatch! session-store* session-key (policy/policy-name crew-cfg))
+        sess           (request-policy request)]
+    (when (and session-key sess
+               (nil? (policy/get-session sess session-key))
+               (or (:origin request) resolved-cwd))
+      (policy/open-session! sess session-key
+                            {:crew           crew-id
+                             :cwd            resolved-cwd
+                             :origin         (:origin request)
+                             :config         cfg
+                             :session-store  session-store*
+                             :session-policy (policy/policy-name crew-cfg)}))
+    request))
+
+;; endregion ^^^^^ Helpers ^^^^^
+
+;; region ----- Slash Command Handlers -----
+
+(defn- handle-slash [session-key input ctx]
+  (let [{:keys [args name]} (slash-builtin/parse-command input)]
+    (if-let [command (slash-registry/lookup name (:module-index ctx))]
+      {:action :reply
+       :result ((:handler command) session-key input ctx)}
+      (if-let [{:keys [input]} (prompt-catalog/resolve-command-prompt (prompt-catalog-opts ctx) name args)]
+        {:action :turn
+         :charge (assoc ctx :input input)}
+        (if (autonomous-origin? (:origin ctx))
+          {:action :turn
+           :charge ctx}
+          {:action :reply
+           :result (unknown-command-result name args)})))))
+
+;; endregion ^^^^^ Slash Command Handlers ^^^^^
+
+;; region ----- Triage -----
+
+(defn slash-command?
+  "Returns true if input begins with a slash."
+  [input]
+  (and (string? input) (str/starts-with? input "/")))
+
+(defn- route-charge! [c]
+  (let [ch          (:comm c)
+        session-key (:session-key c)]
+    (cond
+      (charge/slash? c)
+      (let [{:keys [action charge result]} (handle-slash session-key (:input c) c)]
+        (case action
+          :reply {:result (reply-result session-key ch result)}
+          :turn  {:charge charge}
+          {:error :invalid-slash-action}))
+
+      (charge/unresolved? c)
+      {:result (reject-turn session-key (:crew c) (:charge/reason c)
+                            (case (:charge/reason c)
+                              :unknown-crew (unknown-session-crew-message session-key (:crew c) (:origin c))
+                              :no-model     (no-model-message (:crew c))
+                              "resolution failed"))}
+
+      :else
+      {:charge c})))
+
+(defn- marker-source
+  "An autonomous origin names its own kind and the bridge carries it unread —
+   the drive knows dispatchers only by the kind they stamp on the origin."
+  [charge]
+  (let [origin (:origin charge)]
+    (cond
+      (autonomous-origin? origin) (:kind origin)
+      (:comm charge)              :comm
+      ;; A resumed turn (isaac-yxch) runs off the turn queue with no comm
+      ;; attached; its origin carries the source of the marker it came from so
+      ;; staleness keeps applying to what was once a comm turn.
+      (:source origin)            (:source origin)
+      :else                       :cli)))
+
+(defn- turn-marker
+  "The durable resume ROUTING for an in-flight turn (isaac-7li9): which source
+   the turn came from and when it started. Nothing about the dispatcher that
+   sent it (isaac-6doh) — a marker is a work order, and resume re-drives it in
+   its own session. Resolved values (model, etc.) are deliberately NOT stored;
+   they re-resolve at resume."
+  [charge]
+  {:source     (marker-source charge)
+   :started-at (System/currentTimeMillis)
+   :leases (mapv (fn [{:keys [name release-id]}]
+                   {:pool (clojure.core/name name) :release-id release-id})
+                 (:pool-leases charge))})
+
+(defn record-turn-marker!
+  "The bridge is the single writer of durable turn markers (isaac-7li9). Callers
+   (comm dispatch here, a delivery worker) hand a charge; the bridge builds
+   the resume-routing marker from it and persists it via the SessionStore."
+  [store session-key charge]
+  (policy/record-turn-marker! (policy/wrap store) session-key (turn-marker charge)))
+
+(defn clear-turn-marker! [store session-key]
+  (suspend/release-turn-marker! store session-key))
+
+(defn- isolate-cleanup! [step-name f]
+  (try
+    (f)
+    (catch Throwable t
+      (log/warn :turn/finalization-step-failed
+                :step step-name
+                :error (.getMessage t)
+                :ex-class (.getName (class t))))))
+
+(defn- resolve-charge-observers [charge]
+  (let [refs (:observers charge)]
+    (cond
+      (empty? refs) {:charge charge}
+      (every? #(satisfies? observer/TurnObserver %) refs) {:charge charge}
+      :else (let [resolved (observer/resolve-submitted refs)]
+              (if (:error resolved)
+                resolved
+                {:charge (assoc charge :observer-refs refs :observers (:observers resolved))})))))
+
+(defn- resource-pool-refuse-message [decision]
+  (or (:message decision)
+      (str "resource pool refused: "
+           (let [reason (:reason decision)]
+             (cond
+               (keyword? reason) (name reason)
+               (string? reason)  reason
+               :else             (pr-str reason))))))
+
+(defn- persist-parked-user-message! [charge]
+  (when-not (:from-queue? charge)
+    (when-let [session-key (:session-key charge)]
+      (when-let [input (:input charge)]
+        (when-let [sess (request-policy charge)]
+          (policy/append-message! sess session-key {:role "user" :content input :cwd (:cwd charge)}))))))
+
+(defn- format-resource-pool-refs [names]
+  (mapv name names))
+
+(defn- charge-root [charge]
+  (or (:root charge)
+      (get-in charge [:config :root])
+      (nexus/get :root)
+      (loader/root)))
+
+(defn- park-held-charge! [charge decision]
+  (persist-parked-user-message! charge)
+  (let [record (binding [turn-queue/*root* (charge-root charge)]
+                 (turn-queue/enqueue!
+                   (cond-> {:session    (:session-key charge)
+                            :input      (:input charge)
+                            :key        (:key charge)
+                            :resource-pools (:resource-pools charge)
+                            :crew       (:crew charge)
+                            :origin     (:origin charge)
+                            :cwd        (:cwd charge)
+                            :observers  (or (:observer-refs charge) (:observers charge))
+                            :message    (:message decision)
+                            :reason     :hold
+                            :state      :held
+                            :input-persisted? true}
+                     (or (:held-id charge) (:turn-id charge)) (assoc :id (or (:held-id charge) (:turn-id charge))))))
+        _      (when (:turn-id charge)
+                 (binding [turn-queue/*root* (charge-root charge)]
+                   (turn-queue/update-turn! (:id record)
+                                            (assoc (select-keys record [:reason :message :observers :key
+                                                                  :input-persisted? :cwd :crew]) :state :held))))
+        refs   (format-resource-pool-refs (:resource-pools charge))
+        label  (or (first refs) "resource pool")]
+    {:held    true
+     :id      (:id record)
+     :reason  :hold
+     :message (or (:message decision) (str label " held"))
+     :resource-pools refs}))
+
+(defn- maybe-log-gateless! [charge]
+  (when (and (empty? (:resource-pools charge))
+             (seq (pool/registered-names)))
+    (log/info :pool/gateless
+              :session (:session-key charge)
+              :message "gateless turn in a registered worksite")))
+
+(defn- admit-charge-resource-pools [charge]
+  (let [names (:resource-pools charge)]
+    (if (empty? names)
+      {:charge charge}
+      (let [resolved (pool/resolve-submitted (:config charge) names)]
+        (if (:error resolved)
+          resolved
+          (let [decision (pool/acquire-all! (:resource-pools resolved)
+                                            {:session-key (:session-key charge)
+                                             :cwd (:cwd charge)
+                                             :crew (:crew charge)
+                                             :origin (:origin charge)
+                                             :now (or (:now charge) (memory/now))})]
+            (if (:error decision)
+              decision
+              {:charge (-> charge
+                           (assoc :pool-leases (:leases decision))
+                           (assoc :cwd (or (some (comp :session/cwd :bindings) (:leases decision))
+                                           (:cwd charge))))})))))))
+
+(declare dispatch-matched-charge!)
+
+(defn- dispatch-charge! [c]
+  (let [cfg (or (:config c) (some-> (nexus/get :config) deref) {})
+        crew-id (or (:crew c) (defaults/crew-id cfg))
+        session-store* (or (:session-store c) (nexus/get-in [:sessions :store]))
+        mismatch (policy/session-policy-mismatch session-store* (:session-key c)
+                                                 (policy/policy-name (get-in cfg [:crew crew-id])))]
+    (if mismatch
+      {:error :session-policy-mismatch :message mismatch}
+      (dispatch-matched-charge! c))))
+
+(defn- dispatch-matched-charge! [c]
+  (let [{:keys [charge result]} (route-charge! c)]
+    (if charge
+      (let [obs-check (resolve-charge-observers charge)]
+        (if (:error obs-check)
+          {:error   (:error obs-check)
+           :message (:message obs-check)
+           :ref     (:ref obs-check)}
+          (let [charge   (or (:charge obs-check) charge)
+                ts-check (admit-charge-resource-pools charge)]
+            (cond
+              (and (:error ts-check) (= :hold (:reason ts-check)))
+              (park-held-charge! charge ts-check)
+
+              (:error ts-check)
+              {:error   (:error ts-check)
+               :reason  (:reason ts-check)
+               :message (:message ts-check)
+               :ref     (:ref ts-check)}
+
+              :else
+              (let [charge (or (:charge ts-check) charge)]
+                (if-let [session-key (:session-key charge)]
+                  (let [session-store* (or (:session-store charge) (nexus/get-in [:sessions :store]))
+                        sess           (request-policy charge)]
+                    (if (store/mark-in-flight! session-store* session-key)
+                      (do
+                        (record-turn-marker! (or sess session-store*) session-key charge)
+                        (let [turn-result (atom nil)]
+                          (try
+                            (reset! turn-result (turn/run-turn! (assoc charge :session-policy sess)))
+                            @turn-result
+                            (finally
+                              (isolate-cleanup! :clear-turn-marker
+                                                #(clear-turn-marker! (or sess session-store*) session-key))
+                              (isolate-cleanup! :clear-in-flight
+                                                #(store/clear-in-flight! session-store* session-key))
+                              ;; A session's own waiting room drains as soon as its running
+                              ;; turn releases it; avoid a bridge → worker load cycle.
+                              (when-let [root (charge-root charge)]
+                                (when (binding [turn-queue/*root* root]
+                                        (or (some :frequencies (turn-queue/list-held))
+                                             (seq (turn-queue/waiting-groups session-key))))
+                                  (isolate-cleanup! :drain-waiting-session
+                                                    #((requiring-resolve 'isaac.agent.turn.worker/tick!)))))))))
+                      (do (pool/release-all! (:pool-leases charge))
+                          (wait-for-session! (dissoc charge :pool-leases)))))
+                  (turn/run-turn! (assoc charge :session-policy (request-policy charge)))))))))
+      result)))
+
+(defn- dispatch-recorded! [charge]
+  (if (or (:turn-id charge) (:from-queue? charge) (charge/slash? charge))
+    (dispatch-charge! charge)
+    (let [root (charge-root charge)
+          record (binding [turn-queue/*root* root]
+                   (turn-queue/enqueue! {:session (:session-key charge)
+                                         :input (:input charge)
+                                         :origin (:origin charge)
+                                         :state :running}))]
+      (try
+        (let [result (dispatch-charge! (assoc charge :turn-id (:id record)))]
+          (when-not (or (:held result) (= :waiting-session (:reason result)))
+            (binding [turn-queue/*root* root]
+              (turn-queue/update-turn! (:id record)
+                                       {:state :finished
+                                        :outcome (if (:error result) :error :ok)})))
+          result)
+        (catch Throwable t
+          (binding [turn-queue/*root* root]
+            (turn-queue/update-turn! (:id record) {:state :finished :outcome :error}))
+          (throw t))))))
+
+(defn dispatch!
+  "Comm-facing entry point. Accepts a charge (built via charge/build) or a
+   request map (which gets passed through charge/build). Slash commands are
+   handled here; normal turns delegate to run-turn!. Bridge -> drive only."
+  ([input]
+    (if (charge/charge? input)
+      (dispatch-recorded! (ensure-session! input))
+      (let [request (ensure-session! (merge (nexus/necho) input))]
+        (dispatch-recorded! (charge/build request)))))
+  ([_root request]
+    ;; Two-arg form is a back-compat shim — root now lives on the
+    ;; config snapshot, which downstream readers consult directly.
+    (dispatch! request)))
+
+;; endregion ^^^^^ Triage ^^^^^

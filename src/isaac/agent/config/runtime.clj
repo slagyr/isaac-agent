@@ -1,5 +1,5 @@
 (ns isaac.agent.config.runtime
-  "Agent-side companion to isaac.config.loader. Ensures the session store
+  "Agent-side companion to isaac.foundation.config.loader. Ensures the session store
    when a committed config is installed. Server-only lifecycle (reconcile,
    berth activation, hot reload) lives in isaac-http's isaac.config.runtime.
 

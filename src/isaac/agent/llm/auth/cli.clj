@@ -1,0 +1,335 @@
+;; mutation-tested: 2026-05-06
+(ns isaac.agent.llm.auth.cli
+  (:require
+    [isaac.foundation.cli.api :as cli-api]
+    [isaac.foundation.cli.host :as host]
+    [clojure.string :as str]
+    [clojure.tools.cli :as tools-cli]
+    [isaac.foundation.config.loader :as loader]
+    [isaac.foundation.fs :as fs]
+    [isaac.agent.llm.auth.device-code :as device-code]
+    [isaac.agent.llm.auth.store :as auth-store]
+    [isaac.foundation.config.root :as root]))
+
+;; region ----- Login -----
+
+(defn- known-providers [] #{"anthropic" "ollama" "openai" "chatgpt" "grok"})
+
+(defn- load-auth-config [reason]
+  (let [loaded* (atom nil)]
+    (host/ensure-runtime!
+      {:install!
+       (fn []
+         (reset! loaded* (loader/load-config! (root/current-root) (fs/instance) reason)))})
+    (or @loaded* (loader/snapshot reason) {})))
+
+(defn- oauth-provider? [provider-name]
+  (contains? #{"chatgpt" "grok"} provider-name))
+
+(defn- login-api-key [provider-name]
+  (binding [*in* (host/in)]
+    (print (str "Enter API key for " provider-name ": "))
+    (flush)
+    (if-let [key (read-line)]
+      (if (str/blank? key)
+        (do (println "Error: API key is required")
+            1)
+        (let [sdir (or (:root (load-auth-config "auth cli: key login"))
+                       (root/current-root))]
+          (auth-store/save-api-key! sdir provider-name key (fs/instance))
+          (println (str "Authenticated with " provider-name " via API key"))
+          0))
+      (do (println "Error: No input")
+          1))))
+
+(defn- auth-dir []
+  (root/current-root))
+
+(defn- format-device-code-error [resp]
+  (str (:error resp)
+       (when-let [st (:status resp)] (str " (HTTP " st ")"))
+       (when-let [msg (:message resp)] (str ": " msg))
+       (when (and (not (:message resp)) (map? (:body resp)))
+         (when-let [b (or (get-in resp [:body :message])
+                           (get-in resp [:body :error])
+                           (get-in resp [:body :error_description]))]
+           (str ": " b)))))
+
+(defn- login-device-code [provider-name]
+  (let [descriptor (device-code/provider-descriptor! provider-name)]
+    (println "Requesting device code...")
+    (let [user-code-resp (device-code/request-user-code! descriptor)]
+      (if (:error user-code-resp)
+        (do
+          (println (str "Error: Failed to request device code: "
+                        (format-device-code-error user-code-resp)))
+          1)
+        (let [user-code    (:user_code user-code-resp)
+              device-id    (or (:device_auth_id user-code-resp)
+                               (:device_code user-code-resp))
+              raw-interval (:interval user-code-resp)
+              interval     (if (string? raw-interval) (parse-long raw-interval) (or raw-interval 5))]
+          (println)
+          (println "Follow these steps to sign in:")
+          (println)
+          (println "  1. Open this link in your browser:")
+          (println (str "     " (device-code/verification-url descriptor)))
+          (println)
+          (println "  2. Enter this one-time code (expires in 15 minutes)")
+          (println (str "     " user-code))
+          (println)
+          (println "Waiting for authorization...")
+          (let [auth-resp (device-code/poll-for-auth! descriptor device-id user-code (* interval 1000))]
+            (cond
+              (:error auth-resp)
+              (do
+                (println (str "Error: Authorization failed: "
+                              (format-device-code-error auth-resp)))
+                1)
+
+              :else
+              (let [tokens (if (= :oidc-device-code (:flow descriptor))
+                             auth-resp
+                             (device-code/exchange-tokens! descriptor
+                                                           (:authorization_code auth-resp)
+                                                           (:code_verifier auth-resp)))]
+                (cond
+                  (:error tokens)
+                  (do
+                    (println (str "Error: "
+                                  (if (= :oidc-device-code (:flow descriptor))
+                                      "Authorization succeeded but no access_token in response"
+                                      (str "Token exchange failed: " (:error tokens)
+                                           (when (:body tokens) (str " - " (:body tokens)))))))
+                    1)
+
+                  (not (:access_token tokens))
+                  (do
+                    (println "Error: Authorization succeeded but no access_token in response")
+                    1)
+
+                  :else
+                  (do
+                    (auth-store/save-tokens! (auth-dir) provider-name tokens (fs/instance))
+                    (println)
+                    (println "Authentication successful!")
+                    (println (str "Tokens saved for " provider-name))
+                    0))))))))))
+
+(defn- login [{:keys [provider api-key]}]
+  (cond
+    (nil? provider)
+    (do (println "Error: --provider is required")
+        (println)
+        (println "Usage: isaac auth login --provider <name> [--api-key]")
+        (println)
+        (println "Options:")
+        (println "  --provider <name>  Provider to authenticate with")
+        (println "  --api-key          Use API key authentication (prompts for key)")
+        1)
+
+    (not (contains? (known-providers) provider))
+    (do (println (str "Unknown provider: " provider))
+        1)
+
+    (oauth-provider? provider)
+    (login-device-code provider)
+
+    api-key
+    (login-api-key provider)
+
+    :else
+    (do (println "Error: --api-key is required")
+        (println)
+        (println "Usage: isaac auth login --provider <name> --api-key")
+        1)))
+
+;; endregion ^^^^^ Login ^^^^^
+
+;; region ----- Status -----
+
+(defn- humanize-ms [ms]
+  (let [mins (quot (max 0 ms) 60000)]
+    (if (>= mins 60)
+      (str (quot mins 60) "h")
+      (str (max 1 mins) "m"))))
+
+(defn- provider-auth-line
+  "Human-readable auth state for one provider, from its :auth requirement and the
+   stored token (isaac-b9rh). An OAuth provider reports its real token state —
+   authenticated / EXPIRED / not logged in — instead of a blanket
+   'no auth required' that hides an expired token."
+  [name p tokens now-ms]
+  (let [oauth? (or (= "oauth-device" (:auth p))
+                   (= "oauth" (:type tokens)))]
+    (cond
+      oauth?
+      (cond
+        (not= "oauth" (:type tokens))
+        "not logged in"
+
+        (<= (:expires tokens 0) now-ms)
+        (str "EXPIRED — run isaac auth login --provider " name)
+
+        :else
+        (str "authenticated (expires in " (humanize-ms (- (:expires tokens) now-ms)) ")"))
+
+      (or (:api-key p) (= "api-key" (:type tokens)))
+      "authenticated (API key)"
+
+      (= "api-key" (:auth p))
+      "not logged in"
+
+      :else
+      "no auth required")))
+
+(defn- status [_opts]
+  (let [cfg  (load-auth-config "auth cli: status")
+        root (or (:root cfg) (root/current-root))
+        fs*  (fs/instance)
+        now  (System/currentTimeMillis)]
+    (println "Provider status:")
+    (doseq [[name p] (or (seq (:providers cfg)) [["ollama" {}]])]
+      (let [tokens (auth-store/load-tokens root name fs*)]
+        (println (str "  " name ": " (provider-auth-line name p tokens now)))))
+    0))
+
+;; endregion ^^^^^ Status ^^^^^
+
+;; region ----- Logout -----
+
+(defn- logout [{:keys [provider]}]
+  (if (nil? provider)
+    (do (println "Error: --provider is required")
+        1)
+    (do ;; TODO: remove stored credentials
+        (println (str "Logged out from " provider))
+        0)))
+
+;; endregion ^^^^^ Logout ^^^^^
+
+;; region ----- Entry Point -----
+
+(def option-spec
+  [["-h" "--help" "Show help"]])
+
+(def ^:private login-option-spec
+  [["-p" "--provider NAME" "Provider to authenticate with"]
+   ["-k" "--api-key"       "Use API key authentication (prompts for key)"]
+   ["-h" "--help"          "Show help"]])
+
+(def ^:private status-option-spec
+  [["-h" "--help" "Show help"]])
+
+(def ^:private logout-option-spec
+  [["-p" "--provider NAME" "Provider to logout from"]
+   ["-h" "--help"          "Show help"]])
+
+(defn- parse-option-map [args option-spec & parse-args]
+  (let [{:keys [options arguments errors]} (apply tools-cli/parse-opts args option-spec parse-args)]
+    {:options   (->> options
+                     (remove (comp nil? val))
+                     (into {}))
+     :arguments arguments
+     :errors    errors}))
+
+(defn help-text []
+  (str "Usage: isaac auth <subcommand> [options]\n\n"
+       "Subcommands:\n"
+       "  login   Authenticate with a provider\n"
+       "  status  Show authentication status\n"
+       "  logout  Remove stored credentials"))
+
+(defn- print-auth-help []
+  (println (help-text)))
+
+(defn run [args]
+  (let [subcmd   (first args)
+        sub-args (rest args)]
+    (cond
+      (or (nil? subcmd) (= "--help" subcmd) (= "-h" subcmd))
+      (do (print-auth-help)
+          0)
+
+      (= "login" subcmd)
+      (let [{:keys [options errors]} (parse-option-map sub-args login-option-spec)]
+        (cond
+          (:help options)
+          (do
+            (println "Usage: isaac auth login --provider <name> [--api-key]")
+            0)
+
+          (seq errors)
+          (do
+            (doseq [error errors]
+              (println error))
+            1)
+
+          :else
+          (login options)))
+
+      (= "status" subcmd)
+      (let [{:keys [options errors]} (parse-option-map sub-args status-option-spec)]
+        (cond
+          (:help options)
+          (do
+            (println "Usage: isaac auth status")
+            0)
+
+          (seq errors)
+          (do
+            (doseq [error errors]
+              (println error))
+            1)
+
+          :else
+          (status options)))
+
+      (= "logout" subcmd)
+      (let [{:keys [options errors]} (parse-option-map sub-args logout-option-spec)]
+        (cond
+          (:help options)
+          (do
+            (println "Usage: isaac auth logout --provider <name>")
+            0)
+
+          (seq errors)
+          (do
+            (doseq [error errors]
+              (println error))
+            1)
+
+          :else
+          (logout options)))
+
+      :else
+      (do (println (str "Unknown auth subcommand: " subcmd))
+          1))))
+
+(defn run-fn [{:keys [_raw-args]}]
+  (let [{:keys [options arguments errors]} (parse-option-map (or _raw-args []) option-spec :in-order true)]
+    (cond
+      (seq errors)
+      (do
+        (doseq [error errors]
+          (println error))
+        1)
+
+      (:help options)
+      (run ["--help"])
+
+      :else
+      (run arguments))))
+
+;; endregion ^^^^^ Entry Point ^^^^^
+
+;; ----- :isaac/cli berth implementation -----
+
+(defmethod cli-api/run :auth [_id opts]
+  (run-fn opts))
+
+(defmethod cli-api/option-spec :auth [_id]
+  option-spec)
+
+(defmethod cli-api/help :auth [_id]
+  (help-text))

@@ -2,7 +2,7 @@
   "Agent-side config install: ensures the session store only. Comm/service
    reconcile and berth activation are server-boot responsibilities (isaac-95lv)."
   (:require
-    [isaac.session.store.spi :as store]))
+    [isaac.agent.session.store.spi :as store]))
 
 (defn- ensure-store! [config]
   (when-not (store/registered-store)
