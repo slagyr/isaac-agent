@@ -1,15 +1,17 @@
 (ns isaac.turn.queue-steps
   (:require
     [clojure.string :as str]
-    [gherclj.core :as g :refer [defgiven defwhen helper!]]
+    [gherclj.core :as g :refer [defgiven defthen defwhen helper!]]
     [isaac.foundation.cli-steps :as fcli]
     [isaac.foundation.fs-steps :as fsteps]
     [isaac.config.api :as config]
     [isaac.config.loader :as loader]
     [isaac.fs :as fs]
+    [isaac.llm.api.grover :as grover]
     [isaac.nexus :as nexus]
     [isaac.scheduler.runtime :as scheduler]
     [isaac.session.session-steps :as session-steps]
+    [isaac.spec-helper :as helper]
     [isaac.tool.memory :as memory]
     [isaac.turn.queue :as queue]
     [isaac.turn.worker :as worker]
@@ -84,7 +86,12 @@
                       queue/*root* (root-dir)]
               (nexus/-with-nested-nexus {:root (root-dir) :fs (mem-fs)}
                 (config/dangerously-install-config! (g/get :feature-config) "feature: queue tick")
-                (worker/tick! {:now now})))))))))
+                ;; worker/tick! only claims and starts each runnable turn
+                ;; before returning (isaac-e9jl); await-idle! waits out that
+                ;; turn (and any it chains via a drain-on-release nudge)
+                ;; before the next step runs.
+                (worker/tick! {:now now})
+                (worker/await-idle!)))))))))
 
 (defonce ^:private live-scheduler* (atom nil))
 
@@ -126,11 +133,19 @@
       (try-acquire [_ _ctx]
         (if (false? @(:open? state))
           :busy
-          (if (< @(:inflight state) (:limit state))
-            (do (swap! (:inflight state) inc) (let [id (str (java.util.UUID/randomUUID))]
-                  (swap! (:leases state) conj id)
-                  {:bindings @(:bindings state) :release-id id}))
-            :busy)))
+          ;; Claimed turns for different sessions now start concurrently
+          ;; (isaac-e9jl), so two futures can call try-acquire at once —
+          ;; check-then-swap on :inflight would let both through. swap-vals!
+          ;; makes "am I under the limit" and "claim a slot" one atomic step:
+          ;; only a call whose pre-swap value was still under the limit won.
+          (let [limit (:limit state)
+                [before _after] (swap-vals! (:inflight state)
+                                            (fn [n] (if (< n limit) (inc n) n)))]
+            (if (< before limit)
+              (let [id (str (java.util.UUID/randomUUID))]
+                (swap! (:leases state) conj id)
+                {:bindings @(:bindings state) :release-id id})
+              :busy))))
       (release! [_ token]
         (let [id (or (:release-id token) (:id token))]
           (when (contains? @(:leases state) id)
@@ -176,15 +191,40 @@
       (fn []
         (config/dangerously-install-config! (g/get :feature-config) "feature: pool opened")
         (pool/release-all! [{:resource-pool (scripted-gate name (:limit state))
-                             :token (pool/->ReleaseToken "open")}])))))
+                             :token (pool/->ReleaseToken "open")}])
+        ;; release-all! only wakes the queue (worker/tick!, via the wake-hook)
+        ;; — that only claims and starts the newly-admitted turn before
+        ;; returning (isaac-e9jl); await it before the next step runs.
+        (worker/await-idle!)))))
 
 (defn user-sends-with-resource-pools [content key-str resource-pools]
   (ensure-wake-hook!)
   (session-steps/user-sends-on-session
     content key-str (mapv keyword (str/split resource-pools #",\s*"))))
 
+(defn session-waiting-on-model
+  "Polls isaac.llm.api.grover/waiting? — true once that session's turn has
+   dequeued a scripted response tagged `wait` and is blocked in Grover's
+   wait-gate, rather than having finished or never having started."
+  [n session]
+  (helper/await-condition #(grover/waiting? session) (* 1000 n))
+  (g/should (grover/waiting? session)))
+
+(defn model-releases-session
+  "Delivers isaac.llm.api.grover/release-wait! for that session's wait-gate,
+   unblocking the turn that isaac.llm.api.grover/waiting? found parked there."
+  [session]
+  (grover/release-wait! session))
+
 (g/after-scenario
   (fn []
+    ;; A scenario can end (or move to the next step) without every turn it
+    ;; started having settled — e.g. a release that wakes the queue but
+    ;; whose admitted turn the scenario never asserted on. worker/tick! only
+    ;; claims and starts before returning (isaac-e9jl), so a straggler can
+    ;; still be running when the next scenario resets scripted-gates* out
+    ;; from under it. Best-effort drain before tearing anything else down.
+    (worker/await-idle! 2000)
     (reset! scripted-gates* {})
     (g/dissoc! :held-id)
     (g/dissoc! :turn-id)
@@ -210,3 +250,14 @@
 
 (defgiven #"a scripted resource pool \"([^\"]+)\" binds:" isaac.turn.queue-steps/scripted-pool-binds)
 (defgiven #"resource pool \"([^\"]+)\" has lease \"([^\"]+)\" out" isaac.turn.queue-steps/scripted-pool-has-lease)
+
+(defthen "within {n:int} seconds session {s:string} is waiting on the model"
+  isaac.turn.queue-steps/session-waiting-on-model
+  "Polls isaac.llm.api.grover/waiting? up to n seconds — true once that
+   session's in-flight turn has dequeued a `wait`-tagged scripted response and
+   is blocked in Grover's wait-gate (isaac-e9jl).")
+
+(defwhen "the model releases session {s:string}"
+  isaac.turn.queue-steps/model-releases-session
+  "isaac.llm.api.grover/release-wait! for that session — unblocks the turn a
+   prior 'is waiting on the model' step found parked there (isaac-e9jl).")

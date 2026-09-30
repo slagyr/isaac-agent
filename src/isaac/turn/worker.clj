@@ -129,6 +129,59 @@
                                  (:error result) (assoc :reason (or (:message result) (name (:error result))))))
         (queue/forget-live-comm! id)))))
 
+;; A turn started asynchronously can itself trigger more async turn-queue
+;; work before it settles — bridge.core's own-session drain-on-release
+;; (isolate-cleanup! :drain-waiting-session) calls isaac.turn.worker/tick!
+;; from inside a *different* turn's finally block and discards what it
+;; started. Tracking every started future here — not just the ones a
+;; particular tick! call happened to start — lets await-idle! below wait out
+;; that whole chain regardless of which call kicked each link off.
+(defonce ^:private active-futures* (atom #{}))
+
+(defn- run-record-async!
+  "Starts one claimed record's turn on its own thread and returns immediately.
+   The tick's job ends at claim + start; process-record!'s bookkeeping (outcome,
+   merged ids, live-comm cleanup, held->:held on a hold) happens on that thread
+   once the turn ends, so a long turn on one session never blocks another
+   session's claimed turn from starting in the same pass (isaac-e9jl). Follows
+   the same bound-fn + future idiom as isaac.drive.turn/start-async-compaction!
+   so dynamic bindings active at claim time (queue/*root*, memory/*now*) carry
+   into the turn's thread."
+  [now record]
+  (let [self (promise)
+        task (bound-fn []
+               (try
+                 (process-record! now record)
+                 (catch Throwable t
+                   (log/warn :turn.queue/record-crashed
+                             :id (:id record)
+                             :error (.getMessage t)))
+                 (finally
+                   ;; Leave the registry on the way out, or a long-lived server
+                   ;; keeps every finished turn's future (and result) forever.
+                   (swap! active-futures* disj @self))))
+        fut  (future (task))]
+    (swap! active-futures* conj fut)
+    (deliver self fut)
+    fut))
+
+(defn await-idle!
+  "Blocks until every turn started via the turn queue — by this process,
+   including any chained by an automatic drain — has finished, or timeout-ms
+   elapses. Not used on the production path (the whole point of isaac-e9jl is
+   that nothing should block on another session's turn); for tests and tools
+   that need the queue to have gone fully quiet before asserting on it."
+  ([] (await-idle! 30000))
+  ([timeout-ms]
+   (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
+     (loop []
+       (swap! active-futures* #(into #{} (remove realized?) %))
+       (when-let [pending (seq @active-futures*)]
+         (doseq [fut pending]
+           (deref fut (max 1 (- deadline (System/currentTimeMillis))) ::timeout))
+         (when (< (System/currentTimeMillis) deadline)
+           (recur)))))))
+
 (defn- request-tick! []
   (loop []
     (let [state @tick-state*]
@@ -145,14 +198,17 @@
         (= :running state) (if (compare-and-set! tick-state* :running :idle) :idle (recur))
         :else              :idle))))
 
-(defn- run-one-pass! [now]
+(defn- run-one-pass!
+  "Claims and starts every runnable record, then returns — the pass's own job
+   ends at claim + start (isaac-e9jl)."
+  [now]
   (let [records (queue/list-held)
         waiting-sessions (distinct (map :session (filter #(= :waiting-session (:state %)) records)))
         waiting-ids (set (mapcat #(map :id (mapcat identity (queue/waiting-groups %))) waiting-sessions))
         ordinary (remove #(contains? waiting-ids (:id %)) records)]
     (doseq [record ordinary]
       (when (queue/claim! (:id record))
-        (process-record! now record)))
+        (run-record-async! now record)))
     (doseq [session waiting-sessions
             :when (not (store/in-flight? (or (nexus/get-in [:sessions :store])
                                               (store/registered-store)) session))
@@ -161,9 +217,16 @@
         (when (> (count records) 1)
           (log/info :turn/coalesced :session session :key (:coalesce-key record) :count (count records)))
         (when (queue/claim! (:id record))
-          (process-record! now record))))))
+          (run-record-async! now record))))))
 
 (defn tick!
+  "Claims and starts every runnable record, then returns — a long turn on
+   one session never blocks another session's claimed turn from starting in
+   the same pass, nor holds tick-state* (and so every later scheduled or
+   woken tick) hostage until it finishes (isaac-e9jl). A caller that needs
+   the turns this call started (and anything they chain) to have actually
+   finished — a test, not the production scheduler or the resource-pool
+   wake-hook — calls await-idle! afterward."
   ([] (tick! {}))
   ([{:keys [now]}]
    (let [now (or now (memory/now))]
