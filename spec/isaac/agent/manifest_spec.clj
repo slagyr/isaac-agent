@@ -15,6 +15,9 @@
 (def comm-berth
   (get-in manifest [:berths :isaac.agent/comm]))
 
+(def comms-table
+  (get-in manifest [:isaac.config/schema :comms]))
+
 (describe "isaac-agent declares the comm berth"
 
   (it "declares :isaac.agent/comm"
@@ -41,3 +44,22 @@
   (it "does not declare transport-named comm berths"
     (should-not (contains? (:berths manifest) :isaac.http/comm))
     (should-not (contains? (:berths manifest) :isaac.server/comm))))
+
+(describe "isaac-agent declares the :comms config table"
+
+  ;; isaac-6pqo: moved off isaac-http/isaac-server, which only ever
+  ;; mirrored agent's own factory/berth.
+  (it "declares :comms"
+    (should comms-table))
+
+  (it "instantiates slots through its own comm factory"
+    (should= 'isaac.comm.factory/create!
+             (get-in comms-table [:schema :value-spec :factory])))
+
+  (it "composes extra-schema from its own comm berth"
+    (should= {:berth :isaac.agent/comm :path [:extra-schema]}
+             (get-in comms-table [:schema :value-spec :dynamic-schema])))
+
+  (it "routes a comm slot into a crew that must exist"
+    (should= [:crew-exists?]
+             (get-in comms-table [:schema :value-spec :schema :crew :validations]))))
