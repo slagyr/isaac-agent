@@ -169,3 +169,26 @@ Feature: Turn store — every turn has a durable record and a stable id
     Then within 15 seconds session "harbor" has transcript matching:
       | type    | message.role | message.content |
       | message | assistant    | Setting sail    |
+
+  @wip
+  Scenario: queued turns on different sessions run side by side (isaac-e9jl)
+    One long turn must not stall the fleet. The queue tick starts each turn
+    it claims and moves on; only a turn's own session waits for it.
+    Given the Isaac runner is started
+    And the following sessions exist:
+      | name  |
+      | jetty |
+    And the following model responses are queued:
+      | type | content      | model | wait |
+      | text | Setting sail | echo  | true |
+      | text | Tied off     | echo  |      |
+    When isaac is run with "prompt --queue --session harbor -m 'Leave harbor'"
+    Then within 15 seconds session "harbor" is waiting on the model
+    When isaac is run with "prompt --queue --session jetty -m 'Come alongside'"
+    Then within 15 seconds session "jetty" has transcript matching:
+      | type    | message.role | message.content |
+      | message | assistant    | Tied off        |
+    When the model releases session "harbor"
+    Then within 15 seconds session "harbor" has transcript matching:
+      | type    | message.role | message.content |
+      | message | assistant    | Setting sail    |
