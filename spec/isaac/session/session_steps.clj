@@ -2299,14 +2299,22 @@
     (grover/await-delay-start)
     (grover/disable-delay!)))
 
+(defn- await-send! [key-str turn-future]
+  (when (and (not (realized? turn-future)) (grover/waiting? key-str))
+    (grover/release-wait! key-str))
+  (when (= ::timeout (deref turn-future 30000 ::timeout))
+    (throw (ex-info "turn did not complete within 30 seconds" {}))))
+
 (defn turns-on-session-finish [key-str]
-  (grover/release-delay!)
-  (doseq [turn-future (or (g/get :turn-futures) [])]
-    (when (and (not (realized? turn-future)) (grover/waiting? key-str))
-      (grover/release-wait! key-str))
-    (let [result (deref turn-future 30000 ::timeout)]
-      (when (= ::timeout result)
-        (throw (ex-info "turn did not complete within 30 seconds" {})))))
+  (let [turn-futures (or (g/get :turn-futures) [])]
+    ;; A queued send may not have parked yet. Do not let the running turn
+    ;; release the session and drain its waiting room until all later sends
+    ;; have finished admission, or they can become independent turns.
+    (doseq [turn-future (rest turn-futures)]
+      (await-send! key-str turn-future))
+    (grover/release-delay!)
+    (doseq [turn-future turn-futures]
+      (await-send! key-str turn-future)))
   (g/dissoc! :turn-futures)
   ;; turn-worker/tick! only claims and starts each runnable turn before
   ;; returning (isaac-e9jl); await-idle! waits out that turn (and any it

@@ -33,6 +33,25 @@
           (nexus/reset!)
           (g/reset!)))))
 
+  (it "parks every later send before releasing the running turn to drain its waiting room"
+    (let [first-turn  (promise)
+          second-turn (promise)
+          released    (promise)]
+      (g/assoc! :turn-futures [first-turn second-turn])
+      (with-redefs [grover/release-delay! (fn [] (deliver released true) (deliver first-turn {:result :ok}))
+                    grover/waiting? (constantly false)
+                    isaac.turn.worker/tick! (fn [] nil)
+                    isaac.turn.worker/await-idle! (fn [] nil)]
+        (let [finishing (future (sut/turns-on-session-finish "bridge"))]
+          (try
+            (should= ::pending (deref released 100 ::pending))
+            (deliver second-turn {:result :held})
+            (should= true (deref released 1000 ::pending))
+            (should= nil (deref finishing 1000 ::pending))
+            (finally
+              (deliver first-turn {:result :ok})
+              (deliver second-turn {:result :held})))))))
+
   (it "does not wait for a Grover gate after a turn already completed"
     (g/assoc! :turn-future (future {:output "done"
                                     :request {:id :request}
