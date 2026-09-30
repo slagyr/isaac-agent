@@ -160,17 +160,9 @@ crew member's config, one directory per session under the state root
 compaction records). `config:sessions.store` selects `:ednl-dir` (the
 default) or `:memory` (test/ephemeral use).
 
-**Frequencies** is the shared shape (used by the CLI, hail, cron, and
-config) for picking or creating a session: `session` (explicit id),
-`session-tags` (must all match), `crew`, `prefer` (`:recent` or `:oldest`
-among multiple matches), and `create` (`:never`, `:if-missing`, or
-`:always`). A match that's merely **busy** is not "missing" — with
-`:if-missing` (the default create policy), a turn against a crew that has
-one busy and one free session takes the free one even if the busy one is
-more recent; if every candidate is busy, the turn waits and attaches to
-whichever frees first. An explicit `session` id always waits for that
-exact session rather than falling back to another. `defaults.frequencies`
-supplies the fallback crew/tags when a caller names none.
+Which session a turn actually lands on — an existing one, or a new one —
+is decided by **frequencies**; see Frequencies, below, for the shape and
+matching rules.
 
 `history-retention` (`:prune` or `:retain`, resolved once at session
 creation from crew/model/provider/`defaults` and then locked on that
@@ -195,13 +187,120 @@ in-progress turn marker, fire-and-forget).
 - **A new turn keeps missing an existing session and creating another
   one.** Check `create` in the frequencies used — `:if-missing` only skips
   creation when a real match exists and isn't itself busy; if you need to
-  always land on one session, name it explicitly with `session`.
+  always land on one session, name it explicitly with `session`. See
+  Frequencies, below, for the full picture.
 - **`history-retention` doesn't seem to match what I just set on the
   crew.** It's resolved once, at session creation, and locked — changing
   the crew's default afterward doesn't retroactively change existing
   sessions.
 - **A turn refuses with a session-policy mismatch.** See Crews,
   Troubleshooting — start a new session rather than forcing it.
+
+## Frequencies
+
+Isaac is a ship, and a turn doesn't just start — it's **hailed**. Every
+caller that wants a turn to happen (a CLI invocation, a hail, a cron tick,
+a webhook, a comm) opens hailing frequencies and Isaac picks up on
+whichever session is listening. The name is a small nod to *Star Trek*'s
+"Open hailing frequencies" — the module quietly enjoys that it gets to say
+this with a straight face in production logs.
+
+**What it is.** A frequencies map is the one shape every caller builds to
+say "this session," or "a session like this," plus a handful of per-turn
+overrides. `isaac.session.frequencies` owns conforming, matching, and
+resolving it; nothing else in Isaac re-implements session selection. The
+CLI (`isaac prompt` and friends), hail, cron, `defaults.frequencies`, ACP,
+and every comm all build the same map and hand it here — each of those
+modules' own chapters cover *how* they build it, not what it means once
+built.
+
+Selection keys:
+
+- `session` — explicit session id(s); the first is used. An explicit
+  `session` always wins outright — no tag or crew selector narrows or
+  overrides it, and a named session that doesn't exist is either created
+  (`create :if-missing`/`:always`) or refused (`create :never`), never
+  silently matched to something else.
+- `session-tags` — tags a session must carry, ANDed (every tag named, not
+  just one).
+- `crew` — sessions whose `:crew` matches this id.
+- `prefer` — `:recent` or `:oldest`; the tiebreak when more than one
+  session matches (default `:recent`).
+- `create` — `:never`, `:if-missing` (the default), or `:always`. A match
+  that's merely **busy** (already mid-turn) is not "missing" — with
+  `:if-missing`, a crew with one busy and one free session takes the free
+  one even if the busy one is more recent; if every candidate is busy, the
+  turn waits and attaches to whichever frees first rather than spawning a
+  sibling session.
+
+Per-turn overrides — these change how *this* turn runs without touching
+the crew's own config or persisting onto the session:
+
+- `with-crew` — run this turn under a different crew's model and soul.
+- `with-model` — override the model for this turn.
+- `with-effort` — override effort (see Providers, models, and effort).
+- `with-context-mode` — override `:full`/`:reset` for this turn only.
+
+A CLI-only `--resume` selects across every live session, ignoring every
+other selector (it's a resolver-level flag, not one of the keys above);
+combining it with `session`/`crew`/`session-tags` is a usage error.
+
+**How matching resolves.** An explicit `session` is looked up directly.
+Otherwise, naming `crew` and/or `session-tags` filters the live session
+set to matches on both. `create :always` skips matching entirely and
+always creates. Zero matches with `create :never` (or an explicit
+`session` that doesn't exist) fails the turn outright — the error names
+what was searched for (a session id, a crew, or the tags) rather than a
+bare "not found." More than one match resolves by `prefer`. There's no
+error for "too many": frequencies always picks exactly one session or
+fails outright — it never fans a turn out to several. An older `:reach`
+key that did exactly that is gone for good; `isaac config validate`
+refuses it outright wherever it still appears (isaac-5gu1).
+
+**`defaults.frequencies`** supplies fallback values — most commonly
+`crew` — for any key a caller's own map doesn't set. The merge is
+consumer-wins: a caller's own frequencies beat the default on any key
+they both set. And if the caller *does* name `session`, `session-tags`,
+or `crew` explicitly, the default's `crew` is dropped from the merge
+entirely rather than tacked on as an extra filter alongside it — a caller
+selecting by tag shouldn't also be silently constrained to whatever crew
+the default names. A bare `isaac prompt -m "..."` with nothing configured
+and no `defaults.frequencies.crew` set has nowhere to land and fails.
+
+**How to change it.** Everything about a specific call's frequencies is
+per-call, not config — CLI flags, a hail's `:frequencies`, a cron job's
+flat fields, a comm's per-channel config (see that surface's own chapter
+for its addressing syntax; the shape and resolution rules here are the
+same everywhere). The one config-level knob is the fallback:
+
+```
+config set defaults.frequencies.crew cordelia
+config set defaults.frequencies.create if-missing
+```
+
+**How to verify.** `isaac sessions show <id>` confirms which session a
+turn actually landed on and its `crew`/tags. A rejected frequencies map
+raises before any session work happens — a CLI's stderr, a hail's error
+response, or a `config validate` failure on `defaults.frequencies` all
+name the same underlying reason.
+
+### Troubleshooting
+
+- **A turn keeps missing an existing session and creating another one.**
+  Check `create`: `:if-missing` (the default) only skips creation when a
+  real, non-busy match exists. Name the session explicitly with `session`
+  if you need to always land on one.
+- **A bare invocation with no selectors fails with "no session
+  selected."** Nothing named a session, tags, or crew, and
+  `config:defaults.frequencies.crew` isn't set either — there's nothing to
+  resolve. Set the default or pass a selector.
+- **`config validate` rejects an unknown key under `defaults.frequencies`
+  by name.** That table is checked against the same key set this section
+  documents — a typo (a stray `:reach`, `:session-tag` instead of
+  `:session-tags`) is refused rather than silently ignored.
+- **A `with-*` override didn't seem to "stick."** It isn't supposed to —
+  overrides apply only to the turn they're attached to and never persist
+  onto the crew or the session's own config.
 
 ## Turns and the tool loop
 
