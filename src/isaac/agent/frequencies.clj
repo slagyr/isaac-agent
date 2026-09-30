@@ -134,6 +134,18 @@
     :else
     "no session selected"))
 
+(defn normalize
+  "Coerce a bare-string :session to a one-element vector; :session is
+   documented as one-or-more ids, but a convenience caller (or a durable
+   record persisted before this normalization existed, isaac-n8rb) may hand
+   a bare string. Every reader — submit-time admission and wake-time
+   re-resolution alike — normalizes through this one function instead of
+   each re-deriving its own coercion (or, worse, one of them skipping it and
+   `(first \"some-id\")` silently reading a character)."
+  [frequencies]
+  (cond-> frequencies
+    (string? (:session frequencies)) (update :session vector)))
+
 (defn resolve-session-targets
   "Resolve a single session target from `frequencies` and `session-store`.
 
@@ -160,6 +172,7 @@
                             (cond-> (defaults/frequencies-template cfg)
                               (some #(contains? frequencies %) [:session :session-tags :crew])
                               (dissoc :crew)) frequencies)
+        frequencies  (normalize frequencies)
         create       (:create frequencies)
         sess         (policy/wrap session-store)
         all-sessions (policy/list-sessions sess)]

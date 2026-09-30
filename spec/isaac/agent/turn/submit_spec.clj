@@ -7,9 +7,11 @@
     [isaac.foundation.nexus :as nexus]
     [isaac.agent.resource-pool :as pool]
     [isaac.agent.frequencies :as frequencies]
+    [isaac.agent.session.spec-helper :as session-helper]
     [isaac.agent.session.store.spi :as sessions]
     [isaac.agent.turn.queue :as queue]
     [isaac.agent.turn.submit :as sut]
+    [isaac.agent.turn.worker :as turn-worker]
     [speclj.core :refer :all]))
 
 (describe "Agent turn submission"
@@ -131,7 +133,18 @@
         (let [first-turn (sut/submit! request)]
           (queue/update-turn! (:id first-turn) {:state :finished})
           (should= true (:already-accepted? (sut/submit! request)))
-          (should= 1 (count (queue/all-turns))))))
+          (should= 1 (count (queue/all-turns)))))))
+
+  (it "wakes a turn submitted with a bare-string :session onto that session, not a character of it (isaac-n8rb)"
+    (session-helper/with-memory-store
+      (session-helper/create-session! "/isaac-state" "lamp-room")
+      (let [seen (atom nil)]
+        (with-redefs [bridge/dispatch! (fn [charge] (reset! seen charge) {})]
+          (sut/submit! {:root "/isaac-state" :config {} :frequencies {:session "lamp-room"}
+                       :prompt "Light lamp"})
+          (turn-worker/tick! {})
+          (turn-worker/await-idle!))
+        (should= "lamp-room" (:session-key @seen)))))
 
   (it "rejects an unknown pool without accepting a request"
     (with-redefs [pool/resolve-submitted (fn [_ _] {:error :unknown-resource-pool
@@ -140,4 +153,3 @@
         (sut/submit! {:root "/isaac-state" :fs @mem :config {} :resource-pools ["drydock"]
                       :frequencies {:session "lamp-room"} :prompt "Light lamp" :key "watch/7/tide/tend"})))
     (should= [] (queue/all-turns))))
-  )

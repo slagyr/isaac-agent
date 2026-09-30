@@ -109,6 +109,12 @@
                                                 {:defaults {:frequencies {:crew "cordelia"}}})]
         (should= "mooring" (:session-key result))))
 
+    (it "treats a bare-string :session the same as a one-element vector (isaac-n8rb)"
+      (helper/create-session! "/test" "lamp-room" {:crew "ketch"})
+      (let [result (sut/resolve-session-targets {:session "lamp-room" :create :never}
+                                                 (store/registered-store))]
+        (should= "lamp-room" (:session-key result))))
+
     (it "refuses to invent a session without selection fields"
       (let [result (sut/resolve-session-targets {} (store/registered-store) {})]
         (should= :no-match (:error result))

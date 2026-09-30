@@ -12,17 +12,19 @@
 (defn submit!
   "Accept one durable, keyed turn without running it. Returns its stable request record."
   [{:keys [root config frequencies resource-pools observers prompt preamble cycle id key origin]}]
-  (let [cfg       (or config (loader/snapshot "turn submit"))
-        pool-refs (mapv keyword resource-pools)
-        pools     (pool/resolve-submitted cfg pool-refs)
-        resolved  (when-not (:error pools)
-                    (frequencies/resolve-session-targets
-                      (cond-> frequencies
-                        (string? (:session frequencies)) (update :session vector))
-                      (sessions/registered-store) cfg))
-        obs       (when (and resolved (not (:error resolved)))
-                    (observer/resolve-submitted observers))
-        error     (or (:error pools) (:error resolved) (:error obs))]
+  (let [cfg         (or config (loader/snapshot "turn submit"))
+        pool-refs   (mapv keyword resource-pools)
+        pools       (pool/resolve-submitted cfg pool-refs)
+        ;; Normalize once here so the record persisted below already carries
+        ;; a vector :session — the wake-time re-resolution (isaac.agent.turn.worker/
+        ;; wake-charge) reads :frequencies straight off the durable record and
+        ;; must see the same shape submit-time resolution used (isaac-n8rb).
+        frequencies (frequencies/normalize frequencies)
+        resolved    (when-not (:error pools)
+                      (frequencies/resolve-session-targets frequencies (sessions/registered-store) cfg))
+        obs         (when (and resolved (not (:error resolved)))
+                      (observer/resolve-submitted observers))
+        error       (or (:error pools) (:error resolved) (:error obs))]
     (when error
       (throw (ex-info (or (:message pools) (:message resolved) (:message obs) (name error))
                       {:reason error})))
