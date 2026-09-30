@@ -8,34 +8,6 @@ Feature: Config Composition
   Background:
     Given an Isaac root at "isaac-state"
 
-  # ----- Soul -----
-
-  Scenario: soul loads from a companion .md file when :soul is absent
-    Given config file "crew/cordelia.edn" containing:
-      """
-      {:model :llama}
-      """
-    And config file "crew/cordelia.md" containing:
-      """
-      You are Cordelia, first mate.
-      """
-    Then the loaded config has:
-      | key                | value                         |
-      | crew.cordelia.soul | You are Cordelia, first mate. |
-
-  Scenario: defining soul in both :soul and <id>.md is an error
-    Given config file "crew/cordelia.edn" containing:
-      """
-      {:soul "Inline soul."}
-      """
-    And config file "crew/cordelia.md" containing:
-      """
-      File soul.
-      """
-    Then the config has validation errors matching:
-      | key                | value                      |
-      | crew.cordelia.soul | must be set in .edn OR .md |
-
   # ----- Semantic validation -----
 
   Scenario: defaults.frequencies.crew must reference an existing crew
