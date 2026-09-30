@@ -370,4 +370,28 @@
               {:keys [leases]} (pool/acquire-all! [{:name :dock :pool gate}] {})]
           (pool/release-all! leases)))
       (should= [] @ran)
-      (should= "orphan" (:id (queue/read-held "orphan"))))))
+      (should= "orphan" (:id (queue/read-held "orphan")))))
+
+  (it "resolves wake-config synchronously, before tick! returns, so a caller's own nexus scope (isaac.foreman.core/retry!, loading a fresh snapshot before waking the queue, exactly as a CLI would) has not yet moved on when the config is read (isaac-8evx)"
+    (let [real-snapshot loader/snapshot
+          tick-returned? (atom false)
+          read-when      (atom ::not-yet)]
+      (queue/enqueue! {:id "berth-1" :session "harbor" :input "Leave harbor"
+                       :resource-pools [] :created-at "2026-03-01T14:00:00Z"})
+      (with-redefs [bridge/dispatch! (fn [_] {:content "Setting sail"})
+                    loader/snapshot  (fn [reason]
+                                       (when (= ::not-yet @read-when)
+                                         (reset! read-when (if @tick-returned? :after-tick-returned :before-tick-returned)))
+                                       (real-snapshot reason))]
+        (sut/tick! {:now (Instant/parse "2026-03-01T23:30:00Z")})
+        (reset! tick-returned? true)
+        (await-settled! "berth-1"))
+      ;; Before isaac-8evx, this read happened inside process-record!, on the
+      ;; turn's own future thread, which only starts once tick! has already
+      ;; returned (isaac-e9jl: claim + start, then return) — so a caller that
+      ;; installs a fresh config and calls tick! from inside its own nexus
+      ;; scope could have already unwound that scope (isaac.foundation.nexus
+      ;; is one process-wide atom, not a dynamic var) by the time this read
+      ;; actually ran, and could see whatever the now-restored outer scope
+      ;; holds instead — including nothing at all.
+      (should= :before-tick-returned @read-when))))

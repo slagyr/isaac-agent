@@ -40,9 +40,8 @@
             nil)))
       {}))
 
-(defn- wake-charge [record now]
-  (let [cfg     (wake-config record)
-        ss      (or (nexus/get-in [:sessions :store]) (store/registered-store))
+(defn- wake-charge [record now cfg]
+  (let [ss      (or (nexus/get-in [:sessions :store]) (store/registered-store))
         target  (when-let [address (:frequencies record)]
                   (frequencies/resolve-session-targets address ss cfg
                     (set (store/in-flight-sessions ss))))
@@ -104,9 +103,9 @@
            :origin (:origin last-record)
            :held-ids (mapv :id records))))
 
-(defn- process-record! [now record]
+(defn- process-record! [now cfg record]
   (let [result (try
-                 (let [charge (wake-charge record now)]
+                 (let [charge (wake-charge record now cfg)]
                    (if (:address-busy? charge)
                      {:held true}
                      (bridge/dispatch! charge)))
@@ -147,12 +146,27 @@
    session's claimed turn from starting in the same pass (isaac-e9jl). Follows
    the same bound-fn + future idiom as isaac.agent.drive.turn/start-async-compaction!
    so dynamic bindings active at claim time (queue/*root*, memory/*now*) carry
-   into the turn's thread."
-  [now record]
+   into the turn's thread.
+
+   `cfg` is resolved by the CALLER, synchronously, before this future starts
+   (isaac-8evx) — not re-derived here on the turn's own thread. isaac.foundation.nexus
+   is a single process-wide atom, not a dynamic var, and is shared by every
+   concurrently-running turn; reinstalling a captured snapshot of it on this
+   thread would race every OTHER turn currently reading or writing it, so
+   the fix threads the one value admission actually needs (the resolved
+   config) through as a plain argument instead. A caller that installs a
+   fresh config and calls tick! from inside its own nexus scope
+   (isaac.foreman.core/retry!, loading a fresh snapshot before waking the
+   queue, exactly as a CLI would) can return — unwinding that scope — before
+   this future ever runs; wake-config's own ambient re-read would then see
+   whatever the now-restored outer scope holds instead of the config the
+   caller just installed, and could resolve a resource pool the caller's
+   config plainly declares as :unknown-resource-pool."
+  [now cfg record]
   (let [self (promise)
         task (bound-fn []
                (try
-                 (process-record! now record)
+                 (process-record! now cfg record)
                  (catch Throwable t
                    (log/warn :turn.queue/record-crashed
                              :id (:id record)
@@ -209,7 +223,14 @@
         ordinary (remove #(contains? waiting-ids (:id %)) records)]
     (doseq [record ordinary]
       (when (queue/claim! (:id record))
-        (run-record-async! now record)))
+        ;; Resolved here, synchronously, on the tick!-calling thread — not
+        ;; inside the future. A caller that just installed a fresh config
+        ;; and calls tick! from within its own nexus scope (a CLI retry) may
+        ;; unwind that scope before the future runs; nexus is a single
+        ;; process-wide atom, not a dynamic var, so a lazy re-read there
+        ;; would see whatever the now-restored outer scope holds instead
+        ;; (isaac-8evx).
+        (run-record-async! now (wake-config record) record)))
     (doseq [session waiting-sessions
             :when (not (store/in-flight? (or (nexus/get-in [:sessions :store])
                                               (store/registered-store)) session))
@@ -227,7 +248,7 @@
           (doseq [{id :id} records
                   :when (not= id (:id record))]
             (queue/claim! id))
-          (run-record-async! now record))))))
+          (run-record-async! now (wake-config record) record))))))
 
 (defn tick!
   "Claims and starts every runnable record, then returns — a long turn on
