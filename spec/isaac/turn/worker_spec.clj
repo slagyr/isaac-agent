@@ -16,6 +16,18 @@
   (:import
     (java.time Instant)))
 
+;; run-one-pass! claims a record and starts its turn on its own thread, then
+;; moves on (isaac-e9jl) — tick! returns before the turn finishes. Every
+;; assertion on a record's post-dispatch state must first wait for that
+;; thread to finish the isaac.turn.worker/process-record! bookkeeping (claim!
+;; already moved it off :queued/:held/:waiting-session, so "settled" is
+;; simply "no longer :running"). Call from inside the enclosing with-redefs
+;; so the mocked vars are still in effect while the turn's thread runs
+;; (with-redefs alters a var's root binding, visible to every thread, but
+;; only for as long as the form is active).
+(defn- await-settled! [id]
+  (helper/await-condition #(not= :running (:state (queue/read-held id)))))
+
 (describe "turn.worker"
 
   (helper/with-captured-logs)
@@ -35,7 +47,8 @@
       (with-redefs [bridge/dispatch! (fn [charge]
                                        (swap! ran conj charge)
                                        {:held true :id "berth-1" :reason :hold})]
-        (sut/tick! {:now (Instant/parse "2026-03-01T14:00:00Z")}))
+        (sut/tick! {:now (Instant/parse "2026-03-01T14:00:00Z")})
+        (await-settled! "berth-1"))
       (should= 1 (count @ran))
       (should= "berth-1" (:id (queue/read-held "berth-1")))))
 
@@ -49,7 +62,8 @@
                     (should= #{"engine-room"} busy)
                     {:busy? true})
                   bridge/dispatch! (fn [_] (throw (ex-info "should not dispatch" {})))]
-      (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")}))
+      (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")})
+      (await-settled! "berth-1"))
     (should= :held (:state (queue/read-held "berth-1"))))
 
   (it "creates a session for a create-enabled hail at admission with its tags and origin"
@@ -66,7 +80,8 @@
                     (fn [name opts] (reset! opened [name opts]) {:id name})
                     charge/build identity
                     bridge/dispatch! (fn [_] {})]
-        (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")}))
+        (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")})
+        (await-settled! "coil-1"))
       (should= "session-1" (first @opened))
       (should= #{:project/warp} (get-in @opened [1 :tags]))
       (should= "bartholomew" (get-in @opened [1 :crew]))
@@ -78,7 +93,8 @@
     (let [seen (atom nil)]
       (with-redefs [charge/build (fn [request] (reset! seen request) request)
                     bridge/dispatch! (fn [_] {})]
-        (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")}))
+        (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")})
+        (await-settled! "coil-1"))
       (should= {:limit 1 :checkpoint-every 1} (:cycle @seen))))
 
   (it "uses sequential session naming when the loaded configuration requests it"
@@ -95,7 +111,8 @@
                     (fn [name _] (reset! opened name) {:id name})
                     charge/build identity
                     bridge/dispatch! (fn [_] {})]
-        (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")}))
+        (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")})
+        (await-settled! "coil-2"))
       (should= "session-1" @opened)))
 
   (it "passes a submitted preamble to the charge at admission"
@@ -104,7 +121,8 @@
     (let [seen (atom nil)]
       (with-redefs [charge/build (fn [request] (reset! seen request) request)
                     bridge/dispatch! (fn [_] {})]
-        (sut/tick! {:now (Instant/parse "2026-03-01T23:30:00Z")}))
+        (sut/tick! {:now (Instant/parse "2026-03-01T23:30:00Z")})
+        (await-settled! "berth-1"))
       (should= "Bridge watch instructions" (:preamble @seen))))
 
   (it "runs a held turn whose stack now passes and drops it"
@@ -117,7 +135,8 @@
       (with-redefs [bridge/dispatch! (fn [charge]
                                        (swap! ran conj charge)
                                        {:content "Setting sail"})]
-        (sut/tick! {:now (Instant/parse "2026-03-01T23:30:00Z")}))
+        (sut/tick! {:now (Instant/parse "2026-03-01T23:30:00Z")})
+        (await-settled! "berth-1"))
       (should= 1 (count @ran))
       (should= "harbor" (:session-key (first @ran)))
       (should= "Leave harbor" (:input (first @ran)))
@@ -126,14 +145,15 @@
   (it "records a failed wake reason and finish time"
     (queue/enqueue! {:id "lamp-7" :session "harbor" :input "Trim lamp" :state :queued})
     (with-redefs [bridge/dispatch! (fn [_] {:error :provider :message "lamp oil spilled"})]
-      (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")}))
+      (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")})
+      (await-settled! "lamp-7"))
     (let [record (queue/read-held "lamp-7")]
       (should= :error (:outcome record))
       (should= "lamp oil spilled" (:reason record))
       (should (:started-at record))
       (should (:finished-at record))))
 
-  (it "runs every held turn whose stack now passes, in submit order"
+  (it "runs every held turn whose stack now passes"
     (queue/enqueue! {:id "later" :session "quay" :input "three"
                      :resource-pools [] :created-at "2026-03-01T14:00:02Z"})
     (queue/enqueue! {:id "first" :session "jetty" :input "two"
@@ -142,12 +162,18 @@
       (with-redefs [bridge/dispatch! (fn [charge]
                                        (swap! ran conj (:session-key charge))
                                        {})]
-        (sut/tick! {:now (Instant/parse "2026-03-01T23:30:00Z")}))
-      (should= ["jetty" "quay"] @ran)
+        (sut/tick! {:now (Instant/parse "2026-03-01T23:30:00Z")})
+        (await-settled! "later")
+        (await-settled! "first"))
+      ;; Both run — but no longer necessarily in submit order: each claimed
+      ;; turn starts on its own thread and moves on (isaac-e9jl), so
+      ;; completion order across different sessions is no longer guaranteed.
+      (should= #{"jetty" "quay"} (set @ran))
       (should= [] (queue/list-held))))
 
-  (it "runs a wake requested while another tick is dispatching"
+  (it "starts a claimed turn on its own thread so a slow session doesn't stall another session in the same pass (isaac-e9jl)"
     (queue/enqueue! {:id "first" :session "jetty" :input "one" :resource-pools []})
+    (queue/enqueue! {:id "second" :session "quay" :input "two" :resource-pools []})
     (let [started (promise)
           release (promise)
           ran     (atom [])]
@@ -157,13 +183,22 @@
                                          (deliver started true)
                                          @release)
                                        {})]
-        (let [active-tick (future (sut/tick!))]
-          @started
-          (queue/enqueue! {:id "second" :session "quay" :input "two" :resource-pools []})
-          (sut/tick!)
-          (deliver release true)
-          (deref active-tick 1000 ::timeout)))
-      (should= ["jetty" "quay"] @ran)
+        ;; The pre-fix synchronous tick would block here for as long as
+        ;; "jetty" holds dispatch!, since run-one-pass! dispatched each
+        ;; record inline. Bound the deref so a regression fails fast
+        ;; instead of hanging the suite.
+        (should= false (= ::timeout
+                          (deref (future (sut/tick! {:now (Instant/parse "2026-03-01T23:30:00Z")}))
+                                 2000 ::timeout)))
+        @started
+        ;; "quay" (second) finishes without waiting for "jetty" (first),
+        ;; which is still blocked inside dispatch!.
+        (await-settled! "second")
+        (should= :finished (:state (queue/read-held "second")))
+        (should= :running (:state (queue/read-held "first")))
+        (deliver release true)
+        (await-settled! "first"))
+      (should= #{"jetty" "quay"} (set @ran))
       (should= [] (queue/list-held))))
 
   (it "accepts the next tick after queue inspection fails"
@@ -212,7 +247,8 @@
                      :state      :held})
     (with-redefs [bridge/dispatch! (fn [_]
                                      {:held true :id "berth-1" :reason :hold})]
-      (sut/tick! {:now (Instant/parse "2026-03-01T23:30:00Z")}))
+      (sut/tick! {:now (Instant/parse "2026-03-01T23:30:00Z")})
+      (await-settled! "berth-1"))
     (should= "berth-1" (:id (queue/read-held "berth-1"))))
 
   (it "builds the wake charge from the current config snapshot"
@@ -230,7 +266,8 @@
                                       (reset! seen request)
                                       (assoc request :charge/type :charge :model "echo"))
                     bridge/dispatch! (fn [_] {:content "Setting sail"})]
-        (sut/tick! {:now (Instant/parse "2026-03-01T23:30:00Z")}))
+        (sut/tick! {:now (Instant/parse "2026-03-01T23:30:00Z")})
+        (await-settled! "berth-1"))
       (should= cfg (:config @seen))
       (should= "harbor" (:session-key @seen))
       (should= "Leave harbor" (:input @seen))))
@@ -259,7 +296,8 @@
                                        (reset! seen request)
                                        (assoc request :charge/type :charge :model "echo"))
                     bridge/dispatch! (fn [_] {:content "Setting sail"})]
-        (sut/tick! {:now (Instant/parse "2026-03-01T23:30:00Z")}))
+        (sut/tick! {:now (Instant/parse "2026-03-01T23:30:00Z")})
+        (await-settled! "berth-1"))
       (should= "grover" (get-in @seen [:config :defaults :crew :model]))
       (should= "harbor" (:session-key @seen))))
 

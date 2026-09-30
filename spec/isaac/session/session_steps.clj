@@ -1387,7 +1387,12 @@
         (throw (ex-info "turn did not complete within 30 seconds" {})))
       (g/update! :turn-futures-by-session dissoc key-str)
       (when (= turn-future (g/get :turn-future))
-        (complete-turn! result)))))
+        (complete-turn! result))))
+  ;; This session's release (in-flight clear, pool lease) can itself wake a
+  ;; held or waiting-session turn on the turn queue — bridge.core's own
+  ;; drain-on-release nudge starts it and moves on (isaac-e9jl); await that
+  ;; chain too so the very next step can assert on its outcome.
+  (turn-worker/await-idle!))
 
 (defn session-in-flight-status [key-str expected]
   (g/should= (= "true" expected) (store/in-flight? (session-store) key-str)))
@@ -2303,7 +2308,11 @@
       (when (= ::timeout result)
         (throw (ex-info "turn did not complete within 30 seconds" {})))))
   (g/dissoc! :turn-futures)
-  (turn-worker/tick!))
+  ;; turn-worker/tick! only claims and starts each runnable turn before
+  ;; returning (isaac-e9jl); await-idle! waits out that turn (and any it
+  ;; chains via a drain-on-release nudge) before the next step runs.
+  (turn-worker/tick!)
+  (turn-worker/await-idle!))
 
 (defwhen #"the user sends \"(.+)\" on session \"([^\"]+)\" as crew \"([^\"]+)\""
   isaac.session.session-steps/user-sends-on-session-as-crew

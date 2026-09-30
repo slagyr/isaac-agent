@@ -170,7 +170,6 @@ Feature: Turn store — every turn has a durable record and a stable id
       | type    | message.role | message.content |
       | message | assistant    | Setting sail    |
 
-  @wip
   Scenario: queued turns on different sessions run side by side (isaac-e9jl)
     One long turn must not stall the fleet. The queue tick starts each turn
     it claims and moves on; only a turn's own session waits for it.
