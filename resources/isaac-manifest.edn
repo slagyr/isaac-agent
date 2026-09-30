@@ -2,6 +2,7 @@
  :version "0.1.94",
  :builtin? true,
  :factory isaac.agent.module/create-module,
+ :handbook "isaac/agent/handbook.md",
  :berths
  #:isaac.agent{:tools
                {:description "LLM tool factories.",
@@ -229,12 +230,18 @@
   {:entity-dir "resource-pools"
    :merge-root-entity? true
    :schema {:type :map :key-spec {:type :string}
+            :description "Named admission gates a turn leases before it runs (map of pool id -> pool config); a busy pool parks the turn on the turn queue until it frees."
             :value-spec {:type :map
-                         :schema {:type {:type :keyword}
-                                  :window {:type :string}
-                                  :name {:type :string}
-                                  :limit {:type :int}
-                                  :members {:type :seq :spec {:type :string}}}}}},
+                         :schema {:type {:type :keyword
+                                         :description "Pool behavior/factory id, e.g. :tide (a clock-window gate); registered via the :isaac.agent/resource-pool-types berth."}
+                                  :window {:type :string
+                                           :description "For :tide pools: an \"HH:mm-HH:mm\" clock range (wraparound allowed) during which the pool admits turns."}
+                                  :name {:type :string
+                                         :description "Display name for this pool instance, passed through to its factory."}
+                                  :limit {:type :int
+                                          :description "Concurrency cap interpreted by the pool's own factory (not used by :tide)."}
+                                  :members {:type :seq :spec {:type :string}
+                                            :description "Member resource paths this pool coordinates access to, for pool types that gate a shared list of resources."}}}}},
   :providers
   {:entity-dir "providers",
    :merge-root-entity? true,
@@ -332,13 +339,15 @@
       {:type :map,
        :description "Compaction policy override for this provider",
        :schema
-       {:async? {:type :boolean},
+       {:async? {:type :boolean
+                 :description "Run compaction in a background thread instead of blocking the current turn; a per-session lock coordinates transcript appends with the splice."},
         :effort
         {:type :int,
          :description
          "Effort used for compaction summary requests (default 2)"},
         :head
         {:type :double,
+         :description "Fraction of the context window's worth of recent transcript kept intact (uncompacted) under the :slinky strategy (default 0.3)."
          :validations
          [[:percentage? "e.g. 0.3 for 30% of context-window"]]},
         :head-threshold
@@ -347,9 +356,11 @@
          :validations [[:less-than? :head :threshold]]},
         :strategy
         {:type :keyword,
+         :description "How compaction folds transcript history when the gauge crosses :threshold: :rubberband compacts everything compactable in one shot; :slinky compacts only the older portion, leaving the most recent :head fraction of the window intact."
          :validations [[:one-of? :rubberband :slinky]]},
         :threshold
         {:type :double,
+         :description "Fraction of the model's context window that, once the running token gauge reaches or exceeds it, triggers compaction (default 0.8)."
          :validations
          [[:percentage? "e.g. 0.8 for 80% of context-window"]]}}},
       :originator
@@ -386,24 +397,29 @@
     :schema
     {:max-parallel
      {:type :int,
+      :description "Retired: crew-wide max concurrent tool calls now lives at :defaults :crew :tools :max-parallel."
       :validations [[:retired? "use :defaults :crew :tools :max-parallel"]]}
      :defaults
      {:type :map,
+      :description "Retired: per-tool defaults now live at :defaults :tools."
       :validations [[:retired? "use :defaults :tools"]]}
      :web_search
      {:type :map,
       :description "Web search tool config",
       :schema
-      {:provider {:type :keyword, :validations [[:one-of? :brave]]},
-       :api-key {:type :string, :validations [:present?]}}}
+      {:provider {:type :keyword, :description "Web search backend to use (only :brave is registered)." :validations [[:one-of? :brave]]},
+       :api-key {:type :string, :description "API key for the configured web search provider." :validations [:present?]}}}
      :allow
      {:type :ignore,
+      :description "Retired: tool allow list now lives at :defaults :crew :tools :allow."
       :validations [[:retired? "use :defaults :crew :tools :allow"]]}
      :deny
      {:type :ignore,
+      :description "Retired: tool deny list now lives at :defaults :crew :tools :deny."
       :validations [[:retired? "use :defaults :crew :tools :deny"]]}
      :directories
      {:type :map,
+      :description "Retired: tool directory overlay now lives at :defaults :crew :tools :directories."
       :validations [[:retired? "use :defaults :crew :tools :directories"]]}}}},
   :crew
   {:entity-dir "crew",
@@ -490,14 +506,17 @@
        [[:registered-in? :isaac.agent/provider [:providers]]]},
       :compaction
       {:type :map,
+       :description "Compaction policy override for this crew",
        :schema
-       {:async? {:type :boolean},
+       {:async? {:type :boolean
+                 :description "Run compaction in a background thread instead of blocking the current turn; a per-session lock coordinates transcript appends with the splice."},
         :effort
         {:type :int,
          :description
          "Effort used for compaction summary requests (default 2)"},
         :head
         {:type :double,
+         :description "Fraction of the context window's worth of recent transcript kept intact (uncompacted) under the :slinky strategy (default 0.3)."
          :validations
          [[:percentage? "e.g. 0.3 for 30% of context-window"]]},
         :head-threshold
@@ -506,13 +525,16 @@
          :validations [[:less-than? :head :threshold]]},
         :strategy
         {:type :keyword,
+         :description "How compaction folds transcript history when the gauge crosses :threshold: :rubberband compacts everything compactable in one shot; :slinky compacts only the older portion, leaving the most recent :head fraction of the window intact."
          :validations [[:one-of? :rubberband :slinky]]},
         :threshold
         {:type :double,
+         :description "Fraction of the model's context window that, once the running token gauge reaches or exceeds it, triggers compaction (default 0.8)."
          :validations
          [[:percentage? "e.g. 0.8 for 80% of context-window"]]}}},
       :max-in-flight
       {:type :ignore,
+       :description "Retired: the crew-wide in-flight cap is gone; turns serialize per session only."
        :validations
        [[:retired? "the crew-wide in-flight cap is gone (isaac-ximd); turns serialize per session only"]]},
       :cycle
@@ -596,27 +618,35 @@
         :description "Max UTF-8 bytes in a tool result string before head-tail truncation"}}},
      :context-mode
      {:type :keyword,
+      :description "Retired: default context mode now lives at :defaults :crew :context-mode."
       :validations [[:retired? "use :defaults :crew :context-mode"]]},
      :cycle
      {:type :map,
+      :description "Retired: default cycle knobs now live at :defaults :crew :cycle."
       :validations [[:retired? "use :defaults :crew :cycle"]]},
      :effort
      {:type :int,
+      :description "Retired: default effort now lives at :defaults :provider :effort."
       :validations [[:retired? "use :defaults :provider :effort"]]},
      :history-retention
      {:type :keyword,
+      :description "Retired: default history retention now lives at :defaults :provider :history-retention."
       :validations [[:retired? "use :defaults :provider :history-retention"]]},
      :compaction
      {:type :map,
+      :description "Retired: default compaction policy now lives at :defaults :provider :compaction."
       :validations [[:retired? "use :defaults :provider :compaction"]]},
      :stream-idle-timeout-ms
      {:type :int,
+      :description "Retired: default stream idle timeout now lives at :defaults :provider :stream-idle-timeout-ms."
       :validations [[:retired? "use :defaults :provider :stream-idle-timeout-ms"]]},
      :provider-retry-after-ms
      {:type :int,
+      :description "Retired: default provider retry-after now lives at :defaults :provider :retry-after-ms."
       :validations [[:retired? "use :defaults :provider :retry-after-ms"]]},
      :provider-auth-retry-ms
      {:type :int,
+      :description "Retired: default provider auth-retry now lives at :defaults :provider :auth-retry-ms."
       :validations [[:retired? "use :defaults :provider :auth-retry-ms"]]}}}},
   :attention
   {:schema
@@ -634,8 +664,8 @@
      {:type :map,
       :description "Break-glass attention channel (declared; unused in 5a4n)",
       :schema
-      {:comm {:type :string},
-       :target {:type :string}}}}}},
+      {:comm {:type :string :description "Comm id to deliver break-glass attention messages"},
+       :target {:type :string :description "Comm-specific target (channel, user, etc.)"}}}}}},
   :skill-paths
   {:schema
    {:type :seq,
@@ -693,13 +723,15 @@
       {:type :map,
        :description "Compaction policy override for this model",
        :schema
-       {:async? {:type :boolean},
+       {:async? {:type :boolean
+                 :description "Run compaction in a background thread instead of blocking the current turn; a per-session lock coordinates transcript appends with the splice."},
         :effort
         {:type :int,
          :description
          "Effort used for compaction summary requests (default 2)"},
         :head
         {:type :double,
+         :description "Fraction of the context window's worth of recent transcript kept intact (uncompacted) under the :slinky strategy (default 0.3)."
          :validations
          [[:percentage? "e.g. 0.3 for 30% of context-window"]]},
         :head-threshold
@@ -708,9 +740,11 @@
          :validations [[:less-than? :head :threshold]]},
         :strategy
         {:type :keyword,
+         :description "How compaction folds transcript history when the gauge crosses :threshold: :rubberband compacts everything compactable in one shot; :slinky compacts only the older portion, leaving the most recent :head fraction of the window intact."
          :validations [[:one-of? :rubberband :slinky]]},
         :threshold
         {:type :double,
+         :description "Fraction of the model's context window that, once the running token gauge reaches or exceeds it, triggers compaction (default 0.8)."
          :validations
          [[:percentage? "e.g. 0.8 for 80% of context-window"]]}}},
       :model

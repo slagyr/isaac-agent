@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Handbook chapter (`isaac/agent/handbook.md`, manifest `:handbook`): crews, souls, tools/directories, sessions/transcripts, turns/tool loop, compaction, providers/models/effort, bridge/slash commands, and comms/delivery, written for a crew operating Isaac. Adds `spec/isaac/agent/handbook_chapter_spec.clj` (backtick `config:<path>` refs resolve against the composed schema; `isaac <command>` refs are registered). Fills in missing schema `:description`s (`resource-pools`, `tools.web_search`, the three `:compaction` maps, `attention.break-glass`, and several retired `:defaults`/`:tools` fields) so the generated config reference stays complete (isaac-aaf4).
 - Agent accepts a generic per-turn `:preamble` through durable submission and charge construction, admits create-enabled/tagged hails with live session naming, retains explicit-session behavior and band cycle overrides, and preserves keyed requests across retries (isaac-ex4q).
 
 - TurnStore persists every accepted turn under `turns/<id>.edn`, retaining its stable id and outcome through queue, hold, wait, completion and restart. `prompt --queue` accepts without running, `--key` deduplicates, `turns show` inspects a record, and `turns list --all` includes finished and merged requests (isaac-70cr).
