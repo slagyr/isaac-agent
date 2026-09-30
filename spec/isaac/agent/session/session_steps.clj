@@ -1698,12 +1698,20 @@
 
 (defn- await-transcript-turn! [key-str]
   (if-let [turn-future (g/get-in [:turn-futures-by-session key-str])]
-    (if (= turn-future (g/get :turn-future))
-      (await-turn!)
+    ;; A concurrently-parked session (isaac-e9jl lets sessions run side by
+    ;; side) is only the single legacy :turn-future slot by accident of
+    ;; which pending send filled it first — that equality is not a signal
+    ;; that THIS session is the one under test. Block on it only when it is
+    ;; not still intentionally wait-gated: an unrealized, actively-waiting
+    ;; future is one this step should never force to completion (isaac-n8uv),
+    ;; only read whatever it has already persisted.
+    (when-not (and (not (realized? turn-future)) (grover/waiting? key-str))
       (let [result (deref turn-future 30000 ::timeout)]
         (when (= ::timeout result)
           (throw (ex-info "turn did not complete within 30 seconds" {:session key-str})))
-        (g/update! :turn-futures-by-session dissoc key-str)))
+        (g/update! :turn-futures-by-session dissoc key-str)
+        (when (= turn-future (g/get :turn-future))
+          (complete-turn! result))))
     (when-not (seq (g/get :turn-futures-by-session))
       (await-turn!))))
 

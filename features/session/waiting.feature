@@ -51,3 +51,23 @@ Feature: A busy session queues its next messages; same-thread prompts consolidat
     And the log has entries matching:
       | level | event           | session | key | count |
       | :info | :turn/coalesced | dm      | t1  | 2     |
+
+  Scenario: a session's transcript check does not block on a different session's still-parked turn (isaac-n8uv)
+    Given the following sessions exist:
+      | name | crew |
+      | dm   | main |
+      | dm2  | main |
+    And the following model responses are queued:
+      | model | type | content       | wait |
+      | echo  | text | First reply.  | true |
+      | echo  | text | Second reply. | true |
+    When the user sends "one" on session "dm" without waiting via memory comm
+    And the user sends "two" on session "dm2" without waiting via memory comm
+    And the turn ends on session "dm2"
+    Then session "dm2" has transcript matching:
+      | type    | message.role | message.content |
+      | message | user         | two             |
+      | message | assistant    | Second reply.   |
+    And session "dm" has transcript matching:
+      | type    | message.role | message.content |
+      | message | user         | one             |
