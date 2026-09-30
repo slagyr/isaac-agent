@@ -201,6 +201,27 @@
       (should= #{"jetty" "quay"} (set @ran))
       (should= [] (queue/list-held))))
 
+  (it "does not run a duplicate turn for a coalesced member exposed by a nested drain (isaac-2tez)"
+    ;; bridge.core's own-session drain-waiting-session fires a nested tick!
+    ;; from inside dispatch! (its finally, after clearing in-flight but
+    ;; before process-record! marks the coalesced group's members
+    ;; :finished). Before isaac-2tez, run-one-pass! claimed only the merged
+    ;; record's own id, leaving the other coalesced member still
+    ;; :waiting-session — visible to that nested tick!, which re-discovers
+    ;; it and starts a second, spurious turn for it alone.
+    (queue/enqueue! {:id "two" :session "harbor" :input "two" :state :waiting-session
+                     :coalesce-key "t1" :created-at "2026-03-01T14:00:01Z"})
+    (queue/enqueue! {:id "three" :session "harbor" :input "three" :state :waiting-session
+                     :coalesce-key "t1" :created-at "2026-03-01T14:00:02Z"})
+    (let [ran (atom [])]
+      (with-redefs [bridge/dispatch! (fn [charge]
+                                       (swap! ran conj (:input charge))
+                                       (sut/tick! {:now (Instant/parse "2026-03-01T14:00:03Z")})
+                                       {:content "Both answered."})]
+        (sut/tick! {:now (Instant/parse "2026-03-01T14:00:00Z")})
+        (sut/await-idle!))
+      (should= ["two\nthree"] @ran)))
+
   (it "accepts the next tick after queue inspection fails"
     (let [calls (atom 0)]
       (with-redefs [queue/list-held (fn []

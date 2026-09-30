@@ -121,8 +121,9 @@
               :error (:error result)
               :session (:session record))
     (if (still-held? result)
-      (when (= :running (:state (queue/read-held (:id record))))
-        (queue/update-turn! (:id record) {:state :held}))
+      (doseq [id (or (:held-ids record) [(:id record)])]
+        (when (= :running (:state (queue/read-held id)))
+          (queue/update-turn! id {:state :held})))
       (doseq [id (or (:held-ids record) [(:id record)])]
         (queue/update-turn! id (cond-> {:state :finished :outcome (if (:error result) :error :ok)}
                                  (not= id (:id record)) (assoc :merged-into (:id record))
@@ -217,6 +218,15 @@
         (when (> (count records) 1)
           (log/info :turn/coalesced :session session :key (:coalesce-key record) :count (count records)))
         (when (queue/claim! (:id record))
+          ;; Claim every trailing coalesced member too, not just the merged
+          ;; record's own id. Otherwise they sit at :waiting-session while
+          ;; this turn runs, and a nested tick! (bridge.core's own-session
+          ;; drain-waiting-session, fired from this very turn's dispatch!
+          ;; before process-record! marks them :finished) rediscovers them
+          ;; and starts a second, spurious turn (isaac-2tez).
+          (doseq [{id :id} records
+                  :when (not= id (:id record))]
+            (queue/claim! id))
           (run-record-async! now record))))))
 
 (defn tick!
