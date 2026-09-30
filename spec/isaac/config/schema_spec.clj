@@ -43,13 +43,13 @@
 
     (it "requires a default crew without supplying an implicit identity"
       (let [crew-spec (get-in sut/defaults [:schema :frequencies :schema :crew])]
-        (should (:required? crew-spec))
+        (should (:required crew-spec))
         (should-not (contains? crew-spec :default))))
 
     (it "each :defaults section is its entity's schema, never a required one"
       (should= :int (get-in sut/defaults [:schema :provider :schema :effort :type]))
       (should= :keyword (get-in sut/defaults [:schema :crew :schema :context-mode :type]))
-      (should-be-nil (get-in sut/defaults [:schema :model :schema :provider :required?])))
+      (should-be-nil (get-in sut/defaults [:schema :model :schema :provider :required])))
 
     (it "the flat :defaults keys are retired, each naming its new path"
       (should= [[:retired? "use :defaults :provider :effort"]]
@@ -58,7 +58,9 @@
                (get-in sut/defaults [:schema :provider-retry-after-ms :validations])))
 
     (it "defaults conforms provider stream-idle-timeout-ms"
-      (should= {:provider {:stream-idle-timeout-ms 100}}
+      ;; apron 3.2.1's :default now fills the provider entity's other two
+      ;; retry-ms fields alongside the explicit override (isaac-dnib).
+      (should= {:provider {:stream-idle-timeout-ms 100 :retry-after-ms 1800000 :auth-retry-ms 300000}}
                (lexicon/conform (runtime-spec sut/defaults)
                                 {:provider {:stream-idle-timeout-ms 100}})))
 
@@ -148,7 +150,9 @@
                                  :context-window 128000})))
 
     (it "provider conforms including string-to-string headers"
-      (should= {:base-url "https://api" :api marigold/helm-api :auth "oauth-device" :headers {"X-Foo" "bar"}}
+      ;; apron 3.2.1's :default fills the three retry-ms fields (isaac-dnib).
+      (should= {:base-url "https://api" :api marigold/helm-api :auth "oauth-device" :headers {"X-Foo" "bar"}
+                :stream-idle-timeout-ms 90000 :retry-after-ms 1800000 :auth-retry-ms 300000}
                (lexicon/conform (runtime-spec sut/provider)
                                 {:base-url "https://api"
                                  :api      marigold/helm-api
@@ -156,7 +160,7 @@
                                  :headers  {"X-Foo" "bar"}})))
 
     (it "provider conforms stream-idle-timeout-ms override"
-      (should= {:stream-idle-timeout-ms 45000}
+      (should= {:stream-idle-timeout-ms 45000 :retry-after-ms 1800000 :auth-retry-ms 300000}
                (lexicon/conform (runtime-spec sut/provider)
                                 {:stream-idle-timeout-ms 45000})))
 
@@ -164,6 +168,9 @@
       (should= {:base-url "https://api.x.ai/v1"
                 :api marigold/helm-api
                 :auth "oauth-device"
+                :stream-idle-timeout-ms 90000
+                :retry-after-ms 1800000
+                :auth-retry-ms 300000
                 :oauth {:issuer "https://auth.x.ai"
                         :client-id "grok-client"
                         :device-path "/oauth2/device/code"

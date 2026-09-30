@@ -244,7 +244,7 @@
     :snapshot-only? true,
     :description
     "Provider configurations (map of id -> provider config)",
-    :key-spec {:type :string},
+    :key-spec {:type :id},
     :value-spec
     {:name :provider,
      :type :map,
@@ -416,7 +416,7 @@
     :snapshot-only? true,
     :description
     "Crew member configurations (map of id -> crew config)",
-    :key-spec {:type :string},
+    :key-spec {:type :id},
     :value-spec
     {:name :crew,
      :type :map,
@@ -565,7 +565,7 @@
        :override
        {:crew
         {:type :id,
-         :required? true,
+         :required true,
          :description "Default crew member id",
          :validations [:present? :crew-exists?]}}}},
      :crew
@@ -649,7 +649,7 @@
     :type :map,
     :snapshot-only? true,
     :description "Model configurations (map of id -> model config)",
-    :key-spec {:type :string},
+    :key-spec {:type :id},
     :value-spec
     {:name :model,
      :type :map,
@@ -681,9 +681,8 @@
       {:type :id,
        :description "Provider alias",
        :validations
-       [:present?
-        [:registered-in? :isaac.agent/provider [:providers]]],
-       :required? true},
+       [[:registered-in? :isaac.agent/provider [:providers]]],
+       :required true},
       :context-window
       {:type :int, :description "Context window size in tokens"},
       :think-mode
@@ -717,8 +716,7 @@
       :model
       {:type :string,
        :description "Provider-specific model name or id",
-       :validations [:present?],
-       :required? true}}}}},
+       :required true}}}}},
   :command-paths
   {:schema
    {:type :seq,

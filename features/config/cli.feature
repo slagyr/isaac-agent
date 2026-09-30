@@ -511,7 +511,7 @@ Feature: Config Command
       | pattern                          |
       | \[crew\] crew table schema       |
       | map of                           |
-      | key\s+string\s+\[crew\.key\]     |
+      | key\s+id\s+\[crew\.key\]         |
       | value\s+.*crew\s+\[crew\.value\] |
       | Crew member configurations       |
     And the stdout does not contain "Model alias"
@@ -532,7 +532,7 @@ Feature: Config Command
     Then the stdout matches:
       | pattern                     |
       | \[providers\.key\] schema   |
-      | string\s+\[providers\.key\] |
+      | id\s+\[providers\.key\]     |
     And the exit code is 0
 
   Scenario: config schema providers.value prints the provider entity template
