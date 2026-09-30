@@ -1,9 +1,13 @@
 (ns isaac.agent.handbook-chapter-spec
   "Lint for isaac.agent's own handbook chapter (isaac-aaf4): every backtick
-   `config:<path>` reference must resolve against the composed config schema,
-   and every `isaac <command>` invocation must name a registered top-level
-   CLI command. See the convention comment at the top of the chapter file
-   itself (isaac.foundation.handbook.md carries the canonical copy)."
+   `config:<dotted.path>` reference (no angle-bracket placeholder inside the
+   path) must resolve against the composed config schema, and the word
+   right after `isaac ` in every `isaac <command>` invocation must name a
+   registered top-level CLI command. Keep both literal and real when you
+   write one — this lint fails the build once either drifts from what
+   Isaac actually exposes. `<placeholder>` shapes (e.g.
+   `config:<dotted.path>` itself, or `<module-id>#<slug>`) are
+   intentionally skipped. Mirrors isaac.foundation.handbook-chapter-spec."
   (:require
     [clojure.java.io :as io]
     [clojure.string :as str]
