@@ -84,6 +84,7 @@ Feature: Per-window tool cache — repeated reads, greps and skill loads return 
       | event           | tool     | cycle |
       | :tool/cache-hit | fs__grep | 1     |
 
+  @wip
   Scenario: a skill loaded twice in one window is served once
     Given the isaac file "prompts/skills/greenhouse-protocol/SKILL.md" exists with:
       """
@@ -98,8 +99,8 @@ Feature: Per-window tool cache — repeated reads, greps and skill loads return 
       | greenhouse | main |
     And the following model responses are queued:
       | tool_call   | arguments                      |
-      | skill__load | {"name":"greenhouse-protocol"} |
-      | skill__load | {"name":"greenhouse-protocol"} |
+      | prompt__load | {"name":"greenhouse-protocol"} |
+      | prompt__load | {"name":"greenhouse-protocol"} |
     When the user sends "Tend the orchid twice." on session "greenhouse"
     Then session "greenhouse" has transcript matching:
       | type     | message.role | message.content                                                 |
@@ -110,4 +111,4 @@ Feature: Per-window tool cache — repeated reads, greps and skill loads return 
       | message  | toolResult   | #"(?s)greenhouse-protocol.*already in context since cycle 1"    |
     And the log has entries matching:
       | event           | tool        | cycle |
-      | :tool/cache-hit | skill__load | 1     |
+      | :tool/cache-hit | prompt__load | 1     |

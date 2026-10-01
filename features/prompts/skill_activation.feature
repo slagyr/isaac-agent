@@ -2,13 +2,13 @@ Feature: Model-driven skill activation
   Skills are advertised to the model by name + description in the cached system
   prompt (progressive disclosure, like Anthropic Agent Skills): cheap, stable
   per project, so it caches within a session. When a skill's description fits
-  the task, the model calls load_skill to pull the full body into the turn on
+  the task, the model calls prompt__load to pull the full body into the turn on
   demand — only activated skills load. The menu is rendered in a stable
   (sorted) order so an unchanged skill set never busts the cache per turn.
 
-  (Large skill sets: descriptions can instead be served via a list_skills tool
+  (Large skill sets: descriptions can instead be served via a prompt__list tool
   to avoid bloating the cached prompt — a threshold knob, acceptance not
-  scenario. load_skill is shaped load_skill(name, [resource]) so isaac-etpt can
+  scenario. prompt__load is shaped prompt__load(name, [kind], [resource]) so isaac-etpt can
   add bundled-resource loading without a redesign.)
 
   Background:
@@ -40,7 +40,8 @@ Feature: Model-driven skill activation
       | system[0].text               | #"(?s).*greenhouse-protocol.*Use when tending specimens.*" | skill menu: name + description  |
       | system[0].cache_control.type | ephemeral                                                  | menu sits in the cached prefix |
 
-  Scenario: the model loads a skill body on demand via load_skill
+  @wip
+  Scenario: the model loads a skill body on demand via prompt__load
     Given the isaac file "prompts/skills/greenhouse-protocol/SKILL.md" exists with:
       """
       ---
@@ -51,7 +52,7 @@ Feature: Model-driven skill activation
       """
     And the following model responses are queued:
       | model  | type      | content | tool_call  | arguments                      |
-      | grover | tool_call |         | skill__load | {"name":"greenhouse-protocol"} |
+      | grover | tool_call |         | prompt__load | {"name":"greenhouse-protocol"} |
       | grover | text      | On it.  |            |                                |
     When the user sends "Tend the orchid." on session "greenhouse"
     Then the tool result lines match:

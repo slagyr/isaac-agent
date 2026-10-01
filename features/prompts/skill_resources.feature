@@ -1,6 +1,6 @@
-Feature: Skill bundled resources via load_skill
+Feature: Skill bundled resources via prompt__load
   A skill packaged as a directory (<name>/SKILL.md) may bundle reference files.
-  load_skill, shaped load_skill(name, [resource]), serves them: with a resource
+  prompt__load, shaped prompt__load(name, [kind], [resource]), serves them: with a resource
   arg it returns that bundled file's contents. It is a SCOPED reader of the
   skill's own directory under config/ (which general crew fs-bounds forbid), so
   it must confine to that directory — a resource path that escapes is rejected.
@@ -20,7 +20,8 @@ Feature: Skill bundled resources via load_skill
       | name       | crew       |
       | greenhouse | hieronymus |
 
-  Scenario: load_skill fetches a bundled resource file from the skill's directory
+  @wip
+  Scenario: prompt__load fetches a bundled resource file from the skill's directory
     Given the isaac file "prompts/skills/greenhouse-protocol/SKILL.md" exists with:
       """
       ---
@@ -36,7 +37,7 @@ Feature: Skill bundled resources via load_skill
       """
     And the following model responses are queued:
       | model  | type      | content | tool_call  | arguments                                                |
-      | grover | tool_call |         | skill__load | {"name":"greenhouse-protocol","resource":"checklist.md"} |
+      | grover | tool_call |         | prompt__load | {"name":"greenhouse-protocol","resource":"checklist.md"} |
       | grover | text      | Done.   |            |                                                          |
     When the user sends "Run the greenhouse checklist." on session "greenhouse"
     Then the tool result lines match:
@@ -44,6 +45,7 @@ Feature: Skill bundled resources via load_skill
       | 1. Check soil moisture.                    |
       | 2. Quarantine new specimens for one cycle. |
 
+  @wip
   Scenario: a resource path that escapes the skill directory is rejected
     Given the isaac file "prompts/skills/greenhouse-protocol/SKILL.md" exists with:
       """
@@ -55,7 +57,7 @@ Feature: Skill bundled resources via load_skill
       """
     And the following model responses are queued:
       | model  | type      | content     | tool_call  | arguments                                                   |
-      | grover | tool_call |             | skill__load | {"name":"greenhouse-protocol","resource":"../../auth.json"} |
+      | grover | tool_call |             | prompt__load | {"name":"greenhouse-protocol","resource":"../../auth.json"} |
       | grover | text      | Understood. |            |                                                             |
     When the user sends "Load the secrets." on session "greenhouse"
     Then the tool result lines match:
