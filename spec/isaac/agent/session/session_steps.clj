@@ -397,15 +397,38 @@
         (first (configured-crew-ids)))
       (get-in (loaded-config) [:defaults :frequencies :crew])))
 
+(defn- isaac-edn-path []
+  (str (root-dir) "/config/isaac.edn"))
+
+(defn- read-isaac-edn []
+  (let [fs* (mem-fs) path (isaac-edn-path)]
+    (if (fs/exists? fs* path) (edn/read-string (fs/slurp fs* path)) {})))
+
+(defn- write-isaac-edn! [data]
+  (let [fs* (mem-fs) path (isaac-edn-path)]
+    (fs/mkdirs fs* (fs/parent path))
+    (fs/spit   fs* path (pr-str data))))
+
 (defn- update-crew-config! [crew-id f]
   (with-feature-fs
     (fn []
-      (let [path    (crew-config-path crew-id)
-            fs*     (mem-fs)
-            current (if (fs/exists? fs* path) (edn/read-string (fs/slurp fs* path)) {})
-            updated (f current)]
-        (fs/mkdirs fs* (fs/parent path))
-        (fs/spit   fs* path (pr-str updated))
+      (let [root-data (read-isaac-edn)
+            crew-kw   (keyword crew-id)]
+        (if (contains? (:crew root-data) crew-kw)
+          ;; isaac-4g2k: a root-declared crew entity (written via "the isaac
+          ;; EDN file config/isaac.edn exists with: crew.<id>...") wins over
+          ;; the config/crew/<id>.edn entity file wholesale (foundation's
+          ;; merge-root-entity-with-schema assoc-in's the whole entity). Write
+          ;; into the root entity instead so a later allow/deny step merges
+          ;; alongside whatever that root entity already declared, rather
+          ;; than being silently discarded at config load.
+          (write-isaac-edn! (update-in root-data [:crew crew-kw] f))
+          (let [path    (crew-config-path crew-id)
+                fs*     (mem-fs)
+                current (if (fs/exists? fs* path) (edn/read-string (fs/slurp fs* path)) {})
+                updated (f current)]
+            (fs/mkdirs fs* (fs/parent path))
+            (fs/spit   fs* path (pr-str updated))))
         (invalidate-feature-config!)))))
 
 (defn- lookup-model-cfg [models model-id]
@@ -737,7 +760,7 @@
     (doseq [tool tools]
       (when-not (tool-registry/lookup (:name tool))
         (tool-registry/register! (assoc tool :handler (fn [_] {:result "ok"})))))
-    (update-crew-config! crew-id #(assoc % :tools {:allow allow}))))
+    (update-crew-config! crew-id #(update % :tools merge {:allow allow}))))
 
 (defn config-applied
   "Delegates to the foundation-grade `config:` step implementation."
@@ -758,7 +781,7 @@
                        (map str/trim)
                        (remove str/blank?)
                        (mapv keyword))]
-        (update-crew-config! crew-id #(assoc % :tools {:allow allow}))))))
+        (update-crew-config! crew-id #(update % :tools merge {:allow allow}))))))
 
 (defn telly-comm-module-registered []
   ;; Module ids contain dots; persist-config-entry! splits on "." so we

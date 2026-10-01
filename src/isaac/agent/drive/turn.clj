@@ -555,6 +555,18 @@
                 tool-loop/default-max-parallel-tools)]
     (parse-long-or-raw raw)))
 
+(defn- resolve-tool-timeout-ms
+  "Crew override of the tool-call deadline, else the global default
+   (:defaults :tools :timeout-ms). Nil here is fine — the registry falls
+   back to its own hard-coded default when neither is configured; a tool's
+   own declared :timeout-ms still outranks both (isaac-4g2k)."
+  [{:keys [config crew crew-cfg]}]
+  (parse-long-or-raw
+    (or (get-in crew-cfg [:tools :timeout-ms])
+        (get-in config [:crew (keyword crew) :tools :timeout-ms])
+        (get-in config [:crew crew :tools :timeout-ms])
+        (defaults/tool-timeout-ms config))))
+
 (def ended-by-values #{:reply :cycle-limit :cancelled :error :context-exhausted :provider-unavailable :suspended})
 
 (defn- classify-ended-by [result]
@@ -1600,8 +1612,9 @@
         cycle-cfg     (resolve-cycle {:cycle cycle :config config :crew crew :crew-cfg crew-cfg})
         cycle-budget  (:limit cycle-cfg)
         max-parallel  (resolve-max-parallel-tools {:config config :crew crew :crew-cfg crew-cfg})
-        caps          {:max-lines (:max-lines (defaults/tool-caps config))
-                       :max-bytes (:max-bytes (defaults/tool-caps config))}
+        caps          {:max-lines  (:max-lines (defaults/tool-caps config))
+                       :max-bytes  (:max-bytes (defaults/tool-caps config))
+                       :timeout-ms (resolve-tool-timeout-ms {:config config :crew crew :crew-cfg crew-cfg})}
         ch            (or comm null-comm/channel)
         p             provider]
     (when-not (:input-persisted? charge)

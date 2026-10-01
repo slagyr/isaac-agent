@@ -16,7 +16,6 @@ Feature: Every tool call has a timeout (isaac-4g2k)
       | name    |
       | logbook |
 
-  @wip
   Scenario: a call past the default timeout returns an error and the turn moves on
     Given the isaac EDN file "config/isaac.edn" exists with:
       | path                          | value |
@@ -37,7 +36,6 @@ Feature: Every tool call has a timeout (isaac-4g2k)
       | type    | message.role | message.content |
       | message | assistant    | Moving on.      |
 
-  @wip
   Scenario: a crew's timeout overrides the default
     Given the isaac EDN file "config/isaac.edn" exists with:
       | path                          | value |
@@ -53,7 +51,6 @@ Feature: Every tool call has a timeout (isaac-4g2k)
     Then the tool result is not an error
     And the tool result contains "done"
 
-  @wip
   Scenario: exec__run's own timeout argument outlasts the default
     Given the isaac EDN file "config/isaac.edn" exists with:
       | path                          | value |

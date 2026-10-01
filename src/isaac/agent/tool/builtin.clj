@@ -95,6 +95,7 @@
                                                  "format"  {:type "string" :description "text or raw"}
                                                  "timeout" {:type "integer" :description "Timeout in milliseconds"}}
                                     :required   ["url"]}
+                      :timeout-ms  web-fetch/default-timeout
                       :handler     #'web-fetch/web-fetch-tool}
    "web__search"     {:name        "web__search"
                       :description "Search the web via Brave Search"
@@ -129,6 +130,7 @@
                                                  "workdir" {:type "string" :description "Working directory"}
                                                  "timeout" {:type "integer" :description "Timeout in ms"}}
                                     :required   ["command"]}
+                      :timeout-ms  #'exec/registry-timeout-ms
                       :handler     #'exec/exec-tool}
    "turn__get"      {:name        "turn__get"
                       :description "Get a durable turn record by id"

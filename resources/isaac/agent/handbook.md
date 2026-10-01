@@ -122,6 +122,21 @@ Tool-level knobs, not directory-related:
   a tool result string before head-tail truncation. `defaults.crew.tools
   .max-parallel` caps concurrent tool calls from one model response batch,
   per crew.
+- `defaults.tools.timeout-ms` (60000 when unset) is the deadline every tool
+  call runs against. `crew.<id>.tools.timeout-ms` overrides it for one
+  crew. A tool's own declared default (exec__run's own `timeout` argument
+  plus a safety margin; the web tools' historical 30s) outranks both — a
+  crew/global deadline only governs tools that don't declare their own.
+  Past the deadline the call returns an ordinary tool error ("timed out
+  after `<n>`ms") and the turn moves on; the stuck work is interrupted
+  (best-effort) or abandoned and logged (`:tool/timed-out`, then
+  `:tool/abandoned`) if it ignores the interrupt — a blocked read of a
+  dataless (iCloud-evicted) file is the canonical case that never responds
+  to interrupt. Turn cancellation (ESC, a user cancel) ends an in-flight
+  call the same way. Suspend is the one exception: it deliberately lets a
+  stuck tool keep running past its own short cap so the turn marker can be
+  stamped `:unclean` for isaac-vdfc to repair — it does not route through
+  this timeout.
 
 `resource-pools` (entity table, `config/resource-pools/<id>.edn`) is a
 different kind of gate: not a tool permission, but an admission check a
@@ -150,6 +165,13 @@ coordinates). An unregistered `type` is refused at config load.
 - **A resource pool's `type` is rejected as unknown.** It isn't a
   built-in (`:tide`) and no installed module has contributed it via the
   `:isaac.agent/resource-pool-types` berth — check `isaac modules list`.
+- **A tool call is erroring out with "timed out after `<n>`ms" sooner than
+  expected.** Check whether the tool declares its own default (exec__run,
+  the web tools) before assuming `defaults.tools.timeout-ms` or
+  `crew.<id>.tools.timeout-ms` is the active deadline — a tool's own
+  default always wins over both. Raise the crew or global value if the
+  work is legitimately slow; a long `exec__run` call should pass its own
+  `timeout` argument rather than relying on the global default.
 
 ## Sessions and transcripts
 

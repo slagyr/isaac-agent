@@ -71,3 +71,11 @@
   "Tool output caps applied at the turn boundary. Nothing overrides these."
   [cfg]
   (select-keys (get-in cfg [:defaults :tools]) [:max-lines :max-bytes]))
+
+;; --- tool-call timeout -------------------------------------------------------
+
+(defn tool-timeout-ms
+  "Global default deadline (ms) for a tool call. Nil when unset; the caller
+   falls back to the registry's hard-coded default (60000)."
+  [cfg]
+  (get-in cfg [:defaults :tools :timeout-ms]))

@@ -8,7 +8,10 @@
 
 (def ^:dynamic *default-limit* 2000)
 
-(def ^:private default-timeout 30000)
+;; Public (not ^:private): builtin.clj declares this as web__fetch's own
+;; registry timeout-ms (isaac-4g2k) — the global default stays 60s, web tools
+;; keep their historical 30s.
+(def default-timeout 30000)
 (def ^:private max-web-redirects 5)
 
 (defn- web-header [headers name]

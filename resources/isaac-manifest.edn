@@ -462,6 +462,10 @@
         {:type :int,
          :description "Crew override for max concurrent tool calls from one model response batch",
          :validations [:positive?]},
+        :timeout-ms
+        {:type :int,
+         :description "Crew override for the global tool-call deadline (:defaults :tools :timeout-ms); a tool's own declared default still wins over this.",
+         :validations [:positive?]},
         :directories
         {:type :map,
          :description
@@ -608,14 +612,18 @@
       :entity-template {:kind :providers, :except [:id :name]}},
      :tools
      {:type :map,
-      :description "Global tool output caps applied at the turn boundary",
+      :description "Global tool output caps and the default tool-call deadline applied at the turn boundary",
       :schema
       {:max-lines
        {:type :int,
         :description "Max lines in a tool result string before head-tail truncation"},
        :max-bytes
        {:type :int,
-        :description "Max UTF-8 bytes in a tool result string before head-tail truncation"}}},
+        :description "Max UTF-8 bytes in a tool result string before head-tail truncation"},
+       :timeout-ms
+       {:type :int,
+        :description "Default deadline (ms) for any tool call before the registry returns a timeout error and abandons the work; 60000 when unset. A tool may declare its own default, and a crew may override with :crew <id> :tools :timeout-ms.",
+        :validations [:positive?]}}},
      :context-mode
      {:type :keyword,
       :description "Retired: default context mode now lives at :defaults :crew :context-mode."

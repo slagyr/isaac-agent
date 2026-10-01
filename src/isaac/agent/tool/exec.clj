@@ -11,6 +11,20 @@
 
 (def ^:private default-timeout 30000)
 
+;; isaac-4g2k: margin the registry's outer deadline adds on top of exec's own
+;; `timeout` argument, so the registry never fires before exec's own
+;; wait-for-process!/destroy-process! handling has a chance to return an
+;; ordinary tool error first.
+(def ^:private registry-timeout-margin-ms 5000)
+
+(defn registry-timeout-ms
+  "The tool registry's own declared :timeout-ms for exec__run (isaac-4g2k):
+   the call's `timeout` argument (or exec's own default) plus a safety
+   margin. Evaluated against the raw call arguments."
+  [args]
+  (let [args (bounds/string-key-map args)]
+    (+ (or (bounds/arg-int args "timeout" nil) default-timeout) registry-timeout-margin-ms)))
+
 (defn start-process [args]
   ;; Spawn the process AND immediately start draining its merged
   ;; stdout+stderr in a background thread. Without the concurrent drain

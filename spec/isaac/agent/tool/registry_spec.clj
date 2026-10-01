@@ -1,6 +1,7 @@
 (ns isaac.agent.tool.registry-spec
   (:require
     [clojure.string :as str]
+    [isaac.agent.bridge.cancellation :as bridge]
     [isaac.foundation.config.loader :as loader]
     [isaac.foundation.logger :as log]
     [isaac.foundation.module.loader :as module-loader]
@@ -193,6 +194,58 @@
             (should-not-be-nil (sut/lookup "fs__read"))))))
 
   ;; endregion ^^^^^ Execution ^^^^^
+
+  ;; region ----- Tool-call timeout (isaac-4g2k) -----
+
+  (describe "tool-call timeout"
+
+    (helper/with-captured-logs)
+
+    (it "times out a call that never returns, using the global default when nothing else declares one"
+      (sut/register! {:name "stuck" :handler (fn [_] (deref (promise)))})
+      (let [result (sut/execute "stuck" {} #{"stuck"} nil {:timeout-ms 20})]
+        (should (:isError result))
+        (should (re-find #"timed out after 20ms" (:error result)))
+        (should (some #(= :tool/timed-out (:event %)) @log/captured-logs))))
+
+    (it "logs the abandonment of a timed-out call"
+      (sut/register! {:name "stuck" :handler (fn [_] (deref (promise)))})
+      (sut/execute "stuck" {} #{"stuck"} nil {:timeout-ms 20})
+      (should (some #(and (= :tool/abandoned (:event %)) (= :timed-out (:reason %)))
+                    @log/captured-logs)))
+
+    (it "lets a tool's own declared timeout-ms fire sooner than a longer configured default"
+      (sut/register! {:name "picky" :timeout-ms 20 :handler (fn [_] (deref (promise)))})
+      (let [result (sut/execute "picky" {} #{"picky"} nil {:timeout-ms 5000})]
+        (should (:isError result))
+        (should (re-find #"timed out after 20ms" (:error result)))))
+
+    (it "evaluates a tool's own :timeout-ms fn against the raw call arguments"
+      (sut/register! {:name    "custom"
+                      :timeout-ms (fn [args] (get args "limit"))
+                      :handler (fn [_] (deref (promise)))})
+      (let [result (sut/execute "custom" {"limit" 15} #{"custom"} nil {:timeout-ms 5000})]
+        (should (re-find #"timed out after 15ms" (:error result)))))
+
+    (it "lets a tool's own declared timeout-ms outlast a shorter configured default"
+      (sut/register! {:name "outlasts" :timeout-ms 5000 :handler (fn [_] (Thread/sleep 50) {:result "finished"})})
+      (let [result (sut/execute "outlasts" {} #{"outlasts"} nil {:timeout-ms 20})]
+        (should-not (:isError result))
+        (should= "finished" (:result result))))
+
+    (it "abandons and reports {:error :cancelled} for an in-flight call when the turn is cancelled"
+      (bridge/clear!)
+      (bridge/begin-turn! "sess-timeout-cancel")
+      (sut/register! {:name "blocker" :handler (fn [_] (deref (promise)))})
+      (let [fut (future (sut/execute "blocker" {"session_key" "sess-timeout-cancel"} #{"blocker"} nil {:timeout-ms 5000}))]
+        (bridge/cancel! "sess-timeout-cancel")
+        (let [result (deref fut 2000 :spec-timed-out)]
+          (should= {:error :cancelled} result)
+          (should (some #(and (= :tool/abandoned (:event %)) (= :cancelled (:reason %)))
+                        @log/captured-logs))))
+      (bridge/clear!)))
+
+  ;; endregion ^^^^^ Tool-call timeout (isaac-4g2k) ^^^^^
 
   ;; region ----- tool-fn -----
 

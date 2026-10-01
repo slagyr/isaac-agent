@@ -1,6 +1,8 @@
 (ns isaac.agent.tool.registry
   (:require
     [clojure.string :as str]
+    [isaac.agent.bridge.cancellation :as bridge]
+    [isaac.agent.bridge.suspend :as suspend]
     [isaac.agent.config.defaults :as defaults]
     [isaac.foundation.config.loader :as loader]
     [isaac.foundation.logger :as log]
@@ -9,7 +11,8 @@
     [isaac.agent.tool.fs-bounds :as fs-bounds]
     [isaac.agent.tool.names :as names]
     [isaac.agent.tool.output-cap :as output-cap])
-  (:import (java.security MessageDigest)))
+  (:import (java.security MessageDigest)
+           (java.util.concurrent ExecutionException)))
 
 ;; region ----- State -----
 
@@ -154,22 +157,92 @@
                     [kw v]))))
         arguments))
 
+(defn- session-key-of [arguments]
+  (or (get arguments "session_key")
+      (get arguments :session_key)))
+
 (defn- tool-cwd [arguments]
-  (fs-bounds/session-workdir (or (get arguments "session_key")
-                                 (get arguments :session_key))))
+  (fs-bounds/session-workdir (session-key-of arguments)))
 
 (defn- snapshot-caps []
   (let [cfg (or (loader/snapshot "tool output caps — ambient fallback when caller passes no caps") {})]
-    {:max-lines (:max-lines (defaults/tool-caps cfg))
-     :max-bytes (:max-bytes (defaults/tool-caps cfg))}))
+    {:max-lines  (:max-lines (defaults/tool-caps cfg))
+     :max-bytes  (:max-bytes (defaults/tool-caps cfg))
+     :timeout-ms (defaults/tool-timeout-ms cfg)}))
 
-;; caps is {:max-lines _ :max-bytes _} resolved from config at the turn boundary
-;; and threaded in as a value; nil falls back to the ambient snapshot.
+;; caps is {:max-lines _ :max-bytes _ :timeout-ms _} resolved from config at
+;; the turn boundary and threaded in as a value; nil falls back to the
+;; ambient snapshot.
 (defn- cap-output [caps s]
   (let [caps*     (or caps (snapshot-caps))
         max-lines (or (:max-lines caps*) output-cap/default-max-output-lines)
         max-bytes (or (:max-bytes caps*) output-cap/default-max-output-bytes)]
     (output-cap/cap-result (str s) max-lines max-bytes)))
+
+;; region ----- Tool-call deadline (isaac-4g2k) -----
+
+(def default-timeout-ms
+  "Hard-coded fallback deadline (ms) for a tool call when nothing else
+   declares one: not the tool, not the crew, not :defaults :tools :timeout-ms."
+  60000)
+
+(defn- declared-timeout-ms
+  "A tool's own :timeout-ms — a number, or a fn (or #'var) of the raw call
+   arguments (exec__run computes its own `timeout` argument plus a safety
+   margin)."
+  [tool arguments]
+  (let [t (:timeout-ms tool)]
+    (cond
+      (number? t) t
+      (ifn? t)    (t arguments)
+      :else       nil)))
+
+(defn- effective-timeout-ms
+  "Highest priority first: the tool's own declared default, then the
+   config-resolved value threaded in via caps (crew override, else the
+   global default), then the registry's hard-coded fallback."
+  [tool arguments caps]
+  (or (declared-timeout-ms tool arguments)
+      (:timeout-ms caps)
+      default-timeout-ms))
+
+(defn- await-tool-call
+  "Waits for `fut` up to `timeout-ms`, also watching turn cancellation for
+   `session-key`. Returns {:outcome :done :value v}, {:outcome :timed-out},
+   or {:outcome :cancelled}.
+
+   Suspend (isaac-2xj5) reuses the same cancellation path to let a tool's own
+   cooperative handling run (exec kills its process), but deliberately lets a
+   stray tool keep running past its cap so the turn marker can be stamped
+   :unclean — a session-suspended cancel is not a reason for THIS generic
+   wrapper to abandon early; only a real user/turn cancel is.
+
+   On a non-:done outcome the handler is abandoned: `future-cancel` is a
+   best-effort interrupt of its thread, but a blocked call that ignores
+   interrupt (a dataless iCloud file read, for example) keeps running
+   regardless — the turn moves on without waiting for it."
+  [fut timeout-ms session-key]
+  (let [cancelled? (atom false)
+        deadline   (+ (System/currentTimeMillis) (max 0 (long timeout-ms)))]
+    (bridge/on-cancel! session-key
+                      #(when-not (suspend/session-suspended? session-key)
+                         (reset! cancelled? true)))
+    (loop []
+      (cond
+        (realized? fut)
+        {:outcome :done :value @fut}
+
+        @cancelled?
+        (do (future-cancel fut) {:outcome :cancelled})
+
+        (>= (System/currentTimeMillis) deadline)
+        (do (future-cancel fut) {:outcome :timed-out})
+
+        :else
+        (do (Thread/sleep 5)
+            (recur))))))
+
+;; endregion ^^^^^ Tool-call deadline (isaac-4g2k) ^^^^^
 
 (defn- unknown-tool-error [name]
   (log/error :tool/execute-failed :tool name :error (str "unknown tool: " name))
@@ -256,34 +329,59 @@
     arguments
     (dissoc arguments "crew" "session_key" "state_dir" :crew :session_key :state_dir)))
 
+(defn- run-handler-result [name caps cwd log-args value]
+  ;; Post-processing shared by the synchronous and future-backed call paths:
+  ;; isError / nil / {:error :cancelled} pass through verbatim; everything
+  ;; else gets capped and logged.
+  (cond
+    (:isError value)
+    (do (log/error :tool/execute-failed :tool name :arguments log-args :cwd cwd :error (:error value))
+        value)
+
+    (nil? value)
+    (do (log/error :tool/execute-failed :tool name :arguments log-args :cwd cwd :error "tool returned nil")
+        {:isError true :error "tool returned nil"})
+
+    (and (map? value) (= :cancelled (:error value)))
+    value
+
+    (and (map? value) (contains? value :result))
+    (let [capped (cap-output caps (:result value))]
+      (log/debug :tool/result (assoc (result-metadata capped) :tool name :cwd cwd))
+      (assoc value :result capped))
+
+    :else
+    (let [capped (cap-output caps value)]
+      (log/debug :tool/result (assoc (result-metadata capped) :tool name :cwd cwd))
+      {:result capped})))
+
 (defn- run-handler [name arguments caps]
   (if-let [tool (lookup name)]
-    (let [cwd      (tool-cwd arguments)
-          log-args (log-arguments arguments)]
-      (log/debug :tool/start :tool name :arguments log-args :cwd cwd)
+    (let [cwd         (tool-cwd arguments)
+          log-args    (log-arguments arguments)
+          caps*       (or caps (snapshot-caps))
+          timeout-ms  (effective-timeout-ms tool arguments caps*)
+          session-key (session-key-of arguments)]
+      (log/debug :tool/start :tool name :arguments log-args :cwd cwd :timeout-ms timeout-ms)
       (try
-        (let [result ((:handler tool) (handler-arguments tool arguments))]
-          (cond
-            (:isError result)
-            (do (log/error :tool/execute-failed :tool name :arguments log-args :cwd cwd :error (:error result))
-                result)
+        (let [fut                     (future ((:handler tool) (handler-arguments tool arguments)))
+              {:keys [outcome value]} (await-tool-call fut timeout-ms session-key)]
+          (case outcome
+            :timed-out
+            (do (log/warn :tool/timed-out :tool name :timeout-ms timeout-ms)
+                (log/warn :tool/abandoned :tool name :reason :timed-out)
+                {:isError true :error (str "timed out after " timeout-ms "ms")})
 
-            (nil? result)
-            (do (log/error :tool/execute-failed :tool name :arguments log-args :cwd cwd :error "tool returned nil")
-                {:isError true :error "tool returned nil"})
+            :cancelled
+            (do (log/warn :tool/abandoned :tool name :reason :cancelled)
+                {:error :cancelled})
 
-            (and (map? result) (= :cancelled (:error result)))
-            result
-
-            (and (map? result) (contains? result :result))
-            (let [capped (cap-output caps (:result result))]
-              (log/debug :tool/result (assoc (result-metadata capped) :tool name :cwd cwd))
-              (assoc result :result capped))
-
-            :else
-            (let [capped (cap-output caps result)]
-              (log/debug :tool/result (assoc (result-metadata capped) :tool name :cwd cwd))
-              {:result capped})))
+            :done
+            (run-handler-result name caps* cwd log-args value)))
+        (catch ExecutionException e
+          (let [cause (or (.getCause e) e)]
+            (log/error :tool/execute-failed :tool name :arguments log-args :cwd cwd :error (.getMessage cause))
+            {:isError true :error (.getMessage cause)}))
         (catch Exception e
           (log/error :tool/execute-failed :tool name :arguments log-args :cwd cwd :error (.getMessage e))
           {:isError true :error (.getMessage e)})))

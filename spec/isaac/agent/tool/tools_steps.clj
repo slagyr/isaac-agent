@@ -225,6 +225,19 @@
 (defn nil-tool-registered [name]
   (registry/register! {:name name :description "Returns nil" :handler (fn [_] nil)}))
 
+(defn stall-tool-registered [name]
+  ;; isaac-4g2k: a fixture tool that never returns, so the registry's
+  ;; tool-call deadline is what ends the call.
+  (registry/register! {:name name :description "Never returns" :handler (fn [_] (deref (promise)))}))
+
+(defn slow-tool-registered [name delay-ms]
+  ;; isaac-4g2k: a fixture tool that finishes after a given delay, used to
+  ;; prove a crew/tool timeout override outlasts the shorter global default.
+  (let [ms (if (number? delay-ms) delay-ms (parse-long delay-ms))]
+    (registry/register! {:name        name
+                         :description "Returns after a delay"
+                         :handler     (fn [_] (Thread/sleep (long ms)) {:result "done"})})))
+
 ;; endregion ^^^^^ Registration ^^^^^
 
 ;; region ----- File / Directory Setup -----
@@ -501,15 +514,24 @@
   (g/should-not (str/includes? (result-text) text)))
 
 (defn tool-result-not-error []
+  ;; isaac-4g2k: a slow-but-successful tool can still be mid-flight when this
+  ;; assertion runs; await the turn the same way result-text does so this
+  ;; doesn't pass vacuously on a nil :tool-result.
+  (ensure-tool-result-ready!)
   (g/should-not (:isError (g/get :tool-result))))
 
 (defn tool-result-json-has [table]
+  (ensure-tool-result-ready!)
   (let [result (g/get :tool-result)
         parsed (json/parse-string (or (:result result) "{}") true)
         r      (match/match-object table parsed)]
     (g/should= [] (:failures r))))
 
 (defn tool-result-is-error []
+  ;; isaac-4g2k: a call that times out past the default/crew deadline can
+  ;; still be mid-flight (parked :turn-future) when this assertion runs;
+  ;; await it first instead of reading a premature nil :tool-result.
+  (ensure-tool-result-ready!)
   (let [result (g/get :tool-result)]
     (g/should (or (:isError result)
                   (and (string? result) (str/starts-with? result "Error:"))))))
@@ -608,6 +630,15 @@
    should skip this unless they actually need to run tools.")
 
 (defgiven #"a tool \"([^\"]+)\" that returns nil is registered" isaac.agent.tool.tools-steps/nil-tool-registered)
+
+(defgiven #"a fixture tool \"([^\"]+)\" that never returns is registered"
+  isaac.agent.tool.tools-steps/stall-tool-registered
+  "Registers a mock tool whose handler blocks forever — only the registry's
+   tool-call deadline (isaac-4g2k) can end the call.")
+
+(defgiven #"a fixture tool \"([^\"]+)\" that returns after (\d+)ms is registered"
+  isaac.agent.tool.tools-steps/slow-tool-registered
+  "Registers a mock tool whose handler sleeps for the given delay then returns \"done\".")
 
 (defgiven "a clean test directory {dir:string}" isaac.agent.tool.tools-steps/clean-test-dir
   "Wipes the directory on the REAL filesystem and recreates it, then
