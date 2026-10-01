@@ -72,6 +72,23 @@
       (should (< (str/index-of output "origin.thread-id: thread-7")
                  (str/index-of output "origin.reply-to: hail-42")))))
 
+  (it "shows resumed-by on the closed record a resume replaced (isaac-ziqg)"
+    (queue/enqueue! {:id "t-orig" :session "harbor" :state :queued})
+    (queue/update-turn! "t-orig" {:state :finished :outcome :interrupted :resumed-by "t-new"})
+    (let [output (with-out-str
+                   (should= 0 (sut/run-fn {:_raw-args ["show" "t-orig"] :root "/test/isaac"})))]
+      (doseq [fragment ["state: finished" "outcome: interrupted" "resumed-by: t-new"]]
+        (should (str/includes? output fragment)))))
+
+  (it "lists the resumes link even when neither record is currently held (isaac-ziqg)"
+    (queue/enqueue! {:id "t-orig" :session "harbor" :state :queued})
+    (queue/update-turn! "t-orig" {:state :finished :outcome :interrupted :resumed-by "t-new"})
+    (queue/enqueue! {:id "t-new" :session "harbor" :state :queued :resumes "t-orig"})
+    (queue/update-turn! "t-new" {:state :finished :outcome :ok})
+    (let [output (with-out-str
+                   (should= 0 (sut/run-fn {:_raw-args ["list"] :root "/test/isaac"})))]
+      (should (str/includes? output "resumes: t-orig"))))
+
   (it "drops a held turn and prints dropped"
     (queue/enqueue! {:id "berth-1" :session "harbor"})
     (let [output (with-out-str

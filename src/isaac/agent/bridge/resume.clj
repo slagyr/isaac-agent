@@ -83,11 +83,30 @@
     (or (policy/repair-transcript! sess session-id)
         (repair-dangling-tool-calls! sess session-id))))
 
+(defn- running-record-for-session
+  "The record a prior normal dispatch left behind (bridge.core's
+   dispatch-recorded!) when the process died mid-turn with a marker already
+   persisted. Marker-less dangling :running records are handled separately,
+   in place, by resume-interrupted-turns! itself; this is for the case a
+   marker exists so resume-marker! takes this path instead. Closed by
+   enqueue-resume-turn! so `isaac turns` never shows it as a ghost running
+   turn (isaac-ziqg)."
+  [session-id]
+  (->> (queue/all-turns)
+       (filter #(and (= session-id (:session %)) (= :running (:state %))))
+       (sort-by :created-at)
+       last))
+
 (defn- enqueue-resume-turn!
   "Parks the resumed turn in the normal turn queue (isaac-yxch). Resume is
    recovery work, not boot work: the scan hands the turn over and returns, so
    starting the components never waits on a turn that may legitimately run for
-   minutes. The queue worker drives it and logs its own outcome."
+   minutes. The queue worker drives it and logs its own outcome.
+
+   If the session has a stuck :running record from the turn this resume
+   replaces, that record is closed (:state :finished, :outcome :interrupted,
+   :resumed-by the new record's id) and the new record carries :resumes
+   naming it (isaac-ziqg) — a resumed turn closes the record it replaces."
   [{:keys [session-store root cfg]} session-id marker]
   (try
     ;; The note is persisted here, the way a parked CLI turn persists its user
@@ -96,11 +115,18 @@
     (policy/append-message! (session-policy session-store cfg session-id) session-id
                             {:role "user" :content resume-note})
     (binding [queue/*root* root]
-      (queue/enqueue! {:session session-id
-                       :input   resume-note
-                       :origin  {:kind :resume :source (:source marker)}
-                       :root    root
-                       :resource-pools (mapv (comp keyword :pool) (:leases marker))}))
+      (let [old-record (running-record-for-session session-id)
+            new-record (queue/enqueue! (cond-> {:session session-id
+                                                :input   resume-note
+                                                :origin  {:kind :resume :source (:source marker)}
+                                                :root    root
+                                                :resource-pools (mapv (comp keyword :pool) (:leases marker))}
+                                          old-record (assoc :resumes (:id old-record))))]
+        (when old-record
+          (queue/update-turn! (:id old-record)
+                              {:state      :finished
+                               :outcome    :interrupted
+                               :resumed-by (:id new-record)}))))
     true
     (catch Throwable t
       (log/warn :resume/enqueue-failed

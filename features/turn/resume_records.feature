@@ -28,7 +28,6 @@ Feature: A resumed turn closes the record it replaces (isaac-ziqg)
       | type | content   | model |
       | text | All clear | echo  |
 
-  @wip
   Scenario: the interrupted record is closed and points at the turn that resumed it
     When interrupted turns are resumed at "2026-04-21T10:00:00Z"
     And the turn queue ticks at "2026-04-21T10:00:01Z"
@@ -39,7 +38,6 @@ Feature: A resumed turn closes the record it replaces (isaac-ziqg)
       | (?m)^outcome: interrupted$ |
       | (?m)^resumed-by: \S+$    |
 
-  @wip
   Scenario: the resuming record names the record it resumed
     When interrupted turns are resumed at "2026-04-21T10:00:00Z"
     And the turn queue ticks at "2026-04-21T10:00:01Z"

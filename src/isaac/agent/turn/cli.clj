@@ -60,8 +60,9 @@
 (defn- run-list [opts]
   (with-queue-root opts
     (fn []
-      (let [records (if (:all opts) (queue/all-turns) (queue/list-held))
-            rows (mapv held->row records)]
+      (let [all     (queue/all-turns)
+            records (if (:all opts) all (queue/list-held))
+            rows    (mapv held->row records)]
         (when (seq rows)
           (println (format-held rows))
           (doseq [{:keys [id state merged-into]} records]
@@ -69,6 +70,12 @@
               (println (str "waiting: " id)))
             (when (seq merged-into)
               (println (str "merged-into: " merged-into)))))
+        ;; A resumed turn's record (isaac-ziqg) names the record it replaced
+        ;; even after both have finished, so `turns list` with no --all still
+        ;; shows the link — unlike merged-into, which rides the main table.
+        (doseq [{:keys [resumes]} all]
+          (when resumes
+            (println (str "resumes: " resumes))))
         0))))
 
 (defn- run-drop [opts id]
@@ -94,7 +101,8 @@
 
 (defn- print-record! [record]
   (doseq [field [:id :session :frequencies :input :resource-pools :state :outcome
-                 :reason :created-at :started-at :finished-at :merged-into]
+                 :reason :created-at :started-at :finished-at :merged-into
+                 :resumes :resumed-by]
           :when (contains? record field)]
     (println (str (name field) ": " (display-value (get record field)))))
   (doseq [[key value] (sort-by (fn [[k _]] [(case k :thread-id 0 :reply-to 1 2) (str k)]) (:origin record))]

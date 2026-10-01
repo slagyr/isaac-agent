@@ -75,6 +75,26 @@
       (should= 0 (:dropped entry)))
     (should= nil (store/get-turn-marker (store/registered-store) "logbook")))
 
+  (it "closes the stuck :running record a marker-backed resume replaces (isaac-ziqg)"
+    (helper/create-session! test-root "logbook")
+    (queue/enqueue! {:id "t-orig" :session "logbook" :input "Daily check" :state :running})
+    (store/record-turn-marker! (store/registered-store) "logbook"
+                               {:source     :cron
+                                :session-id "logbook"
+                                :started-at "2026-04-21T09:59:30Z"})
+    (sut/resume-interrupted-turns! {:session-store (store/registered-store)
+                                    :root          test-root
+                                    :cfg           {}
+                                    :now           (Instant/parse "2026-04-21T10:00:00Z")})
+    (let [all        (binding [queue/*root* test-root] (queue/all-turns))
+          old-record (first (filter #(= "t-orig" (:id %)) all))
+          new-record (first (filter #(= "logbook" (:session %)) (remove #(= "t-orig" (:id %)) all)))]
+      (should-not-be-nil new-record)
+      (should= :finished (:state old-record))
+      (should= :interrupted (:outcome old-record))
+      (should= (:id new-record) (:resumed-by old-record))
+      (should= "t-orig" (:resumes new-record))))
+
   (it "returns the orphaned dock lease before requeueing the interrupted turn"
     (helper/create-session! test-root "logbook")
     (let [released (atom [])]
