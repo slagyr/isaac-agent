@@ -257,16 +257,16 @@
                             (= 1 (:cycle %)))
                       @log/captured-logs))))
 
-    (it "returns a stub for a skill already loaded in this window"
-      (sut/register! {:name "skill__load" :handler (fn [_] {:result "Always quarantine new specimens for one cycle."})})
+    (it "returns a stub for a prompt already loaded in this window"
+      (sut/register! {:name "prompt__load" :handler (fn [_] {:result "Always quarantine new specimens for one cycle."})})
       (let [cache (atom {})
-            first (sut/execute "skill__load" {"name" "greenhouse-protocol"} #{"skill__load"} nil nil cache 1)
-            second (sut/execute "skill__load" {"name" "greenhouse-protocol"} #{"skill__load"} nil nil cache 2)]
+            first (sut/execute "prompt__load" {"name" "greenhouse-protocol"} #{"prompt__load"} nil nil cache 1)
+            second (sut/execute "prompt__load" {"name" "greenhouse-protocol"} #{"prompt__load"} nil nil cache 2)]
         (should (re-find #"Always quarantine" (:result first)))
         (should (re-find #"greenhouse-protocol" (:result second)))
         (should (re-find #"already in context since cycle 1" (:result second)))
         (should (some #(and (= :tool/cache-hit (:event %))
-                            (= "skill__load" (:tool %))
+                            (= "prompt__load" (:tool %))
                             (= 1 (:cycle %)))
                       @log/captured-logs))))
 

@@ -20,7 +20,6 @@ Feature: Skill bundled resources via prompt__load
       | name       | crew       |
       | greenhouse | hieronymus |
 
-  @wip
   Scenario: prompt__load fetches a bundled resource file from the skill's directory
     Given the isaac file "prompts/skills/greenhouse-protocol/SKILL.md" exists with:
       """
@@ -45,7 +44,6 @@ Feature: Skill bundled resources via prompt__load
       | 1. Check soil moisture.                    |
       | 2. Quarantine new specimens for one cycle. |
 
-  @wip
   Scenario: a resource path that escapes the skill directory is rejected
     Given the isaac file "prompts/skills/greenhouse-protocol/SKILL.md" exists with:
       """

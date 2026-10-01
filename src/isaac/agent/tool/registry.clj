@@ -193,8 +193,8 @@
     "fs__grep"
     [:grep (arg arguments "pattern") (arg arguments "path") (arg arguments "glob") (arg arguments "include")]
 
-    "skill__load"
-    [:skill (arg arguments "name") (arg arguments "resource")]
+    "prompt__load"
+    [:prompt (arg arguments "name") (arg arguments "kind") (arg arguments "resource")]
 
     nil))
 
@@ -224,7 +224,7 @@
       nil)))
 
 (defn- cache-stub [name arguments cycle]
-  (if (= "skill__load" name)
+  (if (= "prompt__load" name)
     (str (arg arguments "name") " already in context since cycle " cycle)
     (str "unchanged since cycle " cycle " — already in your context")))
 

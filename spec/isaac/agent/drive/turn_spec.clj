@@ -1122,9 +1122,9 @@
         (with-redefs [sut/augment-provider (fn [_root p _session-key _context-window _model-cfg-overrides] p)
                       session-ctx/read-skill-disclosure (fn [& _]
                                                           {:menu-text  nil
-                                                           :tool-names #{"skill__list" "skill__load"}})]
+                                                           :tool-names #{"prompt__list" "prompt__load"}})]
           (let [turn (#'sut/build-turn charge)]
-            (should= ["skill__list" "skill__load"] (sort (:allowed-tools turn)))))))
+            (should= ["prompt__list" "prompt__load"] (sort (:allowed-tools turn)))))))
 
     (it "inherits global :allow :all when the crew omits :tools"
       (helper/create-session! test-dir "inherit-all")

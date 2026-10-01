@@ -40,7 +40,6 @@ Feature: Model-driven skill activation
       | system[0].text               | #"(?s).*greenhouse-protocol.*Use when tending specimens.*" | skill menu: name + description  |
       | system[0].cache_control.type | ephemeral                                                  | menu sits in the cached prefix |
 
-  @wip
   Scenario: the model loads a skill body on demand via prompt__load
     Given the isaac file "prompts/skills/greenhouse-protocol/SKILL.md" exists with:
       """

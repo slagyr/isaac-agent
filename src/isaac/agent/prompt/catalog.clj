@@ -283,19 +283,25 @@
           render-skill-menu))
 
 (defn resolve-skill-disclosure [{:keys [config cwd fs root]}]
-  (let [catalog       (resolve-catalog {:config config :cwd cwd :fs fs :root root})
-        skill-entries (sorted-skill-entries catalog)
-        threshold     (:skill-menu-threshold (or config {}))]
+  (let [catalog         (resolve-catalog {:config config :cwd cwd :fs fs :root root})
+        skill-entries   (sorted-skill-entries catalog)
+        threshold       (:skill-menu-threshold (or config {}))
+        ;; Commands and rules aren't advertised in the cached menu text (only
+        ;; skills are), so prompt__list is the only way a crew discovers them
+        ;; — grant it whenever the catalog holds one, independent of the
+        ;; skill-menu-threshold knob (which only governs skill menu-text size).
+        listable?       (or (seq (:commands catalog)) (seq (:rules catalog)))
+        over-threshold? (and (some? threshold) (> (count skill-entries) threshold))]
     (cond
-      (empty? skill-entries)
+      (and (empty? skill-entries) (not listable?))
       {:menu-text nil :tool-names #{}}
 
-      (and (some? threshold) (> (count skill-entries) threshold))
-      {:menu-text nil :tool-names #{"skill__list" "skill__load"}}
+      (or over-threshold? (empty? skill-entries))
+      {:menu-text nil :tool-names #{"prompt__list" "prompt__load"}}
 
       :else
       {:menu-text  (render-skill-menu skill-entries)
-       :tool-names #{"skill__load"}})))
+       :tool-names (cond-> #{"prompt__load"} listable? (conj "prompt__list"))})))
 
 (defn resolve-skill-body [{:keys [config cwd fs root]} skill-name]
   (some-> (get-in (resolve-catalog {:config config :cwd cwd :fs fs :root root})
@@ -303,6 +309,47 @@
           entry-body
           str/trim
           not-empty))
+
+(defn find-entry
+  "Look up a catalog entry by name. With kind (:skill/:command/:rule),
+   scoped to that kind's collection. Without kind, tries skill, then
+   command, then rule, and returns the first match."
+  [catalog kind name]
+  (let [name (normalize-entry-name name)]
+    (case kind
+      :skill   (get-in catalog [:skills name])
+      :command (get-in catalog [:commands name])
+      :rule    (get-in catalog [:rules name])
+      (or (get-in catalog [:skills name])
+          (get-in catalog [:commands name])
+          (get-in catalog [:rules name])))))
+
+(defn resolve-entry-body
+  "Trimmed body text for a catalog entry that isn't a command (commands
+   render via resolve-command-prompt, which also inlines their declared
+   skills)."
+  [entry]
+  (some-> entry entry-body str/trim not-empty))
+
+(defn- all-entries [catalog]
+  (concat (vals (:skills catalog)) (vals (:commands catalog)) (vals (:rules catalog))))
+
+(defn- prompt-menu-line [entry]
+  (let [description (some-> (:description entry) str/trim not-empty)]
+    (str "- " (:name entry) " (" (name (:type entry)) ")"
+         (when description
+           (str ": " description)))))
+
+(defn resolve-prompt-menu
+  "Every catalog entry (skill, command, rule) with its kind and
+   description, sorted by name, one `- <name> (<kind>): <description>`
+   line per entry. For the prompt__list tool."
+  [{:keys [config cwd fs root]}]
+  (let [entries (->> (resolve-catalog {:config config :cwd cwd :fs fs :root root})
+                     all-entries
+                     (sort-by :name))]
+    (when (seq entries)
+      (str/join "\n" (map prompt-menu-line entries)))))
 
 (defn resolve-skill-resource [{:keys [config cwd fs root]} skill-name resource-name]
   (let [catalog    (resolve-catalog {:config config :cwd cwd :fs fs :root root})

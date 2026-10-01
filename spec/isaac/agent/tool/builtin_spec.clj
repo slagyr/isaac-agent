@@ -62,12 +62,12 @@
       (should-contain "never task status" description)
       (should-contain "never instructions or advice to your future self" description)))
 
-  (it "marks skill list and load as built-ins"
-    (sut/register-all! #{:skill/list :skill/load})
-    (should= #{"skill__list" "skill__load"}
+  (it "marks prompt list and load as built-ins"
+    (sut/register-all! #{:prompt/list :prompt/load})
+    (should= #{"prompt__list" "prompt__load"}
              (set (map :name (registry/all-tools))))
-    (should (:builtin? (registry/lookup "skill__list")))
-    (should (:builtin? (registry/lookup "skill__load"))))
+    (should (:builtin? (registry/lookup "prompt__list")))
+    (should (:builtin? (registry/lookup "prompt__load"))))
 
   (it "marks hail send as a built-in"
     (sut/register-all! #{:hail/send})
@@ -82,7 +82,7 @@
 
   (it "registers the advertised permissions.feature built-ins"
     (sut/register-all!)
-    (should (contains? (set (map :name (registry/all-tools))) "skill__list"))
-    (should (contains? (set (map :name (registry/all-tools))) "skill__load"))
+    (should (contains? (set (map :name (registry/all-tools))) "prompt__list"))
+    (should (contains? (set (map :name (registry/all-tools))) "prompt__load"))
     (should (contains? (set (map :name (registry/all-tools))) "hail__send"))
     (should (contains? (set (map :name (registry/all-tools))) "comm__send"))))

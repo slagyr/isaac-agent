@@ -157,8 +157,8 @@
   :fs/glob {:factory isaac.agent.tool.builtin/glob-tool-factory},
   :memory/search
   {:factory isaac.agent.tool.builtin/memory-search-tool-factory},
-  :skill/load {:factory isaac.agent.tool.skill/load-skill-tool-factory},
-  :skill/list {:factory isaac.agent.tool.skill/list-skills-tool-factory},
+  :prompt/load {:factory isaac.agent.tool.prompt/load-prompt-tool-factory},
+  :prompt/list {:factory isaac.agent.tool.prompt/list-prompts-tool-factory},
   :memory/get {:factory isaac.agent.tool.builtin/memory-get-tool-factory},
   :comm/send {:factory isaac.agent.tool.comm-send/comm-send-tool-factory}},
  :isaac.agent/provider-template
@@ -388,7 +388,7 @@
   {:schema
    {:type :int,
     :description
-    "Max skill count to inject into the cached prompt before falling back to skill__list",
+    "Max skill count to inject into the cached prompt before falling back to prompt__list",
     :validations [:non-negative?]}},
   :tools
   {:schema

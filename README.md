@@ -18,7 +18,7 @@ The runtime for Isaac agents and crews. Supplies LLM API adapters, tool executio
 
 - `isaac.agent` core — module factory, berths for tools, llm-api, slash-commands, providers.
 - LLM API adapters: messages, chat-completions, ollama, claude-cli, responses, grover.
-- Tool registry: builtin tools (web_fetch, read, write, exec, grep, edit, memory, search, glob, skills) and registration.
+- Tool registry: builtin tools (web_fetch, read, write, exec, grep, edit, memory, search, glob, prompts) and registration.
 - Crew & sessions: persistent transcripts, compaction, state.
 - Bridge: prompt execution, tool loop, comm dispatch.
 - CLI: auth, crew, prompt, sessions.

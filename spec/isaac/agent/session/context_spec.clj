@@ -83,7 +83,7 @@
     (nexus/-with-nexus {:fs (fs/mem-fs)}
       (example)))
 
-  (it "returns a cached skill menu and load_skill when skills are discovered"
+  (it "returns a cached skill menu and prompt__load when skills are discovered"
     (fs/spit (nexus/get :fs) (str test-root "/prompts/skills/greenhouse-protocol/SKILL.md")
              (str "---\n"
                   "type: skill\n"
@@ -93,10 +93,10 @@
     (should= {:menu-text  (str "Available skills:\n"
                                "- greenhouse-protocol: Use when tending specimens\n\n"
                                "Use these skills as you work. Load a skill's body only when its description matches what you are about to do and it is not already in your context; once loaded it stays valid for the rest of the turn.")
-              :tool-names #{"skill__load"}}
+              :tool-names #{"prompt__load"}}
              (sut/read-skill-disclosure {:root test-root} test-root (str test-root "/project"))))
 
-  (it "falls back to list_skills when the configured threshold is exceeded"
+  (it "falls back to prompt__list when the configured threshold is exceeded"
     (fs/spit (nexus/get :fs) (str test-root "/prompts/skills/a/SKILL.md")
              (str "---\n"
                   "type: skill\n"
@@ -110,7 +110,7 @@
                   "---\n\n"
                   "Two."))
     (should= {:menu-text  nil
-              :tool-names #{"skill__list" "skill__load"}}
+              :tool-names #{"prompt__list" "prompt__load"}}
              (sut/read-skill-disclosure {:skill-menu-threshold 1} test-root (str test-root "/project")))))
 
 (describe "behavior funnel"

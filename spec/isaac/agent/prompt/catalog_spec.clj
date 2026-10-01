@@ -228,7 +228,7 @@
                                                       "isaac-1234")
                           [:name :input])))
 
-  (it "renders a stable sorted skill menu and enables load_skill"
+  (it "renders a stable sorted skill menu and enables prompt__load"
     (write-config-file! "prompts/skills/greenhouse-protocol/SKILL.md"
                         (str "---\n"
                              "type: skill\n"
@@ -245,11 +245,11 @@
                                "- aeroponics: Use for soil-free growing\n"
                                "- greenhouse-protocol: Use when tending specimens\n\n"
                                "Use these skills as you work. Load a skill's body only when its description matches what you are about to do and it is not already in your context; once loaded it stays valid for the rest of the turn.")
-              :tool-names #{"skill__load"}}
+              :tool-names #{"prompt__load"}}
              (sut/resolve-skill-disclosure {:fs        (nexus/get :fs)
                                             :root root})))
 
-  (it "falls back to list_skills when the menu threshold is exceeded"
+  (it "falls back to prompt__list when the menu threshold is exceeded"
     (write-config-file! "prompts/skills/a/SKILL.md"
                         (str "---\n"
                              "type: skill\n"
@@ -263,7 +263,7 @@
                              "---\n\n"
                              "Two."))
     (should= {:menu-text  nil
-              :tool-names #{"skill__list" "skill__load"}}
+              :tool-names #{"prompt__list" "prompt__load"}}
              (sut/resolve-skill-disclosure {:config    {:skill-menu-threshold 1}
                                             :fs        (nexus/get :fs)
                                             :root root})))
@@ -322,6 +322,53 @@
                                                       "greenhouse-protocol"
                                                       "missing.md")
                           [:error])))
+
+  (it "finds a catalog entry by name across kinds without an explicit kind"
+    (write-config-file! "prompts/skills/greenhouse-protocol/SKILL.md"
+                        (str "---\n"
+                             "type: skill\n"
+                             "description: Use when tending specimens\n"
+                             "---\n\n"
+                             "Always quarantine new specimens for one cycle."))
+    (should= :skill (:type (sut/find-entry (resolve-catalog) nil "greenhouse-protocol")))
+    (should-be-nil (sut/find-entry (resolve-catalog) nil "no-such-one")))
+
+  (it "scopes find-entry to the requested kind when a name is shared"
+    (write-config-file! "prompts/skills/greenhouse-protocol/SKILL.md"
+                        (str "---\n"
+                             "type: skill\n"
+                             "description: Use when tending specimens\n"
+                             "---\n\n"
+                             "Always quarantine new specimens for one cycle."))
+    (write-config-file! "prompts/commands/greenhouse-protocol.md"
+                        (str "---\n"
+                             "description: Run the protocol as a task\n"
+                             "---\n\n"
+                             "Run the full greenhouse protocol now."))
+    (let [catalog (resolve-catalog)]
+      (should= :skill (:type (sut/find-entry catalog :skill "greenhouse-protocol")))
+      (should= :command (:type (sut/find-entry catalog :command "greenhouse-protocol")))))
+
+  (it "renders every catalog entry with its kind, sorted by name"
+    (write-config-file! "prompts/skills/greenhouse-protocol/SKILL.md"
+                        (str "---\n"
+                             "type: skill\n"
+                             "description: Use when tending specimens\n"
+                             "---\n\n"
+                             "Always quarantine new specimens for one cycle."))
+    (write-config-file! "prompts/commands/inspect.md"
+                        (str "---\n"
+                             "description: Inspect the greenhouse\n"
+                             "---\n\n"
+                             "Walk every bay and log what you find."))
+    (should= (str "- greenhouse-protocol (skill): Use when tending specimens\n"
+                  "- inspect (command): Inspect the greenhouse")
+             (sut/resolve-prompt-menu {:fs        (nexus/get :fs)
+                                       :root root})))
+
+  (it "returns nil from resolve-prompt-menu when nothing is discovered"
+    (should-be-nil (sut/resolve-prompt-menu {:fs        (nexus/get :fs)
+                                             :root root})))
 
   (it "does not discover prompts left under the legacy config/ typed-base"
     (write-config-file! "config/commands/legacy.md"

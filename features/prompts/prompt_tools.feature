@@ -37,7 +37,6 @@ Feature: Prompt tools — list and load skills, commands and rules
       Walk every bay and log what you find.
       """
 
-  @wip
   Scenario: prompt__list shows every prompt with its kind
     Given the following model responses are queued:
       | model  | type      | content | tool_call    | arguments |
@@ -49,7 +48,6 @@ Feature: Prompt tools — list and load skills, commands and rules
       | - greenhouse-protocol (skill): Use when tending specimens |
       | - inspect (command): Inspect the greenhouse               |
 
-  @wip
   Scenario: prompt__load loads a command together with its declared skills
     Given the following model responses are queued:
       | model  | type      | content | tool_call    | arguments          |
@@ -62,7 +60,6 @@ Feature: Prompt tools — list and load skills, commands and rules
       |                                                                   |
       | Always quarantine new specimens for one cycle before integration. |
 
-  @wip
   Scenario: kind picks between a skill and a command that share a name
     Given the isaac file "prompts/commands/greenhouse-protocol.md" exists with:
       """
@@ -80,7 +77,6 @@ Feature: Prompt tools — list and load skills, commands and rules
       | line                                  |
       | Run the full greenhouse protocol now. |
 
-  @wip
   Scenario: prompt__load reports an unknown prompt
     Given the following model responses are queued:
       | model  | type      | content | tool_call    | arguments              |

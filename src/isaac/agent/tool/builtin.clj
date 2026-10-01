@@ -20,7 +20,7 @@
 (def ^:private ordered-built-in-tools
   ["fs__read" "fs__write" "fs__edit" "fs__multi_edit" "fs__grep" "fs__glob"
    "web__fetch" "web__search" "memory__write" "memory__get" "memory__search"
-   "exec__run" "turn__get" "session__info" "session__model" "skill__load" "skill__list"
+   "exec__run" "turn__get" "session__info" "session__model" "prompt__load" "prompt__list"
    "comm__send" "hail__send"])
 
 (def ^:private built-in-tool-specs
@@ -188,10 +188,10 @@
      :handler     (fn [_] {:isError true :error "hail module is not loaded"})}))
 
 (def ^:private extra-built-in-factories
-  {"comm__send"  'isaac.agent.tool.comm-send/comm-send-tool-factory
-   "skill__list" 'isaac.agent.tool.skill/list-skills-tool-factory
-   "skill__load" 'isaac.agent.tool.skill/load-skill-tool-factory
-   "hail__send"  'isaac.agent.tool.builtin/hail-send-tool-factory})
+  {"comm__send"   'isaac.agent.tool.comm-send/comm-send-tool-factory
+   "prompt__list" 'isaac.agent.tool.prompt/list-prompts-tool-factory
+   "prompt__load" 'isaac.agent.tool.prompt/load-prompt-tool-factory
+   "hail__send"   'isaac.agent.tool.builtin/hail-send-tool-factory})
 
 (defn- register-extra-built-in! [tool-name]
   (when-let [factory (get extra-built-in-factories tool-name)]

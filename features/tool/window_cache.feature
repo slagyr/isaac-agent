@@ -84,7 +84,6 @@ Feature: Per-window tool cache — repeated reads, greps and skill loads return 
       | event           | tool     | cycle |
       | :tool/cache-hit | fs__grep | 1     |
 
-  @wip
   Scenario: a skill loaded twice in one window is served once
     Given the isaac file "prompts/skills/greenhouse-protocol/SKILL.md" exists with:
       """
