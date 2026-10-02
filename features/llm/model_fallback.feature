@@ -39,7 +39,6 @@ Feature: A crew falls through its model chain when the provider is walled (isaac
       | provider       | grover:anthropic |
       | context-window | 8                |
 
-  @wip
   Scenario: a walled primary continues the turn on the next model (isaac-uyj3)
     Given the isaac EDN file "config/isaac.edn" exists with:
       | path                    | value       |
@@ -69,7 +68,6 @@ Feature: A crew falls through its model chain when the provider is walled (isaac
       | level | event                | skipped-model | model      | reason |
       | :info | :turn/model-fallback | primary-wire  | relay-wire | :wall  |
 
-  @wip
   Scenario: a 400 contract error does not fall back (isaac-uyj3)
     Given the isaac EDN file "config/crew/zane.edn" exists with:
       | path           | value    |
@@ -88,7 +86,6 @@ Feature: A crew falls through its model chain when the provider is walled (isaac
       | event                |
       | :turn/model-fallback |
 
-  @wip
   Scenario: context overflow retries the same model and does not fall back (isaac-uyj3)
     Given the isaac EDN file "config/crew/zane.edn" exists with:
       | path           | value    |
@@ -112,7 +109,6 @@ Feature: A crew falls through its model chain when the provider is walled (isaac
       | event                |
       | :turn/model-fallback |
 
-  @wip
   Scenario: a failure after tools have run continues from the transcript (isaac-uyj3)
     Given the isaac EDN file "config/crew/zane.edn" exists with:
       | path           | value    |
@@ -134,7 +130,6 @@ Feature: A crew falls through its model chain when the provider is walled (isaac
       | turn-end | :reply          |
     And the last chat request on session "tools" used model "relay-wire"
 
-  @wip
   Scenario: the fallback request carries no previous-response-id (isaac-uyj3)
     Given the isaac EDN file "config/models/primary.edn" exists with:
       | path           | value          |
@@ -161,7 +156,6 @@ Feature: A crew falls through its model chain when the provider is walled (isaac
       | model | relay-wire |
     And LLM request 3 has no previous-response-id
 
-  @wip
   Scenario: the rest of the turn stays on the model that answered (isaac-uyj3)
     Given the isaac EDN file "config/crew/zane.edn" exists with:
       | path           | value    |
@@ -184,7 +178,6 @@ Feature: A crew falls through its model chain when the provider is walled (isaac
       | key   | value      |
       | model | relay-wire |
 
-  @wip
   Scenario: the next message returns to the head of the chain after the wall expires (isaac-uyj3)
     Given the isaac EDN file "config/crew/zane.edn" exists with:
       | path           | value    |
@@ -204,7 +197,6 @@ Feature: A crew falls through its model chain when the provider is walled (isaac
     And the user sends "again?" on session "again" at "2026-04-21T10:02:00Z"
     Then the last chat request on session "again" used model "primary-wire"
 
-  @wip
   Scenario: a message inside the retry-after starts on the next provider (isaac-uyj3)
     Given the isaac EDN file "config/crew/zane.edn" exists with:
       | path           | value    |
@@ -224,7 +216,6 @@ Feature: A crew falls through its model chain when the provider is walled (isaac
     And the user sends "again?" on session "still" at "2026-04-21T10:00:30Z"
     Then the last chat request on session "still" used model "relay-wire"
 
-  @wip
   Scenario: a later model on the walled provider is skipped (isaac-uyj3)
     Given the isaac EDN file "config/crew/zane.edn" exists with:
       | path           | value          |
@@ -242,7 +233,6 @@ Feature: A crew falls through its model chain when the provider is walled (isaac
       | key   | value      |
       | model | relay-wire |
 
-  @wip
   Scenario: a fallback model that cannot hold the transcript is skipped (isaac-uyj3)
     Given the isaac EDN file "config/crew/zane.edn" exists with:
       | path           | value           |
@@ -260,7 +250,6 @@ Feature: A crew falls through its model chain when the provider is walled (isaac
       | key   | value      |
       | model | roomy-wire |
 
-  @wip
   Scenario: an exhausted chain reports the provider broken (isaac-uyj3)
     Given the isaac EDN file "config/isaac.edn" exists with:
       | path                    | value       |
@@ -281,7 +270,6 @@ Feature: A crew falls through its model chain when the provider is walled (isaac
     Then the turn result is unavailable with retry-after-ms 60000 and reason wall
     And the directory "comm/delivery/pending" has exactly 1 file
 
-  @wip
   Scenario: the jump log names the skipped model and the reason (isaac-uyj3)
     Given the isaac EDN file "config/crew/zane.edn" exists with:
       | path           | value    |

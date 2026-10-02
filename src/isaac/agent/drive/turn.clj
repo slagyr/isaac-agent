@@ -8,6 +8,7 @@
     [isaac.agent.comm.null :as null-comm]
     [isaac.agent.comm.protocol :as comm]
     [isaac.agent.config.defaults :as defaults]
+    [isaac.agent.config.resolve :as config-resolve]
     [isaac.foundation.config.loader :as loader]
     [isaac.agent.drive.accounting :as accounting]
     [isaac.agent.drive.dispatch :as dispatch]
@@ -1601,6 +1602,50 @@
       (persist-tool-result! (:ctx tool-ctx) (:session-key tool-ctx) tc result)
       result)))
 
+(defn- turn-now []
+  (or memory/*now* (memory/now)))
+
+(defn- log-model-fallback! [skipped next reason]
+  (log/info :turn/model-fallback
+            :skipped-model skipped
+            :model next
+            :reason reason))
+
+(defn- notify-chain-exhausted! [config session-key provider model reason result]
+  (when (and (seq provider) (not= :auth reason))
+    (let [raw (:provider-response result)]
+      (attention/maybe-notify-provider-broken!
+        (or config (loader/snapshot "model-fallback attention"))
+        {:provider provider
+         :model    model
+         :session  session-key
+         :error    (:error raw)
+         :status   (or (:status result) (:status raw))
+         :message  (or (:message result) (:message raw))}))))
+
+(defn- chain-link [cfg crew-id model-id root session-key]
+  (let [resolved (config-resolve/resolve-crew-context cfg crew-id {:model-override model-id})
+        window   (:context-window resolved)
+        provider (augment-provider root (:provider resolved) session-key window
+                                   (select-keys (or (:model-cfg resolved) {})
+                                                [:thinking-budget-max :think-mode :stateful]))]
+    {:id             model-id
+     :model          (:model resolved)
+     :model-cfg      (:model-cfg resolved)
+     :context-window window
+     :provider       provider
+     :provider-name  (when provider (api/display-name provider))}))
+
+(defn- fallback-links [ctx session-key]
+  (let [charge (:charge ctx)
+        cfg    (:config charge)
+        root   (:root ctx)
+        crew   (:crew charge)]
+    (mapv #(chain-link cfg crew % root session-key)
+          (->> (get-in charge [:crew-cfg :model-fallback])
+               (map session-ctx/normalize-model-ref)
+               (remove str/blank?)))))
+
 (defn- execute-llm-turn!
   "Build the chat request, drive the tool-loop, and persist the final
    assistant response. Tool pairs are written mid-loop by record-tool-call!.
@@ -1661,7 +1706,12 @@
           window-cache    (atom {})]
       (when-let [done (:compaction-llm-done (active-compaction-state session-key))]
         (deref done 5000 nil))
-      (let [cycle*      (atom {:n 1 :model model :origin (:origin charge)})
+      (let [active*     (atom {:provider       p
+                                     :model          model
+                                     :model-cfg      (:model-cfg charge)
+                                     :context-window (:context-window charge)
+                                     :provider-name  (api/display-name p)})
+            cycle*      (atom {:n 1 :model model :origin (:origin charge)})
             ;; Every request the drive sends goes out through here, so this is
             ;; where its size and composition are recorded — in the log, never
             ;; in the transcript (isaac-5nx5).
@@ -1669,22 +1719,26 @@
                          :boot-files      boot-files
                          :rules-text      rules-text
                          :skill-menu-text skill-menu-text}
-            acct-info   (fn [] {:session  session-key
-                                :provider (api/display-name p)
-                                :model    model
-                                :cycle    (:n @cycle*)})
+            acct-info   (fn []
+                          (let [{:keys [provider model]} @active*]
+                            {:session  session-key
+                             :provider (some-> provider api/display-name)
+                             :model    model
+                             :cycle    (:n @cycle*)}))
             measured    (fn [f] (accounting/measuring f acct-info parts))
-            chat-fn     (measured (chat-fn-for ch session-key p @current-request cycle*))
+            chat-fn     (fn [req]
+                          (let [provider (:provider @active*)]
+                            ((measured (chat-fn-for ch session-key provider req cycle*)) req)))
             followup-elapsed* (atom nil)
             followup-fn (fn [req response tool-calls tool-results]
                           (let [start-ns (System/nanoTime)
-                                messages (api/followup-messages p req response tool-calls tool-results)]
+                                messages (api/followup-messages (:provider @active*) req response tool-calls tool-results)]
                             (reset! followup-elapsed* (elapsed-ms start-ns))
                             (reset! current-request (assoc req :messages messages))
                             messages))
             pending-aside* (atom nil)
             on-cycle      (fn [phase n response-or-req]
-                            (let [cycle {:n n :model model :origin (:origin charge)}]
+                            (let [cycle {:n n :model (:model @active*) :origin (:origin charge)}]
                               (reset! cycle* cycle)
                               (if (= :start phase)
                                 (do (reset! pending-aside* nil)
@@ -1718,10 +1772,18 @@
                             :window-cache   window-cache
                             :cycle*         cycle*}
             tool-fn       (partial record-tool-call! tool-ctx)
+            model-ctx     (fn []
+                            (-> ctx
+                                (assoc :provider (:provider @active*)
+                                       :window-cache window-cache)
+                                (assoc-in [:charge :model] (:model @active*))
+                                (assoc-in [:charge :context-window] (:context-window @active*))
+                                (assoc-in [:charge :model-cfg] (:model-cfg @active*))))
             run-loop      (fn [req]
-                            (let [provider-name (api/display-name p)
+                            (let [provider      (:provider @active*)
+                                  provider-name (api/display-name provider)
                                   request*      (assoc req :provider provider-name)
-                                  chat-fn*      (measured (chat-fn-for ch session-key p request* cycle*))]
+                                  chat-fn*      (measured (chat-fn-for ch session-key provider request* cycle*))]
                               (tool-loop/run chat-fn* followup-fn request* tool-fn
                                              {:max-loops          cycle-budget
                                               :max-parallel-tools max-parallel
@@ -1731,7 +1793,7 @@
                                               :cancelled?         #(bridge/cancelled? session-key)
                                               :after-tools        (fn [req]
                                                                    (let [start-ns (System/nanoTime)
-                                                                         next     (maybe-mid-turn-compact! session-key (assoc ctx :window-cache window-cache) req current-request)]
+                                                                         next     (maybe-mid-turn-compact! session-key (model-ctx) req current-request)]
                                                                      (when-let [ms @followup-elapsed*]
                                                                        (log/debug :turn/followup-built :elapsed-ms ms)
                                                                        (reset! followup-elapsed* nil))
@@ -1748,25 +1810,121 @@
                                                                              nudged)
                                                                            next)))))
                                               :on-cycle           on-cycle
-                                              :api                p})))
-            first-result (run-loop request)
-            retry        (overflow-compact-retry! session-key (assoc ctx :window-cache window-cache) current-request first-result)
-            loop-result  (cond
-                           (nil? retry) first-result
-                           (:unavailable? retry) retry
-                           :else (run-loop retry))
-            loop-result  (if (and retry (prompt-too-long? loop-result))
-                           (context-exhausted-result config session-key
-                                                     (session-gauge session-key (mid-turn-compaction-opts ctx))
-                                                     (:context-window charge))
-                           loop-result)
+                                              :api                provider})))
+            attempt       (fn []
+                            (let [first-result (run-loop @current-request)
+                                  ctx*         (model-ctx)
+                                  retry        (overflow-compact-retry! session-key ctx* current-request first-result)
+                                  loop-result  (cond
+                                                 (nil? retry) first-result
+                                                 (:unavailable? retry) retry
+                                                 :else (run-loop retry))]
+                              (if (and retry (prompt-too-long? loop-result))
+                                (context-exhausted-result config session-key
+                                                          (session-gauge session-key (mid-turn-compaction-opts ctx*))
+                                                          (:context-window @active*))
+                                loop-result)))
+            request-for   (fn [link]
+                            (let [transcript (with-transcript-lock session-key #(policy/active-transcript (session-policy ctx) session-key))
+                                  transcript (if (= :reset context-mode)
+                                               (if-let [current-user (last transcript)] [current-user] [])
+                                               transcript)
+                                  tools      (active-tools (:provider link) allowed-tools module-index)]
+                              ;; previous-response-id belongs to the model that stored it.
+                              (dissoc (build-chat-request (:provider link)
+                                                         {:boot-files      boot-files
+                                                          :crew            crew
+                                                          :effort          effort
+                                                          :guidance        guidance
+                                                          :model           (:model link)
+                                                          :nonce           nonce
+                                                          :origin          origin
+                                                          :rules-text      rules-text
+                                                          :session-name    session-key
+                                                          :skill-menu-text skill-menu-text
+                                                          :soul            soul
+                                                          :transcript      transcript
+                                                          :tools           tools})
+                                      :previous-response-id)))
+            fits?         (fn [link req]
+                            ;; :system sits beside :messages; estimate-tokens only
+                            ;; walks :content/:messages/:tools, so count the
+                            ;; system text as content or an 8-token window
+                            ;; looks like it can hold the prompt.
+                            (let [window (:context-window link)
+                                  tokens (api/estimate-tokens
+                                           {:content  (str (:system req) (:instructions req))
+                                            :messages (:messages req)
+                                            :tools    (:tools req)})]
+                              (or (not (and window (pos? window)))
+                                  (<= tokens window))))
+            ;; A walled provider is not called. Fallback models that cannot
+            ;; hold the transcript are not called either; the head still is,
+            ;; so context overflow can compact and retry that same model.
+            prepared      (fn [link check-context? ready-req]
+                            (when (and (:provider link)
+                                       (nil? (provider-wall/active-wall (:provider-name link) (turn-now))))
+                              (let [req (or ready-req (request-for link))]
+                                (when (or (not check-context?) (fits? link req))
+                                  req))))
+            engage!       (fn [link req]
+                            (reset! active* link)
+                            (reset! current-request req)
+                            req)
+            fallbacks     (fallback-links ctx session-key)
+            head          @active*
+            loop-result   (if (empty? fallbacks)
+                            (attempt)
+                            (letfn [(search [links]
+                                      (loop [links links]
+                                        (when-let [link (first links)]
+                                          (if-let [req (prepared link true nil)]
+                                            [link req (rest links)]
+                                            (recur (rest links))))))
+                                    (exhausted! [link reason result]
+                                      (notify-chain-exhausted! config session-key
+                                                               (:provider-name link)
+                                                               (:model link)
+                                                               reason result)
+                                      result)
+                                    (drive! [link req remaining]
+                                      (engage! link req)
+                                      (let [result  (attempt)
+                                            weather (provider-wall/fallback-weather result config (:provider-name link))]
+                                        (if-not weather
+                                          result
+                                          (do
+                                            (provider-wall/record-wall! (:provider-name link)
+                                                                        (:reason weather)
+                                                                        (:retry-after-ms weather)
+                                                                        (turn-now))
+                                            (if-let [[next next-req remaining*] (search remaining)]
+                                              (do
+                                                (log-model-fallback! (:model link) (:model next) (:reason weather))
+                                                (drive! next next-req remaining*))
+                                              (exhausted! link (:reason weather) weather))))))]
+                              (let [now      (turn-now)
+                                    head-req (prepared head false request)]
+                                (if-let [req head-req]
+                                  (drive! head req fallbacks)
+                                  (if-let [[link req remaining] (search fallbacks)]
+                                    (do
+                                      (log-model-fallback! (:model head) (:model link)
+                                                           (:reason (provider-wall/active-wall (:provider-name head) now)))
+                                      (drive! link req remaining))
+                                    (let [wall   (provider-wall/active-wall (:provider-name head) now)
+                                          result {:unavailable?   true
+                                                  :reason         (:reason wall :wall)
+                                                  :retry-after-ms (:retry-after-ms wall)
+                                                  :provider       (:provider-name head)}]
+                                      (exhausted! head (:reason result) result)))))))
             ;; Before the wall classifier reshapes the result: a turn that died
             ;; on its last request still burned the cycles that finished
             ;; (isaac-ewxh).
             _            (keep-cycle-usage! ctx session-key loop-result)
             result       (if (:unavailable? loop-result)
                            loop-result
-                           (let [normalized (provider-wall/normalize loop-result config (api/display-name p))
+                           (let [normalized (provider-wall/normalize loop-result config (:provider-name @active*))
                                  exhausted? (:loop-request? normalized)
                                  policy     (when exhausted?
                                               (exhaustion-policy ch session-key {:cycle-limit cycle-budget}))
@@ -1783,15 +1941,16 @@
                              (-> handled
                                  (assoc :cycle-limit cycle-budget)
                                  finalize-turn-result)))]
-        (log/debug :turn/model-response-summary
-                   :session session-key
-                   :provider (api/display-name p)
-                   :error (:error result)
-                   :assistant-content-chars (count (or (get-in result [:response :content]) ""))
-                   :tool-calls-count (count (:tool-calls result))
-                   :executed-tools-count @tool-count)
-        (let [provider-name (api/display-name p)
-              result        (provider-wall/normalize result config provider-name)]
+        (let [{:keys [model provider-name]} @active*
+              answered result
+              result   (provider-wall/normalize result config provider-name)]
+          (log/debug :turn/model-response-summary
+                     :session session-key
+                     :provider provider-name
+                     :error (:error answered)
+                     :assistant-content-chars (count (or (get-in answered [:response :content]) ""))
+                     :tool-calls-count (count (:tool-calls answered))
+                     :executed-tools-count @tool-count)
           (cond
             (or (= :cancelled (:error result))
                 (:cancelled? result)
@@ -1806,7 +1965,7 @@
                                         {:cfg      config
                                          :provider provider-name
                                          :model    model
-                                         :now      (or memory/*now* (memory/now))
+                                         :now      (turn-now)
                                          :model-override (:model-override charge)})
                 result))
 

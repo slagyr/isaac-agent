@@ -160,12 +160,17 @@
 (defn validate-error [value]
   (schema/validate error value))
 
+(defn- nonempty-text [value]
+  (when (string? value)
+    (let [s (str/trim value)]
+      (when-not (str/blank? s) s))))
+
 (defn error-message [value]
-  (or (:message value)
+  (or (nonempty-text (:message value))
       (let [body-error (get-in value [:body :error])]
         (cond
-          (map? body-error) (or (:message body-error) (pr-str body-error))
-          (string? body-error) body-error
+          (map? body-error) (or (nonempty-text (:message body-error)) (pr-str body-error))
+          (string? body-error) (nonempty-text body-error)
           (:body value) (pr-str (:body value))))
       (when-let [kind (:error value)] (name kind))
       "provider error"))

@@ -91,3 +91,29 @@
       (should-be-nil (:retry-after-ms classified))))
 
   )
+
+(describe "provider wall clock"
+  (before (sut/clear-walls!))
+  (after (sut/clear-walls!))
+
+  (it "remembers a provider until its retry-after passes"
+    (let [now (java.time.Instant/parse "2026-04-21T10:00:00Z")]
+      (sut/record-wall! "chatgpt" :wall 60000 now)
+      (should= :wall (:reason (sut/active-wall "chatgpt" (.plusMillis now 30000))))
+      (should-be-nil (sut/active-wall "chatgpt" (.plusMillis now 60000)))
+      (should-be-nil (sut/active-wall "anthropic" (.plusMillis now 1000)))))
+
+  (it "a wall on a provider covers every model on that provider"
+    (let [now (java.time.Instant/parse "2026-04-21T10:00:00Z")]
+      (sut/record-wall! "chatgpt" :wall 60000 now)
+      (should (sut/active-wall "chatgpt" (.plusMillis now 1000)))))
+
+  (it "fallback-weather is wall, auth, and stall — not a contract error or overflow"
+    (should= :wall (:reason (sut/fallback-weather {:error :rate-limited :status 429 :retry-after-ms 60000 :message "slow"}
+                                                  {} "chatgpt")))
+    (should= :auth (:reason (sut/fallback-weather {:error :api-error :status 401 :message "no"}
+                                                  {} "chatgpt")))
+    (should-be-nil (sut/fallback-weather {:error :api-error :status 400 :message "invalid request: unknown field"}
+                                         {} "chatgpt"))
+    (should-be-nil (sut/fallback-weather {:error :context-overflow :status 400 :message "prompt is too long"}
+                                         {} "chatgpt"))))

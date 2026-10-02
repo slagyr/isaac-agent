@@ -2,7 +2,8 @@
   (:require
     [clojure.string :as str]
     [isaac.agent.config.defaults :as defaults]
-    [isaac.foundation.logger :as log]))
+    [isaac.foundation.logger :as log])
+  (:import (java.time Instant)))
 
 (def default-provider-retry-after-ms 1800000)
 (def default-provider-auth-retry-ms 300000)
@@ -150,3 +151,53 @@
         result)
 
     :else result))
+
+;; region ----- Provider wall clock -----
+
+(def fallback-reasons
+  "Unavailable reasons that advance a crew's model chain. A contract
+   :api-error and context overflow are not in this set."
+  #{:wall :auth :stream-stalled})
+
+(defonce ^:private walls* (atom {}))
+
+(defn clear-walls!
+  "Test hook — forget every provider's retry-after."
+  []
+  (reset! walls* {}))
+
+(defn- clock [now]
+  (or now (Instant/now)))
+
+(defn record-wall!
+  "Remember that `provider` (display name) is unusable until `retry-after-ms`
+   has passed. A later model on the same provider is not a way around it."
+  [provider reason retry-after-ms now]
+  (when (seq provider)
+    (let [now*  (clock now)
+          ms    (long (or retry-after-ms 0))
+          until (.plusMillis ^Instant now* ms)
+          wall  {:until          until
+                 :reason         (or reason :wall)
+                 :retry-after-ms ms
+                 :provider       provider}]
+      (swap! walls* assoc provider wall)
+      wall)))
+
+(defn active-wall
+  "The recorded wall for `provider`, or nil once its retry-after has passed."
+  [provider now]
+  (when-let [wall (get @walls* provider)]
+    (when (.isBefore ^Instant (clock now) ^Instant (:until wall))
+      wall)))
+
+(defn fallback-weather
+  "Normalized unavailable result when the provider wall says to leave this
+   model. Nil for a genuine :api-error and for context overflow."
+  [result cfg provider]
+  (let [normalized (normalize result cfg provider)]
+    (when (and (:unavailable? normalized)
+               (contains? fallback-reasons (:reason normalized)))
+      normalized)))
+
+;; endregion ^^^^^ Provider wall clock ^^^^^

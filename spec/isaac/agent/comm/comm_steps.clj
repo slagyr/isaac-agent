@@ -139,6 +139,10 @@
     (g/assoc! :llm-result result)
     (g/assoc! :llm-request (or (drive-dispatch/last-request)
                                (grover/last-request)))
+    (when-let [k (g/get :current-key)]
+      (when-let [request (or (drive-dispatch/last-request) (grover/last-request))]
+        (g/update! :chat-requests-by-session
+                   (fn [m] (update (or m {}) k (fnil conj []) request)))))
     (g/assoc! :provider-request (or (last outbound-requests)
                                     (grover/last-provider-request)
                                     grover-request))

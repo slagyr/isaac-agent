@@ -549,11 +549,18 @@
         (:reasoning response) (assoc :reasoning (:reasoning response))
         (:response-id response) (assoc :response-id (:response-id response))))))
 
+(defn record-request!
+  "Remember a Clojure chat request. GroverAPI/chat records itself; simulated
+   provider HTTP (responses, messages) does not, so dispatch notes those."
+  [request]
+  (reset! last-request* request)
+  (swap! requests* conj request)
+  request)
+
 (defn chat
   "Synchronous chat. Returns a response map instantly."
   [request provider-name cfg]
-  (reset! last-request* request)
-  (swap! requests* conj request)
+  (record-request! request)
   (let [session-key  (:session-key cfg)
         delayed?     @delay-enabled*
         delay-error  (when delayed? (maybe-delay! session-key))

@@ -91,9 +91,21 @@
                                      (response-preview result))))
   result)
 
+(defn- note-simulated-chat!
+  "Feature steps read `grover/requests` for the Clojure chat request. Direct
+   GroverAPI/chat records itself; a simulated responses/messages call only
+   hits HTTP, so note the request here once."
+  [p request]
+  (when (and (:simulate-provider (api/config p))
+             (not= "grover" (:api (api/config p))))
+    (when-let [record (try (requiring-resolve 'isaac.agent.llm.api.grover/record-request!)
+                           (catch Throwable _ nil))]
+      (record request))))
+
 (defn dispatch-chat [p request]
   (let [name (api/display-name p)]
     (reset! last-request* request)
+    (note-simulated-chat! p request)
     (log/debug :chat/request :provider name :model (:model request))
     (log-dispatch-result p name request (validate-provider-result name (api/chat p request))
                          :chat/error :chat/response)))
@@ -101,6 +113,7 @@
 (defn dispatch-chat-stream [p request on-chunk]
   (let [name (api/display-name p)]
     (reset! last-request* request)
+    (note-simulated-chat! p request)
     (log/debug :chat/stream-request :provider name :model (:model request))
     (log-dispatch-result p name request (validate-provider-result name (api/chat-stream p request on-chunk))
                          :chat/stream-error :chat/stream-response)))

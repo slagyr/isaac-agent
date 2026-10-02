@@ -565,6 +565,10 @@
       {:type :id,
        :description "ID of the model this crew member uses.",
        :validations [:model-exists?]},
+      :model-fallback
+      {:type :seq,
+       :description "Ordered model ids tried when the head model's provider is walled, rejected for auth, or stalled. A walled provider is skipped for every later model on that same provider.",
+       :spec {:type :id, :validations [:model-exists?]}},
       :session-policy
       {:type :keyword,
        :description

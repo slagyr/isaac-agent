@@ -104,6 +104,7 @@
     (grover/clear-own-tool-loop!)
     (drive-dispatch/clear-last-request!)
     ((requiring-resolve 'isaac.agent.attention/clear-throttle!))
+    ((requiring-resolve 'isaac.agent.drive.provider-wall/clear-walls!))
     (bridge-cancel/clear!)
     (bridge-suspend/clear!)
     (reset! comm-registry/*registry* (comm-registry/fresh-registry))

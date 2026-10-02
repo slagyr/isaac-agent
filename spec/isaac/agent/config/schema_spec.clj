@@ -100,6 +100,18 @@
                (lexicon/conform (runtime-spec sut/crew)
                                 {:session-policy :episodes})))
 
+    (it "crew conforms an ordered model-fallback of known model ids"
+      (binding [validation-lexicon/*config* {:models {test-model-id {}
+                                                      "relay" {}}}]
+        (let [result (lexicon/conform sut/crew {:model test-model-id
+                                                :model-fallback [:relay]})]
+          (should-not (schema/error? result))
+          (should= ["relay"] (:model-fallback result)))))
+
+    (it "crew rejects a model-fallback id that does not exist"
+      (let [result (lexicon/conform sut/crew {:model-fallback ["ghost"]})]
+        (should (schema/error? result))))
+
     (it "defaults.tools conforms max-lines and max-bytes"
       (should= {:tools {:max-lines 500 :max-bytes 131072}}
                (lexicon/conform (runtime-spec sut/defaults)
