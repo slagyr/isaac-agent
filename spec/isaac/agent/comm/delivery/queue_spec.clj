@@ -44,6 +44,16 @@
               :target "C999"}
              (select-keys (last @log/captured-logs) [:event :id :comm :target])))
 
+  (it "logs sender details when a queued record names them"
+    (sut/enqueue! {:id "7f3a" :comm :stub :content "Hello"
+                   :crew "lookout" :session "dawn-watch"})
+    (should= {:crew "lookout" :session "dawn-watch"}
+             (select-keys (last @log/captured-logs) [:crew :session])))
+
+  (it "omits sender details for older records"
+    (sut/enqueue! {:id "7f3a" :comm :stub :content "Hello"})
+    (should= {} (select-keys (last @log/captured-logs) [:crew :session])))
+
   (it "moves a pending delivery to comm/delivery/failed"
     (sut/enqueue! {:id      "7f3a"
                    :comm    (keyword marigold/longwave)

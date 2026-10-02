@@ -3,9 +3,11 @@
     [clojure.string :as str]
     [isaac.agent.comm.delivery.queue :as queue]
     [isaac.agent.comm.factory :as comm-factory]
+    [isaac.agent.config.defaults :as defaults]
+    [isaac.agent.session.store.spi :as store]
+    [isaac.agent.tool.fs-bounds :as bounds]
     [isaac.foundation.config.loader :as loader]
-    [isaac.foundation.fs :as fs]
-    [isaac.agent.tool.fs-bounds :as bounds]))
+    [isaac.foundation.fs :as fs]))
 
 (def ^:private attachments-description
   "Local file paths to attach. Only comms that accept attachments take them.")
@@ -178,8 +180,15 @@
       (:error resolved)
 
       :else
-      {:result (:id (queue/enqueue! (cond-> (build-record comm-kw content args send-schema)
-                                      (seq (:paths resolved)) (assoc :attachments (:paths resolved)))))})))
+      (let [session-key (or (get args "session_key") (get args :session_key))
+            session     (when session-key
+                          (some-> (bounds/session-store args) (store/get-session session-key)))
+            crew        (when session-key
+                          (or (:crew session)
+                              (defaults/crew-id (loader/snapshot "comm_send: default crew"))))]
+        {:result (:id (queue/enqueue! (cond-> (build-record comm-kw content args send-schema)
+                                        session-key (assoc :crew crew :session session-key)
+                                        (seq (:paths resolved)) (assoc :attachments (:paths resolved)))))}))))
 
 (defn comm-send-tool
   "Queue an outbound comm delivery. Args use string keys (LLM JSON)."

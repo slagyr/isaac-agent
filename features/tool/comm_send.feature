@@ -67,7 +67,6 @@ Feature: comm_send tool
       | telly/target | bridge          |
       | telly/loft   | high            |
 
-  @wip
   Scenario: comm_send stamps the sending crew and session on the delivery (isaac-qn4o)
     Every outbound message says who sent it. Apple, Discord and the rest
     see one bot; the record and the log keep the crew and session.

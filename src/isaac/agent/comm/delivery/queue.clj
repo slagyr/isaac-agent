@@ -61,9 +61,9 @@
     (fs/mkdirs fs* (fs/parent path))
     (fs/spit fs* path (write-edn record))
     (log/info :comm.delivery/queued
-              :id (:id record)
-              :comm (:comm record)
-              :target (:target record))
+              (cond-> {:id (:id record) :comm (:comm record) :target (:target record)}
+                (some? (:crew record)) (assoc :crew (:crew record))
+                (some? (:session record)) (assoc :session (:session record))))
     record))
 
 (defn update-pending! [id attrs]

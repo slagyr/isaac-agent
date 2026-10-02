@@ -6,6 +6,8 @@
     [isaac.foundation.marigold :as marigold]
     [isaac.foundation.nexus :as nexus]
     [isaac.agent.session.spec-helper :as store-helper]
+    [isaac.agent.spec-helper :as helper]
+    [isaac.agent.session.store.spi :as store]
     [isaac.agent.tool.comm-send :as sut]
     [speclj.core :refer :all]))
 
@@ -32,6 +34,8 @@
   (fs/spit (fs/instance) (str workdir "/" name) content))
 
 (describe "tool.comm-send"
+
+  (helper/with-captured-logs)
 
   #_{:clj-kondo/ignore [:unresolved-symbol]}
   (around [example]
@@ -98,6 +102,26 @@
                     :telly/loft   "high"}
                    (select-keys (first pending)
                                 [:comm :content :telly/target :telly/loft])))))
+
+    (it "stamps the sending session's crew on its queued delivery"
+      (store-helper/with-memory-store
+        (store-helper/create-session! "/test/isaac" session-key {:crew crew-name})
+        (sut/comm-send-tool {"comm" "tannoy" "content" "Lantern is lit."
+                             "session_key" session-key})
+        (should= {:crew crew-name :session session-key}
+                 (select-keys (first (queue/list-pending)) [:crew :session]))))
+
+    (it "uses the default crew when a session has no crew"
+      (store-helper/with-memory-store
+        (store-helper/create-session! "/test/isaac" session-key {:crew crew-name})
+        (loader/set-snapshot!
+          (assoc (loader/snapshot "comm_send spec") :defaults {:frequencies {:crew "main"}})
+          "comm_send spec default crew")
+        (with-redefs [store/get-session (fn [_ _] {:crew nil})]
+          (sut/comm-send-tool {"comm" "tannoy" "content" "Lantern is lit."
+                               "session_key" session-key}))
+        (should= {:crew "main" :session session-key}
+                 (select-keys (first (queue/list-pending)) [:crew :session]))))
 
     (it "errors on unknown comm slots without enqueueing"
       (let [result (sut/comm-send-tool {"comm" "phantom" "content" "Anyone there?"})]

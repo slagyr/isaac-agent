@@ -66,6 +66,31 @@
     (sut/tick! {:now (Instant/parse "2026-04-21T10:00:00Z")})
     (should-be-nil (queue/read-pending "7f3a")))
 
+  (it "logs the sender when a delivery succeeds"
+    (queue/enqueue! {:id "7f3a" :comm :stub :content "Hello"
+                     :crew "lookout" :session "dawn-watch"})
+    (comm-registry/register-instance! "stub" (->StubComm {:ok true}))
+    (sut/tick! {:now (Instant/parse "2026-04-21T10:00:00Z")})
+    (should= {:crew "lookout" :session "dawn-watch"}
+             (select-keys (last @log/captured-logs) [:crew :session])))
+
+  (it "carries sender details through attempt failure, deferral and dead-letter logs"
+    (doseq [result [{:ok false :transient? true}
+                    {:ok false :transient? true :defer? true}
+                    {:ok false :transient? false}]]
+      (queue/enqueue! {:id "7f3a" :comm :stub :content "Hello"
+                       :crew "lookout" :session "dawn-watch"})
+      (comm-registry/register-instance! "stub" (->StubComm result))
+      (sut/tick! {:now (Instant/parse "2026-04-21T10:00:00Z")})
+      (should= {:crew "lookout" :session "dawn-watch"}
+               (select-keys (last @log/captured-logs) [:crew :session]))))
+
+  (it "omits sender details for older pending records"
+    (queue/enqueue! {:id "7f3a" :comm :stub :content "Hello"})
+    (comm-registry/register-instance! "stub" (->StubComm {:ok true}))
+    (sut/tick! {:now (Instant/parse "2026-04-21T10:00:00Z")})
+    (should= {} (select-keys (last @log/captured-logs) [:crew :session])))
+
   (it "reschedules a transient failure with the next backoff"
     (queue/enqueue! {:id      "7f3a"
                      :comm    :stub

@@ -45,6 +45,8 @@
      (cond-> {:id   (:id record)
               :comm (:comm record)}
        (some? target)          (assoc :target target)
+       (some? (:crew record))  (assoc :crew (:crew record))
+       (some? (:session record)) (assoc :session (:session record))
        (some? (:error result)) (assoc :error (:error result))))))
 
 (defn- dead-letter! [record attempts reason result]

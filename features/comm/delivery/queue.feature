@@ -110,7 +110,6 @@ Feature: Delivery queue
       | level | event                    | id   |
       | info  | :comm.delivery/delivered | 7f3a |
 
-  @wip
   Scenario: the delivered log names the crew and session that sent it (isaac-qn4o)
     Given the comm "stub" returns:
       | ok   |
