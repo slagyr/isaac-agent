@@ -35,7 +35,10 @@
   #_{:clj-kondo/ignore [:unresolved-symbol]}
   (around [example]
     (nexus/-with-nexus {:root "/test/isaac" :fs (fs/mem-fs)}
-      (example)))
+      (with-redefs [store/mark-in-flight! (fn [_ _] true)
+                    store/clear-in-flight! (fn [_ _] nil)
+                    pool/resolve-submitted (fn [_ _] {:resource-pools []})]
+        (example))))
 
   (it "leaves a held turn parked when dispatch parks again"
     (queue/enqueue! {:id         "berth-1"

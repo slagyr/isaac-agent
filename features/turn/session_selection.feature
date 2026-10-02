@@ -79,7 +79,6 @@ Feature: Session selection at admission
     Then the stdout contains "Lookout reply"
     And the exit code is 0
 
-  @wip
   Scenario: two hails to the same frequencies claimed in one tick land on different sessions (isaac-r209)
     Admission must reserve the session it picks the moment the queue claims
     the charge, not when the drive later accepts the turn — otherwise two
@@ -107,7 +106,6 @@ Feature: Session selection at admission
       | type    | message.role | message.content   |
       | message | user         | #"Haul (one|two)" |
 
-  @wip
   Scenario: with every matching session busy a hail waits, then runs as its own turn on the session that frees (isaac-r209)
     Separate hails never merge into a running turn (decision, 2026-10-02) —
     even one that waited for a session to free runs as ITS OWN turn, never
@@ -133,13 +131,11 @@ Feature: Session selection at admission
     When isaac is run with "turns show #turn-id"
     Then the stdout does not contain "merged-into"
 
-  @wip
   Scenario: an empty match with create never fails immediately and never waits (isaac-r209)
     When a turn with input "Signal the fleet" is submitted to crew "ghost" with create "never"
     Then the hail submission failed with "no session for crew: ghost"
     And the hail submission did not wait
 
-  @wip
   Scenario: an empty match with create if-missing creates a session and runs there (isaac-r209)
     Given the isaac EDN file "config/crew/lookout.edn" exists with:
       | path  | value              |
@@ -156,7 +152,6 @@ Feature: Session selection at admission
       | finished |
       | ok       |
 
-  @wip
   Scenario: a free session held by a pool-busy charge is not reserved — another charge can still use it (isaac-r209)
     Given a scripted resource pool "dock" admits 1 turn at a time
     And the following model responses are queued:

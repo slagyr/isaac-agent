@@ -103,31 +103,59 @@
            :origin (:origin last-record)
            :held-ids (mapv :id records))))
 
-(defn- process-record! [now cfg record]
+(defn- admit! [charge]
+  (let [ss (:session-store charge)
+        session-key (:session-key charge)]
+    (if (or (:address-busy? charge)
+            (and session-key (not (store/mark-in-flight! ss session-key))))
+      {:held true}
+      (let [reserved? (boolean session-key)
+            resolved (pool/resolve-submitted (:config charge) (:resource-pools charge))
+            decision (if (:error resolved)
+                       resolved
+                       (pool/acquire-all! (:resource-pools resolved)
+                                          {:session-key session-key :cwd (:cwd charge)
+                                           :crew (:crew charge) :origin (:origin charge) :now (:now charge)}))]
+        (if (:error decision)
+          (do (when reserved? (store/clear-in-flight! ss session-key))
+              (if (= :hold (:reason decision)) {:held true} decision))
+          {:charge (assoc charge :session-reserved? reserved?
+                                 :pool-leases (:leases decision)
+                                 :cwd (or (some (comp :session/cwd :bindings) (:leases decision))
+                                          (:cwd charge)))})))))
+
+(declare tick!)
+
+(defn- process-record! [now cfg record admitted]
   (let [result (try
-                 (let [charge (wake-charge record now cfg)]
-                   (if (:address-busy? charge)
-                     {:held true}
-                     (bridge/dispatch! charge)))
+                 (bridge/dispatch! admitted)
                  (catch Throwable t
                    (log/warn :turn.queue/wake-failed
                              :id (:id record)
                              :error (.getMessage t))
-                   {:error :exception :message (.getMessage t)}))]
-    (log/info :turn.queue/woke
-              :id (:id record)
+                   {:error :exception :message (.getMessage t)})
+                 (finally
+                   ;; The drive releases leases on its normal path; this also
+                   ;; covers early errors and exceptions.
+                   (pool/release-all! (:pool-leases admitted))))
+        ids (or (:held-ids record) [(:id record)])]
+    (log/info :turn.queue/woke :id (:id record)
               :held? (boolean (still-held? result))
-              :error (:error result)
-              :session (:session record))
+              :error (:error result) :session (:session-key admitted))
     (if (still-held? result)
-      (doseq [id (or (:held-ids record) [(:id record)])]
+      (doseq [id ids]
         (when (= :running (:state (queue/read-held id)))
           (queue/update-turn! id {:state :held})))
-      (doseq [id (or (:held-ids record) [(:id record)])]
+      (doseq [id ids]
         (queue/update-turn! id (cond-> {:state :finished :outcome (if (:error result) :error :ok)}
                                  (not= id (:id record)) (assoc :merged-into (:id record))
                                  (:error result) (assoc :reason (or (:message result) (name (:error result))))))
-        (queue/forget-live-comm! id)))))
+        (queue/forget-live-comm! id)))
+    ;; Keep the reservation through bookkeeping so a nested wake cannot
+    ;; reclaim this record before it reaches :finished.
+    (when (:session-reserved? admitted)
+      (store/clear-in-flight! (:session-store admitted) (:session-key admitted))
+      (when (and (not (still-held? result)) (seq (queue/list-held))) (tick!)))))
 
 ;; A turn started asynchronously can itself trigger more async turn-queue
 ;; work before it settles — bridge.core's own-session drain-on-release
@@ -162,11 +190,11 @@
    whatever the now-restored outer scope holds instead of the config the
    caller just installed, and could resolve a resource pool the caller's
    config plainly declares as :unknown-resource-pool."
-  [now cfg record]
+  [now cfg record admitted]
   (let [self (promise)
         task (bound-fn []
                (try
-                 (process-record! now cfg record)
+                 (process-record! now cfg record admitted)
                  (catch Throwable t
                    (log/warn :turn.queue/record-crashed
                              :id (:id record)
@@ -213,24 +241,29 @@
         (= :running state) (if (compare-and-set! tick-state* :running :idle) :idle (recur))
         :else              :idle))))
 
+(defn- claim-and-start! [record now]
+  (let [cfg (wake-config record)
+        charge (wake-charge record now cfg)
+        admission (admit! charge)]
+    (if-let [admitted (:charge admission)]
+      (if (queue/claim! (:id record))
+        (run-record-async! now cfg record admitted)
+        (do (pool/release-all! (:pool-leases admitted))
+            (when (:session-reserved? admitted)
+              (store/clear-in-flight! (:session-store admitted) (:session-key admitted)))))
+      (when-not (:held admission)
+        (when (queue/claim! (:id record))
+          (queue/update-turn! (:id record) {:state :finished :outcome :error
+                                              :reason (or (:message admission) (name (:error admission)))}))))))
+
 (defn- run-one-pass!
-  "Claims and starts every runnable record, then returns — the pass's own job
-   ends at claim + start (isaac-e9jl)."
+  "Admit a session and its pools synchronously before claiming a record."
   [now]
   (let [records (queue/list-held)
         waiting-sessions (distinct (map :session (filter #(= :waiting-session (:state %)) records)))
-        waiting-ids (set (mapcat #(map :id (mapcat identity (queue/waiting-groups %))) waiting-sessions))
-        ordinary (remove #(contains? waiting-ids (:id %)) records)]
-    (doseq [record ordinary]
-      (when (queue/claim! (:id record))
-        ;; Resolved here, synchronously, on the tick!-calling thread — not
-        ;; inside the future. A caller that just installed a fresh config
-        ;; and calls tick! from within its own nexus scope (a CLI retry) may
-        ;; unwind that scope before the future runs; nexus is a single
-        ;; process-wide atom, not a dynamic var, so a lazy re-read there
-        ;; would see whatever the now-restored outer scope holds instead
-        ;; (isaac-8evx).
-        (run-record-async! now (wake-config record) record)))
+        waiting-ids (set (mapcat #(map :id (mapcat identity (queue/waiting-groups %))) waiting-sessions))]
+    (doseq [record (remove #(contains? waiting-ids (:id %)) records)]
+      (claim-and-start! record now))
     (doseq [session waiting-sessions
             :when (not (store/in-flight? (or (nexus/get-in [:sessions :store])
                                               (store/registered-store)) session))
@@ -238,17 +271,16 @@
       (let [record (coalesced-record records)]
         (when (> (count records) 1)
           (log/info :turn/coalesced :session session :key (:coalesce-key record) :count (count records)))
-        (when (queue/claim! (:id record))
-          ;; Claim every trailing coalesced member too, not just the merged
-          ;; record's own id. Otherwise they sit at :waiting-session while
-          ;; this turn runs, and a nested tick! (bridge.core's own-session
-          ;; drain-waiting-session, fired from this very turn's dispatch!
-          ;; before process-record! marks them :finished) rediscovers them
-          ;; and starts a second, spurious turn (isaac-2tez).
-          (doseq [{id :id} records
-                  :when (not= id (:id record))]
-            (queue/claim! id))
-          (run-record-async! now (wake-config record) record))))))
+        (let [cfg (wake-config record)
+              admission (admit! (wake-charge record now cfg))]
+          (when-let [admitted (:charge admission)]
+            (if (queue/claim! (:id record))
+              (do (doseq [{id :id} records :when (not= id (:id record))]
+                    (queue/claim! id))
+                  (run-record-async! now cfg record admitted))
+              (do (pool/release-all! (:pool-leases admitted))
+                  (when (:session-reserved? admitted)
+                    (store/clear-in-flight! (:session-store admitted) (:session-key admitted)))))))))))
 
 (defn tick!
   "Claims and starts every runnable record, then returns — a long turn on

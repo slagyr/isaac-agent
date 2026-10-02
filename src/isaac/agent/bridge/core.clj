@@ -342,7 +342,8 @@
            :message (:message obs-check)
            :ref     (:ref obs-check)}
           (let [charge   (or (:charge obs-check) charge)
-                ts-check (admit-charge-resource-pools charge)]
+                ts-check (if (:session-reserved? charge) {:charge charge}
+                           (admit-charge-resource-pools charge))]
             (cond
               (and (:error ts-check) (= :hold (:reason ts-check)))
               (park-held-charge! charge ts-check)
@@ -358,7 +359,8 @@
                 (if-let [session-key (:session-key charge)]
                   (let [session-store* (or (:session-store charge) (nexus/get-in [:sessions :store]))
                         sess           (request-policy charge)]
-                    (if (store/mark-in-flight! session-store* session-key)
+                    (if (or (:session-reserved? charge)
+                            (store/mark-in-flight! session-store* session-key))
                       (do
                         (record-turn-marker! (or sess session-store*) session-key charge)
                         (let [turn-result (atom nil)]
@@ -369,7 +371,8 @@
                               (isolate-cleanup! :clear-turn-marker
                                                 #(clear-turn-marker! (or sess session-store*) session-key))
                               (isolate-cleanup! :clear-in-flight
-                                                #(store/clear-in-flight! session-store* session-key))
+                                                #(when-not (:session-reserved? charge)
+                                                   (store/clear-in-flight! session-store* session-key)))
                               ;; A session's own waiting room drains as soon as its running
                               ;; turn releases it; avoid a bridge → worker load cycle.
                               (when-let [root (charge-root charge)]
