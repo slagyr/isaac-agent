@@ -79,6 +79,100 @@ Feature: Session selection at admission
     Then the stdout contains "Lookout reply"
     And the exit code is 0
 
+  @wip
+  Scenario: two hails to the same frequencies claimed in one tick land on different sessions (isaac-r209)
+    Admission must reserve the session it picks the moment the queue claims
+    the charge, not when the drive later accepts the turn — otherwise two
+    charges claimed in the same pass can both see every matching session
+    as idle and pile onto the same one.
+    Given the following sessions exist:
+      | name       | crew  | updated-at          |
+      | mooring    | ketch | 2026-10-02T09:00:00 |
+      | slipway    | ketch | 2026-10-02T09:05:00 |
+      | forecastle | ketch | 2026-10-02T09:10:00 |
+    And the following model responses are queued:
+      | type | content | model |
+      | text | Aye one | echo  |
+      | text | Aye two | echo  |
+    When a turn with input "Haul one" is submitted to crew "ketch"
+    And a turn with input "Haul two" is submitted to crew "ketch"
+    And the turn queue ticks at "2026-10-02T09:15:00Z"
+    Then session "forecastle" has transcript matching:
+      | type    | message.role | message.content |
+      | message | user         | Haul one         |
+    And session "slipway" has transcript matching:
+      | type    | message.role | message.content |
+      | message | user         | Haul two         |
+    And session "mooring" has transcript not matching:
+      | type    | message.role | message.content   |
+      | message | user         | #"Haul (one|two)" |
+
+  @wip
+  Scenario: with every matching session busy a hail waits, then runs as its own turn on the session that frees (isaac-r209)
+    Separate hails never merge into a running turn (decision, 2026-10-02) —
+    even one that waited for a session to free runs as ITS OWN turn, never
+    folded into the turn that freed the session.
+    Given the following model responses are queued:
+      | type | content    | model | wait |
+      | text | Hold fast  | echo  | true |
+      | text | Trim sails | echo  | true |
+      | text | On deck.   | echo  |      |
+    When the user sends "keep watch" on session "mooring"
+    And the user sends "trim the sails" on session "slipway"
+    And a turn with input "Status?" is submitted to crew "ketch"
+    And the turn queue ticks at "2026-10-02T09:15:00Z"
+    When isaac is run with "turns list"
+    Then the stdout matches:
+      | target     | state |
+      | crew ketch | held  |
+    When the turn ends on session "mooring"
+    Then session "mooring" has transcript matching:
+      | type    | message.role | message.content |
+      | message | user         | Status?         |
+      | message | assistant    | On deck.        |
+    When isaac is run with "turns show #turn-id"
+    Then the stdout does not contain "merged-into"
+
+  @wip
+  Scenario: an empty match with create never fails immediately and never waits (isaac-r209)
+    When a turn with input "Signal the fleet" is submitted to crew "ghost" with create "never"
+    Then the hail submission failed with "no session for crew: ghost"
+    And the hail submission did not wait
+
+  @wip
+  Scenario: an empty match with create if-missing creates a session and runs there (isaac-r209)
+    Given the isaac EDN file "config/crew/lookout.edn" exists with:
+      | path  | value              |
+      | model | echo               |
+      | soul  | You are a lookout. |
+    And the following model responses are queued:
+      | type | content   | model |
+      | text | Aye, aye. | echo  |
+    When a turn with input "Signal the fleet" is submitted to crew "lookout" with create "if-missing"
+    And the turn queue ticks at "2026-10-02T09:15:00Z"
+    Then the session count is 3
+    When isaac is run with "turns show #turn-id"
+    Then the stdout matches:
+      | finished |
+      | ok       |
+
+  @wip
+  Scenario: a free session held by a pool-busy charge is not reserved — another charge can still use it (isaac-r209)
+    Given a scripted resource pool "dock" admits 1 turn at a time
+    And the following model responses are queued:
+      | type | content       | model | wait |
+      | text | Tied off      | echo  | true |
+      | text | Lookout reply | echo  |      |
+    When the user sends "Come alongside" on session "mooring" with resource pools "dock"
+    And a turn with input "Load cargo" is submitted to crew "ketch" with resource pools "dock"
+    And the turn queue ticks at "2026-10-02T09:15:00Z"
+    Then session "slipway" has transcript not matching:
+      | type    | message.role | message.content |
+      | message | user         | Load cargo       |
+    When isaac is run with "prompt --session slipway -m 'Anything on the horizon?'"
+    Then the stdout contains "Lookout reply"
+    And the exit code is 0
+
   Scenario: an explicit session stays bound even when another candidate is free
     Given the following model responses are queued:
       | type | content       | model | wait |

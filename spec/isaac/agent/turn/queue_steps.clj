@@ -14,6 +14,7 @@
     [isaac.agent.spec-helper :as helper]
     [isaac.agent.tool.memory :as memory]
     [isaac.agent.turn.queue :as queue]
+    [isaac.agent.turn.submit :as submit]
     [isaac.agent.turn.worker :as worker]
     [isaac.agent.resource-pool :as pool])
   (:import
@@ -197,6 +198,51 @@
         ;; returning (isaac-e9jl); await it before the next step runs.
         (worker/await-idle!)))))
 
+;; isaac-r209: a hail submits a charge by frequencies alone (crew/tags),
+;; unresolved to any session until the turn queue claims it — the same
+;; entry point isaac-hail uses (isaac.agent.turn.submit/submit!), not the
+;; CLI's --session/--crew resolve-at-submit path. Two submits back to back,
+;; before any tick, land both records in queue/list-held as :queued so a
+;; single "the turn queue ticks at" claims both in the same pass.
+(defn- do-submit! [input frequencies resource-pools]
+  (session-steps/with-feature-config! "hail submit"
+    (fn []
+      (with-feature-fs
+        (fn []
+          (binding [queue/*root* (root-dir)]
+            (nexus/-with-nested-nexus {:root (root-dir) :fs (mem-fs)}
+              (config/dangerously-install-config! (g/get :feature-config) "feature: hail submit")
+              (g/dissoc! :submit-error)
+              (try
+                (let [accepted (submit/submit! {:root           (root-dir)
+                                                 :config         (g/get :feature-config)
+                                                 :frequencies    frequencies
+                                                 :resource-pools resource-pools
+                                                 :prompt         input
+                                                 :origin         {:kind :hail}})]
+                  (g/assoc! :turn-id (:id accepted))
+                  (g/assoc! :held-id (:id accepted))
+                  accepted)
+                (catch Exception e
+                  (g/assoc! :submit-error (ex-message e))
+                  nil)))))))))
+
+(defn turn-submitted-to-crew [input crew]
+  (do-submit! input {:crew crew} nil))
+
+(defn turn-submitted-to-crew-with-pools [input crew resource-pools]
+  (do-submit! input {:crew crew} (mapv keyword (str/split resource-pools #",\s*"))))
+
+(defn turn-submitted-to-crew-with-create [input crew create-mode]
+  (do-submit! input {:crew crew :create (keyword create-mode)} nil))
+
+(defn hail-submission-failed [expected]
+  (g/should (some? (g/get :submit-error)))
+  (g/should (str/includes? (g/get :submit-error) expected)))
+
+(defn hail-submission-did-not-wait []
+  (g/should= [] (queue/list-held)))
+
 (defn user-sends-with-resource-pools [content key-str resource-pools]
   (ensure-wake-hook!)
   (session-steps/user-sends-on-session
@@ -250,6 +296,24 @@
 
 (defgiven #"a scripted resource pool \"([^\"]+)\" binds:" isaac.agent.turn.queue-steps/scripted-pool-binds)
 (defgiven #"resource pool \"([^\"]+)\" has lease \"([^\"]+)\" out" isaac.agent.turn.queue-steps/scripted-pool-has-lease)
+
+;; isaac-r209: minimal new steps — submit a charge by frequencies alone
+;; (crew), the same unresolved-until-claim shape isaac-hail uses, so the
+;; turn queue's claim-time admission can be exercised from a feature.
+(defwhen #"a turn with input \"([^\"]+)\" is submitted to crew \"([^\"]+)\""
+  isaac.agent.turn.queue-steps/turn-submitted-to-crew)
+
+(defwhen #"a turn with input \"([^\"]+)\" is submitted to crew \"([^\"]+)\" with resource pools \"([^\"]+)\""
+  isaac.agent.turn.queue-steps/turn-submitted-to-crew-with-pools)
+
+(defwhen #"a turn with input \"([^\"]+)\" is submitted to crew \"([^\"]+)\" with create \"([^\"]+)\""
+  isaac.agent.turn.queue-steps/turn-submitted-to-crew-with-create)
+
+(defthen #"the hail submission failed with \"([^\"]+)\""
+  isaac.agent.turn.queue-steps/hail-submission-failed)
+
+(defthen "the hail submission did not wait"
+  isaac.agent.turn.queue-steps/hail-submission-did-not-wait)
 
 (defthen "within {n:int} seconds session {s:string} is waiting on the model"
   isaac.agent.turn.queue-steps/session-waiting-on-model
