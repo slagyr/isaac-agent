@@ -110,6 +110,24 @@ Feature: Delivery queue
       | level | event                    | id   |
       | info  | :comm.delivery/delivered | 7f3a |
 
+  @wip
+  Scenario: the delivered log names the crew and session that sent it (isaac-qn4o)
+    Given the comm "stub" returns:
+      | ok   |
+      | true |
+    And the isaac EDN file comm/delivery/pending/7f3a.edn exists with:
+      | path    | value                                |
+      | id      | 7f3a                                 |
+      | comm    | stub                                 |
+      | target  | https://stub.test/channels/C999/post |
+      | content | Hello from the delivery worker.      |
+      | crew    | lookout                              |
+      | session | dawn-watch                           |
+    When the delivery worker ticks
+    Then the log has entries matching:
+      | level | event                    | id   | crew    | session    |
+      | info  | :comm.delivery/delivered | 7f3a | lookout | dawn-watch |
+
   Scenario: a transient failure logs the attempt count (isaac-ic4g)
     Given the comm "stub" returns:
       | ok    | transient? |

@@ -67,6 +67,30 @@ Feature: comm_send tool
       | telly/target | bridge          |
       | telly/loft   | high            |
 
+  @wip
+  Scenario: comm_send stamps the sending crew and session on the delivery (isaac-qn4o)
+    Every outbound message says who sent it. Apple, Discord and the rest
+    see one bot; the record and the log keep the crew and session.
+    Given the telly comm module is registered
+    And config:
+      | key               | value |
+      | comms.tannoy.type | telly |
+    And the following model responses are queued:
+      | type     | tool_call  | arguments                                                 |
+      | toolCall | comm__send | {"comm":"tannoy","content":"Lantern is lit.","telly.target":"bridge"} |
+      | text     |            | Done.                                                     |
+    When the user sends "tell the bridge" on session "dawn-watch"
+    And the turn ends on session "dawn-watch"
+    Then a pending comm delivery matches:
+      | path    | value           |
+      | comm    | tannoy          |
+      | content | Lantern is lit. |
+      | crew    | main            |
+      | session | dawn-watch      |
+    And the log has entries matching:
+      | level | event                 | comm   | crew | session    |
+      | info  | :comm.delivery/queued | tannoy | main | dawn-watch |
+
   Scenario: comm_send to an unknown comm slot errors without enqueueing
     And the following model responses are queued:
       | type     | tool_call | arguments                                    |
