@@ -547,6 +547,8 @@
                               (some? cache-write) (assoc :cache-write-tokens cache-write)
                               (some? reasoning-tokens) (assoc :reasoning-tokens reasoning-tokens))}
         (:reasoning response) (assoc :reasoning (:reasoning response))
+        (and @drive-own-loop?* (get-in response [:usage :gauge_prompt_tokens]))
+        (assoc :gauge-prompt-tokens (get-in response [:usage :gauge_prompt_tokens]))
         (:response-id response) (assoc :response-id (:response-id response))))))
 
 (defn record-request!
@@ -626,7 +628,14 @@
    hooks identically to Isaac's default loop — the test double Claude Code
    will replace (isaac-1sdl)."
   [chat-fn followup-fn request tool-fn opts]
-  (tool-loop/-run-default chat-fn followup-fn request tool-fn opts))
+  (let [gauge* (atom nil)
+        capture-gauge (fn [req]
+                        (let [response (chat-fn req)]
+                          (when (and (nil? @gauge*) (:gauge-prompt-tokens response))
+                            (reset! gauge* (:gauge-prompt-tokens response)))
+                          response))]
+    (cond-> (tool-loop/-run-default capture-gauge followup-fn request tool-fn opts)
+      @gauge* (assoc :gauge-prompt-tokens @gauge*))))
 
 (defn drive-own-tool-loop!
   "Fixture toggle: Grover declares :drives-tool-loop? and installs the fake

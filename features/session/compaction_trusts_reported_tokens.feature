@@ -1,4 +1,3 @@
-@wip
 Feature: Compaction trusts the provider's reported prompt tokens
 
   Compaction decides whether to fold history before the next LLM request.

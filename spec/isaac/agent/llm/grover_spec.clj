@@ -5,7 +5,7 @@
     [isaac.agent.llm.api.grover :as sut]
     [isaac.agent.llm.api.protocol :as api]
     [isaac.agent.spec-helper :as helper]
-    [speclj.core :refer :all]))
+    [speclj.core :refer [after before context describe it should should-be-nil should-not should-not-throw should-throw should=]]))
 
 (describe "Grover"
 
@@ -97,6 +97,16 @@
                             :messages [{:role "user" :content "Ignored"}]}
                            "grover" {})]
         (should= "Scripted answer" (:content resp))))
+
+    (it "preserves a declared prompt gauge separately from measured usage in a driven loop"
+      (sut/drive-own-tool-loop!)
+      (try
+        (sut/enqueue! [{:type "text" :content "Done"
+                        :usage {:input_tokens 85 :gauge_prompt_tokens 20}}])
+        (let [response (sut/chat {:model "echo" :messages []} "grover" {})]
+          (should= 85 (get-in response [:usage :prompt-tokens]))
+          (should= 20 (:gauge-prompt-tokens response)))
+        (finally (sut/clear-own-tool-loop!))))
 
     (it "consumes queue in order"
       (sut/enqueue! [{:content "First"} {:content "Second"}])
@@ -305,6 +315,18 @@
       (sut/drive-own-tool-loop!)
       (sut/clear-own-tool-loop!)
       (should-not (:drives-tool-loop? (api/config (sut/make "grover" {})))))
+
+    (it "propagates a declared gauge out of a provider-driven turn"
+      (sut/enqueue! [{:type "text" :content "Done"
+                      :usage {:input_tokens 85 :gauge_prompt_tokens 20}}])
+      (sut/drive-own-tool-loop!)
+      (let [result (sut/grover-loop-driver
+                     #(sut/chat % "grover" {})
+                     (fn [_ _ _ _] [])
+                     {:model "echo" :messages [{:role "user" :content "hi"}]}
+                     (fn [_ _] "ok") {})]
+        (should= 85 (get-in result [:response :usage :prompt-tokens]))
+        (should= 20 (:gauge-prompt-tokens result))))
 
     (it "install-test-fixture! clears a leftover driven-loop flag so later scenarios are not driven"
       (sut/drive-own-tool-loop!)

@@ -293,9 +293,8 @@
     prompt-tokens))
 
 (defn- declared-gauge-tokens
-  "A driver that can tell its first request from the turn's spend names that
-   prompt size here. Absent, or not a positive number, the response's own
-   prompt size stays the gauge (isaac-6ef2)."
+  "The first-cycle gauge is a fallback when the provider's final request
+   reports no trustworthy prompt size. A valid final report wins (isaac-o13p)."
   [result]
   (let [n (:gauge-prompt-tokens result)]
     (when (and (number? n) (pos? n)) n)))
@@ -310,8 +309,8 @@
         stop-reason       (get-in result [:response :stop-reason])
         session-entry     (or (policy/get-session sess session-key) {})
         turn-input-tokens (:input-tokens turn-tokens 0)
-        prompt-tokens     (or (declared-gauge-tokens result)
-                              (provider-prompt-tokens ctx session-key result)
+        prompt-tokens     (or (provider-prompt-tokens ctx session-key result)
+                              (declared-gauge-tokens result)
                               0)
         output-tokens     (:output-tokens turn-tokens 0)
         cache-read        (:cache-read turn-tokens)

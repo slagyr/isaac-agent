@@ -272,9 +272,21 @@
           (should= 150000 (:last-input-tokens session))
           (should-be-nil (first (filter #(= :session/stamp-implausible (:event %)) @log/captured-logs))))))
 
-    (it "stamps a declared gauge and leaves the response usage as turn spend (isaac-6ef2)"
-      ;; claude-code's last cycle is not the next Isaac request. The driver
-      ;; names the first cycle; the response keeps the last cycle's own usage.
+    (it "a reported final prompt outranks a smaller declared first-cycle gauge (isaac-o13p)"
+      (helper/create-session! test-dir "reported-over-gauge")
+      (sut/process-response! "reported-over-gauge"
+                             {:usage               {:requests 2 :prompt-tokens 125 :output-tokens 7}
+                              :gauge-prompt-tokens 20
+                              :response            {:content "Done" :model "echo" :tool-calls []
+                                                    :stop-reason :end-turn
+                                                    :usage {:prompt-tokens 85 :output-tokens 7}}}
+                             {:model "echo" :provider "claude-code"})
+      (let [session (helper/get-session test-dir "reported-over-gauge")]
+        (should= 85 (:last-input-tokens session))))
+
+    (it "uses the reported final prompt while leaving response usage as turn spend (isaac-o13p)"
+      ;; The driver names the first cycle, but the last reported request
+      ;; measures the context reached before the next Isaac turn.
       (helper/create-session! test-dir "first-cycle")
       (sut/process-response! "first-cycle"
                              {:usage               {:requests 2 :prompt-tokens 580 :output-tokens 7}
@@ -290,7 +302,7 @@
             session   (helper/get-session test-dir "first-cycle")]
         (should= 580 (get-in assistant [:usage :prompt-tokens]))
         (should= 580 (:turn-input-tokens session))
-        (should= 260 (:last-input-tokens session))))
+        (should= 320 (:last-input-tokens session))))
 
     (it "ignores a zero gauge and keeps the response prompt size (isaac-6ef2)"
       (helper/create-session! test-dir "zero-gauge")

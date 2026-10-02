@@ -497,6 +497,7 @@
      "reason"
      "message"
      "usage.input_tokens"
+     "usage.gauge_prompt_tokens"
      "usage.prompt_tokens"
      "usage.output_tokens"
      "usage.cache_read_input_tokens"
@@ -519,6 +520,7 @@
          cache-read        (some-> (get m "usage.cache_read_input_tokens") not-empty parse-long)
          cache-write       (some-> (get m "usage.cache_creation_input_tokens") not-empty parse-long)
          input-tokens      (some-> (get m "usage.input_tokens") not-empty parse-long)
+         gauge-tokens      (some-> (get m "usage.gauge_prompt_tokens") not-empty parse-long)
          prompt-tokens     (some-> (get m "usage.prompt_tokens") not-empty parse-long)
          output-tokens     (some-> (or (get m "usage.output_tokens")
                                        (get m "usage.completion_tokens")) not-empty parse-long)
@@ -580,6 +582,9 @@
       (assoc :usage (cond-> {:output_tokens (or output-tokens 0)}
                       input-tokens (assoc :input_tokens input-tokens)
                       prompt-tokens (assoc :prompt_tokens prompt-tokens)))
+
+      gauge-tokens
+      (assoc-in [:usage :gauge_prompt_tokens] gauge-tokens)
 
       reasoning-tokens
       (assoc-in [:usage :output_tokens_details :reasoning_tokens] reasoning-tokens)

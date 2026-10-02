@@ -21,12 +21,15 @@
     [clojure.edn :as edn]
     [clojure.java.io :as io]
     [gherclj.core :as g :refer [helper!]]
-    [isaac.foundation.component.runtime-steps :as runtime-steps]))
+    [isaac.foundation.component.runtime-steps :as runtime-steps]
+    [isaac.foundation.runner :as runner]))
 
 (helper! isaac.agent.runtime-steps)
 
 (def ^:private agent-manifest
-  (delay (edn/read-string (slurp (io/resource "isaac-manifest.edn")))))
+  (delay (edn/read-string (slurp (io/file "resources/isaac-manifest.edn")))))
+
+(g/after-scenario runner/stop!)
 
 (defn- with-agent-module-injected! []
   (g/update! :server-config

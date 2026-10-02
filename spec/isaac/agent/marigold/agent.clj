@@ -90,7 +90,12 @@
               [:crew :schema :value-spec :schema :max-in-flight]
               (constantly {:type :ignore
                            :validations [[:retired? "the crew-wide in-flight cap is gone (isaac-ximd); turns serialize per session only"]]}))
-   :isaac.config/check  check-contributions/server})
+   :isaac.config/check  check-contributions/server
+   :isaac.config/validation-ref
+   {:crew-exists? {:known 'isaac.agent.config.checks/known-crew-ids
+                   :message "references undefined crew"}
+    :model-exists? {:known 'isaac.agent.config.checks/known-model-ids+aliases
+                    :message "references undefined model"}}})
 
 (def baseline-manifest baseline-agent-manifest)
 
