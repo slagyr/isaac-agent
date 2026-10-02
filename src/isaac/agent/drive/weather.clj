@@ -11,6 +11,7 @@
   (:import
     (java.time Instant)))
 
+(def default-attention-ms (* 6 60 60 1000))
 (def default-backoff-ms 30000)
 (def max-backoff-ms 1800000)
 
@@ -28,6 +29,7 @@
       :wall :wall
       :auth :auth
       :stream-stalled :stall
+      :mcp-unavailable :mcp-unavailable
       nil)))
 
 (defn backoff-ms
@@ -68,9 +70,16 @@
         now*          (clock now)
         wait-ms       (backoff-ms result suspend-count)
         retry-at      (plus-ms now* wait-ms)
-        notified?     (notify-auth-park! cfg session-key reason
-                                         (or provider (get-in existing [:suspended-on :provider]))
-                                         now*)
+        provider*     (or provider (get-in existing [:suspended-on :provider]))
+        notified?     (or (notify-auth-park! cfg session-key reason provider* now*)
+                          (when (and (= :mcp-unavailable reason)
+                                     (>= suspend-count 2)
+                                     (>= (- (.toEpochMilli ^Instant now*)
+                                            (.toEpochMilli (Instant/parse (:suspended-at existing))))
+                                         (or (get-in cfg [:turn :suspended-attention-ms]) default-attention-ms)))
+                            (attention/maybe-notify-turn-parked!
+                              cfg session-key {:reason reason :provider provider*}
+                              (.toEpochMilli ^Instant now*))))
         marker        (cond-> (assoc (or existing {})
                                 :session-id     session-key
                                 :suspended      true
@@ -97,8 +106,6 @@
              :unavailable?  true}
       (:retry-after-ms result) (assoc :retry-after-ms (:retry-after-ms result))
       (seq (:message result)) (assoc :message (:message result)))))
-
-(def default-attention-ms (* 6 60 60 1000))
 
 (defn- retry-due? [marker now]
   (let [retry (:retry-at marker)]

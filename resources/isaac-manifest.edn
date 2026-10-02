@@ -217,7 +217,9 @@
   :model {:factory isaac.agent.slash.builtin/model-command},
   :status {:factory isaac.agent.slash.builtin/status-command}},
  :isaac.config/schema
- {:bridge
+ {:turn {:schema {:type :map :description "Provider weather turn suspension"
+                  :schema {:suspended-attention-ms {:type :int :description "Milliseconds before repeated MCP suspension posts attention"}}}}
+  :bridge
   {:schema
    {:name :bridge,
     :type :map,

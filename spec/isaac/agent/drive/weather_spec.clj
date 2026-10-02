@@ -32,7 +32,8 @@
   (it "treats walls, auth, and stalls as weather"
     (should= :wall (sut/weather-reason {:unavailable? true :reason :wall}))
     (should= :auth (sut/weather-reason {:unavailable? true :reason :auth}))
-    (should= :stall (sut/weather-reason {:unavailable? true :reason :stream-stalled})))
+    (should= :stall (sut/weather-reason {:unavailable? true :reason :stream-stalled}))
+    (should= :mcp-unavailable (sut/weather-reason {:unavailable? true :reason :mcp-unavailable})))
 
   (it "does not treat blocked or exhausted conversations as weather"
     (should-be-nil (sut/weather-reason {:unavailable? true :reason :blocked}))
@@ -63,6 +64,17 @@
       (should= "2026-04-21T10:00:00Z" (:suspended-at marker))
       (should= "2026-04-21T10:01:00Z" (:retry-at marker))
       (should= 1 (:suspend-count marker))))
+
+  (it "posts attention after a second MCP suspension when the attention window has elapsed"
+    (let [store (mem-store/create-store)
+          now (Instant/parse "2026-04-21T10:00:00Z")
+          cfg {:turn {:suspended-attention-ms 0}}]
+      (sut/stamp-weather! store "trash-can" {:unavailable? true :reason :mcp-unavailable}
+                          {:cfg cfg :provider "claude-code" :model "sonnet" :now now})
+      (should-not (:attention-posted (isaac.agent.session.store.spi/get-turn-marker store "trash-can")))
+      (sut/stamp-weather! store "trash-can" {:unavailable? true :reason :mcp-unavailable}
+                          {:cfg cfg :provider "claude-code" :model "sonnet" :now (.plusSeconds now 60)})
+      (should= true (:attention-posted (isaac.agent.session.store.spi/get-turn-marker store "trash-can")))))
 
   (it "keeps the provider message so prompt stderr still surfaces auth rejection"
     (let [store  (mem-store/create-store)
