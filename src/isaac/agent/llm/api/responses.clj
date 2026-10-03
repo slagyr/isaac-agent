@@ -7,6 +7,7 @@
     [isaac.agent.effort :as effort]
     [isaac.agent.llm.api.protocol :as api]
     [isaac.agent.llm.api.openai.shared :as shared]
+    [isaac.agent.llm.followup :as followup]
     [isaac.agent.llm.http :as llm-http]
     [isaac.agent.llm.prompt.builder :as prompt]
     [isaac.foundation.logger :as log]))
@@ -21,6 +22,7 @@
   (cond
     (string? content) content
     (nil? content)    ""
+    (and (vector? content) (every? #(= "input_image" (:type %)) content)) content
     :else             (json/generate-string content)))
 
 (defn- sanitize-responses-message [{:keys [call_id content output role tool_call_id tool_calls type]}]
@@ -33,7 +35,9 @@
     (= "tool" role)
     {:type    "function_call_output"
      :call_id tool_call_id
-     :output  (->responses-output content)}
+     :output  (if (followup/image? content)
+                [{:type "input_image" :image_url (followup/image-url content)}]
+                (->responses-output content))}
 
     (and (= "assistant" role) (seq tool_calls))
     (mapv (fn [tc]
@@ -259,7 +263,20 @@
   api/Api
   (chat [_ req] (chat req provider-name cfg))
   (chat-stream [_ req on-chunk] (chat-stream req on-chunk provider-name cfg))
-  (followup-messages [_ req resp tcs trs] (shared/followup-messages req resp tcs trs))
+  (followup-messages [_ req resp tcs trs]
+    (let [messages (shared/followup-messages req resp tcs trs)
+          images   (into {} (keep (fn [[tc result]]
+                                    (when (followup/image? result)
+                                      [(:id tc) result]))
+                                  (map vector tcs trs)))]
+      (->> messages
+           (remove #(and (= "user" (:role %))
+                         (vector? (:content %))
+                         (every? (fn [item] (= "image_url" (:type item))) (:content %))))
+           (mapv (fn [message]
+                   (if-let [image (get images (:tool_call_id message))]
+                     (assoc message :content [{:type "input_image" :image_url (followup/image-url image)}])
+                     message))))))
   (config [_] cfg)
   (display-name [_] provider-name)
   (format-tools [this tools] (when (seq tools) (mapv api/flat-function-tool tools)))

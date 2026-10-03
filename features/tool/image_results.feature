@@ -23,7 +23,6 @@ Feature: fs__read images reach every provider as images (isaac-73vs)
       | defaults.crew.tools.directories.allow | [:cwd] |
     And the built-in tools are registered
 
-  @wip
   Scenario: Anthropic Messages carries the image inside the tool_result
     Given the isaac EDN file "config/models/lens.edn" exists with:
       | path           | value     |
@@ -55,7 +54,6 @@ Feature: fs__read images reach every provider as images (isaac-73vs)
       | type    | message.role | message.content                                  |
       | message | toolResult   | #"^\[image: pixel\.png, image/png, \d+ bytes\]$" |
 
-  @wip
   Scenario: OpenAI Responses carries the image as an input_image in the function_call_output
     Given the isaac EDN file "config/models/lens.edn" exists with:
       | path           | value     |
@@ -84,7 +82,6 @@ Feature: fs__read images reach every provider as images (isaac-73vs)
       | type    | message.role | message.content                                  |
       | message | toolResult   | #"^\[image: pixel\.png, image/png, \d+ bytes\]$" |
 
-  @wip
   Scenario: Chat Completions follows the text-only tool message with a user message carrying the image
     Given the isaac EDN file "config/models/lens.edn" exists with:
       | path           | value     |
@@ -115,7 +112,6 @@ Feature: fs__read images reach every provider as images (isaac-73vs)
       | type    | message.role | message.content                                  |
       | message | toolResult   | #"^\[image: pixel\.png, image/png, \d+ bytes\]$" |
 
-  @wip
   Scenario: Ollama follows the tool message with a message carrying the image
     Given the isaac EDN file "config/models/lens.edn" exists with:
       | path           | value     |
@@ -145,7 +141,6 @@ Feature: fs__read images reach every provider as images (isaac-73vs)
       | type    | message.role | message.content                                  |
       | message | toolResult   | #"^\[image: pixel\.png, image/png, \d+ bytes\]$" |
 
-  @wip
   Scenario: a model configured without vision gets only the note
     Given the isaac EDN file "config/models/lens.edn" exists with:
       | path           | value     |

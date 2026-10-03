@@ -39,4 +39,12 @@
     (let [request       {:messages []}
           assistant-msg {:role "assistant" :content nil :tool_calls []}
           messages      (sut/raw-tool-call-followup-messages request assistant-msg [{:id "tc1"}] ["ok"])]
-      (should= assistant-msg (first messages)))))
+      (should= assistant-msg (first messages))))  (it "keeps image bytes out of a text-only tool result and adds an image user message"
+    (let [image {:type "image" :media-type "image/png" :bytes 42 :path "/tmp/pixel.png" :data "YWJj"}
+          messages (sut/raw-tool-call-followup-messages {:messages []} {:role "assistant"}
+                                                         [{:id "tc1"}] [image])]
+      (should= "[image: pixel.png, image/png, 42 bytes]" (get-in messages [1 :content]))
+      (should= [{:type "image_url" :image_url {:url "data:image/png;base64,YWJj"}}]
+               (get-in messages [2 :content]))))
+
+)

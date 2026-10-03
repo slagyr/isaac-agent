@@ -310,15 +310,44 @@
     (with-open [out (io/output-stream (io/file path))]
       (.write out bytes))))
 
+(declare session-working-directory)
+
+(defn- image-bytes []
+  (.decode (java.util.Base64/getDecoder)
+           "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlJLQAAAABJRU5ErkJggg=="))
+
+(defn- image-fs [delegate path bytes]
+  (reify isaac-fs/Fs
+    (-slurp [_ p opts] (isaac-fs/-slurp delegate p opts))
+    (-spit [_ p content opts] (isaac-fs/-spit delegate p content opts))
+    (-exists? [_ p] (if (= path p) true (isaac-fs/-exists? delegate p)))
+    (-file? [_ p] (if (= path p) true (isaac-fs/-file? delegate p)))
+    (-dir? [_ p] (isaac-fs/-dir? delegate p))
+    (-children [_ p] (isaac-fs/-children delegate p))
+    (-cache-token [_] (isaac-fs/-cache-token delegate))
+    (-modified [_ p] (isaac-fs/-modified delegate p))
+    (-size [_ p] (if (= path p) (alength bytes) (isaac-fs/-size delegate p)))
+    (-mkdirs [_ p] (isaac-fs/-mkdirs delegate p))
+    (-delete [_ p] (isaac-fs/-delete delegate p))
+    (-move [_ from to] (isaac-fs/-move delegate from to))
+    (-copy [_ from to] (isaac-fs/-copy delegate from to))
+    (-read-bytes [_ p offset length]
+      (if (= path p)
+        (let [start (min (alength bytes) (max 0 offset))
+              end   (min (alength bytes) (+ start (max 0 length)))]
+          (java.util.Arrays/copyOfRange bytes start end))
+        (isaac-fs/-read-bytes delegate p offset length)))))
+
+(defn- install-image! [path]
+  (let [fs* (image-fs (feature-fs) path (image-bytes))]
+    (g/assoc! :mem-fs fs*)
+    (nexus/register! [:fs] fs*)))
+
 (defn image-file-exists [name]
-  (let [path (str (System/getProperty "user.dir") "/target/test-state-tools/" name)
-        bytes (.decode (java.util.Base64/getDecoder)
-                       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlJLQAAAABJRU5ErkJggg==")]
-    (.mkdirs (.getParentFile (io/file path)))
-    (with-open [out (io/output-stream (io/file path))]
-      (.write out bytes))
-    ;; Image bytes must be read from a binary-capable filesystem (MemFs stores UTF-8 strings).
-    (g/assoc! :image-file-on-disk path)))
+  (install-image! (str (System/getProperty "user.dir") "/target/test-state-tools/" name)))
+
+(defn image-in-session-workdir [name]
+  (install-image! (str (session-working-directory) "/" name)))
 
 (defn dir-with-files [dir-name files-str]
   (let [dir-path   (resolve-path dir-name)
@@ -672,6 +701,8 @@
 
 (defgiven "a binary file {name:string} exists" isaac.agent.tool.tools-steps/binary-file-exists)
 (defgiven "an image file {name:string} exists" isaac.agent.tool.tools-steps/image-file-exists)
+(defgiven "an image file {name:string} exists in the session working directory"
+  isaac.agent.tool.tools-steps/image-in-session-workdir)
 
 (defgiven "a file {name:string} exists in the session working directory with content {content:string}" isaac.agent.tool.tools-steps/file-in-session-workdir
   "Writes the file under the current session's :cwd (the :current-key

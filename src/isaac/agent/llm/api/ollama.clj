@@ -1,5 +1,6 @@
 (ns isaac.agent.llm.api.ollama
   (:require
+    [clojure.string :as str]
     [isaac.agent.llm.api.protocol :as api]
     [isaac.agent.llm.followup :as followup]
     [isaac.agent.llm.http :as llm-http]
@@ -136,7 +137,7 @@
   "Build the next iteration's :messages vector for Ollama's /api/chat.
    Assistant message carries the raw tool_calls; tool responses are role=tool."
   [request response tool-calls tool-results]
-  (followup/raw-tool-call-followup-messages
+  (let [messages (followup/raw-tool-call-followup-messages
     request
     {:role       "assistant"
      :content    (:content response)
@@ -146,7 +147,12 @@
                           :function {:name (:name tool-call) :arguments (:arguments tool-call)}})
                        tool-calls)}
     tool-calls
-    tool-results))
+    tool-results)]
+    (mapv (fn [message]
+            (if (and (= "user" (:role message))
+                     (= "image_url" (get-in message [:content 0 :type])))
+              {:role "user" :content "" :images [(second (str/split (get-in message [:content 0 :image_url :url]) #"," 2))]}
+              message)) messages)))
 
 (deftype OllamaAPI [provider-name cfg]
   api/Api

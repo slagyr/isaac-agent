@@ -150,6 +150,12 @@
                   {:type "tool_result" :tool_use_id "tc2" :content "ok"}]
                  (:content user-result))))
 
+    (it "carries image bytes as a native tool_result block"
+      (let [image {:type "image" :media-type "image/png" :bytes 3 :path "/tmp/pixel.png" :data "YWJj"}
+            messages (sut/followup-messages {:messages []} nil [{:id "tc1" :name "read" :arguments {}}] [image])]
+        (should= [{:type "image" :source {:type "base64" :media_type "image/png" :data "YWJj"}}]
+                 (get-in messages [1 :content 0 :content]))))
+
     (it "preserves the original messages and appends the new turn"
       (let [request  {:messages [{:role "user" :content "go"}
                                  {:role "assistant" :content "ok"}]}

@@ -1,8 +1,6 @@
 (ns isaac.agent.mcp.mcp-steps
   (:require
     [gherclj.core :as g :refer [defgiven defthen defwhen helper!]]
-    [clojure.string :as str]
-    [isaac.foundation.fs :as fs]
     [isaac.agent.comm.null :as null-comm]
     [isaac.foundation.config.loader :as loader]
     [isaac.agent.drive.turn :as drive-turn]
@@ -74,21 +72,7 @@
 
 (defn mcp-request-handled [turn-id json]
   (commit-caps-config!)
-  (let [path (g/get :image-file-on-disk)
-        real (fs/real-fs)
-        exists? fs/exists?
-        size fs/size
-        read-bytes fs/read-bytes]
-    (g/assoc! :mcp-response
-              (if path
-                (with-redefs [fs/exists? (fn [fs* p] (if (and path (str/ends-with? p "/pixel.png")) (exists? real path) (exists? fs* p)))
-                              fs/size (fn [fs* p] (if (and path (str/ends-with? p "/pixel.png")) (size real path) (size fs* p)))
-                              fs/read-bytes (fn [fs* p offset length]
-                                              (read-bytes (if (and path (str/ends-with? p "/pixel.png")) real fs*)
-                                                          (if (and path (str/ends-with? p "/pixel.png")) path p)
-                                                          offset length))]
-                  (mcp-turns/handle turn-id json))
-                (mcp-turns/handle turn-id json)))))
+  (g/assoc! :mcp-response (mcp-turns/handle turn-id json)))
 
 (defn mcp-response-matches [table]
   (let [result (match/match-object table (g/get :mcp-response))]

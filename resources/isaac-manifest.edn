@@ -729,6 +729,8 @@
        :required true},
       :context-window
       {:type :int, :description "Context window size in tokens"},
+      :vision
+      {:type :boolean, :description "Send images returned by tools to this model in the current turn (default true); false sends only an image note"},
       :think-mode
       {:type :keyword,
        :description

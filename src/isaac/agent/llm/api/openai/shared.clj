@@ -200,5 +200,10 @@
                                                  (fn [tc result]
                                                    {:role         "tool"
                                                     :tool_call_id (:id tc)
-                                                    :content      result}))]
-    (followup/append-followup-messages request assistant-msg result-msgs)))
+                                                    :content      (if (followup/image? result) (followup/image-note result) result)}))]
+    (followup/append-followup-messages
+      request assistant-msg
+      (concat result-msgs (keep #(followup/image-followup %
+                                     (fn [image] [{:type "image_url"
+                                                   :image_url {:url (followup/image-url image)}}]))
+                                tool-results)))))

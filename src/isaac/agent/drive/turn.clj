@@ -17,6 +17,7 @@
     [isaac.agent.drive.weather :as weather]
     [isaac.foundation.fs :as fs]
     [isaac.agent.llm.api.protocol :as api]
+    [isaac.agent.llm.followup :as followup]
     [isaac.agent.llm.provider :as llm-provider]
     [isaac.agent.llm.tool-loop :as tool-loop]
     [isaac.agent.llm.usage :as usage]
@@ -1400,7 +1401,7 @@
         rules-text       (session-ctx/read-rules-text (:config charge) root (or (:cwd charge) (:cwd session)))
         augmented        (augment-provider root provider session-key context-window
                                            (select-keys (or model-cfg {})
-                                                        [:thinking-budget-max :think-mode :stateful]))]
+                                                        [:thinking-budget-max :think-mode :stateful :vision]))]
     (log/debug :turn/context-resolved
                :session session-key
                :crew crew
@@ -1631,7 +1632,7 @@
         window   (:context-window resolved)
         provider (augment-provider root (:provider resolved) session-key window
                                    (select-keys (or (:model-cfg resolved) {})
-                                                [:thinking-budget-max :think-mode :stateful]))]
+                                                [:thinking-budget-max :think-mode :stateful :vision]))]
     {:id             model-id
      :model          (:model resolved)
      :model-cfg      (:model-cfg resolved)
@@ -1735,7 +1736,11 @@
             followup-elapsed* (atom nil)
             followup-fn (fn [req response tool-calls tool-results]
                           (let [start-ns (System/nanoTime)
-                                messages (api/followup-messages (:provider @active*) req response tool-calls tool-results)]
+                                visible-results (if (false? (get-in @active* [:model-cfg :vision]))
+                                                  (mapv #(if (and (map? %) (= "image" (:type %)))
+                                                           (followup/image-note %) %) tool-results)
+                                                  tool-results)
+                                messages (api/followup-messages (:provider @active*) req response tool-calls visible-results)]
                             (reset! followup-elapsed* (elapsed-ms start-ns))
                             (reset! current-request (assoc req :messages messages))
                             messages))

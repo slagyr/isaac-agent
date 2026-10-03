@@ -231,9 +231,13 @@
                                                            (fn [tc result]
                                                              {:type        "tool_result"
                                                               :tool_use_id (:id tc)
-                                                              :content     (if (str/blank? (str result))
-                                                                              "(empty)"
-                                                                              result)}))}]
+                                                              :content     (cond
+                                                                             (followup/image? result)
+                                                                             [{:type "image" :source {:type "base64"
+                                                                                                      :media_type (:media-type result)
+                                                                                                      :data (:data result)}}]
+                                                                             (str/blank? (str result)) "(empty)"
+                                                                             :else result)}))}]
     (followup/append-followup-messages request assistant-msg [tool-result])))
 
 (deftype MessagesAPI [provider-name cfg]

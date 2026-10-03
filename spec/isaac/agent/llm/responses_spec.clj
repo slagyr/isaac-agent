@@ -34,6 +34,14 @@
 
   (around [example] (nexus/-with-nested-nexus {:fs (fs/mem-fs)} (example)))
 
+  (it "sends a tool image as an input_image item in function_call_output"
+    (let [image {:type "image" :media-type "image/png" :bytes 3 :path "/tmp/pixel.png" :data "YWJj"}
+          messages (api/followup-messages (sut/make "chatgpt" {}) {:messages []} {:content ""}
+                                          [{:id "tc1" :name "read" :arguments {}}] [image])
+          input (#'sut/->responses-request {:model "test" :messages messages})]
+      (should= [{:type "input_image" :image_url "data:image/png;base64,YWJj"}]
+               (get-in input [:input 1 :output]))))
+
   (describe "chat"
 
     (it "returns tool call arguments as a Clojure map on the /responses path"
