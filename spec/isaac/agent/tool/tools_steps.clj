@@ -316,38 +316,39 @@
   (.decode (java.util.Base64/getDecoder)
            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlJLQAAAABJRU5ErkJggg=="))
 
-(defn- image-fs [delegate path bytes]
+(defn- image-fs [delegate paths bytes]
   (reify isaac-fs/Fs
     (-slurp [_ p opts] (isaac-fs/-slurp delegate p opts))
     (-spit [_ p content opts] (isaac-fs/-spit delegate p content opts))
-    (-exists? [_ p] (if (= path p) true (isaac-fs/-exists? delegate p)))
-    (-file? [_ p] (if (= path p) true (isaac-fs/-file? delegate p)))
+    (-exists? [_ p] (if (contains? paths p) true (isaac-fs/-exists? delegate p)))
+    (-file? [_ p] (if (contains? paths p) true (isaac-fs/-file? delegate p)))
     (-dir? [_ p] (isaac-fs/-dir? delegate p))
     (-children [_ p] (isaac-fs/-children delegate p))
     (-cache-token [_] (isaac-fs/-cache-token delegate))
     (-modified [_ p] (isaac-fs/-modified delegate p))
-    (-size [_ p] (if (= path p) (alength bytes) (isaac-fs/-size delegate p)))
+    (-size [_ p] (if (contains? paths p) (alength bytes) (isaac-fs/-size delegate p)))
     (-mkdirs [_ p] (isaac-fs/-mkdirs delegate p))
     (-delete [_ p] (isaac-fs/-delete delegate p))
     (-move [_ from to] (isaac-fs/-move delegate from to))
     (-copy [_ from to] (isaac-fs/-copy delegate from to))
     (-read-bytes [_ p offset length]
-      (if (= path p)
+      (if (contains? paths p)
         (let [start (min (alength bytes) (max 0 offset))
               end   (min (alength bytes) (+ start (max 0 length)))]
           (java.util.Arrays/copyOfRange bytes start end))
         (isaac-fs/-read-bytes delegate p offset length)))))
 
-(defn- install-image! [path]
-  (let [fs* (image-fs (feature-fs) path (image-bytes))]
+(defn- install-image! [paths]
+  (let [fs* (image-fs (feature-fs) paths (image-bytes))]
     (g/assoc! :mem-fs fs*)
     (nexus/register! [:fs] fs*)))
 
 (defn image-file-exists [name]
-  (install-image! (str (System/getProperty "user.dir") "/target/test-state-tools/" name)))
+  (let [path (str (System/getProperty "user.dir") "/target/test-state-tools/" name)]
+    (install-image! (set [path (str (root) "/" name)]))))
 
 (defn image-in-session-workdir [name]
-  (install-image! (str (session-working-directory) "/" name)))
+  (install-image! #{(str (session-working-directory) "/" name)}))
 
 (defn dir-with-files [dir-name files-str]
   (let [dir-path   (resolve-path dir-name)

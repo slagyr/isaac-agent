@@ -268,15 +268,14 @@
           images   (into {} (keep (fn [[tc result]]
                                     (when (followup/image? result)
                                       [(:id tc) result]))
-                                  (map vector tcs trs)))]
-      (->> messages
-           (remove #(and (= "user" (:role %))
-                         (vector? (:content %))
-                         (every? (fn [item] (= "image_url" (:type item))) (:content %))))
-           (mapv (fn [message]
-                   (if-let [image (get images (:tool_call_id message))]
-                     (assoc message :content [{:type "input_image" :image_url (followup/image-url image)}])
-                     message))))))
+                                  (map vector tcs trs)))
+          appended (subvec messages (count (:messages req)))
+          outputs  (take (inc (count trs)) appended)]
+      (into (vec (:messages req))
+            (mapv (fn [message]
+                    (if-let [image (get images (:tool_call_id message))]
+                      (assoc message :content [{:type "input_image" :image_url (followup/image-url image)}])
+                      message)) outputs))))
   (config [_] cfg)
   (display-name [_] provider-name)
   (format-tools [this tools] (when (seq tools) (mapv api/flat-function-tool tools)))

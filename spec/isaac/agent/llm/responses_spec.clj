@@ -42,6 +42,16 @@
       (should= [{:type "input_image" :image_url "data:image/png;base64,YWJj"}]
                (get-in input [:input 1 :output]))))
 
+  (it "preserves images from preceding turns while replacing only the current function output"
+    (let [image {:type "image" :media-type "image/png" :bytes 3 :path "/tmp/pixel.png" :data "YWJj"}
+          previous {:role "user" :content [{:type "image_url" :image_url {:url "data:image/png;base64,old"}}]}
+          messages (api/followup-messages (sut/make "chatgpt" {}) {:messages [previous]} {:content ""}
+                                          [{:id "tc1" :name "read" :arguments {}}] [image])]
+      (should= previous (first messages))
+      (should= 3 (count messages))
+      (should= [{:type "input_image" :image_url "data:image/png;base64,YWJj"}]
+               (get-in messages [2 :content]))))
+
   (describe "chat"
 
     (it "returns tool call arguments as a Clojure map on the /responses path"

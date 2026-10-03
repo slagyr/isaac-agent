@@ -3,9 +3,10 @@
     [babashka.http-client :as http]
     [c3kit.apron.schema :as schema]
     [cheshire.core :as json]
-    [isaac.agent.llm.http :as llm-http]
+    [isaac.agent.llm.api.grover :as grover]
     [isaac.agent.llm.api.ollama :as sut]
     [isaac.agent.llm.api.protocol :as api]
+    [isaac.agent.llm.http :as llm-http]
     [speclj.core :refer :all]))
 
 (defn- mock-response [body]
@@ -79,6 +80,12 @@
         (should= {:role "tool" :content "file contents"} (nth messages 2))
         (should= {:role "tool" :content "wrote ok"} (nth messages 3))))
 
+    (it "sends image bytes in a user message after the tool's text-only note"
+      (let [image    {:type "image" :media-type "image/png" :bytes 3 :path "/tmp/pixel.png" :data "YWJj"}
+            messages (sut/followup-messages {:messages []} {:content ""} [{:id "tc1" :name "read" :arguments {}}] [image])]
+        (should= "[image: pixel.png, image/png, 3 bytes]" (get-in messages [1 :content]))
+        (should= {:role "user" :content "" :images ["YWJj"]} (nth messages 2))))
+
     (it "uses empty string when response has no assistant content"
       (let [response {:content ""}
             request  {:messages []}
@@ -88,6 +95,13 @@
         (should= "" (:content (nth messages 0))))))
 
   (describe "chat-stream"
+
+    (it "preserves tool calls from the simulated Ollama stream"
+      (grover/reset-queue!)
+      (grover/enqueue! [{:tool_call "fs__read" :arguments {:file_path "pixel.png"}}])
+      (let [response (sut/chat-stream {:model "llava" :messages []} identity "ollama" {:simulate-provider "ollama"})]
+        (should= "fs__read" (get-in response [:tool-calls 0 :name]))
+        (should= {:file_path "pixel.png"} (get-in response [:tool-calls 0 :arguments]))))
 
     (it "folds every chunk's text, not just the last one"
       ;; This spec used to assert (:content result) was "!" — the last chunk

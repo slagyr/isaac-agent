@@ -301,6 +301,8 @@
         (let [content (get-in response [:message :content])]
           (doseq [chunk (if (vector? content) content [content])]
             (on-chunk {:message {:content chunk} :done false}))
+          (when (seq (get-in response [:message :tool_calls]))
+            (on-chunk {:message {:tool_calls (get-in response [:message :tool_calls])} :done false}))
           response)))
     (let [last-activity-ms (atom (now-ms))
           bytes-received   (atom 0)
