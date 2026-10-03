@@ -58,9 +58,12 @@
   (let [name      (param params :name)
         arguments (stringify-keys (or (param params :arguments) {}))
         tool-fn   (:tool-fn entry)
-        result    (str (tool-fn name arguments))
+        result    (tool-fn name arguments)
+        image?    (and (map? result) (= "image" (:type result)))
         error?    (error-text? result)]
-    {:content [{:type "text" :text result}]
+    {:content [(if image?
+                 {:type "image" :data (:data result) :mimeType (:media-type result)}
+                 {:type "text" :text (str result)})]
      :isError (boolean error?)}))
 
 (defn- turn-not-active [id]

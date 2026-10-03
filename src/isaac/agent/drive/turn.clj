@@ -177,7 +177,11 @@
           error?   (boolean (or (and (string? result) (str/starts-with? result "Error:"))
                                 (and (map? result) (:isError result))))]
       (append-message! ctx session-key
-                       (cond-> {:role "toolResult" :id (:id tc) :content result}
+                       (cond-> {:role "toolResult" :id (:id tc) :content (if (and (map? result) (= "image" (:type result)))
+                                                                   (format "[image: %s, %s, %d bytes]"
+                                                                           (.getName (java.io.File. ^String (:path result)))
+                                                                           (:media-type result) (:bytes result))
+                                                                   result)}
                                error? (assoc :isError true)))
       (log/debug :tool/result-persisted :elapsed-ms (elapsed-ms start-ns)))))
 

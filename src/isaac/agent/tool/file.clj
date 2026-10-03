@@ -5,7 +5,8 @@
     [clojure.string :as str]
     [isaac.foundation.fs :as fs]
     [isaac.agent.tool.fs-bounds :as bounds])
-  (:import (java.util.regex Pattern)))
+  (:import (java.util Base64)
+           (java.util.regex Pattern)))
 
 (def ^:dynamic *default-read-limit* 2000)
 (def ^:private binary-check-window 8192)
@@ -40,6 +41,29 @@
                                        " of " total " lines)")))]
       {:result (str/join "\n" lines)})))
 
+(def ^:private MAX_IMAGE_BYTES (* 5 1024 1024))
+
+(defn- image-type [^bytes header]
+  (let [unsigned (mapv #(bit-and 0xff %) header)]
+    (cond
+      (= [137 80 78 71 13 10 26 10] (subvec unsigned 0 (min 8 (count unsigned)))) "image/png"
+      (and (<= 3 (count unsigned)) (= [255 216 255] (subvec unsigned 0 3))) "image/jpeg"
+      (and (<= 6 (count unsigned)) (contains? #{"GIF87a" "GIF89a"}
+                                             (apply str (map char (subvec unsigned 0 6))))) "image/gif"
+      (and (<= 12 (count unsigned))
+           (= "RIFF" (apply str (map char (subvec unsigned 0 4))))
+           (= "WEBP" (apply str (map char (subvec unsigned 8 12))))) "image/webp")))
+
+(defn- read-image [fs* file-path]
+  (let [size   (fs/size fs* file-path)
+        header (fs/read-bytes fs* file-path 0 12)]
+    (when-let [media-type (and header (image-type header))]
+      (if (> size MAX_IMAGE_BYTES)
+        {:isError true :error (str "image too large: " file-path " (" size " bytes; max " MAX_IMAGE_BYTES ")")}
+        (let [bytes (fs/read-bytes fs* file-path 0 size)]
+          {:result {:type "image" :media-type media-type :bytes (alength bytes)
+                    :path file-path :data (.encodeToString (Base64/getEncoder) bytes)}})))))
+
 (defn read-tool
   "Read file contents or list a directory.
    Args: file_path, offset, limit."
@@ -60,7 +84,8 @@
           {:result (str/join "\n" (sort (fs/children fs* file-path)))}
 
           :else
-          (format-file-content file-path (or (fs/slurp fs* file-path) "") offset limit)))))
+          (or (read-image fs* file-path)
+              (format-file-content file-path (or (fs/slurp fs* file-path) "") offset limit))))))
 
 (defn write-tool
   "Write content to a file, creating parent directories as needed.

@@ -80,6 +80,16 @@
         (should= "text" (get-in response [:result :content 0 :type]))
         (should= "exec__run:echo hi" (get-in response [:result :content 0 :text]))))
 
+    (it "returns structured image results as MCP image content"
+      (sut/register! "t-image" {:session-key "mcp-sess"
+                                 :tool-fn (fn [_ _] {:type "image" :media-type "image/png"
+                                                     :data "iVBORw0KGgo=" :bytes 8 :path "pixel.png"})
+                                 :tools []})
+      (let [response (sut/handle "t-image" (jrpc/request 4 "tools/call" {:name "fs__read"}))]
+        (should= false (get-in response [:result :isError]))
+        (should= [{:type "image" :data "iVBORw0KGgo=" :mimeType "image/png"}]
+                 (get-in response [:result :content]))))
+
     (it "returns isError true for a failing tool instead of a JSON-RPC error"
       (sut/register! "t-fail" {:session-key "mcp-sess"
                                :tool-fn     error-tool-fn

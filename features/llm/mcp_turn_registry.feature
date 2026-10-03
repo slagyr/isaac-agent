@@ -61,7 +61,6 @@ Feature: Per-turn tool registry — isaac's tools served to a provider-driven lo
       | result.isError | true  |
       | id             | 3     |
 
-  @wip
   Scenario: tools/call returns an image file as an MCP image content block
     MCP carries images as {"type":"image","data":<base64>,"mimeType":…};
     Claude Code hands that block to the model as an image.
@@ -78,7 +77,6 @@ Feature: Per-turn tool registry — isaac's tools served to a provider-driven lo
       | result.content[0].mimeType | image/png          |
       | result.content[0].data     | #"^iVBORw0KGgo"    |
 
-  @wip
   Scenario: the transcript records an image result as a short note, not its bytes
     Given a turn "t-img-log" is registered for session "mcp-sess"
     And an image file "pixel.png" exists

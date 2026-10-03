@@ -305,11 +305,20 @@
 (defn binary-file-exists [name]
   (let [path  (resolve-path name)
         bytes (byte-array (map unchecked-byte
-                               [0x89 0x50 0x4E 0x47 0x0D 0x0A 0x1A 0x0A
-                                0x00 0x00 0x00 0x0D 0x49 0x48 0x44 0x52]))]
+                               [0x00 0x01 0x02 0x03 0xFF]))]
     (.mkdirs (.getParentFile (io/file path)))
     (with-open [out (io/output-stream (io/file path))]
       (.write out bytes))))
+
+(defn image-file-exists [name]
+  (let [path (str (System/getProperty "user.dir") "/target/test-state-tools/" name)
+        bytes (.decode (java.util.Base64/getDecoder)
+                       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlJLQAAAABJRU5ErkJggg==")]
+    (.mkdirs (.getParentFile (io/file path)))
+    (with-open [out (io/output-stream (io/file path))]
+      (.write out bytes))
+    ;; Image bytes must be read from a binary-capable filesystem (MemFs stores UTF-8 strings).
+    (g/assoc! :image-file-on-disk path)))
 
 (defn dir-with-files [dir-name files-str]
   (let [dir-path   (resolve-path dir-name)
@@ -520,6 +529,14 @@
   (ensure-tool-result-ready!)
   (g/should-not (:isError (g/get :tool-result))))
 
+(defn tool-result-is-image [media-type]
+  (ensure-tool-result-ready!)
+  (let [image (:result (g/get :tool-result))]
+    (g/should= "image" (:type image))
+    (g/should= media-type (:media-type image))
+    (g/should (pos? (:bytes image)))
+    (g/should (seq (:data image)))))
+
 (defn tool-result-json-has [table]
   (ensure-tool-result-ready!)
   (let [result (g/get :tool-result)
@@ -654,6 +671,7 @@
 (defgiven "the following files exist:" isaac.agent.tool.tools-steps/files-exist)
 
 (defgiven "a binary file {name:string} exists" isaac.agent.tool.tools-steps/binary-file-exists)
+(defgiven "an image file {name:string} exists" isaac.agent.tool.tools-steps/image-file-exists)
 
 (defgiven "a file {name:string} exists in the session working directory with content {content:string}" isaac.agent.tool.tools-steps/file-in-session-workdir
   "Writes the file under the current session's :cwd (the :current-key
@@ -709,6 +727,8 @@
 (defthen "the tool result does not contain {text:string}" isaac.agent.tool.tools-steps/tool-result-not-contains)
 
 (defthen "the tool result is not an error" isaac.agent.tool.tools-steps/tool-result-not-error)
+(defthen "the tool result is an image of type {media-type:string}"
+  isaac.agent.tool.tools-steps/tool-result-is-image)
 
 (defthen "the tool result JSON has:" isaac.agent.tool.tools-steps/tool-result-json-has)
 

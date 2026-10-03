@@ -72,7 +72,6 @@ Feature: Built-in Tools
     Then the tool result is an error
     And the tool result contains "binary"
 
-  @wip
   Scenario: read returns an image file as an image, not text
     New steps: an image file "<name>" exists (a valid 1x1 PNG);
     the tool result is an image of type "<media type>".

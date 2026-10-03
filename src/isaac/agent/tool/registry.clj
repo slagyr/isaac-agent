@@ -303,7 +303,7 @@
 
 (defn- maybe-cache-hit [name arguments result cache cycle]
   (let [key (cache-key name arguments)]
-    (if (or (nil? cache) (nil? key) (:isError result) (nil? (:result result)))
+    (if (or (nil? cache) (nil? key) (:isError result) (nil? (:result result)) (map? (:result result)))
       result
       (let [hash (sha-256 (:result result))
             prior (get @cache key)]
@@ -343,6 +343,9 @@
         {:isError true :error "tool returned nil"})
 
     (and (map? value) (= :cancelled (:error value)))
+    value
+
+    (and (map? value) (= "image" (get-in value [:result :type])))
     value
 
     (and (map? value) (contains? value :result))

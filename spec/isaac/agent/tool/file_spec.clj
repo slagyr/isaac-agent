@@ -40,6 +40,26 @@
         (should (str/includes? (:result result) "line one"))
         (should (str/includes? (:result result) "line three"))))
 
+    (it "reads PNG bytes as a bounded image result"
+      (let [path (str support/test-dir "/pixel.dat")]
+        (with-open [out (io/output-stream path)]
+          (.write out (byte-array (map unchecked-byte [137 80 78 71 13 10 26 10 0 1]))))
+        (let [result (:result (sut/read-tool {"file_path" path}))]
+          (should= "image" (:type result))
+          (should= "image/png" (:media-type result))
+          (should= 10 (:bytes result))
+          (should= path (:path result))
+          (should= "iVBORw0KGgoAAQ==" (:data result)))))
+
+    (it "refuses images larger than the image size cap before reading them"
+      (let [path (str support/test-dir "/large.png")]
+        (with-open [out (java.io.RandomAccessFile. path "rw")]
+          (.write out (byte-array (map unchecked-byte [137 80 78 71 13 10 26 10])))
+          (.setLength out 5242881))
+        (let [result (sut/read-tool {"file_path" path})]
+          (should (:isError result))
+          (should (str/includes? (:error result) "too large")))))
+
     (it "returns error for missing file"
       (let [result (sut/read-tool {"file_path" (str support/test-dir "/no-such-file.txt")})]
         (should (:isError result))
