@@ -31,9 +31,8 @@ Feature: fs__read images reach every provider as images (isaac-73vs)
       | provider       | grover:anthropic |
       | context-window | 128000    |
     And the isaac EDN file "config/crew/lens.edn" exists with:
-      | path                    | value  |
-      | model                   | lens   |
-      | tools.directories.allow | [:cwd] |
+      | path  | value |
+      | model | lens  |
     And the crew "lens" allows tools: "fs/read"
     And the following sessions exist:
       | name     | crew |
@@ -64,9 +63,8 @@ Feature: fs__read images reach every provider as images (isaac-73vs)
       | provider       | grover:chatgpt |
       | context-window | 128000    |
     And the isaac EDN file "config/crew/lens.edn" exists with:
-      | path                    | value  |
-      | model                   | lens   |
-      | tools.directories.allow | [:cwd] |
+      | path  | value |
+      | model | lens  |
     And the crew "lens" allows tools: "fs/read"
     And the following sessions exist:
       | name     | crew |
@@ -94,9 +92,8 @@ Feature: fs__read images reach every provider as images (isaac-73vs)
       | provider       | grover:openai |
       | context-window | 128000    |
     And the isaac EDN file "config/crew/lens.edn" exists with:
-      | path                    | value  |
-      | model                   | lens   |
-      | tools.directories.allow | [:cwd] |
+      | path  | value |
+      | model | lens  |
     And the crew "lens" allows tools: "fs/read"
     And the following sessions exist:
       | name     | crew |
@@ -126,9 +123,8 @@ Feature: fs__read images reach every provider as images (isaac-73vs)
       | provider       | grover:ollama |
       | context-window | 128000    |
     And the isaac EDN file "config/crew/lens.edn" exists with:
-      | path                    | value  |
-      | model                   | lens   |
-      | tools.directories.allow | [:cwd] |
+      | path  | value |
+      | model | lens  |
     And the crew "lens" allows tools: "fs/read"
     And the following sessions exist:
       | name     | crew |
@@ -158,9 +154,8 @@ Feature: fs__read images reach every provider as images (isaac-73vs)
       | context-window | 128000    |
       | vision         | false     |
     And the isaac EDN file "config/crew/lens.edn" exists with:
-      | path                    | value  |
-      | model                   | lens   |
-      | tools.directories.allow | [:cwd] |
+      | path  | value |
+      | model | lens  |
     And the crew "lens" allows tools: "fs/read"
     And the following sessions exist:
       | name     | crew |
