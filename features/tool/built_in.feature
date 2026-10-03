@@ -72,6 +72,16 @@ Feature: Built-in Tools
     Then the tool result is an error
     And the tool result contains "binary"
 
+  @wip
+  Scenario: read returns an image file as an image, not text
+    New steps: an image file "<name>" exists (a valid 1x1 PNG);
+    the tool result is an image of type "<media type>".
+    Given an image file "pixel.png" exists
+    When the tool "fs__read" is called with:
+      | file_path | pixel.png |
+    Then the tool result is not an error
+    And the tool result is an image of type "image/png"
+
   Scenario: read on an empty file returns a clear empty-file signal
     Given a file "empty.txt" exists with content ""
     When the tool "fs__read" is called with:

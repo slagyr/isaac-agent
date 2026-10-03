@@ -61,6 +61,35 @@ Feature: Per-turn tool registry — isaac's tools served to a provider-driven lo
       | result.isError | true  |
       | id             | 3     |
 
+  @wip
+  Scenario: tools/call returns an image file as an MCP image content block
+    MCP carries images as {"type":"image","data":<base64>,"mimeType":…};
+    Claude Code hands that block to the model as an image.
+    Given a turn "t-img" is registered for session "mcp-sess"
+    And an image file "pixel.png" exists
+    When an MCP request is handled for turn "t-img":
+      """
+      {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"fs__read","arguments":{"file_path":"pixel.png"}}}
+      """
+    Then the MCP response matches:
+      | key                        | value              |
+      | result.isError             | false              |
+      | result.content[0].type     | image              |
+      | result.content[0].mimeType | image/png          |
+      | result.content[0].data     | #"^iVBORw0KGgo"    |
+
+  @wip
+  Scenario: the transcript records an image result as a short note, not its bytes
+    Given a turn "t-img-log" is registered for session "mcp-sess"
+    And an image file "pixel.png" exists
+    When an MCP request is handled for turn "t-img-log":
+      """
+      {"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"fs__read","arguments":{"file_path":"pixel.png"}}}
+      """
+    Then session "mcp-sess" has transcript matching:
+      | type    | message.role | message.content                                  |
+      | message | toolResult   | #"^\[image: pixel\.png, image/png, \d+ bytes\]$" |
+
   Scenario: an oversized tool result is capped by isaac before it is returned
     Given a turn "t-big" is registered for session "mcp-sess"
     And config:
