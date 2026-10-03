@@ -18,9 +18,9 @@ Feature: fs__read images reach every provider as images (isaac-73vs)
   Background:
     Given an Isaac root at "target/test-state"
     And config:
-      | key                              | value  |
-      | log.output                       | memory |
-      | defaults.tools.directories.allow | [:cwd] |
+      | key                                   | value  |
+      | log.output                            | memory |
+      | defaults.crew.tools.directories.allow | [:cwd] |
     And the built-in tools are registered
 
   @wip
