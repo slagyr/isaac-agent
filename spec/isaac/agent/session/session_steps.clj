@@ -2321,20 +2321,21 @@
 (defn user-sends-on-session-as-crew [content key-str crew]
   (user-sends-on-session content key-str nil crew))
 
+(defn- send-without-waiting! [content key-str coalesce-key]
+  (let [running? (some? (g/get :turn-future))]
+    (user-sends-on-session content key-str nil nil coalesce-key)
+    ;; Only the first send waits for Grover to own the in-flight marker.
+    ;; A later send may already be parked while Grover's delay is starting;
+    ;; waiting on that delay again can deadlock the waiting room.
+    (when (and (not running?) (= 1 (count (or (g/get :turn-futures) []))))
+      (grover/await-delay-start)
+      (grover/disable-delay!))))
+
 (defn user-sends-on-session-without-waiting [content key-str]
-  (user-sends-on-session content key-str)
-  ;; The first asynchronous send must own the in-flight marker before the
-  ;; next test action enters the bridge; Grover's promise is a deterministic
-  ;; seam, not a timed wait.
-  (when (= 1 (count (or (g/get :turn-futures) [])))
-    (grover/await-delay-start)
-    (grover/disable-delay!)))
+  (send-without-waiting! content key-str nil))
 
 (defn user-sends-on-session-with-coalesce-key [content key-str coalesce-key]
-  (user-sends-on-session content key-str nil nil coalesce-key)
-  (when (= 1 (count (or (g/get :turn-futures) [])))
-    (grover/await-delay-start)
-    (grover/disable-delay!)))
+  (send-without-waiting! content key-str coalesce-key))
 
 (defn- await-send! [key-str turn-future]
   (when (and (not (realized? turn-future)) (grover/waiting? key-str))

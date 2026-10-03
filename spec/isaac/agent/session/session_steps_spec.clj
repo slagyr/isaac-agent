@@ -2,6 +2,7 @@
   (:require
     [gherclj.core :as g]
     [isaac.agent.bridge.cancellation :as bridge]
+    [isaac.agent.bridge.core :as bridge-core]
     [isaac.foundation.config.config-steps :as config-steps]
     [isaac.foundation.config.loader :as loader]
     [isaac.agent.drive.turn :as single-turn]
@@ -51,6 +52,36 @@
             (finally
               (deliver first-turn {:result :ok})
               (deliver second-turn {:result :held})))))))
+
+  (it "does not block a later send while the first turn's Grover delay has not started yet"
+    (sut/default-grover-setup)
+    (sut/sessions-exist {:headers ["name"] :rows [["dm"]]})
+    (let [first-turn (promise)]
+      (g/assoc! :turn-future first-turn)
+      (with-redefs [bridge-core/dispatch! (fn [& _] {:dispatched? false :reason :waiting-session})
+                    grover/await-delay-start (fn [] @first-turn)]
+        (let [send (future (sut/user-sends-on-session-without-waiting "two" "dm"))]
+          (try
+            (should (not= ::timeout (deref send 3000 ::timeout)))
+            (should-not (realized? first-turn))
+            (finally
+              (deliver first-turn true)
+              (future-cancel send)))))))
+
+  (it "does not await the blocked first turn when a later send is parked in the waiting room"
+    (sut/default-grover-setup)
+    (sut/sessions-exist {:headers ["name"] :rows [["dm"]]})
+    (let [first-turn (promise)]
+      (g/assoc! :turn-future first-turn)
+      (with-redefs [bridge-core/dispatch! (fn [& _] {:dispatched? false :reason :waiting-session})]
+        (let [send (future (sut/user-sends-on-session "two" "dm"))]
+          (try
+            (should (not= ::timeout (deref send 3000 ::timeout)))
+            (should-not (realized? first-turn))
+            (should= first-turn (g/get :turn-future))
+            (finally
+              (deliver first-turn {:output "" :request {} :result {:ok true}})
+              (future-cancel send)))))))
 
   (it "does not wait for a Grover gate after a turn already completed"
     (g/assoc! :turn-future (future {:output "done"
