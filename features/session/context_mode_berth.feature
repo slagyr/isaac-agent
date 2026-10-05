@@ -16,8 +16,8 @@ Feature: Context modes are registered through a berth (isaac-c52a)
   Background:
     Given default Grover setup
     And the isaac EDN file "config/isaac.edn" exists with:
-      | path                          | value                                         |
-      | /modules/isaac.session.lantern | {:local/root "modules/isaac.session.lantern"} |
+      | path    | value                                                                |
+      | modules | {:isaac.session.lantern {:local/root "modules/isaac.session.lantern"}} |
     And the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path      | value            |
       | model     | echo             |
