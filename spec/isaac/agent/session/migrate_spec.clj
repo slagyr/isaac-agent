@@ -60,10 +60,10 @@
           dir (c/session-dir test-dir "main" "done")]
       (c/mkdirs*! fs* dir)
       (c/atomic-spit! fs* (c/session-edn-path test-dir "main" "done")
-                      (c/write-edn {:id "done" :crew "main" :session-policy :chronicle}))
+                      (c/write-edn {:id "done" :crew "main"}))
       (c/write-ednl! fs* (c/current-transcript-path test-dir "main" "done")
                      [{:type "session" :id "h1"}])
-      (c/upsert-index-row! fs* test-dir "done" {:crew "main" :session-policy :chronicle})
+      (c/upsert-index-row! fs* test-dir "done" {:crew "main"})
       (should= :skipped (:status (sut/migrate-session! test-dir "done" fs*)))
       (should-not (some #{"done"} (sut/leftover-ids test-dir fs*)))))
 

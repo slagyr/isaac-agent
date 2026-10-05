@@ -103,7 +103,7 @@
             (marigold/write-config! {:defaults {:frequencies {:crew "main"} :crew {:model "grover"}}})
             (marigold/write-model! "grover" {:model "echo" :provider "grover" :context-window 32768})
             (marigold/write-crew! "main" {:model "grover" :soul "You are Atticus."})
-            (marigold/write-crew! "cordelia" {:model "echo" :soul "You are Cordelia." :session-policy :episodes})
+            (marigold/write-crew! "cordelia" {:model "echo" :soul "You are Cordelia."})
             (marigold/write-provider! "grover" {})
             (let [result (loader/load-config-result {:root marigold/root :fs fs*})
                   model-errors (filter #(= "crew.cordelia.model" (:key %)) (:errors result))]

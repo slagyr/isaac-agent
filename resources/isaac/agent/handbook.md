@@ -44,14 +44,9 @@ Fields worth knowing:
   creation — it is not re-resolved on every turn, and setting it alone
   doesn't make it *readable*; see Tools and directories for the grant a
   crew also needs.
-- `session-policy` — `:chronicle` (the default; one container per session)
-  or `:episodes`, a container-per-episode policy owned by a separate
-  module (`isaac.session.episodes`, if installed). An unknown name is
-  refused at config load, naming what's actually registered. Changing a
-  crew's policy doesn't retroactively touch its existing sessions: a
-  session remembers the policy that opened it, and a turn refuses outright
-  if that no longer matches the crew's current policy — the fix is a new
-  session, not a forced switch.
+- `observers` — ordered session observer ids (for example `[:logbook]`).
+  Sessions may override the crew list; turns cannot, because observers
+  retain state across turns. An unknown id is a config validation error.
 - `tools`, `tools.directories` — covered fully in Tools and directories,
   below; this is where allow/deny lists and directory grants live per
   crew.
@@ -73,10 +68,9 @@ or `isaac config set`/`unset` like any other.
 - **Setting `soul` inline is refused.** A companion `config/crew/<id>.md`
   already exists for this crew — the two are mutually exclusive. Unset one
   before writing the other.
-- **A turn on this crew is refused outright, citing session policy.** The
-  session was opened under a different `session-policy` than the crew
-  currently declares. Point the turn at a new session rather than trying
-  to force the mismatch through.
+- **A context mode is rejected for a missing observer.** Add the required
+  observer to `crew.<id>.observers`, or select another context mode. A
+  session-level `:observers` override must also include that observer.
 - **A crew's `cwd` doesn't help a tool read anything.** `cwd` only seeds
   the session's working directory; it grants no filesystem access by
   itself. See Tools and directories.
@@ -194,8 +188,9 @@ drops it (`:prune`). Either way the **live** transcript view a turn sees is
 a window over the full, append-only record — nothing is rewritten in
 place.
 
-`session-policy` (chronicle vs. episodes) is a crew field, covered above
-under Crews.
+The session store is the record for every session. `isaac sessions list`
+shows the resolved context mode in its CONTEXT column (session override,
+then crew setting).
 
 `isaac sessions` subcommands: `list`, `show <id>`, `set <id>.<path>
 <value>` / `unset <id>.<path>` (mutate a stored field — this is how you
@@ -215,8 +210,8 @@ in-progress turn marker, fire-and-forget).
   crew.** It's resolved once, at session creation, and locked — changing
   the crew's default afterward doesn't retroactively change existing
   sessions.
-- **A turn refuses with a session-policy mismatch.** See Crews,
-  Troubleshooting — start a new session rather than forcing it.
+- **A turn refuses because its context mode requires an observer.** See
+  Crews, Troubleshooting — add the observer to the session or crew.
 
 ## Frequencies
 
@@ -411,12 +406,26 @@ bulletin goes out. Clear it with `isaac sessions unset <id>.block` once
 the underlying cause (usually an oversized single message) is addressed;
 the failure counter resets on the next successful turn.
 
-`context-mode` (per crew, `:full` or `:reset`) decides what a turn
-actually **replays** to the model — not what's stored. `:full` (the
-default) sends the whole compaction-adjusted transcript. `:reset` sends
-only the soul and the current message, treating every turn as
-independent; the on-disk transcript still accumulates normally either
-way, so switching back to `:full` later sees full history again.
+`context-mode` decides what a turn **replays** to the model, not what's
+stored. The `:isaac.agent/context-mode` berth registers modes by id. Built-ins
+are `:full` (the default: whole compaction-adjusted transcript) and `:reset`
+(soul and current message only). Other modules may contribute modes, e.g.
+`:porthole`; the stored transcript still accumulates normally. Resolution is
+`--with-context-mode` for this turn, then session `:context-mode`, crew
+`:context-mode`, then the default. A registration can declare
+`:requires {:observers #{:logbook}}`. Config validation identifies a crew
+whose selected mode needs an observer missing from its list; a turn on a
+session without that observer is refused before appending. A mode can wait
+for a named observer to catch up before constructing context.
+
+The `:isaac.agent/session-observer` berth registers record listeners by id.
+Configure a crew with `:observers [:logbook]`; a session's `:observers`
+replaces the crew's list, but a turn cannot replace it. Observers receive
+`session-opened`, `message-appended`, `compaction-spliced`, `turn-started`,
+and `turn-ended` in order per session, on a queue outside the turn path.
+Sessions are processed in parallel. A slow observer does not delay replies;
+an observer failure raises an attention without failing the turn. Observers
+watch the record; modifying model context belongs to context modes.
 
 ### Troubleshooting
 

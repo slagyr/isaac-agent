@@ -83,7 +83,7 @@
   (:crew charge))
 
 (defn transcript
-  "Returns the active session transcript through the charge's session policy."
+  "Returns the active session transcript from the session store."
   [charge]
   (when-let [sess (or (:session-store charge) (store/registered-store))]
     (store/active-transcript sess (:session-key charge))))
@@ -141,7 +141,7 @@
         ss*             (or session-store (store/registered-store))
         session-entry   (when (and ss* session-key (satisfies? store/SessionStore ss*))
                           (store/get-session ss* session-key))
-        crew-id         (or (:crew session-entry) crew (defaults/crew-id config*))
+        crew-id         (or crew (:crew session-entry) (defaults/crew-id config*))
         known-crews     (or (:crew config*) {})
         unknown?        (and crew-id (not (contains? known-crews crew-id)))
         session-context (delay (session-ctx/resolve-behavior session-key

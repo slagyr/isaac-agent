@@ -5,7 +5,6 @@
   (:require
     [isaac.agent.config.checks]
     [isaac.foundation.module.protocol :as module]
-    [isaac.agent.session.policy.chronicle]
     [isaac.agent.turn.cli]))
 
 (defn create-module []

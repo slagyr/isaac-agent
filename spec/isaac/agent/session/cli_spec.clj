@@ -47,10 +47,21 @@
       (helper/append-message! "/test/sessions" "roomy-chat" {:role "user" :content "Please inspect the session transcript footprint carefully."})
       (helper/append-message! "/test/sessions" "roomy-chat" {:role "assistant" :content "I am measuring transcript size separately from tokens."}))
     (let [output (with-out-str (should= 0 (sut/run-fn {:home "/test" :_raw-args ["list"]})))]
-      (should (re-find #"SESSION\s+AGE\s+SIZE\s+USED\s+WINDOW\s+PCT\s+CREW\s+POLICY" output))
+      (should (re-find #"SESSION\s+AGE\s+SIZE\s+USED\s+WINDOW\s+PCT\s+CREW\s+CONTEXT" output))
       (should (re-find #"compact-chat\s+\S+\s+\d+B\s+0\s+32,768\s+\d+%\s+main\s+full" output))
       (should (re-find #"roomy-chat\s+\S+\s+\d+(\.\d)?K\s+0\s+32,768\s+\d+%\s+main\s+full" output))
       (should-not-contain "1,000,000" output)))
+
+  (it "lists the crew context mode unless the session overrides it"
+    (helper/create-session! "/test/sessions" "lumen" {:crew "main"})
+    (fs/spit (nexus/get :fs) "/test/.isaac/config/isaac.edn"
+             (pr-str {:defaults {:frequencies {:crew "main"}}
+                      :crew {"main" {:context-mode :reset}}}))
+    (let [output (with-out-str (should= 0 (sut/run-fn {:home "/test" :_raw-args ["list"]})))]
+      (should (re-find #"lumen.*main\s+reset" output)))
+    (store/update-session! (store/registered-store) "lumen" {:context-mode :full})
+    (let [output (with-out-str (should= 0 (sut/run-fn {:home "/test" :_raw-args ["list"]})))]
+      (should (re-find #"lumen.*main\s+full" output))))
 
   (it "does not parse transcripts when listing SIZE"
     (helper/create-session! "/test/sessions" "joe" {:crew "main"})

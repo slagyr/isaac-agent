@@ -121,7 +121,7 @@
 (def ^:private default-session-columns
   (conj session-columns
         {:key :crew   :header "CREW"   :align :left}
-        {:key :policy :header "POLICY" :align :left}))
+        {:key :context :header "CONTEXT" :align :left}))
 
 (def ^:private tagged-session-columns
   [{:key :name   :header "Name"    :align :left}
@@ -138,7 +138,7 @@
                 (let [p (or p 0)]
                   (cond (> p 100) :red (>= p 80) :yellow :else nil)))}
    {:key :crew   :header "Crew"    :align :left}
-   {:key :policy :header "POLICY"  :align :left}
+   {:key :context :header "CONTEXT" :align :left}
    {:key :tags   :header "Tags"    :align :left}])
 
 (defn- transcript-size-bytes [entry]
@@ -172,13 +172,16 @@
           tally)
       tally)))
 
-(defn- session->row [entry context-window session-store]
+(defn- session->row [entry context-window session-store cfg]
   (let [bytes  (transcript-size-bytes entry)
         tokens (row-tokens entry bytes)
         pct    (if (pos? context-window)
                    (int (Math/round (* 100.0 (/ tokens context-window)))) 0)
         session-name (or (:key entry) (:id entry))
-        policy       (or (:context-mode entry) :full)]
+        context      (or (:context-mode entry)
+                         (get-in cfg [:crew (:crew entry) :context-mode])
+                         (get-in cfg [:defaults :crew :context-mode])
+                         :full)]
     {:name   (str session-name (when (store/in-flight? session-store (:id entry)) " ✈️"))
      :age    (if-let [ms (age-ms (:updated-at entry))] (format-age ms) "-")
      :size   bytes
@@ -186,7 +189,7 @@
      :window context-window
      :pct    pct
      :crew   (:crew entry)
-     :policy (clojure.core/name policy)
+     :context (clojure.core/name context)
      :tags   (text-tags (:tags entry))}))
 
 (defn- effective-color? [options]
@@ -239,7 +242,7 @@
         ;; resolves through the same crew, which matches prior behavior.)
         rows          (mapv (fn [entry]
                               (let [cw (resolve-context-window cfg (or (:crew entry) (defaults/crew-id cfg)))]
-                                (session->row entry cw session-store)))
+                                (session->row entry cw session-store cfg)))
                             sessions)
         columns       (cond
                         (some (comp seq :tags) sessions) tagged-session-columns
