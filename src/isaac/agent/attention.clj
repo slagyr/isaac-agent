@@ -170,3 +170,6 @@
          (log/info :attention/provider-throttled
                    :provider provider
                    :suppressed next-suppressed))))))
+
+(defn maybe-notify-session-observer-failed! [cfg session-id observer]
+  (enqueue-attention! cfg (str "Session observer " observer " failed for session " session-id)))

@@ -253,3 +253,14 @@
         (should (:nonce behavior))
         (should= (:nonce behavior) (:nonce updated))))
     (config/dangerously-install-config! nil "spec")))
+
+(describe "context mode berth"
+  (it "porthole keeps the last assistant answer and current question"
+    (should= [{:type "message" :message {:role "assistant" :content "Lit"}}
+              {:type "message" :message {:role "user" :content "Oil?"}}]
+             (do ((requiring-resolve 'isaac.agent.session.context-mode/register!)
+                   :porthole {:factory (requiring-resolve 'isaac.session.lantern/porthole)})
+              ((requiring-resolve 'isaac.agent.session.context-mode/select-transcript)
+              :porthole [{:type "message" :message {:role "user" :content "Old?"}}
+                         {:type "message" :message {:role "assistant" :content "Lit"}}
+                         {:type "message" :message {:role "user" :content "Oil?"}}])))))

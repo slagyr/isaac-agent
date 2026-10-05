@@ -1,4 +1,4 @@
-{:paths ["src" "resources" "spec" "test-resources" "src/bb"]
+{:paths ["src" "resources" "spec" "test-resources" "src/bb" "modules/isaac.session.lantern/src"]
 
  ;; Native babashka runners via isaac-foundation-test-support (isaac-x5ru / isaac-h5xm).
  ;; test-support SHA must be >= 43cf46e (bb.test-tasks under spec-support/src/bb/).
