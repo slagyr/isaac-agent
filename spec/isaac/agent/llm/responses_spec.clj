@@ -619,6 +619,35 @@
                                             identity "chatgpt" oauth-device-config))))))
 
 
+    (it "keeps a mid-stream HTTP wall status and retry-after instead of a partial reply"
+      (let [token (jwt-with-account-id "acct-123")]
+        (with-redefs [llm-http/post-sse! (fn [_ _ _ on-chunk process-event initial & _]
+                                           (on-chunk {:type "response.output_text.delta" :delta "partial"})
+                                           (process-event {:type "response.output_text.delta" :delta "partial"} initial)
+                                           {:error :api-error :status 429 :retry-after 60 :body {:error "rate limited"}})
+                      auth-store/load-tokens (fn [_ _ _] {:access token :expires (+ (System/currentTimeMillis) 1800000)})
+                      auth-store/token-expired? (fn [_] false)]
+          (let [result (sut/chat-stream {:model "test" :messages []} identity "chatgpt" oauth-device-config)]
+            (should= :rate-limited (:error result))
+            (should= 429 (:status result))
+            (should= 60000 (:retry-after-ms result))
+            (should-not (:content result))))))
+
+    (it "classifies an error event following a text delta as provider weather"
+      (let [token (jwt-with-account-id "acct-123")]
+        (with-redefs [llm-http/post-sse! (fn [_ _ _ on-chunk process-event initial & _]
+                                           (reduce (fn [acc event] (on-chunk event) (process-event event acc))
+                                                   initial
+                                                   [{:type "response.output_text.delta" :delta "unfinished"}
+                                                    {:type "response.failed"
+                                                     :response {:error {:status 401 :message "expired token"}}}]))
+                      auth-store/load-tokens (fn [_ _ _] {:access token :expires (+ (System/currentTimeMillis) 1800000)})
+                      auth-store/token-expired? (fn [_] false)]
+          (let [result (sut/chat-stream {:model "test" :messages []} identity "chatgpt" oauth-device-config)]
+            (should= 401 (:status result))
+            (should= :auth-failed (:error result))
+            (should-not (:content result))))))
+
     (it "streams codex responses output for oauth-device"
       (let [chunks       (atom [])
             captured-url (atom nil)

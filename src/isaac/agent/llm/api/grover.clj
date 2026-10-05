@@ -177,6 +177,9 @@
                          :eval_count        output-tokens}
         metadata       (cond-> {}
                          (= "cut-off" (:type scripted)) (assoc :cut-off? true)
+                         (= "stream-dropped" (:type scripted)) (assoc :stream-dropped? true)
+                         (:status scripted) (assoc :status (long (:status scripted)))
+                         (:retry-after scripted) (assoc :retry-after (long (:retry-after scripted)))
                          (:reasoning scripted) (assoc :reasoning (:reasoning scripted))
                          (:usage scripted)     (assoc :usage (:usage scripted))
                          (:wire-stop-reason scripted) (assoc :wire-stop-reason (:wire-stop-reason scripted)))]
@@ -408,7 +411,14 @@
   (let [response (provider-response body nil)]
     (if (:error response)
       response
-      (if (str/ends-with? url "/responses")
+      (if (:stream-dropped? response)
+        (let [event {:type "response.output_text.delta" :delta (get-in response [:message :content])}]
+          (on-chunk event)
+          (if-let [status (:status response)]
+            (cond-> {:error :api-error :status status :message "stream HTTP error"}
+              (:retry-after response) (assoc :retry-after (:retry-after response)))
+            (process-event event initial)))
+        (if (str/ends-with? url "/responses")
         (let [tool-call-item (function-call-item response)
               events (if-let [_tool-call (first (get-in response [:message :tool_calls]))]
                        [{:type "response.output_item.added"
@@ -474,7 +484,7 @@
                                      :choices [{:delta {}
                                                 :finish_reason (or (:wire-stop-reason response)
                                                                    (if (seq tool-calls) "tool_calls" "stop"))}]}])]
-            (reduce-provider-events (if (:cut-off? response) (butlast events) events) on-chunk process-event initial)))))))
+            (reduce-provider-events (if (:cut-off? response) (butlast events) events) on-chunk process-event initial))))))))
 
 ;; endregion ^^^^^ Response Building ^^^^^
 

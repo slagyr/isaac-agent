@@ -11,6 +11,23 @@
 
   (before (sut/reset-queue!))
 
+  (it "drops a Responses stream after a partial delta without completing"
+    (sut/enqueue! [{:type "stream-dropped" :content "Who's th"}])
+    (let [events (atom [])
+          result (sut/post-sse! "chatgpt" "https://example.com/responses" {} {} #(swap! events conj %)
+                                (fn [event acc] (conj acc event)) [])]
+      (should= [{:type "response.output_text.delta" :delta "Who's th"}] @events)
+      (should= @events result)))
+
+  (it "reports the HTTP wall after sending a partial Responses delta"
+    (sut/enqueue! [{:type "stream-dropped" :content "Who's th" :status 429 :retry-after 60}])
+    (let [events (atom [])
+          result (sut/post-sse! "chatgpt" "https://example.com/responses" {} {} #(swap! events conj %)
+                                (fn [event acc] (conj acc event)) [])]
+      (should= [{:type "response.output_text.delta" :delta "Who's th"}] @events)
+      (should= 429 (:status result))
+      (should= 60 (:retry-after result))))
+
   ;; region ----- Echo Mode -----
 
   (describe "echo mode"

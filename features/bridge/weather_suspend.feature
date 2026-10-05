@@ -46,7 +46,6 @@ Feature: Turns suspend and resume on provider weather (isaac-nqeq, epic isaac-ug
       | type    | message.role | message.content | #comment                          |
       | message | user         | knock knock     | last entry — nothing fabricated   |
 
-  @wip
   Scenario: a Responses stream that ends without response.completed suspends the turn (isaac-v64q)
     Field 2026-10-02..05: four worker and verifier turns on ChatGPT ended in
     :llm-error with "responses stream ended without response.completed" and
@@ -69,7 +68,6 @@ Feature: Turns suspend and resume on provider weather (isaac-nqeq, epic isaac-ug
       | type    | message.role | message.content | #comment                          |
       | message | user         | knock knock     | last entry — the partial reply is not kept |
 
-  @wip
   Scenario: a 429 that arrives mid-stream on the Responses path suspends as a wall (isaac-v64q)
     Given the following model responses are queued:
       | model        | type           | content  | status | retry-after |

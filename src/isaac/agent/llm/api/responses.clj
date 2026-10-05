@@ -160,6 +160,16 @@
                         tool-call))
                     tool-calls)))
 
+    "response.failed"
+    (let [failure (or (get-in data [:response :error]) (:error data))]
+      (assoc accumulated :stream-error
+             {:error   (if (contains? #{401 403} (or (:status failure) (:status data)))
+                         :auth-failed :api-error)
+              :status  (or (:status failure) (:status data))
+              :message (or (:message failure) "responses stream failed")
+              :body    failure
+              :retry-after (or (:retry-after failure) (:retry-after data))}))
+
     "response.completed"
     (let [response (:response data)]
       (cond-> accumulated
@@ -199,6 +209,9 @@
     (cond
       (:error result)
       (api/normalize-error result)
+
+      (:stream-error result)
+      (api/normalize-error (:stream-error result))
 
       (not (:completed? result))
       {:error :stream-ended-early :message "stream ended before completion marker"}
