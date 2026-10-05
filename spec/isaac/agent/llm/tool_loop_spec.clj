@@ -175,9 +175,9 @@
                            :usage      {:prompt-tokens 10 :output-tokens 5}}])
           followup-fn  (recording-followup calls)
           tool-fn      (fn [_ {:keys [path]}]
-                         (deliver started-one true)
                          (swap! started conj path)
-                         (deref release 1000 :timeout)
+                         (deliver started-one true)
+                         @release
                          (reset! cancelled?* true)
                          (str "ok-" path))
           run*         (future (sut/run chat-fn followup-fn {:messages []} tool-fn
