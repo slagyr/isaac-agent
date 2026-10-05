@@ -2,7 +2,6 @@
   (:require
     [isaac.agent.bridge.cancellation :as cancel]
     [isaac.foundation.logger :as log]
-    [isaac.agent.session.policy :as policy]
     [isaac.agent.session.store.spi :as store]))
 
 (def default-timeout-ms 15000)
@@ -30,12 +29,12 @@
     (cancel/cancelled-result)))
 
 (defn- as-policy [store]
-  (policy/wrap store))
+  store)
 
 (defn- stamp-suspended-marker! [store session-key boundary]
   (let [sess (as-policy store)]
-    (when-let [marker (policy/get-turn-marker sess session-key)]
-      (policy/record-turn-marker! sess session-key
+    (when-let [marker (store/get-turn-marker sess session-key)]
+      (store/record-turn-marker! sess session-key
                                   (assoc marker
                                          :suspended true
                                          :boundary boundary
@@ -54,11 +53,11 @@
         (swap! suspended-sessions* disj session-key)
         (swap! suspend-boundaries* dissoc session-key))
 
-      (weather-parked? (policy/get-turn-marker sess session-key))
+      (weather-parked? (store/get-turn-marker sess session-key))
       nil
 
       :else
-      (policy/clear-turn-marker! sess session-key))))
+      (store/clear-turn-marker! sess session-key))))
 
 (defn suspend!
   [{:keys [timeout-ms session-store]

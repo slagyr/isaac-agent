@@ -19,9 +19,9 @@
     [isaac.agent.drive.turn :as single-turn]
     [isaac.foundation.fs :as fs]
     [isaac.agent.session.context :as session-ctx]
+    [isaac.agent.session.session-observer :as session-observer]
     [isaac.agent.frequencies :as session-frequencies]
     [isaac.agent.frequencies-cli :as frequencies-cli]
-    [isaac.agent.session.policy :as policy]
     [isaac.agent.session.store.spi :as store]
     [isaac.agent.tool.builtin :as builtin]
     [isaac.agent.tool.memory :as memory]
@@ -167,9 +167,7 @@
       (defaults/crew-id cfg)))
 
 (defn- prompt-policy [opts override cfg session-store]
-  (policy/for-request {:crew          (episode-crew-id opts override cfg)
-                       :config        cfg
-                       :session-store session-store}))
+  session-store)
 
 (defn- resolve-target [opts _override cfg session-store]
   (let [frequencies (frequencies-cli/build-frequencies opts)]
@@ -199,18 +197,21 @@
       (:session-key target)
       (do
         (refuse-crew-collision! session-store (:session-key target) (:crew opts))
-        (policy/refuse-policy-mismatch! session-store (:session-key target) (policy/policy-name (get-in cfg [:crew crew-id])))
-        (when (and sess (nil? (policy/get-session sess (:session-key target)))
+        (when (and sess (nil? (store/get-session sess (:session-key target)))
                    (or (:create? target) (:session opts)))
-          (policy/open-session! sess (:session-key target)
+          (store/open-session! sess (:session-key target)
                                 (merge {:cwd           cwd
                                         :config        cfg
                                         :origin        {:kind :cli}
                                         :crew          crew-id
-                                        :session-policy (policy/policy-name (get-in cfg [:crew crew-id]))
+                                        
                                         :session-store session-store}
                                        (or (:create-identity target) {})
-                                       (session-frequencies/behavioral-override override))))
+                                       (session-frequencies/behavioral-override override)))
+          (session-observer/publish! (:session-key target)
+                                     (or (get-in cfg [:crew crew-id :observers])
+                                         (get-in cfg [:crew (keyword crew-id) :observers]))
+                                     {:event :session-opened :config cfg}))
         (:session-key target))
 
       (:create? target)
@@ -220,7 +221,7 @@
                                 :origin        {:kind :cli}
                                 :session-store session-store
                                 :crew          crew-id
-                                :session-policy (policy/policy-name (get-in cfg [:crew crew-id]))}
+                                }
                                identity
                                (session-frequencies/behavioral-override override))
             ;; The agent names the session when the caller and the policy both
@@ -229,14 +230,22 @@
                             (when sess (store/mint-name (loader/root))))]
         (if (and sess session-key)
           (do
-            (policy/open-session! sess session-key create-opts)
+            (store/open-session! sess session-key create-opts)
+            (session-observer/publish! session-key
+                                       (or (get-in cfg [:crew crew-id :observers])
+                                           (get-in cfg [:crew (keyword crew-id) :observers]))
+                                       {:event :session-opened :config cfg})
             session-key)
           (let [entry (session-ctx/create-with-resolved-behavior!
                         session-key create-opts)]
+            (session-observer/publish! (:id entry)
+                                       (or (get-in cfg [:crew crew-id :observers])
+                                           (get-in cfg [:crew (keyword crew-id) :observers]))
+                                       {:event :session-opened :config cfg})
             (:id entry))))
 
       :else
-      (or (when sess (policy/default-session sess crew-id {:cwd cwd :origin {:kind :cli}}))
+      (or (when sess (store/default-session sess crew-id {:cwd cwd :origin {:kind :cli}}))
           (:session-key target)))))
 
 (defn- dispatch-prompt! [opts cfg session-store session-key session comm text]
@@ -367,12 +376,12 @@
               (try
                 (let [session-key (ensure-session! target override opts cfg session-store)
                       session     (or (when-let [sess (prompt-policy opts override cfg session-store)]
-                                        (policy/get-session sess session-key))
+                                        (store/get-session sess session-key))
                                       (store/get-session session-store session-key))
                       {:keys [comm text]} (make-prompt-comm (seq (:observer opts)))]
                   (dispatch-prompt! opts cfg session-store session-key session comm text))
                 (catch ExceptionInfo e
-                  (if (contains? #{:crew-collision :session-policy-mismatch} (:reason (ex-data e)))
+                  (if (contains? #{:crew-collision} (:reason (ex-data e)))
                     (do (print-error! (ex-message e)) 1)
                     (throw e)))))))))))
 

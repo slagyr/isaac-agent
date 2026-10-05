@@ -9,6 +9,7 @@
     [isaac.foundation.config.api :as config]
     [isaac.foundation.config.config-steps :as config-steps]
     [isaac.foundation.config.loader :as loader]
+    [isaac.agent.config.defaults :as defaults]
     [isaac.agent.config.resolve :as resolve]
 
     [isaac.foundation.fs-steps :as ffs]
@@ -38,14 +39,14 @@
     [isaac.agent.comm.factory :as comm-factory]
     [isaac.agent.slash.registry :as slash-registry]
     [isaac.agent.charge :as charge]
-    [isaac.agent.session.policy :as policy]
-    [isaac.agent.session.policy.logbook :as logbook]
+    [isaac.agent.session.session-observer :as session-observer]
     [isaac.agent.session.store.spi :as store]
     [isaac.agent.session.store.sidecar :as sidecar-store]
     [isaac.agent.session.store.memory :as memory-store]
     [isaac.agent.session.store.impl-common :as session-impl-common]
     [isaac.agent.session.transcript :as transcript]
     [isaac.foundation.cli.host :as host]
+    [isaac.foundation.cli-steps :as fcli]
     [isaac.foundation.cli.registry :as cli-registry]
     [isaac.foundation.module.loader :as module-loader]
     [isaac.foundation.nexus :as nexus]
@@ -67,7 +68,7 @@
 (g/before-scenario module-loader/clear-activations!)
 (g/before-scenario grover/install-test-fixture!)
 (g/before-scenario session-compaction/clear-last-compaction-request!)
-(g/before-scenario logbook/reset-calls!)
+(g/before-scenario session-observer/reset-queues!)
 (g/before-scenario slash-registry/clear!)
 
 ;; Capture the real `sidecar-store/create-store` once at load time so we can
@@ -295,8 +296,8 @@
                  (loaded-config)
                  {})
         crew (or (:crew opts) (get-in cfg [:defaults :frequencies :crew]) "main")
-        pol  (policy/for-crew crew cfg (session-store))]
-    (policy/open-session! pol session-name (assoc opts :crew crew :session-policy (policy/policy-name (get-in cfg [:crew crew]))))))
+        entry (store/open-session! (session-store) session-name (assoc opts :crew crew :config cfg))]
+    entry))
 
 (defn- update-session! [session-key updates]
   (store/update-session! (session-store) session-key updates))
@@ -337,7 +338,8 @@
     (when-not (str/blank? (or value ""))
       (case field
         "compaction"        (edn/read-string value)
-        "context-mode"      (edn/read-string value)
+        "context-mode"      (keyword (edn/read-string value))
+        "observers"         (edn/read-string value)
         "effort"            (parse-long value)
         "history-retention" (edn/read-string value)
         "model"             (session-ctx/normalize-model-ref (edn/read-string value))
@@ -397,6 +399,14 @@
       (when (= 1 (count (configured-crew-ids)))
         (first (configured-crew-ids)))
       (get-in (loaded-config) [:defaults :frequencies :crew])))
+
+(defn- unique-observer-crew-id []
+  (let [extras (filter (fn [[id crew]]
+                         (and (not= "main" (name id))
+                              (seq (:observers crew))))
+                       (or (:crew (loaded-config)) {}))]
+    (when (= 1 (count extras))
+      (name (ffirst extras)))))
 
 (defn- isaac-edn-path []
   (str (root-dir) "/config/isaac.edn"))
@@ -672,6 +682,7 @@
       (when (= ::timeout result)
         (throw (ex-info "turn did not complete within 30 seconds" {})))
       (complete-turn! result)
+      (session-observer/drain-all!)
       (g/update! :turn-futures-by-session
                  (fn [futures] (into {} (remove (fn [[_ f]] (= f turn-future)) futures)))))))
 
@@ -1120,8 +1131,11 @@
     (with-feature-fs
       (fn []
         (commit-feature-config!)
-        (let [entry (or (get-session name)
-                        (session-ctx/create-with-resolved-behavior! name {}))]
+        (let [cfg   (loaded-config)
+              crew  (or (unique-observer-crew-id) (active-crew-id) (defaults/crew-id cfg))
+              entry (or (get-session name)
+                        (session-ctx/create-with-resolved-behavior!
+                          name {:crew crew :config cfg :session-store (session-store)}))]
           (when (some? value)
             (update-session! (:id entry) {(keyword field) value}))
           (g/assoc! :current-key (:id entry)))))))
@@ -1286,7 +1300,10 @@
                                 :context-window (:context-window model-cfg)
                                 :origin         {:kind :cli}
                                 :comm           channel
-                                :crew           (or crew-id (active-crew-id))
+                                :crew           (or crew-id
+                                                     (:crew (get-session key-str))
+                                                     (unique-observer-crew-id)
+                                                     (active-crew-id))
                                 :config         cfg}
                          (seq resource-pools) (assoc :resource-pools resource-pools)
                          coalesce-key (assoc :coalesce-key coalesce-key))]
@@ -1336,7 +1353,8 @@
            (do
              (when existing-turn-future
                (g/assoc! :turn-future existing-turn-future))
-             (record-turn-result! result)))))
+             (record-turn-result! result)
+             (session-observer/drain-all!)))))
      (g/assoc! :memory-comm-events events))))
 
 (defn charge-dispatched-with
@@ -1380,27 +1398,6 @@
                             :result  @result})
       (g/assoc! :memory-comm-events events)
       (g/assoc! :channel-events events))))
-
-(defn recording-session-policy-registered [name]
-  (logbook/reset-calls!)
-  (policy/register-factory! name logbook/create))
-
-(defn- logbook-call-row [call]
-  (cond-> {:method (:method call)}
-    (contains? call :session-id) (assoc :session-id (:session-id call))
-    (contains? call :crew) (assoc :crew (:crew call))))
-
-(defn logbook-policy-recorded-calls-matching [table]
-  (await-turn!)
-  (await-acp-turn!)
-  (let [actual (mapv logbook-call-row (logbook/recorded-calls))
-        result (match/match-entries table actual)]
-    (g/should= [] (:failures result))))
-
-(defn logbook-policy-recorded-no-calls []
-  (await-turn!)
-  (await-acp-turn!)
-  (g/should= [] (logbook/recorded-calls)))
 
 (defn turn-ends-on-session [key-str]
   (when-let [turn-future (or (g/get-in [:turn-futures-by-session key-str])
@@ -1999,6 +1996,7 @@
   (await-turn!)
   (g/should= (unquote-string expected)
              (or (:stopReason (g/get :llm-result))
+                 (some-> (g/get :llm-result) :ended-by name)
                  (some-> (g/get :llm-result) :error name))))
 
 (defn turn-result-is-unavailable-with-retry-after-ms [ms-str]
@@ -2256,18 +2254,6 @@
    fields (message.model, message.usage.input, etc.).")
 
 (defgiven #"session \"([^\"]+)\" has an error entry \"([^\"]+)\"" isaac.agent.session.session-steps/session-has-error-entry)
-
-(defgiven #"a recording session policy \"([^\"]+)\" is registered"
-  isaac.agent.session.session-steps/recording-session-policy-registered
-  "Registers the logbook recording policy factory under the given name.")
-
-(defthen "the logbook policy recorded calls matching:"
-  isaac.agent.session.session-steps/logbook-policy-recorded-calls-matching
-  "Matches recorded SessionPolicy method calls. Columns: method, session-id, crew.")
-
-(defthen "the logbook policy recorded no calls"
-  isaac.agent.session.session-steps/logbook-policy-recorded-no-calls
-  "Asserts the logbook recording policy saw zero protocol calls.")
 
 (defwhen "a charge is dispatched with:" isaac.agent.session.session-steps/charge-dispatched-with
   "Builds a charge via charge/build then dispatch! (the skip path Discord/ACP
@@ -2687,3 +2673,7 @@
 ;; endregion ^^^^^ Routing ^^^^^
 
 ;; endregion ^^^^^ Then ^^^^^
+
+(fcli/register-isaac-run-postflight!
+  (fn []
+    (session-observer/drain-all!)))

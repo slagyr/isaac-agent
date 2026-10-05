@@ -6,7 +6,6 @@
     [isaac.foundation.reconfigurable :as reconfigurable]
     [isaac.agent.llm.api.protocol :as api-impl]
     [isaac.foundation.nexus :as nexus]
-    [isaac.agent.session.policy :as policy]
     [isaac.agent.session.store.spi :as session-store]))
 
 (def Comm
@@ -44,11 +43,10 @@
   (api-impl/register! api-key factory))
 
 (defn- crew-policy [crew store]
-  (policy/for-crew crew (or (some-> (nexus/get :config) deref) {}) store))
+  store)
 
 (defn create-session!
-  "Create (or reopen) a session record through the crew's session policy
-   (chronicle when opts name no crew or the crew sets none).
+  "Create (or reopen) a session record through the session store.
    identifier may be a session name string or an existing session map; a nil
    identifier is named here, by the configured naming strategy, before the
    policy sees it.
@@ -59,11 +57,11 @@
   ([identifier opts]
    (let [store        (or (:session-store opts) (session-store/registered-store))
          session-opts (dissoc opts :root :session-store)]
-     (policy/open-session! (crew-policy (:crew opts) store)
+     (session-store/open-session! (crew-policy (:crew opts) store)
                            (or identifier (session-store/mint-name))
                            session-opts)))
   ([root identifier opts]
-   (policy/open-session! (crew-policy (:crew opts) (session-store/create root))
+   (session-store/open-session! (crew-policy (:crew opts) (session-store/create root))
                          (or identifier (session-store/mint-name root))
                          opts)))
 

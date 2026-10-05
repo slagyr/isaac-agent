@@ -322,13 +322,12 @@
 (defn- keywordize-index-row [row]
   (let [m (if (map? row) (keywordize-map row) {})]
     (cond-> m
-      (and (contains? m :session-policy) (string? (:session-policy m)))
-      (update :session-policy keyword)
+
       (and (contains? m :crew) (keyword? (:crew m)))
       (update :crew name))))
 
 (defn read-index
-  "sessions/index.edn as {id {:crew :session-policy :updated-at ...}}. Empty map when absent."
+  "sessions/index.edn as {id {:crew :updated-at ...}}. Empty map when absent."
   [fs root]
   (let [path (index-path root)]
     (if-not (exists?* fs path)
@@ -384,7 +383,7 @@
 
 (defn scan-session-dirs
   "Walk sessions/<crew>/<sid>/session.edn (and leftover flat sessions/<sid>/session.edn).
-   Returns {id {:crew :session-policy :updated-at :dir}}."
+   Returns {id {:crew :updated-at :dir}}."
   [fs root]
   (let [dir (sessions-dir root)]
     (if-not (exists?* fs dir)
@@ -426,10 +425,10 @@
         current (read-index fs root)
         merged  (merge-with (fn [idx-row scanned-row]
                               (merge idx-row
-                                     (select-keys scanned-row [:crew :session-policy :updated-at :id])))
+                                     (select-keys scanned-row [:crew :updated-at :id])))
                             current
                             (reduce-kv (fn [m k v]
-                                         (assoc m k (select-keys v [:crew :session-policy :updated-at :id])))
+                                         (assoc m k (select-keys v [:crew :updated-at :id])))
                                        {}
                                        scanned))]
     (write-index! fs root merged)
@@ -437,7 +436,7 @@
 
 (defn locate-session
   "Resolve a session id via the index, falling back to a directory scan that
-   repairs the index. Returns {:crew :session-policy :dir :id ...} or nil.
+   repairs the index. Returns {:crew :dir :id ...} or nil.
 
    The index row is a hint verified against disk on every call (its dir must
    hold a session.edn); only a miss or a stale row pays for the scan, which
@@ -457,7 +456,7 @@
     (when found
       (when (or (not indexed)
                 (not= (:crew found) (:crew indexed)))
-        (upsert-index-row! fs root id (select-keys found [:crew :session-policy :updated-at :id])))
+        (upsert-index-row! fs root id (select-keys found [:crew :updated-at :id])))
       found)))
 
 (defn assert-unique-session-id!
@@ -728,7 +727,7 @@
 
 (defn resolve-session-loc
   "Locate a session by id (index then scan then leftover flat). Returns
-   {:id :crew :dir :session-policy ...} or nil."
+   {:id :crew :dir ...} or nil."
   [root session-id fs]
   (or (locate-session root session-id fs)
       (when (exists?* fs (session-edn-path root session-id))
@@ -854,18 +853,11 @@
           (write-index! fs root (-> idx
                                     (dissoc old-id)
                                     (assoc new-id {:crew           crew
-                                                   :session-policy (or (:session-policy renamed) :chronicle)
+                                                   
                                                    :updated-at     (:updated-at renamed)
                                                    :id             new-id}))))
         (commit-fn store old-id renamed)
         renamed))))
-
-(defn- policy-stamp [opts]
-  (let [raw (or (:session-policy opts) (:session-store opts))]
-    (cond
-      (keyword? raw) raw
-      (string? raw)  (keyword raw)
-      :else          nil)))
 
 (defn create-session! [read-session-fn write-fn now-iso-fn normalize-ts-fn root identifier opts fs]
   (let [explicit-crew (when-let [c (:crew opts)]
@@ -903,7 +895,6 @@
       ;; Sidecar without transcript: recreate (matches pre-b6w0 sidecar spec).
       (let [now           (or (normalize-ts-fn (:updated-at opts)) (now-iso-fn))
             transcript-id (new-id)
-            policy        (or (:session-policy existing) (policy-stamp opts) :chronicle)
             header        {:type      "session"
                            :id        transcript-id
                            :timestamp now
@@ -913,7 +904,7 @@
         (mkdirs*! fs (session-dir root (crew-of existing) id))
         (write-transcript! root (crew-of existing) id [header] fs)
         (write-fn store id (conform-session! (dissoc entry :session-file :effective-history-offset)))
-        (upsert-index-row! fs root id {:crew (crew-of existing) :session-policy policy :updated-at now})
+        (upsert-index-row! fs root id {:crew (crew-of existing)  :updated-at now})
         (log/info :session/created :sessionId id)
         entry)
 
@@ -921,7 +912,6 @@
       (let [now           (or (normalize-ts-fn (:updated-at opts)) (now-iso-fn))
             retention     (resolve-history-retention opts)
             transcript-id (new-id)
-            policy        (or (policy-stamp opts) :chronicle)
             header        {:type      "session"
                            :id        transcript-id
                            :timestamp now
@@ -939,7 +929,7 @@
                                      :updated-at        now
                                      :cwd               (or (:cwd opts) (System/getProperty "user.dir"))
                                      :crew              crew
-                                     :session-policy    policy
+                                     
                                      :tags              (:tags opts)
                                      :channel           (:channel opts)
                                      :chat-type         (or (:chat-type opts) (:chatType opts))
@@ -954,7 +944,7 @@
         (mkdirs*! fs (session-dir root crew id))
         (write-transcript! root crew id [header] fs)
         (write-fn store id (conform-session! (dissoc entry :session-file :effective-history-offset)))
-        (upsert-index-row! fs root id {:crew crew :session-policy policy :updated-at now})
+        (upsert-index-row! fs root id {:crew crew  :updated-at now})
         (log/info :session/created :sessionId id)
         entry))))
 

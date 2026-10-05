@@ -11,6 +11,6 @@
    :manifest-refs           {:fn 'isaac.agent.config.checks/check-manifest-refs}
    :resource-pools          {:fn 'isaac.agent.config.checks/check-resource-pools}
    :resolved-providers      {:fn 'isaac.agent.config.checks/check-resolved-providers}
-   :session-policy          {:fn 'isaac.agent.config.checks/check-session-policy}
+   :session-berths          {:fn 'isaac.agent.config.checks/check-session-berths}
    :tool-allow-tokens       {:fn 'isaac.agent.config.checks/check-tool-allow-tokens}
    :retired-cycle-limit     {:fn 'isaac.agent.config.checks/check-retired-cycle-limit}})

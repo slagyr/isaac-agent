@@ -1,6 +1,5 @@
 (ns isaac.agent.session.context-mode
-  "Registered transformations of a turn's transcript before model delivery."
-)
+  "Registered transformations of a turn's transcript before model delivery.")
 
 (defonce ^:private modes* (atom {}))
 
@@ -10,9 +9,12 @@
 (defn register-entry! [[id {:keys [factory] :as entry}]]
   (register! id (assoc entry :factory (some-> factory requiring-resolve var-get))))
 
+(defn identity-transcript [transcript] transcript)
+(defn reset-transcript [transcript] (if-let [current (last transcript)] [current] []))
+
 (defn ensure-builtins! []
-  (register! :full {:factory identity})
-  (register! :reset {:factory #(if-let [current (last %)] [current] [])}))
+  (register! :full {:factory identity-transcript})
+  (register! :reset {:factory reset-transcript}))
 
 (defn known [module-index]
   (ensure-builtins!)
@@ -24,12 +26,20 @@
   (or (:requires (get @modes* mode))
       (some #(get-in % [:manifest :isaac.agent/context-mode mode :requires]) (vals module-index))))
 
-(defn select-transcript [mode transcript]
-  (ensure-builtins!)
-  (let [factory (:factory (get @modes* (or mode :full)))]
-    (if factory
-      (factory transcript)
-      (throw (ex-info (str "unknown context mode " mode) {:mode mode})))))
+(defn- contributed-factory [mode module-index]
+  (some->> (vals module-index)
+           (some #(get-in % [:manifest :isaac.agent/context-mode mode :factory]))
+           requiring-resolve var-get))
+
+(defn select-transcript
+  ([mode transcript] (select-transcript mode transcript nil))
+  ([mode transcript module-index]
+   (ensure-builtins!)
+   (let [factory (or (:factory (get @modes* (or mode :full)))
+                     (contributed-factory mode module-index))]
+     (if factory
+       (factory transcript)
+       (throw (ex-info (str "unknown context mode " mode) {:mode mode}))))))
 
 (defn prepare-turn! [mode session-store session-key input]
   (ensure-builtins!)

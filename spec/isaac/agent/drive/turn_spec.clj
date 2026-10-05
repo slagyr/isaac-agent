@@ -1103,19 +1103,6 @@
             (should-not-be-nil (:root turn))
             (should-not-be-nil (:session-store turn))))))
 
-    (it "grants recall tools to an episodes crew without an allow list"
-      (helper/create-session! test-dir "episode-recall")
-      (helper/update-session! test-dir "episode-recall" {:crew "main"})
-      (let [charge {:session-key "episode-recall"
-                    :config {:root test-dir}
-                    :crew "main"
-                    :crew-members {"main" {:session-policy :episodes}}
-                    :provider (->TestProvider marigold/quantum-anvil {:api marigold/anvil-api})}]
-        (with-redefs [sut/augment-provider (fn [_ p _ _ _] p)
-                      session-ctx/read-skill-disclosure (fn [& _] {:menu-text nil :tool-names #{}})]
-          (should= #{"recall__search" "recall__scene"}
-                   (:allowed-tools (#'sut/build-turn charge))))))
-
     (it "auto-allows skill activation tools discovered from the prompt catalog"
       (helper/create-session! test-dir "skill-turn")
       (helper/update-session! test-dir "skill-turn" {:crew "main"})

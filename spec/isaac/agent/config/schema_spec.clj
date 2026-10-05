@@ -95,10 +95,9 @@
                (lexicon/conform (runtime-spec sut/crew)
                                 {:tags #{:role/worker :project/chess}})))
 
-    (it "crew conforms with session-policy :episodes"
-      (should= {:session-policy :episodes}
-               (lexicon/conform (runtime-spec sut/crew)
-                                {:session-policy :episodes})))
+    (it "crew conforms with session observers"
+      (should= {:observers [:logbook]}
+               (lexicon/conform (runtime-spec sut/crew) {:observers [:logbook]})))
 
     (it "crew conforms an ordered model-fallback of known model ids"
       (binding [validation-lexicon/*config* {:models {test-model-id {}
@@ -242,17 +241,6 @@
       (let [result (lexicon/conform (runtime-spec sut/crew) {})]
         (should-not (schema/error? result))
         (should-be-nil (:cwd result))))
-
-    (it "crew rejects unknown context-mode values"
-      (let [result (lexicon/conform sut/crew {:context-mode :ponder})]
-        (should (schema/error? result))
-        (should= "must be one of :full, :reset"
-                 (get-in (schema/message-map result) [:context-mode]))))
-
-    (it "crew accepts any keyword session-policy (unknown names fail at check-session-policy)"
-      (let [result (lexicon/conform (runtime-spec sut/crew) {:session-policy :ledger})]
-        (should-not (schema/error? result))
-        (should= {:session-policy :ledger} result)))
 
     (it "crew rejects non-keyword tags"
       (let [result (lexicon/conform sut/crew {:tags #{"worker"}})]

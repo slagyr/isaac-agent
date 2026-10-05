@@ -58,17 +58,6 @@
                                        {:crew "main" :config {:defaults {:provider {:history-retention :prune}}}})]
         (should= :prune (:history-retention entry))))
 
-    (it "stamps :session-policy :chronicle by default"
-      (let [s     (sut/create-store)
-            entry (store/open-session! s "harbor-log" {:crew "main"})]
-        (should= :chronicle (:session-policy entry))))
-
-    (it "stamps an explicit :session-policy"
-      (let [s     (sut/create-store)
-            entry (store/open-session! s "lantern-room" {:crew "cordelia" :session-policy :episodes})]
-        (should= :episodes (:session-policy entry))
-        (should= "cordelia" (:crew entry))))
-
     (it "refuses an id that already belongs to another crew"
       (let [s (sut/create-store)]
         (store/open-session! s "lantern-room" {:crew "cordelia"})
@@ -98,12 +87,12 @@
     (it "hydrates a session that exists on disk but not in the memory atom"
       (let [root "/hydrate-root"
             first (sut/create-store root)
-            _     (store/open-session! first "lantern-room" {:crew "cordelia" :session-policy :episodes})
+            _     (store/open-session! first "lantern-room" {:crew "cordelia" })
             second (sut/create-store root)
             entry  (store/get-session second "lantern-room")]
         (should= "lantern-room" (:id entry))
         (should= "cordelia" (:crew entry))
-        (should= :episodes (:session-policy entry))))
+        (should-not (contains? entry :session-policy))))
     )
 
   (describe "rename-session!"

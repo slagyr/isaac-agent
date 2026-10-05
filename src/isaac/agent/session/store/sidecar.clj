@@ -64,7 +64,7 @@
     (c/atomic-spit! fs path
                     (c/write-edn (dissoc entry :session-file :effective-history-offset)))
     (c/upsert-index-row! fs root id {:crew           crew
-                                     :session-policy (or (:session-policy entry) :chronicle)
+                                     
                                      :updated-at     (:updated-at entry)})))
 
 (defn- read-session-store [root fs]

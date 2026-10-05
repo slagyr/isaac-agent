@@ -6,7 +6,7 @@
     [isaac.foundation.logger :as log]
     [isaac.foundation.nexus :as nexus]
     [isaac.agent.resource-pool :as pool]
-    [isaac.agent.session.policy :as policy]
+
     [isaac.agent.session.store.impl-common :as store-common]
     [isaac.agent.session.store.spi :as store]
     [isaac.agent.turn.queue :as queue])
@@ -58,7 +58,7 @@
     (seq (set/difference tool-call-ids tool-result-ids))))
 
 (defn- repair-dangling-tool-calls! [sess session-id]
-  (let [transcript (policy/get-transcript sess session-id)
+  (let [transcript (store/get-transcript sess session-id)
         dangling   (dangling-tool-call-ids transcript)]
     (when (seq dangling)
       (log/warn :resume/transcript-repair
@@ -66,21 +66,21 @@
                 :repair :dangling-tool-call
                 :tool-call-ids (vec dangling))
       (doseq [call-id dangling]
-        (policy/append-message! sess session-id
+        (store/append-message! sess session-id
                                 {:role       "toolResult"
                                  :toolCallId call-id
                                  :content    synthesized-tool-result}))
       true)))
 
-(defn- session-policy
+(defn- session-store
   "The crew policy for a session id. The session record read is a primitive
    (policy-neutral); everything transcript-shaped goes through the policy."
   [session-store cfg session-id]
-  (policy/for-crew (:crew (store/get-session session-store session-id)) (or cfg {}) session-store))
+  session-store)
 
 (defn- repair-transcript! [session-store cfg session-id]
-  (let [sess (session-policy session-store cfg session-id)]
-    (or (policy/repair-transcript! sess session-id)
+  (let [sess session-store]
+    (or (store/repair-transcript! sess session-id)
         (repair-dangling-tool-calls! sess session-id))))
 
 (defn- running-record-for-session
@@ -112,7 +112,7 @@
     ;; The note is persisted here, the way a parked CLI turn persists its user
     ;; message at submit time: the queue worker drives a :from-queue? charge and
     ;; never re-appends the input.
-    (policy/append-message! (session-policy session-store cfg session-id) session-id
+    (store/append-message! session-store session-id
                             {:role "user" :content resume-note})
     (binding [queue/*root* root]
       (let [old-record (running-record-for-session session-id)

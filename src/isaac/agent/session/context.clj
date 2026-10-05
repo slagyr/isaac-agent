@@ -203,22 +203,19 @@
         store     (require-session-store (:session-store opts))]
    ;; bind the known crew set for the schema's crew validation on the writes below
    (binding [session-schema/*config* cfg]
-    (let [policy    (or (:session-policy opts)
-                        (when-let [raw (get-in cfg [:crew (:crew behavior) :session-policy])]
-                          (keyword raw)))
-          entry     (store/open-session! store session-key (cond-> {:channel           (:channel opts)
-                                                                    :chat-type         (or (:chat-type opts) (:chatType opts))
-                                                                    :crew              (:crew behavior)
-                                                                    :nonce             (or (:nonce opts) (store-common/new-nonce))
-                                                                    :tags              (:tags opts)
-                                                                    :cwd               (:cwd behavior)
-                                                                    :history-retention (:history-retention behavior)
-                                                                    :config            cfg
-                                                                    :origin            (:origin opts)}
-                                                             policy (assoc :session-policy policy)))
+    (let [entry (store/open-session! store session-key {:channel (:channel opts)
+                                                       :chat-type (or (:chat-type opts) (:chatType opts))
+                                                       :crew (:crew behavior)
+                                                       :nonce (or (:nonce opts) (store-common/new-nonce))
+                                                       :tags (:tags opts)
+                                                       :cwd (:cwd behavior)
+                                                       :history-retention (:history-retention behavior)
+                                                       :config cfg
+                                                       :origin (:origin opts)})
           updates   (cond-> {}
                       (contains? opts :compaction)   (assoc :compaction (:compaction opts))
                       (contains? opts :context-mode) (assoc :context-mode (:context-mode opts))
+                      (contains? opts :observers) (assoc :observers (:observers opts))
                       (contains? opts :effort)       (assoc :effort (:effort opts))
                       (contains? opts :model)        (assoc :model (normalize-model-ref (:model opts)))
                       (contains? opts :provider)     (assoc :provider (:provider opts)))]

@@ -10,7 +10,8 @@
     [isaac.foundation.config.schema-compose :as schema-compose]
     [isaac.foundation.config.root :as root]
     [isaac.foundation.config.validation :as validation]
-    [isaac.agent.session.policy :as session-policy]
+    [isaac.agent.session.context-mode :as context-mode]
+    [isaac.agent.session.session-observer :as session-observer]
     [isaac.agent.resource-pool :as pool]
     [isaac.agent.tool.fs-bounds :as fs-bounds]
     [isaac.agent.tool.names :as names]))
@@ -238,26 +239,30 @@
                  (or (:crew config) {}))))
    :warnings []})
 
-(defn- policy-id [value]
-  (when (some? value)
-    (if (keyword? value) (name value) (str value))))
-
-(defn check-session-policy
-  "A crew naming a session policy no factory or module provides is a config error.
-   Absent :session-policy is chronicle (no error). Known names are built-ins
-   unioned with :isaac.agent/session-policy keys in the module index."
+(defn check-session-berths
   [{:keys [config module-index]}]
-  (let [known      (session-policy/known-policy-names module-index)
-        known-set  (set known)
-        known-text (str/join ", " known)]
-    {:errors (vec
-               (keep (fn [[crew-id crew]]
-                       (when-let [raw (:session-policy crew)]
-                         (let [name (policy-id raw)]
-                           (when-not (contains? known-set name)
-                             {:key   (str "crew." (->id crew-id) ".session-policy")
-                              :value (str "references undefined session policy (got \"" name "\"); known: " known-text)}))))
-                     (or (:crew config) {})))
+  (let [modes (context-mode/known module-index)
+        observers (session-observer/known module-index)]
+    {:errors (vec (mapcat
+                   (fn [[crew-id crew]]
+                     (let [path (str "crew." (->id crew-id))
+                           mode (or (:context-mode crew) (defaults/context-mode config) :full)
+                           required (get-in (context-mode/requirement mode module-index) [:observers])
+                           selected (or (:observers crew) (get-in config [:defaults :crew :observers]) [])]
+                       (concat
+                         (when-not (some #{(name mode)} modes)
+                           [{:key (str path ".context-mode")
+                             :value (str "references undefined context mode (got \"" (name mode)
+                                         "\"); known: " (str/join ", " modes))}])
+                         (for [observer selected :when (not (some #{(name observer)} observers))]
+                           {:key (str path ".observers")
+                            :value (str "references undefined session observer (got \"" (name observer)
+                                        "\"); known: " (str/join ", " observers))})
+                         (for [observer required :when (not (some #{observer} selected))]
+                           {:key (str path ".context-mode")
+                            :value (str "context mode :" (name mode) " requires observer " observer
+                                        "; crew has " (if (seq selected) (pr-str selected) "none"))}))))
+                   (:crew config)))
      :warnings []}))
 
 (defn- cycle-limit-error [prefix entity msg]

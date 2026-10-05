@@ -52,19 +52,19 @@
   (it "writes and reads an index row keyed by session id"
     (let [fs* (fs*)]
       (sut/write-index! fs* test-dir
-                        {"lantern-room" {:crew "cordelia" :session-policy :episodes
+                        {"lantern-room" {:crew "cordelia" 
                                          :updated-at "2026-03-01T10:00:00"}})
       (let [idx (sut/read-index fs* test-dir)]
         (should= "cordelia" (get-in idx ["lantern-room" :crew]))
-        (should= :episodes (get-in idx ["lantern-room" :session-policy])))))
+        (should= "cordelia" (get-in idx ["lantern-room" :crew])))))
 
   (it "locates a nested session via the index"
     (let [fs* (fs*)]
       (sut/write-index! fs* test-dir
-                        {"lantern-room" {:crew "cordelia" :session-policy :episodes}})
-      (should= {:crew "cordelia" :session-policy :episodes}
+                        {"lantern-room" {:crew "cordelia" }})
+      (should= {:crew "cordelia"}
                (select-keys (sut/locate-session test-dir "lantern-room" fs*)
-                            [:crew :session-policy]))
+                            [:crew]))
       (should= (sut/session-dir test-dir "cordelia" "lantern-room")
                (:dir (sut/locate-session test-dir "lantern-room" fs*)))))
 
@@ -74,15 +74,15 @@
       (sut/mkdirs*! fs* (sut/session-dir test-dir "cordelia" "lantern-room"))
       (sut/atomic-spit! fs* path
                         (sut/write-edn {:id "lantern-room" :name "Lantern Room"
-                                        :crew "cordelia" :session-policy :chronicle}))
-      (sut/write-index! fs* test-dir {"harbor-log" {:crew "main" :session-policy :chronicle}})
+                                        :crew "cordelia" }))
+      (sut/write-index! fs* test-dir {"harbor-log" {:crew "main" }})
       (let [loc (sut/locate-session test-dir "lantern-room" fs*)]
         (should= "cordelia" (:crew loc))
-        (should= :chronicle (:session-policy loc)))
+        (should= "cordelia" (:crew loc)))
       (let [idx (sut/read-index fs* test-dir)]
         (should= "main" (get-in idx ["harbor-log" :crew]))
         (should= "cordelia" (get-in idx ["lantern-room" :crew]))
-        (should= :chronicle (get-in idx ["lantern-room" :session-policy])))))
+        (should= "cordelia" (get-in idx ["lantern-room" :crew])))))
 
   (it "does not scan session directories when the indexed session is on disk"
     ;; Every get-session/get-transcript/persist goes through locate-session;
@@ -91,9 +91,9 @@
     (let [fs* (fs*)]
       (sut/mkdirs*! fs* (sut/session-dir test-dir "cordelia" "lantern-room"))
       (sut/atomic-spit! fs* (sut/session-edn-path test-dir "cordelia" "lantern-room")
-                        (sut/write-edn {:id "lantern-room" :crew "cordelia" :session-policy :episodes}))
+                        (sut/write-edn {:id "lantern-room" :crew "cordelia" }))
       (sut/write-index! fs* test-dir
-                        {"lantern-room" {:crew "cordelia" :session-policy :episodes}})
+                        {"lantern-room" {:crew "cordelia" }})
       (with-redefs [sut/scan-session-dirs (fn [& _] (throw (ex-info "scanned on an index hit" {})))]
         (should= (sut/session-dir test-dir "cordelia" "lantern-room")
                  (:dir (sut/locate-session test-dir "lantern-room" fs*))))))
@@ -102,9 +102,9 @@
     (let [fs* (fs*)]
       (sut/mkdirs*! fs* (sut/session-dir test-dir "cordelia" "lantern-room"))
       (sut/atomic-spit! fs* (sut/session-edn-path test-dir "cordelia" "lantern-room")
-                        (sut/write-edn {:id "lantern-room" :crew "cordelia" :session-policy :chronicle}))
+                        (sut/write-edn {:id "lantern-room" :crew "cordelia" }))
       (sut/write-index! fs* test-dir
-                        {"lantern-room" {:crew "main" :session-policy :chronicle}})
+                        {"lantern-room" {:crew "main" }})
       (let [loc (sut/locate-session test-dir "lantern-room" fs*)]
         (should= "cordelia" (:crew loc))
         (should= (sut/session-dir test-dir "cordelia" "lantern-room") (:dir loc)))
@@ -115,7 +115,7 @@
   (it "refuses a create when the id already belongs to another crew"
     (let [fs* (fs*)]
       (sut/write-index! fs* test-dir
-                        {"lantern-room" {:crew "cordelia" :session-policy :episodes}})
+                        {"lantern-room" {:crew "cordelia" }})
       (try
         (sut/assert-unique-session-id! test-dir "lantern-room" "main" fs*)
         (should-fail "expected collision")
@@ -127,10 +127,10 @@
     (let [fs* (fs*)]
       (sut/mkdirs*! fs* (sut/session-dir test-dir "main" "lantern-room"))
       (sut/atomic-spit! fs* (sut/session-edn-path test-dir "main" "lantern-room")
-                        (sut/write-edn {:id "lantern-room" :crew "main" :session-policy :chronicle}))
+                        (sut/write-edn {:id "lantern-room" :crew "main" }))
       (sut/mkdirs*! fs* (sut/session-dir test-dir "cordelia" "lantern-room"))
       (sut/atomic-spit! fs* (sut/session-edn-path test-dir "cordelia" "lantern-room")
-                        (sut/write-edn {:id "lantern-room" :crew "cordelia" :session-policy :chronicle}))
+                        (sut/write-edn {:id "lantern-room" :crew "cordelia" }))
       (log/capture-logs
         (let [scanned (sut/scan-session-dirs fs* test-dir)
               warnings (filter #(= :session/split-directory (:event %)) @log/captured-logs)]

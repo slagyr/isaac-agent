@@ -2,7 +2,15 @@
  :version "0.1.0"
  :factory isaac.foundation.module.protocol/module
 
- ;; Fixture session-policy contribution. Validation reads the berth key
- ;; from the module index; the factory is not invoked by config validate.
- :isaac.agent/session-policy
- {:lantern {:factory isaac.agent.session.policy.chronicle/create}}}
+ :isaac.agent/context-mode
+ {:porthole {:factory isaac.session.lantern/porthole
+             :requires {:observers #{:logbook}}}}
+ :isaac.agent/session-observer
+ {:logbook {:factory isaac.session.lantern/logbook}}
+
+ :isaac.config/schema
+ {:lantern {:schema {:type :map
+                     :description "Lantern fixture module"
+                     :schema {:logbook {:type :map
+                                        :schema {:fail {:type :boolean
+                                                        :description "Throw on every event"}}}}}}}}

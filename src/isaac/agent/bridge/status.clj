@@ -4,7 +4,6 @@
     [isaac.agent.config.defaults :as defaults]
     [isaac.agent.llm.api.protocol :as api]
     [isaac.foundation.nexus :as nexus]
-    [isaac.agent.session.policy :as policy]
     [isaac.agent.session.store.spi :as store]
     [isaac.agent.tool.names :as names]
     [isaac.agent.tool.registry :as tool-registry]))
@@ -97,8 +96,8 @@
         cfg            (or (when (map? (:config ctx)) (:config ctx))
                            (some-> (nexus/get :config) deref)
                            {})
-        sess           (policy/for-crew (or (:crew ctx) (:crew entry)) cfg session-store)
-        transcript     (or (policy/get-transcript sess session-key) [])
+        sess           session-store
+        transcript     (or (store/get-transcript sess session-key) [])
         turns          (turn-count transcript)
         tokens         (or (:last-input-tokens entry) 0)
         context-window (or (:context-window ctx) 32768)

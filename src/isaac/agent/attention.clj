@@ -10,12 +10,14 @@
 
 (defonce ^:private last-session-notified* (atom {}))
 (defonce ^:private last-provider-notified* (atom {}))
+(defonce ^:private last-observer-notified* (atom {}))
 
 (defn clear-throttle!
   "Test hook — reset per-session and per-provider attention throttle state."
   []
   (reset! last-session-notified* {})
-  (reset! last-provider-notified* {}))
+  (reset! last-provider-notified* {})
+  (reset! last-observer-notified* {}))
 
 (def ^:private content-cap 1000)
 (def ^:private provider-message-cap 400)
@@ -172,4 +174,7 @@
                    :suppressed next-suppressed))))))
 
 (defn maybe-notify-session-observer-failed! [cfg session-id observer]
-  (enqueue-attention! cfg (str "Session observer " observer " failed for session " session-id)))
+  (let [key [session-id observer]]
+    (when-not (contains? @last-observer-notified* key)
+      (swap! last-observer-notified* assoc key true)
+      (enqueue-attention! cfg (str "Session observer " observer " failed for session " session-id)))))

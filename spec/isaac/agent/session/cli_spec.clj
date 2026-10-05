@@ -48,8 +48,8 @@
       (helper/append-message! "/test/sessions" "roomy-chat" {:role "assistant" :content "I am measuring transcript size separately from tokens."}))
     (let [output (with-out-str (should= 0 (sut/run-fn {:home "/test" :_raw-args ["list"]})))]
       (should (re-find #"SESSION\s+AGE\s+SIZE\s+USED\s+WINDOW\s+PCT\s+CREW\s+POLICY" output))
-      (should (re-find #"compact-chat\s+\S+\s+\d+B\s+0\s+32,768\s+\d+%\s+main\s+chronicle" output))
-      (should (re-find #"roomy-chat\s+\S+\s+\d+(\.\d)?K\s+0\s+32,768\s+\d+%\s+main\s+chronicle" output))
+      (should (re-find #"compact-chat\s+\S+\s+\d+B\s+0\s+32,768\s+\d+%\s+main\s+full" output))
+      (should (re-find #"roomy-chat\s+\S+\s+\d+(\.\d)?K\s+0\s+32,768\s+\d+%\s+main\s+full" output))
       (should-not-contain "1,000,000" output)))
 
   (it "does not parse transcripts when listing SIZE"

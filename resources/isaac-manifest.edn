@@ -77,18 +77,19 @@
                    :schema
                    {:factory
                     {:type :symbol, :validations [:present?]}}}}},
-               :session-policy
-               {:description
-                "Named session-policy factories. A crew selects with :session-policy; absent is chronicle. Factories receive the root session store.",
-                :schema
-                {:type :map,
-                 :key-spec {:type :keyword},
-                 :value-spec
-                 {:type :map,
-                  :factory isaac.agent.session.policy/register-entry!,
-                  :schema
-                  {:factory
-                   {:type :symbol, :validations [:present?]}}}}}
+               :context-mode
+               {:description "Registered turn context transformations."
+                :schema {:type :map :key-spec {:type :keyword}
+                         :value-spec {:type :map
+                                      :factory isaac.agent.session.context-mode/register-entry!
+                                      :schema {:factory {:type :symbol :validations [:present?]}
+                                               :requires {:type :map}}}}}
+               :session-observer
+               {:description "Ordered asynchronous watchers of session records."
+                :schema {:type :map :key-spec {:type :keyword}
+                         :value-spec {:type :map
+                                      :factory isaac.agent.session.session-observer/register-entry!
+                                      :schema {:factory {:type :symbol :validations [:present?]}}}}}
                :comm
                {:description "Communication channels (Discord, iMessage, ACP, …). Manifest contributions name available impls and carry the impl's :namespace (whose load implements isaac.agent.comm.factory/create for that :type) plus its :extra-schema (extension fields composed into [:comms] slots of that :type). User-instantiated comm slots in the [:comms] config slot also count toward this berth, so `[:registered-in? :isaac.agent/comm [:comms]]` accepts both manifest impl ids (the common :type values) and slot ids. :register-fn wires each live slot into comm-registry so the delivery worker can send outbound replies.",
                 :register-fn   isaac.agent.comm.registry/register-instance!
@@ -504,7 +505,7 @@
       :context-mode
       {:type :keyword,
        :description "How much transcript history to replay each turn",
-       :validations [[:one-of? :full :reset]]},
+       :validations [[:registered-in? :isaac.agent/context-mode]]},
       :provider
       {:type :id,
        :description "Provider id for direct provider/model crews",
@@ -571,10 +572,9 @@
       {:type :seq,
        :description "Ordered model ids tried when the head model's provider is walled, rejected for auth, or stalled. A walled provider is skipped for every later model on that same provider.",
        :spec {:type :id, :validations [:model-exists?]}},
-      :session-policy
-      {:type :keyword,
-       :description
-       "Session policy over the primitive store: :chronicle (default) or :episodes"}}}}},
+      :observers
+      {:type :seq, :description "Session observers, overridable per session",
+       :spec {:type :keyword}}}}}},
   :prompt-paths
   {:schema
    {:type :seq,
@@ -848,8 +848,9 @@
                                                   :description "Crew id this comm routes into"
                                                   :validations [:crew-exists?]}}}}}}
 
- :isaac.agent/session-policy
- {:chronicle {:factory isaac.agent.session.policy.chronicle/create}}
+ :isaac.agent/context-mode
+ {:full {:factory isaac.agent.session.context-mode/identity-transcript}
+  :reset {:factory isaac.agent.session.context-mode/reset-transcript}}
 
  :isaac.config/check
  {:default-frequencies {:fn isaac.agent.config.checks/check-default-frequencies}
@@ -867,8 +868,8 @@
   {:fn isaac.agent.config.checks/check-resolved-providers}
   :tool-allow-tokens
   {:fn isaac.agent.config.checks/check-tool-allow-tokens}
-  :session-policy
-  {:fn isaac.agent.config.checks/check-session-policy}
+  :session-berths
+  {:fn isaac.agent.config.checks/check-session-berths}
   :retired-cycle-limit
   {:fn isaac.agent.config.checks/check-retired-cycle-limit}}
 

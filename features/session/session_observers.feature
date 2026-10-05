@@ -25,7 +25,6 @@ Feature: Session observers watch a session's record off the turn path (isaac-c52
       | soul      | You are Cordelia |
       | observers | [:logbook]       |
 
-  @wip
   Scenario: a crew's observer sees a turn's events in order
     Given the following model responses are queued:
       | type | content            | model |
@@ -36,7 +35,6 @@ Feature: Session observers watch a session's record off the turn path (isaac-c52
       | path   | value                                                                                                      |
       | events | #"(?s).*session-opened.*lantern-room.*turn-started.*message-appended.*user.*message-appended.*assistant.*turn-ended.*" |
 
-  @wip
   Scenario: a crew without observers notifies none
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path      | value   |
@@ -48,7 +46,6 @@ Feature: Session observers watch a session's record off the turn path (isaac-c52
     Then the exit code is 0
     And the isaac file "lantern/logbook.edn" does not exist
 
-  @wip
   Scenario: a session's observers override the crew's
     Given a session "lantern-room" exists with observers "[]"
     And the following model responses are queued:
@@ -58,7 +55,6 @@ Feature: Session observers watch a session's record off the turn path (isaac-c52
     Then the exit code is 0
     And the isaac file "lantern/logbook.edn" does not exist
 
-  @wip
   Scenario: an observer sees the compaction splice
     Given the isaac EDN file "config/models/local.edn" exists with:
       | path           | value      |
@@ -87,7 +83,6 @@ Feature: Session observers watch a session's record off the turn path (isaac-c52
       | path   | value                                                                                           |
       | events | #"(?s).*turn-started.*compaction-spliced.*message-appended.*message-appended.*turn-ended.*" |
 
-  @wip
   Scenario: a failing observer raises attention and the turn still replies
     Given the isaac EDN file "config/isaac.edn" exists with:
       | path                    | value       |
@@ -112,7 +107,6 @@ Feature: Session observers watch a session's record off the turn path (isaac-c52
       | target  | boiler-room                           |
       | content | contains "logbook" and "lantern-room" |
 
-  @wip
   Scenario: an unknown observer fails config validation
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path      | value     |

@@ -178,7 +178,7 @@
         pct    (if (pos? context-window)
                    (int (Math/round (* 100.0 (/ tokens context-window)))) 0)
         session-name (or (:key entry) (:id entry))
-        policy       (or (:session-policy entry) :chronicle)]
+        policy       (or (:context-mode entry) :full)]
     {:name   (str session-name (when (store/in-flight? session-store (:id entry)) " ✈️"))
      :age    (if-let [ms (age-ms (:updated-at entry))] (format-age ms) "-")
      :size   bytes

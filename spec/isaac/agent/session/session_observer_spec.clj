@@ -4,6 +4,15 @@
     [speclj.core :refer [describe it should should=]]))
 
 (describe "session observer delivery"
+  (it "does not block the publisher on a slow observer"
+    (let [release (promise) published (promise)]
+      (sut/register! :logbook (fn [_] (fn [_] @release)))
+      (future (sut/publish! "lantern-room" [:logbook] {:event :turn-ended})
+              (deliver published true))
+      (should= true (deref published 200 false))
+      (deliver release true)
+      (sut/await! "lantern-room" :logbook)))
+
   (it "preserves a session's event order off the turn path"
     (let [entered (promise) release (promise) seen (atom [])]
       (sut/register! :logbook (fn [_] (fn [event]

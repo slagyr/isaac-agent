@@ -22,7 +22,8 @@
     [isaac.foundation.nexus :as nexus]
     [isaac.agent.prompt.catalog :as prompt-catalog]
     [isaac.agent.session.context :as session-ctx]
-    [isaac.agent.session.policy :as policy]
+    [isaac.agent.session.context-mode :as context-mode]
+    [isaac.agent.session.session-observer :as session-observer]
     [isaac.agent.session.store.spi :as store]
     [isaac.agent.slash.builtin :as slash-builtin]
     [isaac.agent.slash.registry :as slash-registry]
@@ -110,9 +111,15 @@
                    name))})
 
 (defn- request-policy [request]
-  (or (policy/for-request request)
+  (or (or (:session-store request) (store/registered-store))
       (when-let [ss (or (:session-store request) (nexus/get-in [:sessions :store]))]
-        (policy/wrap ss))))
+        ss)))
+
+(defn- crew-observers [cfg crew-id]
+  (or (get-in cfg [:crew crew-id :observers])
+      (get-in cfg [:crew (keyword crew-id) :observers])
+      (get-in cfg [:crew (name (or crew-id "")) :observers])
+      []))
 
 (defn- ensure-session! [request]
   (let [session-store* (or (:session-store request) (nexus/get-in [:sessions :store]))
@@ -121,18 +128,14 @@
         crew-cfg       (get (:crew cfg) crew-id)
         session-key    (:session-key request)
         resolved-cwd   (resolve-session-cwd (:cwd request) crew-cfg nil)
-        _              (policy/refuse-policy-mismatch! session-store* session-key (policy/policy-name crew-cfg))
         sess           (request-policy request)]
     (when (and session-key sess
-               (nil? (policy/get-session sess session-key))
+               (nil? (store/get-session sess session-key))
                (or (:origin request) resolved-cwd))
-      (policy/open-session! sess session-key
-                            {:crew           crew-id
-                             :cwd            resolved-cwd
-                             :origin         (:origin request)
-                             :config         cfg
-                             :session-store  session-store*
-                             :session-policy (policy/policy-name crew-cfg)}))
+      (store/open-session! sess session-key
+                           {:crew crew-id :cwd resolved-cwd :origin (:origin request) :config cfg})
+      (session-observer/publish! session-key (crew-observers cfg crew-id)
+                                 {:event :session-opened :config cfg}))
     request))
 
 ;; endregion ^^^^^ Helpers ^^^^^
@@ -215,7 +218,7 @@
    (comm dispatch here, a delivery worker) hand a charge; the bridge builds
    the resume-routing marker from it and persists it via the SessionStore."
   [store session-key charge]
-  (policy/record-turn-marker! (policy/wrap store) session-key (turn-marker charge)))
+  (store/record-turn-marker! store session-key (turn-marker charge)))
 
 (defn clear-turn-marker! [store session-key]
   (suspend/release-turn-marker! store session-key))
@@ -253,7 +256,7 @@
     (when-let [session-key (:session-key charge)]
       (when-let [input (:input charge)]
         (when-let [sess (request-policy charge)]
-          (policy/append-message! sess session-key {:role "user" :content input :cwd (:cwd charge)}))))))
+          (store/append-message! sess session-key {:role "user" :content input :cwd (:cwd charge)}))))))
 
 (defn- format-resource-pool-refs [names]
   (mapv name names))
@@ -323,15 +326,30 @@
 
 (declare dispatch-matched-charge!)
 
+(defn- selected-session-observers [c]
+  (let [cfg (or (:config c) (some-> (nexus/get :config) deref) {})
+        session-store* (or (:session-store c) (nexus/get-in [:sessions :store]) (store/registered-store))
+        session (when session-store* (store/get-session session-store* (:session-key c)))
+        crew-id (or (:crew session) (:crew c) (defaults/crew-id cfg))]
+    (if (contains? session :observers)
+      (:observers session)
+      (crew-observers cfg crew-id))))
+
 (defn- dispatch-charge! [c]
   (let [cfg (or (:config c) (some-> (nexus/get :config) deref) {})
-        crew-id (or (:crew c) (defaults/crew-id cfg))
-        session-store* (or (:session-store c) (nexus/get-in [:sessions :store]))
-        mismatch (policy/session-policy-mismatch session-store* (:session-key c)
-                                                 (policy/policy-name (get-in cfg [:crew crew-id])))]
-    (if mismatch
-      {:error :session-policy-mismatch :message mismatch}
-      (dispatch-matched-charge! c))))
+        session-store* (or (:session-store c) (nexus/get-in [:sessions :store]) (store/registered-store))
+        session (when session-store* (store/get-session session-store* (:session-key c)))
+        crew-id (or (:crew session) (:crew c) (defaults/crew-id cfg))
+        mode (or (:context-mode-override c) (:context-mode session) (:context-mode c)
+                 (get-in cfg [:crew crew-id :context-mode]) :full)
+        selected (selected-session-observers c)
+        required (get-in (context-mode/requirement mode (:module-index cfg)) [:observers])
+        missing (first (remove (set selected) required))]
+    (if missing
+      {:error :context-mode-requires-observer
+       :message (str "session " (:session-key c) " context mode :" (name mode)
+                     " requires observer " missing)}
+      (dispatch-matched-charge! (assoc c :session-observers selected :context-mode mode)))))
 
 (defn- dispatch-matched-charge! [c]
   (let [{:keys [charge result]} (route-charge! c)]
@@ -365,7 +383,7 @@
                         (record-turn-marker! (or sess session-store*) session-key charge)
                         (let [turn-result (atom nil)]
                           (try
-                            (reset! turn-result (turn/run-turn! (assoc charge :session-policy sess)))
+                            (reset! turn-result (turn/run-turn! (assoc charge :session-store sess)))
                             @turn-result
                             (finally
                               (isolate-cleanup! :clear-turn-marker
@@ -383,7 +401,7 @@
                                                     #((requiring-resolve 'isaac.agent.turn.worker/tick!)))))))))
                       (do (pool/release-all! (:pool-leases charge))
                           (wait-for-session! (dissoc charge :pool-leases)))))
-                  (turn/run-turn! (assoc charge :session-policy (request-policy charge)))))))))
+                  (turn/run-turn! (assoc charge :session-store (request-policy charge)))))))))
       result)))
 
 (defn- dispatch-recorded! [charge]
@@ -416,7 +434,8 @@
     (if (charge/charge? input)
       (dispatch-recorded! (ensure-session! input))
       (let [request (ensure-session! (merge (nexus/necho) input))]
-        (dispatch-recorded! (charge/build request)))))
+        (dispatch-recorded! (charge/build (assoc request :session-observers
+                                                   (selected-session-observers request)))))))
   ([_root request]
     ;; Two-arg form is a back-compat shim — root now lives on the
     ;; config snapshot, which downstream readers consult directly.

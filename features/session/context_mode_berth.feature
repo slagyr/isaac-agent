@@ -34,7 +34,6 @@ Feature: Context modes are registered through a berth (isaac-c52a)
       | type | content | model |
       | text | Aye     | echo  |
 
-  @wip
   Scenario: a crew selects a contributed context mode
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value    |
@@ -48,7 +47,6 @@ Feature: Context modes are registered through a berth (isaac-c52a)
       | messages[2].content | Check the oil    |
     And the last LLM request does not contain "Is the lamp lit?"
 
-  @wip
   Scenario: a session's context mode overrides the crew's
     Given a session "lantern-room" exists with context-mode "porthole"
     When the user sends "Check the oil" on session "lantern-room"
@@ -57,13 +55,11 @@ Feature: Context modes are registered through a berth (isaac-c52a)
       | key                 | value         |
       | messages[2].content | Check the oil |
 
-  @wip
   Scenario: --with-context-mode selects a contributed mode for one turn
     When isaac is run with "prompt --session lantern-room --with-context-mode porthole -m 'Check the oil'"
     Then the exit code is 0
     And the last LLM request does not contain "Is the lamp lit?"
 
-  @wip
   Scenario: a turn fails when its session lacks the observer its context mode requires
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value    |
@@ -78,7 +74,6 @@ Feature: Context modes are registered through a berth (isaac-c52a)
       | requires observer :logbook |
     And session "lantern-room" has 3 transcript entries
 
-  @wip
   Scenario: validation reports a context mode whose required observer the crew lacks
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value    |
@@ -91,7 +86,6 @@ Feature: Context modes are registered through a berth (isaac-c52a)
       | context mode :porthole requires observer :logbook; crew has none |
     And the exit code is 1
 
-  @wip
   Scenario: validation accepts a context mode whose required observer is present
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value    |
@@ -100,7 +94,6 @@ Feature: Context modes are registered through a berth (isaac-c52a)
     Then the stdout contains "OK"
     And the exit code is 0
 
-  @wip
   Scenario: an unknown context mode names the registered set
     Given the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path         | value  |

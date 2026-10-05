@@ -5,7 +5,7 @@
     [clojure.set :as set]
     [clojure.string :as str]
     [c3kit.apron.schema :as schema]
-    [isaac.agent.session.policy :as policy]
+
     [isaac.agent.config.defaults :as defaults]
     [isaac.foundation.config.loader :as config]
     [isaac.agent.session.store.spi :as store]))
@@ -174,12 +174,12 @@
                               (dissoc :crew)) frequencies)
         frequencies  (normalize frequencies)
         create       (:create frequencies)
-        sess         (policy/wrap session-store)
-        all-sessions (policy/list-sessions sess)]
+        sess         session-store
+        all-sessions (store/list-sessions sess)]
     (cond
       (explicit-session? frequencies)
       (let [session-key (first (:session frequencies))
-            existing    (policy/get-session sess session-key)]
+            existing    (store/get-session sess session-key)]
         (cond
           existing
           {:session-key session-key :session existing :create? false}

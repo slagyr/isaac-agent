@@ -35,7 +35,7 @@
       (c/atomic-spit! fs* (c/session-edn-path root crew id)
                       (c/write-edn (dissoc entry :session-file :effective-history-offset)))
       (c/upsert-index-row! fs* root id {:crew           crew
-                                        :session-policy (or (:session-policy entry) :chronicle)
+                                        
                                         :updated-at     (:updated-at entry)
                                         :id             id})
       (when transcript
@@ -59,20 +59,6 @@
       (loader/snapshot "session store config — ambient fallback when caller passes no :config")
       {}))
 
-(defn- resolve-policy [opts]
-  (or (:session-policy opts)
-      (when-let [raw (:session-store opts)]
-        (if (keyword? raw) raw (keyword raw)))
-      (when-let [crew (:crew opts)]
-        (when-let [raw (get-in (effective-config (:config opts)) [:crew crew :session-policy])]
-          (if (keyword? raw) raw (keyword raw))))
-      :chronicle))
-
-(defn- keywordize-policy [entry]
-  (cond-> entry
-    (and (contains? entry :session-policy) (string? (:session-policy entry)))
-    (update :session-policy keyword)))
-
 (defn- read-disk-session [root id]
   (when root
     (let [fs* (fs/instance)]
@@ -82,7 +68,7 @@
             (try
               (let [raw (c/read-edn-line (fs/slurp fs* path))]
                 (when (map? raw)
-                  (-> raw c/keywordize-map keywordize-policy
+                  (-> raw c/keywordize-map
                       (assoc :id (or (:id raw) id)))))
               (catch Exception _ nil))))))))
 
@@ -159,7 +145,6 @@
                             :timestamp now
                             :version   3
                             :cwd       (or (:cwd opts) (System/getProperty "user.dir"))}
-              policy       (resolve-policy opts)
               entry        {:id                id
                             :key               id
                             :name              (or name id)
@@ -167,7 +152,7 @@
                             :created-at        now
                             :updated-at        now
                             :crew              (:crew opts)
-                            :session-policy    policy
+                            
                             :tags              (or (:tags opts) #{})
                             :channel           (:channel opts)
                             :chat-type         (:chat-type opts)
@@ -254,7 +239,7 @@
               (c/write-index! fs* root (-> (c/read-index fs* root)
                                            (dissoc old-id)
                                            (assoc new-id {:crew           crew
-                                                          :session-policy (or (:session-policy renamed) :chronicle)
+                                                          
                                                           :updated-at     (:updated-at renamed)
                                                           :id             new-id})))))
           renamed))))
@@ -343,7 +328,7 @@
         (when-let [sess (get-in @state [:sessions id])]
           (c/upsert-index-row! (fs/instance) root id
                                {:crew           (:crew sess)
-                                :session-policy (or (:session-policy sess) :chronicle)
+                                
                                 :updated-at     now
                                 :id             id})))
       entry))

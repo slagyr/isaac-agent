@@ -252,47 +252,25 @@
               (should (seq hits))
               (should (re-find #":all" (:value (first hits)))))))))
 
-  (context "check-session-policy"
+  (context "session berths"
+    (it "names the unknown observer and known logbook"
+      (let [index {:lantern {:manifest {:isaac.agent/session-observer {:logbook {}}}}}
+            errors (:errors (sut/check-session-berths
+                              {:config {:crew {"cordelia" {:observers [:ledger]}}}
+                               :module-index index}))]
+        (should= "crew.cordelia.observers" (:key (first errors)))
+        (should (re-find #"known: logbook" (:value (first errors))))))
 
-    (it "rejects an unknown session policy with the planted ledger/chronicle message"
-      (require 'isaac.agent.session.policy.chronicle)
-      (let [{:keys [errors]} (sut/check-session-policy
-                               {:config {:crew {"cordelia" {:session-policy :ledger}}}})]
-        (should= 1 (count errors))
-        (should= "crew.cordelia.session-policy" (:key (first errors)))
-        (should (re-find #"references undefined session policy \(got \"ledger\"\); known: chronicle"
-                         (:value (first errors))))))
-
-    (it "accepts a crew with no session-policy (chronicle default)"
-      (let [{:keys [errors]} (sut/check-session-policy
-                               {:config {:crew {"main" {:model "echo"}}}})]
-        (should= [] errors)))
-
-    (it "accepts a registered session policy"
-      (require 'isaac.agent.session.policy.chronicle)
-      (let [{:keys [errors]} (sut/check-session-policy
-                               {:config {:crew {"cordelia" {:session-policy :chronicle}}}})]
-        (should= [] errors)))
-
-    (it "accepts a session policy contributed by a module without registering a factory"
-      (let [{:keys [errors]} (sut/check-session-policy
-                               {:config {:crew {"cordelia" {:session-policy :lantern}}}
-                                :module-index
-                                {:isaac.session.lantern
-                                 {:manifest {:isaac.agent/session-policy {:lantern {}}}}}})]
-        (should= [] errors)))
-
-    (it "rejects an unknown policy and names the module-contributed set"
-      (require 'isaac.agent.session.policy.chronicle)
-      (let [{:keys [errors]} (sut/check-session-policy
-                               {:config {:crew {"cordelia" {:session-policy :ledger}}}
-                                :module-index
-                                {:isaac.session.lantern
-                                 {:manifest {:isaac.agent/session-policy {:lantern {}}}}}})]
-        (should= 1 (count errors))
-        (should= "crew.cordelia.session-policy" (:key (first errors)))
-        (should (re-find #"references undefined session policy \(got \"ledger\"\); known: chronicle, lantern"
-                         (:value (first errors)))))))
+    (it "refuses a context mode without its required observer"
+      (let [index {:lantern {:manifest {:isaac.agent/context-mode
+                                       {:porthole {:requires {:observers #{:logbook}}}}}}}
+            errors (:errors (sut/check-session-berths
+                              {:config {:crew {"cordelia" {:context-mode :porthole}}}
+                               :module-index index}))]
+        (should= "crew.cordelia.context-mode" (:key (first errors)))
+        (should= "context mode :porthole requires observer :logbook; crew has none"
+                 (:value (first errors)))))
+    )
 
   (context "check-retired-cycle-limit"
 

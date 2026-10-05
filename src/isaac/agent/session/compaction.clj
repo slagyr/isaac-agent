@@ -9,7 +9,8 @@
     [isaac.agent.session.context :as session-ctx]
     [isaac.agent.session.compaction-schema :as compaction-schema]
     [isaac.foundation.nexus :as nexus]
-    [isaac.agent.session.policy :as policy]
+
+    [isaac.agent.session.context-mode :as context-mode]
     [isaac.agent.session.store.spi :as store]
     [isaac.agent.session.transcript :as transcript]
     [isaac.agent.tool.builtin :as builtin]
@@ -127,9 +128,7 @@
 
 (defn- transcript-for-estimate [transcript context-mode input]
   (let [transcript (or transcript [])
-        transcript (if (= :reset context-mode)
-                     (if-let [current-user (last transcript)] [current-user] [])
-                     transcript)]
+        transcript (context-mode/select-transcript context-mode transcript)]
     (if (seq input)
       (conj transcript {:type "message" :message {:role "user" :content input}})
       transcript)))
@@ -137,18 +136,18 @@
 (defn estimate-prompt-tokens
   "Estimate tokens for the outbound prompt from the live transcript (and
    optional pending user input), not lagging session counters."
-  [session-key {:keys [session-store session-policy charge soul boot-files rules-text skill-menu-text
+  [session-key {:keys [session-store charge soul boot-files rules-text skill-menu-text
                        context-window model tools nonce guidance origin input
                        transcript context-mode caller]
                 :or   {soul ""}}]
   (let [start-ns      (System/nanoTime)
         session-store (or session-store (nexus/get-in [:sessions :store]))
-        sess          (or session-policy
-                          (when charge (policy/for-request charge))
-                          (when session-store (policy/wrap session-store)))
+        sess          (or session-store
+                          (when charge (or (:session-store charge) (store/registered-store)))
+                          (when session-store session-store))
         load-ns       (System/nanoTime)
         transcript    (or transcript
-                          (when sess (policy/get-transcript sess session-key)))
+                          (when sess (store/get-transcript sess session-key)))
         load-ms       (/ (- (System/nanoTime) load-ns) 1000000.0)
         _             (log/debug :session/transcript-read
                                  :path session-key
@@ -595,16 +594,16 @@
         :transcript-lock - optional lock used only for the final transcript splice
         :compaction-llm-done - optional promise delivered after LLM call completes
         :splice-ready - optional promise waited on before performing the splice"
-  [key-str {:keys [boot-files chat-fn compaction-llm-done context-window model api soul splice-ready transcript-lock root session-store session-policy charge]}]
+  [key-str {:keys [boot-files chat-fn compaction-llm-done context-window model api soul splice-ready transcript-lock root session-store charge]}]
   (binding [*compaction-system-prompt* (resolve-compaction-prompt (or root (loader/root)))]
   (let [root      (or root (loader/root))
         session-store  (or session-store (nexus/get-in [:sessions :store]))
-        sess           (or session-policy
-                           (when charge (policy/for-request charge))
-                           (when session-store (policy/wrap session-store)))
+        sess           (or session-store
+                           (when charge (or (:session-store charge) (store/registered-store)))
+                           (when session-store session-store))
         ctx            {:root root :session-store session-store}
         behavior       (session-ctx/resolve-behavior key-str (assoc ctx :context-window context-window))
-        transcript      (policy/get-transcript sess key-str)
+        transcript      (store/get-transcript sess key-str)
         history-entries (effective-history-entries transcript)
         compactables    (compactables history-entries context-window)
         messages        (mapv :message compactables)
@@ -669,7 +668,7 @@
       response
       (let [summary (prompt-builder/non-blank-summary (response-content response))
             splice! (fn []
-                      (policy/splice-compaction! sess key-str
+                      (store/splice-compaction! sess key-str
                                                  {:summary           summary
                                                   :turnRequest       turn-request
                                                   :firstKeptEntryId  first-kept-entry-id

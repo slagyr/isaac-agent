@@ -9,7 +9,6 @@
     [isaac.agent.llm.provider :as llm-provider]
     [isaac.foundation.nexus :as nexus]
     [isaac.agent.session.context :as session-ctx]
-    [isaac.agent.session.policy :as policy]
     [isaac.agent.session.store.spi :as store]))
 
 (def charge-schema
@@ -86,8 +85,8 @@
 (defn transcript
   "Returns the active session transcript through the charge's session policy."
   [charge]
-  (when-let [sess (policy/for-request charge)]
-    (policy/active-transcript sess (:session-key charge))))
+  (when-let [sess (or (:session-store charge) (store/registered-store))]
+    (store/active-transcript sess (:session-key charge))))
 
 ;; endregion ^^^^^ Accessors ^^^^^
 
@@ -136,13 +135,13 @@
    model) returns a charge marked :charge/unresolved with a :charge/reason
    keyword."
   [{:keys [session-key input comm crew config model model-ref model-override model-cfg
-           provider provider-cfg context-window soul soul-prepend preamble guidance origin turn-id key coalesce-key observers resource-pools cycle dispatch-error
-           context-mode-override]}]
+           provider provider-cfg context-window soul soul-prepend preamble guidance origin turn-id key coalesce-key observers session-observers resource-pools cycle dispatch-error
+           context-mode-override session-store]}]
   (let [config*         (or (when (map? config) config) (loader/snapshot "charge build fallback — no :config passed (entry seed)") {})
-        ss*             (store/registered-store)
+        ss*             (or session-store (store/registered-store))
         session-entry   (when (and ss* session-key (satisfies? store/SessionStore ss*))
                           (store/get-session ss* session-key))
-        crew-id         (or crew (:crew session-entry) (defaults/crew-id config*))
+        crew-id         (or (:crew session-entry) crew (defaults/crew-id config*))
         known-crews     (or (:crew config*) {})
         unknown?        (and crew-id (not (contains? known-crews crew-id)))
         session-context (delay (session-ctx/resolve-behavior session-key
@@ -167,6 +166,8 @@
                                 key (assoc :key key)
                                 coalesce-key (assoc :coalesce-key coalesce-key)
                                 (seq observers) (assoc :observers observers)
+                                session-store (assoc :session-store session-store)
+                                (some? session-observers) (assoc :session-observers session-observers)
                                 (seq resource-pools) (assoc :resource-pools resource-pools)
                                 (some? cycle) (assoc :cycle cycle))]
     (cond (:error dispatch-error) (unresolved-charge base (:error dispatch-error))
