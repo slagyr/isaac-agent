@@ -33,10 +33,8 @@ Feature: Session observers watch a session's record off the turn path (isaac-c52
     When isaac is run with "prompt --crew cordelia --session lantern-room -m 'Light the lamp'"
     Then the exit code is 0
     And the isaac file "lantern/logbook.edn" EDN contains:
-      | path        | value                                                            |
-      | events      | #"session-opened"                                                |
-      | events      | #"lantern-room"                                                  |
-      | events      | #"(?s)session-opened.*turn-started.*message-appended.*user.*message-appended.*assistant.*turn-ended" |
+      | path   | value                                                                                                      |
+      | events | #"(?s).*session-opened.*lantern-room.*turn-started.*message-appended.*user.*message-appended.*assistant.*turn-ended.*" |
 
   @wip
   Scenario: a crew without observers notifies none
@@ -86,8 +84,8 @@ Feature: Session observers watch a session's record off the turn path (isaac-c52
     When the user sends "new input" on session "lantern-room"
     Then session "lantern-room" has compaction
     And the isaac file "lantern/logbook.edn" EDN contains:
-      | path   | value                                                                                  |
-      | events | #"(?s)turn-started.*compaction-spliced.*message-appended.*message-appended.*turn-ended" |
+      | path   | value                                                                                           |
+      | events | #"(?s).*turn-started.*compaction-spliced.*message-appended.*message-appended.*turn-ended.*" |
 
   @wip
   Scenario: a failing observer raises attention and the turn still replies
