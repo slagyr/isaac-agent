@@ -1994,10 +1994,12 @@
 
 (defn turn-result-is [expected]
   (await-turn!)
-  (g/should= (unquote-string expected)
-             (or (:stopReason (g/get :llm-result))
-                 (some-> (g/get :llm-result) :ended-by name)
-                 (some-> (g/get :llm-result) :error name))))
+  (let [{:keys [stopReason ended-by error]} (g/get :llm-result)]
+    (g/should= (unquote-string expected)
+               (or stopReason
+                   (when (= :error ended-by) (some-> error name))
+                   (some-> ended-by name)
+                   (some-> error name)))))
 
 (defn turn-result-is-unavailable-with-retry-after-ms [ms-str]
   (when (g/get :turn-future) (await-turn!))
