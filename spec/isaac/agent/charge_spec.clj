@@ -201,10 +201,11 @@
                       session-ctx/resolve-behavior (fn [_ opts]
                                                      (reset! seen opts)
                                                      (stub-behavior "main" "Base." test-model-id 4096))]
-          (sut/build {:session-key           "s1"
-                     :input                 "hi"
-                     :context-mode-override :full})
-          (should= :full (:context-mode @seen)))))
+          (let [charge (sut/build {:session-key           "s1"
+                                   :input                 "hi"
+                                   :context-mode-override :full})]
+            (should= :full (:context-mode @seen))
+            (should= :full (:context-mode-override charge))))))
 
     (it "re-resolves crew model from live config when the caller passes a stale config snapshot"
       (let [test-root "/test/charge-reload"

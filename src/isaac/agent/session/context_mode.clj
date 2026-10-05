@@ -4,17 +4,35 @@
 (defonce ^:private modes* (atom {}))
 
 (defn register! [id {:keys [factory] :as entry}]
-  (swap! modes* assoc (keyword id) (assoc entry :factory factory)))
+  (swap! modes* update (keyword id) merge (assoc entry :factory factory)))
 
-(defn register-entry! [[id {:keys [factory] :as entry}]]
-  (register! id (assoc entry :factory (some-> factory requiring-resolve var-get))))
+(defn- resolve-fn [v]
+  (cond
+    (fn? v) v
+    (var? v) (var-get v)
+    (symbol? v) (some-> v requiring-resolve var-get)
+    :else v))
+
+(defn register-entry! [[id {:keys [factory prepare wrap-input] :as entry}]]
+  (register! id (cond-> (assoc entry :factory (resolve-fn factory))
+                  prepare (assoc :prepare (resolve-fn prepare))
+                  wrap-input (assoc :wrap-input (resolve-fn wrap-input)))))
 
 (defn identity-transcript [transcript] transcript)
 (defn reset-transcript [transcript] (if-let [current (last transcript)] [current] []))
 
 (defn ensure-builtins! []
-  (register! :full {:factory identity-transcript})
-  (register! :reset {:factory reset-transcript}))
+  (swap! modes*
+    (fn [m]
+      (cond-> m
+        (not (contains? m :full)) (assoc :full {:factory identity-transcript})
+        (not (contains? m :reset)) (assoc :reset {:factory reset-transcript})))))
+
+(defn wrap-input [mode input]
+  (ensure-builtins!)
+  (if-let [wrap (:wrap-input (get @modes* (or mode :full)))]
+    (wrap input)
+    input))
 
 (defn known [module-index]
   (ensure-builtins!)

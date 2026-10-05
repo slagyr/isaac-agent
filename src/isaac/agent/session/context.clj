@@ -215,7 +215,7 @@
           updates   (cond-> {}
                       (contains? opts :compaction)   (assoc :compaction (:compaction opts))
                       (contains? opts :context-mode) (assoc :context-mode (:context-mode opts))
-                      (contains? opts :observers) (assoc :observers (:observers opts))
+                      (contains? opts :observers)    (assoc :observers (:observers opts))
                       (contains? opts :effort)       (assoc :effort (:effort opts))
                       (contains? opts :model)        (assoc :model (normalize-model-ref (:model opts)))
                       (contains? opts :provider)     (assoc :provider (:provider opts)))]

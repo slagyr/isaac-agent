@@ -1307,16 +1307,26 @@
   [crew-members crew-id config]
   (let [global-tools (defaults/tools config)
         crew-tools   (get-in crew-members [crew-id :tools])
+        observers    (map keyword (or (get-in crew-members [crew-id :observers]) []))
         _            (tool-registry/ensure-policy-tools! (:module-index config)
                                                          (concat (names/policy-list (:allow global-tools))
-                                                                 (names/policy-list (:allow crew-tools))))
+                                                                 (names/policy-list (:allow crew-tools))
+                                                                 (when (some #{:episodes} observers)
+                                                                   ["recall__search" "recall__scene"])))
         registered   (map :name (tool-registry/all-tools))
         declared     (concat (declared-wire-names global-tools)
                              (declared-wire-names crew-tools))
         candidates   (distinct (concat registered declared))]
-    (->> candidates
-         (filter #(names/cascade-allowed? global-tools crew-tools %))
-         set)))
+    (let [allowed (->> candidates
+                       (filter #(names/cascade-allowed? global-tools crew-tools %))
+                       set)
+          observers (map keyword (or (get-in crew-members [crew-id :observers]) []))
+          deny (names/policy-list (:deny crew-tools))
+          recall-ok? (and (some #{:episodes} observers)
+                          (not (names/covers? deny "recall/*"))
+                          (not (names/covers? deny "recall__search")))]
+      (cond-> allowed
+        recall-ok? (into #{"recall__search" "recall__scene"})))))
 
 (defn- active-tools [_p allowed-tools module-index]
   (not-empty (if module-index
@@ -1674,7 +1684,7 @@
         p             provider]
     (context-mode/wait-for! context-mode session-key)
     (when-not (:input-persisted? charge)
-      (append-message! ctx session-key {:role "user" :content input :cwd (:cwd charge)}))
+      (append-message! ctx session-key {:role "user" :content (context-mode/wrap-input context-mode input) :cwd (:cwd charge)}))
     (let [transcript      (with-transcript-lock session-key #(store/active-transcript (session-store ctx) session-key))
           transcript      (context-mode/select-transcript context-mode transcript module-index)
           tools           (active-tools p allowed-tools module-index)

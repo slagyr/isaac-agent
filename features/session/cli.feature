@@ -123,7 +123,6 @@ Feature: Sessions Command
     And the stdout does not contain "crew: ketch"
     And the exit code is 0
 
-  @wip
   Scenario: sessions list shows each session's context mode in a CONTEXT column (isaac-ka10)
     The CONTEXT column replaces the retired POLICY column. It shows the
     context mode the session resolves to: its own override, else its crew's.

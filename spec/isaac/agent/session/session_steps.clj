@@ -1132,7 +1132,7 @@
       (fn []
         (commit-feature-config!)
         (let [cfg   (loaded-config)
-              crew  (or (unique-observer-crew-id) (active-crew-id) (defaults/crew-id cfg))
+              crew  (or (unique-observer-crew-id) (defaults/crew-id cfg) "main")
               entry (or (get-session name)
                         (session-ctx/create-with-resolved-behavior!
                           name {:crew crew :config cfg :session-store (session-store)}))]

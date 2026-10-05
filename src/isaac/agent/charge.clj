@@ -169,7 +169,8 @@
                                 session-store (assoc :session-store session-store)
                                 (some? session-observers) (assoc :session-observers session-observers)
                                 (seq resource-pools) (assoc :resource-pools resource-pools)
-                                (some? cycle) (assoc :cycle cycle))]
+                                (some? cycle) (assoc :cycle cycle)
+                                context-mode-override (assoc :context-mode-override context-mode-override))]
     (cond (:error dispatch-error) (unresolved-charge base (:error dispatch-error))
           unknown? (unresolved-charge base :unknown-crew)
           (nil? @model*) (unresolved-charge base :no-model)

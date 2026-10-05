@@ -178,8 +178,12 @@
         pct    (if (pos? context-window)
                    (int (Math/round (* 100.0 (/ tokens context-window)))) 0)
         session-name (or (:key entry) (:id entry))
+        crew-id      (:crew entry)
+        crew-cfg     (or (get-in cfg [:crew crew-id])
+                         (get-in cfg [:crew (keyword crew-id)])
+                         (get-in cfg [:crew (some-> crew-id name)]))
         context      (or (:context-mode entry)
-                         (get-in cfg [:crew (:crew entry) :context-mode])
+                         (:context-mode crew-cfg)
                          (get-in cfg [:defaults :crew :context-mode])
                          :full)]
     {:name   (str session-name (when (store/in-flight? session-store (:id entry)) " ✈️"))
