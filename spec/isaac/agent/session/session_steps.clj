@@ -1249,9 +1249,8 @@
 
 (defn -prepare-next-send! []
   (when-let [prior (g/get :turn-future)]
-    (let [outcome (deref prior 1000 ::pending)]
-      (when-not (= ::pending outcome)
-        (complete-turn! outcome)))))
+    (when (realized? prior)
+      (complete-turn! @prior))))
 
 (defn normalize-feature-config [cfg]
   ;; Foundation normalizes entity tables from the cached schema. Keep the

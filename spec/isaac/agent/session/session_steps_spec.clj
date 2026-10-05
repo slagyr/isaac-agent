@@ -83,6 +83,17 @@
               (deliver first-turn {:output "" :request {} :result {:ok true}})
               (future-cancel send)))))))
 
+  (it "does not stall a second send while the first turn is still in flight"
+    (let [first-turn (promise)
+          started-at (System/nanoTime)]
+      (g/assoc! :turn-future first-turn)
+      (try
+        (sut/-prepare-next-send!)
+        (should (< (/ (- (System/nanoTime) started-at) 1000000.0) 500.0))
+        (should-not (realized? first-turn))
+        (finally
+          (deliver first-turn {:output "" :request {} :result {:ok true}})))))
+
   (it "does not wait for a Grover gate after a turn already completed"
     (g/assoc! :turn-future (future {:output "done"
                                     :request {:id :request}
