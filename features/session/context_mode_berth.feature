@@ -76,7 +76,7 @@ Feature: Context modes are registered through a berth (isaac-c52a)
       | lantern-room               |
       | porthole                   |
       | requires observer :logbook |
-    And session "lantern-room" has 2 transcript entries
+    And session "lantern-room" has 3 transcript entries
 
   @wip
   Scenario: validation reports a context mode whose required observer the crew lacks
