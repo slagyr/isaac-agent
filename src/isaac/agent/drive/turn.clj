@@ -1427,20 +1427,22 @@
                       :skill-menu-text (:menu-text skill-disclosure)
                       :provider        augmented})))
 
-(defn- observer-ctx [session-key]
-  {:session-key session-key})
+(def ^:dynamic *foreman-request-id* nil)
+
+(defn- observer-ctx [session-key request-id content]
+  {:session-key session-key :request-id request-id :content content})
 
 (defn- notify-observers! [observers method ctx extra]
   (when (seq observers)
     (observer/notify! observers method ctx extra)))
 
-(defn- finish-turn! [ch session-key result observers origin]
+(defn- finish-turn! [ch session-key result observers origin request-id]
   (let [result (-> result
                    (cond-> origin (assoc :origin origin))
                    finalize-turn-result)]
     (log-turn-ended! session-key result)
     (comm/on-turn-end ch session-key result)
-    (let [ctx (observer-ctx session-key)]
+    (let [ctx (observer-ctx session-key request-id (or (:content result) (get-in result [:response :content])))]
       (if (= :exception (:error result))
         (notify-observers! observers :on-turn-died ctx (or (:message result) "unknown"))
         (notify-observers! observers :on-turn-ended ctx (observer/outcome result))))
@@ -1562,6 +1564,7 @@
                             args      (cond-> (or (:arguments tc) {})
                                          true (assoc "session_key" session-key)
                                          true (assoc "caller_crew" crew)
+                                         (:turn-id tool-ctx) (assoc "request_id" (:turn-id tool-ctx))
                                          true (assoc :progress! progress!))
                             cache      (:window-cache tool-ctx)
                             cycle-n    (or (some-> tool-ctx :cycle* deref :n) 1)
@@ -1768,7 +1771,8 @@
                               (reset! pending-aside* nil)
                               (comm/on-cycle-end ch session-key cycle {:outcome :aside :text text :tool-calls tool-calls})
                               (comm/on-aside ch session-key cycle text)))
-            tool-ctx      {:comm           ch
+            tool-ctx      {:turn-id        *foreman-request-id*
+                            :comm           ch
                             :crew           crew
                             :session-key    session-key
                             :allowed-tools  allowed-tools
@@ -2055,16 +2059,18 @@
   [charge]
   (let [session-key (:session-key charge)
         input       (:input charge)
+        turn-id     (bridge/begin-turn! session-key)
+        request-id  (or (:turn-id charge) (str (java.util.UUID/randomUUID)))
         ctx         (build-turn charge)
         ch          (or (:comm charge) null-comm/channel)
-        turn-id     (bridge/begin-turn! session-key)
         observers   (observer/for-turn (:observers charge))
-        finish!     #(-> (finish-turn! ch session-key % observers (:origin charge))
+        finish!     #(-> (finish-turn! ch session-key % observers (:origin charge) request-id)
                          (as-> result (maybe-continue! charge ctx ch session-key result)))]
     (try
       (comm/on-turn-start ch session-key input)
-      (notify-observers! observers :on-turn-started (observer-ctx session-key) nil)
-      (finish! (run-turn-body! session-key input ctx))
+      (notify-observers! observers :on-turn-started (observer-ctx session-key request-id nil) nil)
+      (finish! (binding [*foreman-request-id* request-id]
+                 (run-turn-body! session-key input ctx)))
       (catch ExceptionInfo e
         (if (= :cancelled (:type (ex-data e)))
           (finish! (suspend/interrupt-result session-key))

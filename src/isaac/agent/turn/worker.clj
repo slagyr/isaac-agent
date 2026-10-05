@@ -73,6 +73,7 @@
                   (:observers record) (assoc :observers (:observers record))
                   (:resource-pools record) (assoc :resource-pools (:resource-pools record))
                   (:key record) (assoc :key (:key record))
+                  (:id record) (assoc :turn-id (:id record))
                   (:cwd record) (assoc :cwd (:cwd record))
                   (:input-persisted? record) (assoc :input-persisted? true))
         built   (try
@@ -118,7 +119,11 @@
                                            :crew (:crew charge) :origin (:origin charge) :now (:now charge)}))]
         (if (:error decision)
           (do (when reserved? (store/clear-in-flight! ss session-key))
-              (if (= :hold (:reason decision)) {:held true} decision))
+              (if (= :hold (:reason decision))
+                (do (when-let [id (:held-id charge)]
+                      (queue/update-turn! id {:state :held}))
+                    {:held true})
+                decision))
           {:charge (assoc charge :session-reserved? reserved?
                                  :pool-leases (:leases decision)
                                  :cwd (or (some (comp :session/cwd :bindings) (:leases decision))

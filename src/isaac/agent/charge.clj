@@ -38,6 +38,7 @@
             :preamble          {:type :string :description "Per-turn system prompt preamble"}
             :guidance          {:type :string :description "Per-turn trusted guidance injected into the current user turn"}
             :origin            {:type :ignore :description "Inbound origin metadata"}
+            :turn-id           {:type :string :description "Durable turn request id"}
             :key               {:type :string :description "Idempotent submission identity"}
             :coalesce-key      {:type :string :description "Waiting-room grouping key"}
             :observers         {:type :ignore :description "Submitted per-turn observer refs (name or [name params])"}
@@ -135,7 +136,7 @@
    model) returns a charge marked :charge/unresolved with a :charge/reason
    keyword."
   [{:keys [session-key input comm crew config model model-ref model-override model-cfg
-           provider provider-cfg context-window soul soul-prepend preamble guidance origin key coalesce-key observers resource-pools cycle dispatch-error
+           provider provider-cfg context-window soul soul-prepend preamble guidance origin turn-id key coalesce-key observers resource-pools cycle dispatch-error
            context-mode-override]}]
   (let [config*         (or (when (map? config) config) (loader/snapshot "charge build fallback — no :config passed (entry seed)") {})
         ss*             (store/registered-store)
@@ -162,6 +163,7 @@
                                  :guidance      guidance
                                  :preamble      preamble
                                  :origin        origin}
+                                turn-id (assoc :turn-id turn-id)
                                 key (assoc :key key)
                                 coalesce-key (assoc :coalesce-key coalesce-key)
                                 (seq observers) (assoc :observers observers)
