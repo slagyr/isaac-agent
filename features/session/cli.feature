@@ -123,6 +123,27 @@ Feature: Sessions Command
     And the stdout does not contain "crew: ketch"
     And the exit code is 0
 
+  @wip
+  Scenario: sessions list shows each session's context mode in a CONTEXT column (isaac-ka10)
+    The CONTEXT column replaces the retired POLICY column. It shows the
+    context mode the session resolves to: its own override, else its crew's.
+    Given the isaac EDN file "config/crew/ketch.edn" exists with:
+      | path         | value |
+      | context-mode | reset |
+    And the following sessions exist:
+      | name       | crew  | total-tokens | updated-at          |
+      | alpha-chat | main  | 5000         | 2026-04-12T15:00:00 |
+      | bravo-chat | ketch | 12000        | 2026-04-11T10:00:00 |
+    And a session "delta-chat" exists with context-mode "reset"
+    When isaac is run with "sessions list"
+    Then the stdout matches:
+      | pattern                                                      |
+      | SESSION .* AGE .* SIZE .* USED .* WINDOW .* PCT .* CREW .* CONTEXT |
+      | alpha-chat\s+.*\s+main\s+full                                   |
+      | bravo-chat\s+.*\s+ketch\s+reset                                 |
+      | delta-chat\s+.*\s+main\s+reset                                  |
+    And the exit code is 0
+
   Scenario: sessions list --crew filters by current crew member
     Given the following sessions exist:
       | name         | crew  | total-tokens | updated-at           |
