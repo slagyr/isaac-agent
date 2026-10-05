@@ -5,6 +5,7 @@
     [isaac.foundation.fs :as fs]
     [isaac.foundation.marigold :as marigold]
     [isaac.agent.session.store.spi :as store]
+    [isaac.session.lantern :as lantern]
     [isaac.agent.session.spec-helper :as helper]
     [isaac.agent.session.context :as sut]
     [isaac.foundation.nexus :as nexus]
@@ -258,9 +259,6 @@
   (it "porthole keeps the last assistant answer and current question"
     (should= [{:type "message" :message {:role "assistant" :content "Lit"}}
               {:type "message" :message {:role "user" :content "Oil?"}}]
-             (do ((requiring-resolve 'isaac.agent.session.context-mode/register!)
-                   :porthole {:factory (requiring-resolve 'isaac.session.lantern/porthole)})
-              ((requiring-resolve 'isaac.agent.session.context-mode/select-transcript)
-              :porthole [{:type "message" :message {:role "user" :content "Old?"}}
-                         {:type "message" :message {:role "assistant" :content "Lit"}}
-                         {:type "message" :message {:role "user" :content "Oil?"}}])))))
+             (lantern/porthole [{:type "message" :message {:role "user" :content "Old?"}}
+                                {:type "message" :message {:role "assistant" :content "Lit"}}
+                                {:type "message" :message {:role "user" :content "Oil?"}}]))))

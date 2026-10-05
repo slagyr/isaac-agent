@@ -113,13 +113,11 @@
 
     (it "uses the default crew when a session has no crew"
       (store-helper/with-memory-store
-        (store-helper/create-session! "/test/isaac" session-key {:crew crew-name})
         (loader/set-snapshot!
           (assoc (loader/snapshot "comm_send spec") :defaults {:frequencies {:crew "main"}})
           "comm_send spec default crew")
-        (with-redefs [store/get-session (fn [_ _] {:crew nil})]
-          (sut/comm-send-tool {"comm" "tannoy" "content" "Lantern is lit."
-                               "session_key" session-key}))
+        (sut/comm-send-tool {"comm" "tannoy" "content" "Lantern is lit."
+                             "session_key" session-key})
         (should= {:crew "main" :session session-key}
                  (select-keys (first (queue/list-pending)) [:crew :session]))))
 
