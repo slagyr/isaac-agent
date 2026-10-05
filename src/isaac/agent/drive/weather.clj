@@ -29,6 +29,7 @@
       :wall :wall
       :auth :auth
       :stream-stalled :stall
+      :stream-ended-early :stream-ended-early
       :mcp-unavailable :mcp-unavailable
       nil)))
 

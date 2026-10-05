@@ -176,6 +176,7 @@
         token-overrides {:prompt_eval_count input-tokens
                          :eval_count        output-tokens}
         metadata       (cond-> {}
+                         (= "cut-off" (:type scripted)) (assoc :cut-off? true)
                          (:reasoning scripted) (assoc :reasoning (:reasoning scripted))
                          (:usage scripted)     (assoc :usage (:usage scripted))
                          (:wire-stop-reason scripted) (assoc :wire-stop-reason (:wire-stop-reason scripted)))]
@@ -437,17 +438,25 @@
                                                                    (:usage response))}
                                               (:response-id response) (assoc :id (:response-id response))
                                               (:reasoning response) (assoc :reasoning (:reasoning response)))}]))]
-          (reduce-provider-events events on-chunk process-event initial))
+          (reduce-provider-events (if (:cut-off? response) (butlast events) events) on-chunk process-event initial))
         (if (str/ends-with? url "/messages")
-          (let [events (concat (map (fn [chunk]
+          (let [tool-call (first (get-in response [:message :tool_calls]))
+                events (concat (map (fn [chunk]
                                       {:type "content_block_delta" :delta {:text chunk}})
                                     (content-chunks (get-in response [:message :content])))
+                               (when tool-call
+                                 [{:type "content_block_start"
+                                   :content_block {:type "tool_use"
+                                                   :id (or (:id tool-call) "tc_grover")
+                                                   :name (get-in tool-call [:function :name])
+                                                   :input (get-in tool-call [:function :arguments])}}])
                                [{:type "message_start"
                                  :message {:model (:model response) :usage (:usage (messages-json response))}}
                                 {:type "message_delta"
                                  :stop_reason (or (:wire-stop-reason response) "end_turn")
-                                 :usage {:output_tokens (:eval_count response)}}])]
-            (reduce-provider-events events on-chunk process-event initial))
+                                 :usage {:output_tokens (:eval_count response)}}
+                                {:type "message_stop"}])]
+            (reduce-provider-events (if (:cut-off? response) (butlast events) events) on-chunk process-event initial))
           (let [tool-calls (get-in response [:message :tool_calls])
                 events     (concat (when-let [summary (get-in response [:reasoning :summary])]
                                      ;; GLM streams its thinking beside the
@@ -465,7 +474,7 @@
                                      :choices [{:delta {}
                                                 :finish_reason (or (:wire-stop-reason response)
                                                                    (if (seq tool-calls) "tool_calls" "stop"))}]}])]
-            (reduce-provider-events events on-chunk process-event initial)))))))
+            (reduce-provider-events (if (:cut-off? response) (butlast events) events) on-chunk process-event initial)))))))
 
 ;; endregion ^^^^^ Response Building ^^^^^
 

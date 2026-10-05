@@ -173,8 +173,10 @@
                                       (when-let [text (get-in chunk [:choices 0 :delta :content])]
                                         (on-chunk {:text-delta text})))
                                     process-sse-event initial (shared/llm-http-opts config))]
-    (if (:error result)
-      (api/normalize-error result)
+    (cond
+      (:error result) (api/normalize-error result)
+      (not (:finish-reason result)) {:error :stream-ended-early :message "stream ended before completion marker"}
+      :else
       ;; Both paths run the same extractor, so a tool call has the same id,
       ;; name and parsed arguments however it arrived (isaac-zg3t).
       (let [tool-calls (extract-tool-calls (vals (:tool-call-fragments result)))]

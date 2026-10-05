@@ -23,7 +23,6 @@ Feature: A stream that ends without its end marker is provider weather (isaac-l1
     Given default Grover setup
     And the built-in tools are registered
 
-  @wip
   Scenario Outline: <provider> cut off before any output continues on the next model
     Given the isaac EDN file "config/models/head.edn" exists with:
       | path           | value      |
@@ -62,7 +61,6 @@ Feature: A stream that ends without its end marker is provider weather (isaac-l1
       | grover:openai    | grover:anthropic |
       | grover:ollama    | grover:anthropic |
 
-  @wip
   Scenario Outline: <provider> cut off mid-reply keeps none of the partial text
     Given the isaac EDN file "config/models/head.edn" exists with:
       | path           | value      |
@@ -102,7 +100,6 @@ Feature: A stream that ends without its end marker is provider weather (isaac-l1
       | grover:openai    | grover:anthropic |
       | grover:ollama    | grover:anthropic |
 
-  @wip
   Scenario Outline: <provider> tool call from a cut stream never runs
     Given the isaac EDN file "config/models/head.edn" exists with:
       | path           | value      |
@@ -140,7 +137,6 @@ Feature: A stream that ends without its end marker is provider weather (isaac-l1
       | grover:openai    | grover:anthropic |
       | grover:ollama    | grover:anthropic |
 
-  @wip
   Scenario: a cut stream with no fallback suspends the turn
     Given the isaac EDN file "config/models/snuffy.edn" exists with:
       | path           | value          |

@@ -295,6 +295,11 @@
 
   (describe "chat-stream"
 
+    (it "rejects text and tool-call fragments without a finish reason"
+      (should= :stream-ended-early
+               (:error (stream-events (butlast tool-call-events)))))
+
+
     (it "streams and accumulates response"
       (let [chunks (atom [])
             captured-body (atom nil)]
@@ -302,7 +307,7 @@
                                             (reset! captured-body body)
                                             (let [events [{:model "gpt-5" :choices [{:delta {:content "Hello"}}]}
                                                           {:choices [{:delta {:content " world"}}]}
-                                                          {:usage {:prompt_tokens 10 :completion_tokens 5} :choices [{:delta {}}]}]]
+                                                          {:usage {:prompt_tokens 10 :completion_tokens 5} :choices [{:delta {} :finish_reason "stop"}]}]]
                                               (reduce (fn [acc evt] (on-chunk evt) (process-event evt acc))
                                                       initial events)))]
           (let [result (sut/chat-stream {:model "gpt-5" :messages []}
@@ -358,13 +363,13 @@
       ;; When usage is included the server closes the stream with a chunk that
       ;; has an empty :choices and carries only the numbers.
       (let [result (stream-events [{:model "glm" :choices [{:delta {:content "hi"}}]}
-                                   {:choices [] :usage {:prompt_tokens 1234 :completion_tokens 56}}])]
+                                   {:choices [{:finish_reason "stop"}] :usage {:prompt_tokens 1234 :completion_tokens 56}}])]
         (should= 1234 (:prompt-tokens (:usage result)))
         (should= 56 (:output-tokens (:usage result)))))
 
     (it "reports cached input tokens when the server sends them (isaac-f5tn)"
       (let [result (stream-events [{:model "glm" :choices [{:delta {:content "hi"}}]}
-                                   {:choices []
+                                   {:choices [{:finish_reason "stop"}]
                                     :usage   {:prompt_tokens         1234
                                               :completion_tokens     56
                                               :prompt_tokens_details {:cached_tokens 1000}}}])]
@@ -441,7 +446,8 @@
       (with-redefs [llm-http/post-sse! (fn [_ _ _ _ process-event initial & _]
                                          (reduce (fn [acc evt] (process-event evt acc))
                                                  initial
-                                                 [{:choices [{:delta {:content "hi"}}]}]))]
+                                                 [{:choices [{:delta {:content "hi"}}]}
+                                                  {:model "test" :choices [{:delta {} :finish_reason "stop"}]}]))]
         (let [result (sut/chat-stream {:model "test" :messages []} identity "openai" test-config)]
           (should-not (api/error? result))
           (should-not-throw (api/validate-response result)))))

@@ -102,8 +102,9 @@
         (with-redefs [llm-http/post-sse!         (fn [url _ body _ process-event initial & _]
                                                    (reset! captured-url url)
                                                    (reset! captured-body body)
-                                                   (process-event {:type "response.output_text.delta" :delta "Hello from Codex"}
-                                                                  initial))
+                                                   (->> initial
+                                                        (process-event {:type "response.output_text.delta" :delta "Hello from Codex"})
+                                                        (process-event {:type "response.completed" :response {}})))
                       auth-store/load-tokens    (fn [_ _ _] {:type "oauth" :access token :expires (+ (System/currentTimeMillis) (* 30 60 1000))})
                       auth-store/token-expired? (fn [_] false)]
           (let [result (sut/chat {:model   "gpt-5.4"
@@ -597,15 +598,26 @@
         (should= "gpt-5.4" (:model result))
         (should= {:input_tokens 10 :output_tokens 5} (:usage result)))))
 
-    (it "detects a stream that ends without response.completed"
-      (should= true
-               (@#'sut/incomplete-responses-stream?
-                 {:content "" :model nil :response nil :tool-calls []}))
-      (should= false
-               (@#'sut/incomplete-responses-stream?
-                 {:content "ok" :model nil :response nil :tool-calls []})))
+    (it "marks only response.completed as a complete stream"
+      (let [initial {:content "partial" :tool-calls [{:name "read"}]}
+            completed (@#'sut/process-responses-sse-event
+                        {:type "response.completed" :response {}} initial)]
+        (should-not (:completed? initial))
+        (should= true (:completed? completed))))
 
   (describe "chat-stream"
+
+    (it "rejects a partial response without response.completed"
+      (let [token (jwt-with-account-id "acct-123")]
+        (with-redefs [llm-http/post-sse! (fn [_ _ _ _ process-event initial & _]
+                                           (process-event {:type "response.output_text.delta"
+                                                           :delta "unfinished"} initial))
+                      auth-store/load-tokens (fn [_ _ _] {:access token :expires (+ (System/currentTimeMillis) 1800000)})
+                      auth-store/token-expired? (fn [_] false)]
+          (should= :stream-ended-early
+                   (:error (sut/chat-stream {:model "test" :messages []}
+                                            identity "chatgpt" oauth-device-config))))))
+
 
     (it "streams codex responses output for oauth-device"
       (let [chunks       (atom [])

@@ -96,6 +96,17 @@
 
   (describe "chat-stream"
 
+    (it "rejects tool calls when done never arrives"
+      (with-redefs [llm-http/post-ndjson-stream!
+                    (fn [_ _ _ on-chunk & _]
+                      (let [chunk {:message {:tool_calls [{:function {:name "exec"
+                                                                       :arguments {}}}]}
+                                   :done false}]
+                        (on-chunk chunk) chunk))]
+        (should= :stream-ended-early
+                 (:error (sut/chat-stream {:model "test" :messages []} identity "ollama" {})))))
+
+
     (it "preserves tool calls from the simulated Ollama stream"
       (grover/reset-queue!)
       (grover/enqueue! [{:tool_call "fs__read" :arguments {:file_path "pixel.png"}}])

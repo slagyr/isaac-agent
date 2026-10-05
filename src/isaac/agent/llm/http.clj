@@ -303,7 +303,7 @@
             (on-chunk {:message {:content chunk} :done false}))
           (when (seq (get-in response [:message :tool_calls]))
             (on-chunk {:message {:tool_calls (get-in response [:message :tool_calls])} :done false}))
-          response)))
+          (if (:cut-off? response) (dissoc response :done) response))))
     (let [last-activity-ms (atom (now-ms))
           bytes-received   (atom 0)
           close!*          (atom nil)

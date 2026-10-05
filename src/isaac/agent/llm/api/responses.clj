@@ -126,12 +126,6 @@
       (assoc base :reasoning {:effort level :summary "auto"})
       base)))
 
-(defn- incomplete-responses-stream? [{:keys [content model response tool-calls]}]
-  (and (str/blank? content)
-       (nil? model)
-       (nil? response)
-       (empty? tool-calls)))
-
 (defn- process-responses-sse-event [data accumulated]
   (case (:type data)
     "response.output_text.delta"
@@ -169,6 +163,7 @@
     "response.completed"
     (let [response (:response data)]
       (cond-> accumulated
+        true              (assoc :completed? true)
         response          (assoc :response response)
         (:id response)    (assoc :response-id (:id response))
         (:model response) (assoc :model (:model response))
@@ -205,9 +200,8 @@
       (:error result)
       (api/normalize-error result)
 
-      (incomplete-responses-stream? result)
-      {:error :llm-error
-       :message "responses stream ended without response.completed"}
+      (not (:completed? result))
+      {:error :stream-ended-early :message "stream ended before completion marker"}
 
       :else
       (let [tool-calls  (:tool-calls result)

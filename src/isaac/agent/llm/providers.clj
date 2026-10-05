@@ -144,5 +144,7 @@
    :api-key grover. Returns nil when the provider is not in the catalog."
   [provider-name]
   (when-let [entry (template provider-name)]
-    (cond-> (assoc entry :simulate-provider provider-name)
+    (cond-> (assoc entry :simulate-provider provider-name
+                       :stream-non-tool-turns true
+                       :stream-supports-tool-calls true)
       (not= "oauth-device" (:auth entry)) (assoc :api-key "grover"))))

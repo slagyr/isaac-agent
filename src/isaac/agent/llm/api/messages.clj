@@ -92,7 +92,20 @@
   [data accumulated]
   (case (:type data)
     "content_block_delta"
-    (update accumulated :content str (get-in data [:delta :text]))
+    (if-let [text (get-in data [:delta :text])]
+      (update accumulated :content str text)
+      accumulated)
+
+    "content_block_start"
+    (if (= "tool_use" (get-in data [:content_block :type]))
+      (update accumulated :tool-calls (fnil conj [])
+              {:id (get-in data [:content_block :id])
+               :name (get-in data [:content_block :name])
+               :arguments (get-in data [:content_block :input])})
+      accumulated)
+
+    "message_stop"
+    (assoc accumulated :completed? true)
 
     "message_delta"
     (cond-> (update accumulated :usage merge (:usage data))
@@ -205,11 +218,12 @@
                                            (when-let [thinking (get-in chunk [:delta :thinking])]
                                              (on-chunk {:reasoning-delta thinking})))
                                          process-sse-event initial (http-opts cfg))]
-        (if (:error result)
-          (api/normalize-error result)
-          {:content     (:content result)
+        (cond
+          (:error result) (api/normalize-error result)
+          (not (:completed? result)) {:error :stream-ended-early :message "stream ended before completion marker"}
+          :else {:content     (:content result)
            :model       (:model result)
-           :tool-calls  []
+           :tool-calls  (or (:tool-calls result) [])
            :stop-reason (stop-reason (:stop-reason-wire result))
            :usage       (parse-usage (:usage result))
            :_headers    headers})))))

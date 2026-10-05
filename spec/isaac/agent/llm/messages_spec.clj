@@ -194,13 +194,23 @@
 
   (describe "chat-stream"
 
+    (it "rejects partial output without message_stop"
+      (with-redefs [llm-http/post-sse! (fn [_ _ _ _ process-event initial & _]
+                                         (process-event {:type "content_block_delta"
+                                                         :delta {:text "unfinished"}} initial))]
+        (should= :stream-ended-early
+                 (:error (sut/chat-stream {:model "test" :messages []}
+                                          identity "anthropic" (api-key-config))))))
+
+
     (it "streams and accumulates response"
       (let [chunks (atom [])]
         (with-redefs [llm-http/post-sse! (fn [_ _ _ on-chunk process-event initial & _]
                                            (let [events [{:type "message_start" :message {:model "claude-sonnet-4-6" :usage {:input_tokens 10}}}
                                                          {:type "content_block_delta" :delta {:text "Hello"}}
                                                          {:type "content_block_delta" :delta {:text " world"}}
-                                                         {:type "message_delta" :usage {:output_tokens 8}}]]
+                                                         {:type "message_delta" :usage {:output_tokens 8}}
+                                                         {:type "message_stop"}]]
                                              (reduce (fn [acc evt] (on-chunk evt) (process-event evt acc))
                                                      initial events)))]
           (let [result (sut/chat-stream {:model "claude-sonnet-4-6" :messages []}
@@ -250,7 +260,8 @@
                                                  initial
                                                  [{:type "message_start" :message {:model "claude-sonnet-4-6" :usage {:input_tokens 10}}}
                                                   {:type "content_block_delta" :delta {:text "Hi!"}}
-                                                  {:type "message_delta" :usage {:output_tokens 5}}]))]
+                                                  {:type "message_delta" :usage {:output_tokens 5}}
+                                                  {:type "message_stop"}]))]
         (let [result (sut/chat-stream {:model "test" :messages []} identity "anthropic" (api-key-config))]
           (should-not (api/error? result))
           (should-not-throw (api/validate-response result)))))

@@ -124,9 +124,10 @@
                      (on-chunk {:reasoning-delta reasoning})))
                  (http-opts cfg))]
     (normalize-response
-      (if (:error final)
-        final
-        (merge @folded (select-keys final [:model :done_reason :wire-stop-reason
+      (cond
+        (:error final) final
+        (not (:done final)) {:error :stream-ended-early :message "stream ended before completion marker"}
+        :else (merge @folded (select-keys final [:model :done_reason :wire-stop-reason
                                            :prompt_eval_count :eval_count]))))))
 
 ;; endregion ^^^^^ Public API ^^^^^

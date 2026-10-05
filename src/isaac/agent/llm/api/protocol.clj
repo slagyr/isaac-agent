@@ -108,7 +108,7 @@
             :_headers      {:type :ignore}}})
 
 (def error-kinds
-  #{:auth-missing :auth-failed :refresh-failed :connection-refused :timeout :stream-stalled
+  #{:auth-missing :auth-failed :refresh-failed :connection-refused :timeout :stream-stalled :stream-ended-early
     :cancelled :context-overflow :rate-limited :api-error :llm-error :provider-contract
     :unknown-provider :unknown})
 

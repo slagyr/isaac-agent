@@ -66,6 +66,11 @@
       (should= 5000 (:retry-after-ms normalized))
       (should= "chatgpt" (:provider normalized))))
 
+  (it "classifies an early stream close as weather with no provider retry-after"
+    (let [result {:error :stream-ended-early :message "cut short"}
+          weather (sut/fallback-weather result {} "chatgpt")]
+      (should= {:unavailable? true :reason :stream-ended-early :provider "chatgpt"} weather)))
+
   (it "classifies a prompt-too-long 400 as overflow, not weather"
     (let [result {:error :context-overflow
                   :status 400

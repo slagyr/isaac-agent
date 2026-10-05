@@ -48,7 +48,7 @@
       (contains? #{401 403} (:status result))))
 
 (defn- stall-response? [result]
-  (= :stream-stalled (:error result)))
+  (contains? #{:stream-stalled :stream-ended-early} (:error result)))
 
 (defn- overflow-message? [message]
   (let [lower (some-> message str/lower-case)]
@@ -111,14 +111,15 @@
   [result cfg provider]
   (when (stall-response? result)
     (let [retry-ms (or (:retry-after-ms result)
-                       (provider-retry-after-ms cfg))]
+                       (when (= :stream-stalled (:error result))
+                         (provider-retry-after-ms cfg)))]
       (log/warn :chat/provider-stream-stalled
                 :provider provider
                 :retry-after-ms retry-ms)
-      {:unavailable?   true
-       :retry-after-ms retry-ms
-       :reason         :stream-stalled
-       :provider       provider})))
+      (cond-> {:unavailable? true
+               :reason (:error result)
+               :provider provider}
+        retry-ms (assoc :retry-after-ms retry-ms)))))
 
 (defn- classify-overflow
   [result]
@@ -141,7 +142,7 @@
   (cond
     (:unavailable? result)
     (cond-> result
-      (nil? (:reason result)) (assoc :reason (if (stall-response? result) :stream-stalled :wall))
+      (nil? (:reason result)) (assoc :reason (if (stall-response? result) (:error result) :wall))
       (nil? (:provider result)) (assoc :provider provider))
 
     (:error result)
@@ -157,7 +158,7 @@
 (def fallback-reasons
   "Unavailable reasons that advance a crew's model chain. A contract
    :api-error and context overflow are not in this set."
-  #{:wall :auth :stream-stalled})
+  #{:wall :auth :stream-stalled :stream-ended-early})
 
 (defonce ^:private walls* (atom {}))
 
