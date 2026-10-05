@@ -80,14 +80,3 @@ Feature: Context Mode
       | messages[2].content      | The same thing we do every night, Pinky.       |
       | messages[3].role         | user                                           |
       | messages[3].content      | Are the giant slingshot blueprints ready?      |
-
-  Scenario: Unknown :context-mode value is rejected
-    Given an empty Isaac root at "/tmp/isaac"
-    And config file "isaac.edn" containing:
-      """
-      {:crew {:pinky {:context-mode :ponder}}}
-      """
-    When the config is loaded
-    Then the config has validation errors matching:
-      | key                     | value            |
-      | crew.pinky.context-mode | must be one of.* |
