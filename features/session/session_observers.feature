@@ -18,7 +18,7 @@ Feature: Session observers watch a session's record off the turn path (isaac-c52
     Given default Grover setup
     And the isaac EDN file "config/isaac.edn" exists with:
       | path                          | value                           |
-      | modules.isaac.session.lantern | {:local/root "modules/isaac.session.lantern"} |
+      | /modules/isaac.session.lantern | {:local/root "modules/isaac.session.lantern"} |
     And the isaac EDN file "config/crew/cordelia.edn" exists with:
       | path      | value            |
       | model     | echo             |
