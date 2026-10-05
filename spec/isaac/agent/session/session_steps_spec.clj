@@ -68,6 +68,48 @@
               (deliver first-turn true)
               (future-cancel send)))))))
 
+  (it "a parked send that completes during admission does not await the running turn"
+    (sut/default-grover-setup)
+    (sut/sessions-exist {:headers ["name"] :rows [["dm"]]})
+    (let [running (promise)
+          admit   (promise)
+          entered (promise)]
+      (g/assoc! :turn-future running)
+      (with-redefs [bridge-core/dispatch! (fn [& _] (deliver entered true) @admit
+                                            {:dispatched? false :reason :waiting-session})]
+        (let [send (future (nexus/-with-nexus {:fs (fs/mem-fs)}
+                             (sut/user-sends-on-session "two" "dm")))]
+          (try
+            (should= true (deref entered 2000 ::timeout))
+            (deliver admit true)
+            (should (not= ::timeout (deref send 2000 ::timeout)))
+            (should-not (realized? running))
+            (should= running (g/get :turn-future))
+            (finally
+              (deliver running {:output "" :request {} :result {:ok true}})
+              (deliver admit true)
+              (deref send 1000 nil)))))))
+
+  (it "a later send does not wait for the running turn's delayed response"
+    (sut/default-grover-setup)
+    (sut/sessions-exist {:headers ["name"] :rows [["dm"]]})
+    (sut/llm-response-delayed 2)
+    (sut/responses-queued {:headers ["model" "type" "content"]
+                           :rows    [["echo" "text" "Answered one."]
+                                     ["echo" "text" "Answered two."]]})
+    (try
+      (sut/user-sends-on-session-without-waiting "one" "dm")
+      (let [running (g/get :turn-future)
+            send    (future (sut/user-sends-on-session-without-waiting "two" "dm"))]
+        (should (not= ::timeout (deref send 3000 ::timeout)))
+        (should-not (realized? running))
+        (should= running (g/get :turn-future))
+        (sut/turns-on-session-finish "dm")
+        (should= 2 (count (grover/requests))))
+      (finally
+        (grover/release-delay!)
+        (sut/-drain-parked-turn!))))
+
   (it "does not await the blocked first turn when a later send is parked in the waiting room"
     (sut/default-grover-setup)
     (sut/sessions-exist {:headers ["name"] :rows [["dm"]]})

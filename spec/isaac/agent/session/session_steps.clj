@@ -1331,18 +1331,19 @@
                                                   (grover/last-request))
                                      :result  @result}))]
        (g/update! :turn-futures (fnil conj []) turn-future)
-     (let [result (deref turn-future 50 ::pending)]
+     (let [result (if existing-turn-future ::pending (deref turn-future 50 ::pending))]
          (if (= ::pending result)
            (do
              (g/update! :turn-futures-by-session (fnil assoc {}) key-str turn-future)
              (when-not existing-turn-future
                (g/assoc! :turn-future turn-future))
-             (helper/await-condition
-               (fn []
-                 (or (realized? turn-future)
-                     (some (fn [e] (= "turn-start" (:event e))) @events)
-                     (grover/waiting? key-str)))
-               1000)
+             (when-not existing-turn-future
+               (helper/await-condition
+                 (fn []
+                   (or (realized? turn-future)
+                       (some (fn [e] (= "turn-start" (:event e))) @events)
+                       (grover/waiting? key-str)))
+                 1000))
              ;; Wait-gated scripted replies and still-running turns stay
              ;; parked so later steps can cancel, suspend, or assert
              ;; in-flight state. Fast error/success turns finish here so
