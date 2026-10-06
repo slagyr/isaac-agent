@@ -83,14 +83,14 @@
   (with-feature-fs
     (fn []
       (with-stub-comm
-        #(nexus/-with-nexus {:root (root-dir) :fs (mem-fs)}
+        #(nexus/-with-nested-nexus {:root (root-dir) :fs (mem-fs)}
            (worker/tick! {}))))))
 
 (defn delivery-worker-ticks-at [iso]
   (with-feature-fs
     (fn []
       (with-stub-comm
-        #(nexus/-with-nexus {:root (root-dir) :fs (mem-fs)}
+        #(nexus/-with-nested-nexus {:root (root-dir) :fs (mem-fs)}
            (worker/tick! {:now (Instant/parse iso)}))))))
 
 (defonce ^:private live-scheduler* (atom nil))
