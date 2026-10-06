@@ -124,10 +124,15 @@
                       (queue/update-turn! id {:state :held}))
                     {:held true})
                 decision))
-          {:charge (assoc charge :session-reserved? reserved?
-                                 :pool-leases (:leases decision)
-                                 :cwd (or (some (comp :session/cwd :bindings) (:leases decision))
-                                          (:cwd charge)))})))))
+          (try
+            {:charge (assoc charge :session-reserved? reserved?
+                                   :pool-leases (:leases decision)
+                                   :cwd (or (some (comp :session/cwd :bindings) (:leases decision))
+                                            (:cwd charge)))}
+            (catch Throwable t
+              (pool/release-all! (:leases decision))
+              (when reserved? (store/clear-in-flight! ss session-key))
+              (throw t))))))))
 
 (declare tick!)
 
@@ -246,16 +251,26 @@
         (= :running state) (if (compare-and-set! tick-state* :running :idle) :idle (recur))
         :else              :idle))))
 
+(defn- start-admitted! [now cfg record admitted claimed!]
+  (let [started? (atom false)]
+    (try
+      (if (queue/claim! (:id record))
+        (do (claimed!)
+            (run-record-async! now cfg record admitted)
+            (reset! started? true))
+        nil)
+      (finally
+        (when-not @started?
+          (pool/release-all! (:pool-leases admitted))
+          (when (:session-reserved? admitted)
+            (store/clear-in-flight! (:session-store admitted) (:session-key admitted))))))))
+
 (defn- claim-and-start! [record now]
   (let [cfg (wake-config record)
         charge (wake-charge record now cfg)
         admission (admit! charge)]
     (if-let [admitted (:charge admission)]
-      (if (queue/claim! (:id record))
-        (run-record-async! now cfg record admitted)
-        (do (pool/release-all! (:pool-leases admitted))
-            (when (:session-reserved? admitted)
-              (store/clear-in-flight! (:session-store admitted) (:session-key admitted)))))
+      (start-admitted! now cfg record admitted (fn [] nil))
       (when-not (:held admission)
         (when (queue/claim! (:id record))
           (queue/update-turn! (:id record) {:state :finished :outcome :error
@@ -279,13 +294,9 @@
         (let [cfg (wake-config record)
               admission (admit! (wake-charge record now cfg))]
           (when-let [admitted (:charge admission)]
-            (if (queue/claim! (:id record))
-              (do (doseq [{id :id} records :when (not= id (:id record))]
-                    (queue/claim! id))
-                  (run-record-async! now cfg record admitted))
-              (do (pool/release-all! (:pool-leases admitted))
-                  (when (:session-reserved? admitted)
-                    (store/clear-in-flight! (:session-store admitted) (:session-key admitted)))))))))))
+            (start-admitted! now cfg record admitted
+                             #(doseq [{id :id} records :when (not= id (:id record))]
+                                (queue/claim! id)))))))))
 
 (defn tick!
   "Claims and starts every runnable record, then returns — a long turn on

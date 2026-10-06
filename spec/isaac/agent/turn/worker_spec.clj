@@ -40,6 +40,32 @@
                     pool/resolve-submitted (fn [_ _] {:resource-pools []})]
         (example))))
 
+  (it "returns a worksite lease when the queue claim throws"
+    (queue/enqueue! {:id "berth-1" :session "harbor" :input "Leave harbor"
+                     :resource-pools [:worksite]})
+    (let [released (atom [])
+          lease {:resource-pool :worksite :release-id "chart-room|token"}]
+      (with-redefs [pool/resolve-submitted (fn [_ _] {:resource-pools [:worksite]})
+                    pool/acquire-all! (fn [_ _] {:leases [lease]})
+                    pool/release-all! (fn [leases] (swap! released conj leases))
+                    queue/claim! (fn [_] (throw (ex-info "queue disk failed" {})))]
+        (should-throw Exception "queue disk failed" (sut/tick!)))
+      (should= [[lease]] @released)))
+
+  (it "returns a worksite lease if admission fails after acquisition"
+    (queue/enqueue! {:id "berth-2" :session "harbor" :input "Leave harbor"
+                     :resource-pools [:worksite]})
+    (let [released (atom [])
+          broken-binding (reify clojure.lang.ILookup
+                           (valAt [_ _] (throw (ex-info "binding failed" {})))
+                           (valAt [_ _ _] (throw (ex-info "binding failed" {}))))
+          lease {:resource-pool :worksite :release-id "chart-room|token" :bindings broken-binding}]
+      (with-redefs [pool/resolve-submitted (fn [_ _] {:resource-pools [:worksite]})
+                    pool/acquire-all! (fn [_ _] {:leases [lease]})
+                    pool/release-all! (fn [leases] (swap! released conj leases))]
+        (should-throw Exception "binding failed" (sut/tick!)))
+      (should= [[lease]] @released)))
+
   (it "leaves a held turn parked when dispatch parks again"
     (queue/enqueue! {:id         "berth-1"
                      :session    "harbor"
