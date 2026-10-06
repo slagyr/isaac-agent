@@ -6,7 +6,9 @@
     [isaac.foundation.logger :as log]
     [isaac.foundation.nexus :as nexus]
     [isaac.foundation.scheduler.runtime :as scheduler]
-    [isaac.agent.tool.memory :as memory])
+    [isaac.agent.tool.memory :as memory]
+    [isaac.agent.session.store.spi :as store]
+    [isaac.agent.session.store.sidecar :as sidecar])
   (:import
     (java.time Instant)))
 
@@ -78,6 +80,19 @@
                                                :next-attempt-at (str (.plusMillis now delay-ms))})))
       (dead-letter! record attempts :exhausted result))))
 
+(defn- note-channel! [record result]
+  (when-let [channel (:channel result)]
+    (let [sessions-store (or (store/registered-store)
+                             (sidecar/create-store (nexus/get :root)))
+          key            (str (name (keyword (:comm record))) ":" channel)]
+      (doseq [session (store/list-sessions sessions-store)
+              :when (and (contains? (:channels session) key)
+                         (not= (:session record) (:id session)))]
+        (store/append-message! sessions-store (:id session)
+                               {:role "assistant"
+                                :content (str "[sent here by crew " (:crew record)
+                                              " from session " (:session record) "] " (:content record))})))))
+
 (defn- process-record! [now record]
   (when (due? record now)
     (let [result (try
@@ -89,6 +104,7 @@
         (do
           (log/info :comm.delivery/delivered
                     (assoc (audit-fields record) :attempts (:attempts record 0)))
+          (note-channel! record result)
           (queue/delete-pending! (:id record)))
 
         (:defer? result)

@@ -75,6 +75,10 @@
             :effort              (mutable {:type :int})
             :context-mode        (mutable {:type :keyword})
             :channel             (mutable {:type :string})
+            :channels            (system-managed {:type :ignore
+                                                  :set-type? true
+                                                  :validate #(or (nil? %) (and (set? %) (every? string? %)))
+                                                  :message "must be a set of strings"})
             :chat-type           (mutable {:type :string})
             :cwd                 (mutable {:type :string})
             :created-at          (immutable {:type :string})
