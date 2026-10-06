@@ -90,6 +90,27 @@
       (should= "bartholomew" (get-in @opened [1 :crew]))
       (should= {:source :hail :kind :hail} (get-in @opened [1 :origin]))))
 
+  (it "creates the named session with its crew before dispatching a queued turn"
+    (queue/enqueue! {:id "coil-named" :frequencies {:session "crows-nest" :crew "lookout"
+                                                    :create :if-missing}
+                     :input "Signal the fleet"})
+    (let [opened (atom nil)
+          ran    (atom nil)]
+      (with-redefs [loader/snapshot (fn [_] {:crew {"lookout" {:model "echo"}}})
+                    store/registered-store (fn [] :sessions)
+                    isaac.agent.frequencies/resolve-session-targets
+                    (fn [_ _ _ _] {:session-key "crows-nest" :create? true
+                                   :create-identity {:crew "lookout"}})
+                    isaac.agent.session.context/create-with-resolved-behavior!
+                    (fn [name opts] (reset! opened [name opts]) {:id name})
+                    charge/build identity
+                    bridge/dispatch! (fn [charge] (reset! ran charge) {})]
+        (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")})
+        (await-settled! "coil-named"))
+      (should= "crows-nest" (first @opened))
+      (should= "lookout" (get-in @opened [1 :crew]))
+      (should= "crows-nest" (:session-key @ran))))
+
   (it "passes the submitted cycle override to the charge at admission"
     (queue/enqueue! {:id "coil-1" :session "coil-work" :input "Seal leak"
                      :cycle {:limit 1 :checkpoint-every 1}})

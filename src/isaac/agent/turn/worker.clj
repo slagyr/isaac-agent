@@ -45,19 +45,20 @@
         target  (when-let [address (:frequencies record)]
                   (frequencies/resolve-session-targets address ss cfg
                     (set (store/in-flight-sessions ss))))
-        session-key (or (:session-key target)
-                        (when (and (:create? target) (not (:busy? target)))
-                          (let [name (if (= :sequential (get-in cfg [:sessions :naming-strategy]))
-                                       (naming/generate (store/make-naming-strategy
-                                                          cfg (or (nexus/get :root) (loader/root)) ss
-                                                          (or (nexus/get :fs) (fs/instance))))
-                                       (store/mint-name))]
+        session-key (or (when (and (:create? target) (not (:busy? target)))
+                          (let [name (or (:session-key target)
+                                         (if (= :sequential (get-in cfg [:sessions :naming-strategy]))
+                                           (naming/generate (store/make-naming-strategy
+                                                              cfg (or (nexus/get :root) (loader/root)) ss
+                                                              (or (nexus/get :fs) (fs/instance))))
+                                           (store/mint-name)))]
                             (session-context/create-with-resolved-behavior!
                               name (merge {:config cfg :session-store ss
                                            :origin (assoc (:origin record) :kind :hail)}
                                           (:create-identity target)
                                           (frequencies/behavioral-override (:frequencies record))))
                             name))
+                        (:session-key target)
                         (:session record))
         request (cond-> {:session-key session-key
                          :input       (:input record)

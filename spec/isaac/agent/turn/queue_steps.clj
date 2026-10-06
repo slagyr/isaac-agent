@@ -227,6 +227,12 @@
                   (g/assoc! :submit-error (ex-message e))
                   nil)))))))))
 
+(defn turn-submitted-with-frequencies [input table]
+  (let [frequencies (into {} (map (fn [[key value]]
+                                    [(keyword key) (if (= key "create") (keyword value) value)])
+                                  (:rows table)))]
+    (do-submit! input frequencies nil)))
+
 (defn turn-submitted-to-crew [input crew]
   (do-submit! input {:crew crew} nil))
 
@@ -300,6 +306,9 @@
 ;; isaac-r209: minimal new steps — submit a charge by frequencies alone
 ;; (crew), the same unresolved-until-claim shape isaac-hail uses, so the
 ;; turn queue's claim-time admission can be exercised from a feature.
+(defwhen #"a turn with input \"([^\"]+)\" is submitted with frequencies:"
+  isaac.agent.turn.queue-steps/turn-submitted-with-frequencies)
+
 (defwhen #"a turn with input \"([^\"]+)\" is submitted to crew \"([^\"]+)\""
   isaac.agent.turn.queue-steps/turn-submitted-to-crew)
 

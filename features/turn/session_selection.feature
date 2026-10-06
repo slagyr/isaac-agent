@@ -189,7 +189,6 @@ Feature: Session selection at admission
       | type    | message.role | message.content |
       | message | user         | Status?         |
 
-  @wip
   Scenario: a named session that is missing is created with the crew its frequencies name (isaac-oas8)
     :crew picks the session; when :create makes it, :crew is the new
     session's crew. A Foreman bean-work turn is addressed this way:
