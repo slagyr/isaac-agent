@@ -120,7 +120,6 @@ Feature: Turn-request queue — the waiting room in front of the resource pools
     Then the stdout contains "Never seen"
     And the exit code is 0
 
-  @wip
   Scenario: turns drop tells the turn's observers it died (isaac-tais)
     A dropped turn never runs, so it never ends on its own. Its observers
     (Foreman's among them) hear about the drop as a died turn, reason

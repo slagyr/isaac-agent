@@ -8,7 +8,8 @@
     [isaac.foundation.cli.host :as host]
     [isaac.foundation.cli.table :as table]
     [isaac.foundation.config.root :as root]
-    [isaac.agent.turn.queue :as queue]))
+    [isaac.agent.turn.queue :as queue]
+    [isaac.agent.drive.observer :as observer]))
 
 (def option-spec
   [["-h" "--help" "Show help"]
@@ -83,9 +84,12 @@
     (do (println "Usage: isaac turns drop <id>") 1)
     (with-queue-root opts
       (fn []
-        (if (queue/read-held id)
+        (if-let [record (queue/read-held id)]
           (do
             (queue/update-turn! id {:state :finished :outcome :dropped})
+            (let [resolved (observer/resolve-submitted (:observers record))]
+              (observer/notify! (observer/for-turn (:observers resolved))
+                                :on-turn-died {:session-key (:session record)} "dropped"))
             (println (str "dropped " id))
             0)
           (do

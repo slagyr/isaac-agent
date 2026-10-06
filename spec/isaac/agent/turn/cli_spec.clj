@@ -5,6 +5,7 @@
     [isaac.foundation.nexus :as nexus]
     [isaac.agent.spec-helper :as helper]
     [isaac.agent.turn.cli :as sut]
+    [isaac.agent.drive.observer :as observer]
     [isaac.agent.turn.queue :as queue]
     [speclj.core :refer :all]))
 
@@ -45,6 +46,20 @@
       (doseq [fragment ["id: berth-1" "session: harbor" "state: finished" "outcome: ok"
                         "created-at: " "finished-at: "]]
         (should (str/includes? output fragment)))))
+
+  (it "tells a held turn's observers it died when dropped, without starting it"
+    (let [events (atom [])]
+      (observer/register! :witness (fn [_]
+                                     (reify observer/TurnObserver
+                                       (on-turn-started [_ _] (swap! events conj :started))
+                                       (on-turn-ended [_ _ _] (swap! events conj :ended))
+                                       (on-turn-died [_ ctx reason]
+                                         (swap! events conj [:died (:session-key ctx) reason])))))
+      (try
+        (queue/enqueue! {:id "berth-1" :session "harbor" :state :held :observers [:witness]})
+        (with-out-str (should= 0 (sut/run-fn {:_raw-args ["drop" "berth-1"] :root "/test/isaac"})))
+        (should= [[:died "harbor" "dropped"]] @events)
+        (finally (observer/unregister! :witness)))))
 
   (it "reports an unknown turn id"
     (let [err (java.io.StringWriter.)
