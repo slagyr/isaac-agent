@@ -66,6 +66,11 @@
             (should-not (realized? first-turn))
             (finally
               (deliver first-turn true)
+              (deref send 2000 ::timeout)
+              ;; The send step returns while its dispatched turn is still running.
+              ;; Wait for that turn before the fixture resets the process-wide nexus.
+              (doseq [turn (g/get :turn-futures)]
+                (should (not= ::timeout (deref turn 2000 ::timeout))))
               (future-cancel send)))))))
 
   (it "a parked send that completes during admission does not await the running turn"
