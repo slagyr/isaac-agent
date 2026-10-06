@@ -89,3 +89,24 @@ Feature: A delivery lands in the transcript of the session that talks on its com
       | session | cron-heartbeat |
     When the delivery worker ticks
     Then session "ada-dm" has 1 transcript entries
+
+  @wip
+  Scenario: a comm's marker leads the note, so the crew can place it
+    A comm whose target has sub-places (gchat threads) reports :marker on
+    its send result, the same tag an inbound line from that place carries.
+    The note leads with it; a comm that reports none gets the plain note.
+    Given the comm "stub" returns:
+      | ok   | target | marker        |
+      | true | C999   | "[thread:T9]" |
+    And the isaac EDN file comm/delivery/pending/7f3e.edn exists with:
+      | path    | value               |
+      | id      | 7f3e                |
+      | comm    | stub                |
+      | target  | C999                |
+      | content | Your weekly digest. |
+      | crew    | herald              |
+      | session | cron-heartbeat      |
+    When the delivery worker ticks
+    Then session "ada-dm" has transcript matching:
+      | type    | message.role | message.content                                                                              |
+      | message | assistant    | #"\[thread:T9\] \[sent here by crew herald from session cron-heartbeat\] Your weekly digest\." |
