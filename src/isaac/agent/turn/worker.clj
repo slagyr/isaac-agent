@@ -25,6 +25,7 @@
 (def default-sweep-tick-ms 10000)
 
 (defonce ^:private tick-state* (atom :idle))
+(defonce ^:private running-scheduler* (atom nil))
 
 (defn- wake-config [record]
   (or (let [snapshot (loader/snapshot "turn-queue wake — resolve parked request against live config")]
@@ -332,6 +333,13 @@
                (when failure
                  (throw failure))))))))))
 
+(defn wake!
+  "Wake the queue only when this process started its worker. Shell clients
+   enqueue records for the server's scheduled tick instead of claiming them."
+  []
+  (when @running-scheduler*
+    (tick!)))
+
 (defn sweep-tick!
   "One weather sweep: re-drive the turns parked on provider weather whose
    :retry-at has come due. The sweep had no production caller before isaac-f3hq
@@ -359,12 +367,14 @@
                           :trigger {:kind :interval :ms sweep-tick-ms}
                           :handler (fn [_] (sweep-tick! {}))})
     (pool/set-wake-hook! tick!)
+    (reset! running-scheduler* shared-scheduler)
     {:scheduler      shared-scheduler
      :task-id        :turn.queue/tick
      :sweep-task-id  :turn/sweep-weather}))
 
 (defn stop! [{:keys [scheduler task-id sweep-task-id]}]
   (when scheduler
+    (compare-and-set! running-scheduler* scheduler nil)
     (scheduler/cancel! scheduler task-id)
     (when sweep-task-id
       (scheduler/cancel! scheduler sweep-task-id))

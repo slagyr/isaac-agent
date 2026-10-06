@@ -372,17 +372,29 @@
       (should= "grover" (get-in @seen [:config :defaults :crew :model]))
       (should= "harbor" (:session-key @seen))))
 
+  (it "does not wake a turn from a process without a running queue worker"
+    (queue/enqueue! {:id "berth-shell" :session "harbor" :input "Leave harbor"})
+    (with-redefs [sut/tick! (fn [] (throw (ex-info "shell ticked" {})))]
+      (sut/wake!))
+    (should= :held (:state (queue/read-held "berth-shell"))))
+
   (it "registers its tick and the weather sweep with the shared scheduler"
     (nexus/-with-nexus {}
       (let [sched (-> (scheduler/create {:clock (fn [] (Instant/parse "2026-03-01T14:00:00Z"))})
                       scheduler/start!)]
         (try
           (nexus/register! [:scheduler] sched)
-          (let [handle (sut/start! {:tick-ms 10000})]
+          (let [handle (sut/start! {:tick-ms 10000})
+                ticks  (atom 0)]
+            (with-redefs [sut/tick! (fn [] (swap! ticks inc))]
+              (sut/wake!))
+            (should= 1 @ticks)
             (should= [{:id :turn.queue/tick :trigger {:kind :interval :ms 10000}}
                       {:id :turn/sweep-weather :trigger {:kind :interval :ms 10000}}]
                      (mapv #(select-keys % [:id :trigger]) (scheduler/list-tasks sched)))
             (sut/stop! handle)
+            (with-redefs [sut/tick! (fn [] (throw (ex-info "stopped worker ticked" {})))]
+              (sut/wake!))
             (should= [] (mapv :id (scheduler/list-tasks sched))))
           (finally
             (scheduler/stop! sched)
