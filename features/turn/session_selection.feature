@@ -188,3 +188,33 @@ Feature: Session selection at admission
     And session "slipway" has transcript not matching:
       | type    | message.role | message.content |
       | message | user         | Status?         |
+
+  @wip
+  Scenario: a named session that is missing is created with the crew its frequencies name (isaac-oas8)
+    :crew picks the session; when :create makes it, :crew is the new
+    session's crew. A Foreman bean-work turn is addressed this way:
+    {:crew "scrapper" :session "bean-<id>" :create :if-missing}.
+    Given the isaac EDN file "config/crew/lookout.edn" exists with:
+      | path  | value              |
+      | model | echo               |
+      | soul  | You are a lookout. |
+    And the following model responses are queued:
+      | type | content   | model |
+      | text | Aye, aye. | echo  |
+    When a turn with input "Signal the fleet" is submitted with frequencies:
+      | key     | value      |
+      | session | crows-nest |
+      | crew    | lookout    |
+      | create  | if-missing |
+    And the turn queue ticks at "2026-10-02T09:15:00Z"
+    Then the following sessions match:
+      | name       | crew    |
+      | crows-nest | lookout |
+    And session "crows-nest" has transcript matching:
+      | type    | message.role | message.content  |
+      | message | user         | Signal the fleet |
+      | message | assistant    | Aye, aye.        |
+    When isaac is run with "turns show #turn-id"
+    Then the stdout matches:
+      | finished |
+      | ok       |

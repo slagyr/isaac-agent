@@ -119,3 +119,18 @@ Feature: Turn-request queue — the waiting room in front of the resource pools
     When isaac is run with "prompt -m 'Leave harbor' --session harbor"
     Then the stdout contains "Never seen"
     And the exit code is 0
+
+  @wip
+  Scenario: turns drop tells the turn's observers it died (isaac-tais)
+    A dropped turn never runs, so it never ends on its own. Its observers
+    (Foreman's among them) hear about the drop as a died turn, reason
+    dropped, or they wait forever.
+    Given the current time is "2026-03-01T14:00:00"
+    When isaac is run with "prompt -m 'Leave harbor' --session harbor --pool night-watch --observer lookout"
+    Then the stdout matches:
+      | held: #"[a-z0-9-]+":held-id |
+    And the stdout does not contain "turn started"
+    When isaac is run with "turns drop #held-id"
+    Then the stdout contains "dropped"
+    And the stdout contains "turn ended (error dropped)"
+    And the exit code is 0
