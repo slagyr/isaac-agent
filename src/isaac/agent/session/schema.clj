@@ -74,8 +74,7 @@
                                            :message "must be a set of keywords"})
             :effort              (mutable {:type :int})
             :context-mode        (mutable {:type :keyword})
-            :channel             (mutable {:type :string})
-            :channels            (system-managed {:type :ignore
+            :comms               (system-managed {:type :ignore
                                                   :set-type? true
                                                   :validate #(or (nil? %) (and (set? %) (every? string? %)))
                                                   :message "must be a set of strings"})
@@ -83,8 +82,6 @@
             :cwd                 (mutable {:type :string})
             :created-at          (immutable {:type :string})
             :updated-at          (system-managed {:type :string})
-            :last-channel        (system-managed {:type :string})
-            :last-to             (system-managed {:type :string})
             :compaction-count    (system-managed {:type :int})
             :block               (mutable {:type :map :schema (:schema Block)})
             :compaction          (mutable {:type :map :schema (:schema CompactionState)})

@@ -25,7 +25,6 @@ Feature: A delivery lands in the transcript of the session that talks on its com
       | name      | crew    | comms     |
       | ada-dm    | lookout | stub:C999 |
 
-  @wip
   Scenario: a delivery to a session's comm target is appended to that session as a marked note
     Given the comm "stub" returns:
       | ok   | target  |
@@ -44,7 +43,6 @@ Feature: A delivery lands in the transcript of the session that talks on its com
       | type    | message.role | message.content                                                                  |
       | message | assistant    | #"\[sent here by crew herald from session cron-heartbeat\] Your weekly digest\." |
 
-  @wip
   Scenario: a delivery the owning session sent itself is not appended again
     Given the comm "stub" returns:
       | ok   | target  |
@@ -61,7 +59,6 @@ Feature: A delivery lands in the transcript of the session that talks on its com
     Then the isaac file "comm/delivery/pending/7f3b.edn" does not exist
     And session "ada-dm" has 1 transcript entries
 
-  @wip
   Scenario: a delivery to a comm target no session talks on appends nothing
     Given the comm "stub" returns:
       | ok   | target  |
@@ -78,7 +75,6 @@ Feature: A delivery lands in the transcript of the session that talks on its com
     Then the isaac file "comm/delivery/pending/7f3c.edn" does not exist
     And session "ada-dm" has 1 transcript entries
 
-  @wip
   Scenario: a failed delivery appends nothing
     Given the comm "stub" returns:
       | ok    | transient? | target  |

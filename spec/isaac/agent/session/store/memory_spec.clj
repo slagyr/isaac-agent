@@ -126,15 +126,7 @@
               asst-msg   (nth transcript 2)]
           (should= (:id header) (:parentId user-msg))
           (should= (:id user-msg) (:parentId asst-msg))
-          (should= [{:type "text" :text "Hello"}] (get-in user-msg [:message :content])))))
-
-    (it "updates last-channel and last-to metadata"
-      (let [s (sut/create-store)]
-        (store/open-session! s "chat" {:crew "main"})
-        (store/append-message! s "chat" {:role "user" :content "Hello" :channel marigold/longwave :to marigold/captain})
-        (let [entry (store/get-session s "chat")]
-          (should= marigold/longwave (:last-channel entry))
-          (should= marigold/captain (:last-to entry))))))
+          (should= [{:type "text" :text "Hello"}] (get-in user-msg [:message :content]))))))
 
   (describe "update-session!"
 

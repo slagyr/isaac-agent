@@ -154,7 +154,6 @@
                             :crew              (:crew opts)
                             
                             :tags              (or (:tags opts) #{})
-                            :channel           (:channel opts)
                             :chat-type         (:chat-type opts)
                             :cwd               (or (:cwd opts) (System/getProperty "user.dir"))
                             :origin            (or (:origin opts) {:kind :cli})
@@ -320,8 +319,6 @@
                          (update-in [:sessions id]
                                     (fn [sess]
                                       (cond-> (assoc sess :updated-at now)
-                                        (get-val message :channel) (assoc :last-channel (get-val message :channel))
-                                        (get-val message :to)      (assoc :last-to (get-val message :to))
                                         resolved-agent             (assoc :crew resolved-agent)))))))
       (when root
         (append-transcript-line! root id entry)

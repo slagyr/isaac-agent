@@ -102,7 +102,6 @@
         (should-not (contains? entry :session-file))
         (should (fs/exists? (nexus/get :fs) (current-path test-key)))
         (should (fs/exists? (nexus/get :fs) (sidecar-path test-key)))
-        (should-be-nil (:channel entry))
         (should-be-nil (:chat-type entry))
         (should-not (contains? entry :chatType))
         (should= :retain (:history-retention entry))
@@ -270,14 +269,6 @@
             msg2       (nth transcript 2)]
         (should= (:id header) (:parentId msg1))
         (should= (:id msg1) (:parentId msg2))))
-
-    (it "updates last-channel and last-to on routing messages"
-      (sut/create-session! test-dir test-key)
-      (store/append-message! (s) test-key {:role "user" :content "Hi" :channel marigold/skybeam :to marigold/captain})
-      (let [listing (store/list-sessions-by-agent (s) "main")
-            entry   (first listing)]
-        (should= marigold/skybeam (:last-channel entry))
-        (should= marigold/captain (:last-to entry))))
 
     (it "does not add an agent field when assistant messages resolve a crew"
       (sut/create-session! test-dir test-key)

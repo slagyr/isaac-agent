@@ -545,11 +545,11 @@ gives up; a permanent failure dead-letters immediately. None of this
 backoff schedule is configurable today — a stuck delivery is either still
 retrying or already dead-lettered, not silently lost.
 
-Inbound comms record the conversation's `"<comm>:<channel>"` in the
-session's system-managed `:channels` set. Successful queued sends that report
-`:channel` append `[sent here by crew <crew> from session <session>] <content>`
-as an assistant entry to the session that owns that channel, unless it was
-sent by the same session. A failed send or an unowned channel appends nothing.
+Inbound comms record the conversation's `"<comm>:<target>"` in the
+session's system-managed `:comms` set. Successful queued sends that report
+`:target` append `[sent here by crew <crew> from session <session>] <content>`
+as an assistant entry to the session that owns that target, unless it was
+sent by the same session. A failed send or an unowned target appends nothing.
 This keeps cron and cross-session posts visible even when the comm drops self
 echoes.
 

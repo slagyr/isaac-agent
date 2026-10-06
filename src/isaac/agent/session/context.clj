@@ -203,8 +203,7 @@
         store     (require-session-store (:session-store opts))]
    ;; bind the known crew set for the schema's crew validation on the writes below
    (binding [session-schema/*config* cfg]
-    (let [entry (store/open-session! store session-key {:channel (:channel opts)
-                                                       :chat-type (or (:chat-type opts) (:chatType opts))
+    (let [entry (store/open-session! store session-key {:chat-type (or (:chat-type opts) (:chatType opts))
                                                        :crew (:crew behavior)
                                                        :nonce (or (:nonce opts) (store-common/new-nonce))
                                                        :tags (:tags opts)

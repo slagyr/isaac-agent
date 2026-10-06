@@ -50,7 +50,7 @@
    identifier may be a session name string or an existing session map; a nil
    identifier is named here, by the configured naming strategy, before the
    policy sees it.
-   opts may include :crew, :origin, :chatType, :channel, :cwd.
+   opts may include :crew, :origin, :chatType, :cwd.
    Returns the session map."
   ([identifier]
    (create-session! identifier {}))

@@ -56,44 +56,6 @@
         (store/open-session! s "k2" {})
         (should= 2 (count (store/list-sessions s))))))
 
-  (describe "append-message!"
-
-    (it "updates last-channel from message"
-      (let [s (memory/create-store)]
-        (store/open-session! s "k1" {})
-        (store/append-message! s "k1" {:channel marigold/longwave})
-        (should= marigold/longwave (:last-channel (store/get-session s "k1")))))
-
-    (it "updates last-to from message"
-      (let [s (memory/create-store)]
-        (store/open-session! s "k1" {})
-        (store/append-message! s "k1" {:to marigold/captain})
-        (should= marigold/captain (:last-to (store/get-session s "k1")))))
-
-    (it "updates both last-channel and last-to when both present"
-      (let [s (memory/create-store)]
-        (store/open-session! s "k1" {})
-        (store/append-message! s "k1" {:channel marigold/skybeam :to marigold/first-mate})
-        (let [session (store/get-session s "k1")]
-          (should= marigold/skybeam (:last-channel session))
-          (should= marigold/first-mate (:last-to session)))))
-
-    (it "handles string keys in message map"
-      (let [s (memory/create-store)]
-        (store/open-session! s "k1" {})
-        (store/append-message! s "k1" {"channel" marigold/logbook "to" marigold/navigator})
-        (let [session (store/get-session s "k1")]
-          (should= marigold/logbook (:last-channel session))
-          (should= marigold/navigator (:last-to session)))))
-
-    (it "does not alter session when message has no channel or to"
-      (let [s (memory/create-store)]
-        (store/open-session! s "k1" {})
-        (store/append-message! s "k1" {:text "hello"})
-        (let [session (store/get-session s "k1")]
-          (should-be-nil (:last-channel session))
-          (should-be-nil (:last-to session))))))
-
   (describe "in-flight tracking"
 
     (it "claims a free session once and clears it again"

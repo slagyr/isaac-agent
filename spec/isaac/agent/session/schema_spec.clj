@@ -48,7 +48,6 @@
                       :tags                #{:project/chess :wip}
                       :model               "echo"
                       :provider            "grover"
-                     :channel             "cli"
                      :chat-type           "direct"
                      :cwd                 "/tmp/alpha"
                      :created-at          "2026-05-08T10:00:00"

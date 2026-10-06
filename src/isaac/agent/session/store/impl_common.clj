@@ -156,7 +156,6 @@
 (defn entry-defaults [opts]
   (let [config (effective-config (:config opts))]
     (merge {:crew      (or (:crew opts) (resolve/default-crew config))
-            :channel   (:channel opts)
             :chat-type (or (:chat-type opts) (:chatType opts))}
            (into {} (remove (comp nil? val) opts)))))
 
@@ -931,7 +930,6 @@
                                      :crew              crew
                                      
                                      :tags              (:tags opts)
-                                     :channel           (:channel opts)
                                      :chat-type         (or (:chat-type opts) (:chatType opts))
                                      :compaction-count  0
                                      :segment           0
@@ -1123,8 +1121,6 @@
     (update-entry-fn root identifier
                      (fn [e]
                        (cond-> (assoc e :updated-at now)
-                         (:channel message) (assoc :last-channel (:channel message))
-                         (:to message)      (assoc :last-to (:to message))
                          resolved-agent     (assoc :crew resolved-agent)))
                      fs)
     transcript-entry))

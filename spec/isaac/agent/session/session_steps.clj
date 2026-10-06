@@ -881,7 +881,7 @@
                             origin-name (assoc :name origin-name)))
             history-retention (some-> (get row-map "history-retention") keyword)
             tags        (some-> (get row-map "tags") edn/read-string)
-            channels    (some-> (get row-map "channels") (str/split #"\s*,\s*") set)
+            comms       (some-> (get row-map "comms") (str/split #"\s*,\s*") set)
             entry       (or (open-session name)
                             (with-current-time
                               #(open-session! name {:crew agent :agent agent :cwd (root-dir)
@@ -917,7 +917,7 @@
                             (get row-map "block.reason") (assoc :block {:reason (keyword (str/replace (get row-map "block.reason") #"^:" ""))})
                             (get row-map "nonce") (assoc :nonce (get row-map "nonce"))
                             tags (assoc :tags tags)
-                            channels (assoc :channels channels)
+                            comms (assoc :comms comms)
                             history-retention (assoc :history-retention history-retention)
                             (seq compaction) (assoc :compaction compaction))]
         (let [updates (cond-> updates
@@ -1070,11 +1070,7 @@
                                              (get row-map "message.usage.output")
                                              (assoc :output (parse-long (get row-map "message.usage.output")))))
 
-                             (get row-map "message.channel")
-                             (assoc :channel (get row-map "message.channel"))
-
-                             (get row-map "message.to")
-                             (assoc :to (get row-map "message.to")))))))))
+                             )))))))
 
 (defn session-has-transcript [key-str table]
   (g/assoc! :current-key key-str)

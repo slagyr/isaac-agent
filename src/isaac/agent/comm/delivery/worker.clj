@@ -80,13 +80,13 @@
                                                :next-attempt-at (str (.plusMillis now delay-ms))})))
       (dead-letter! record attempts :exhausted result))))
 
-(defn- note-channel! [record result]
-  (when-let [channel (:channel result)]
+(defn- note-target! [record result]
+  (when-let [target (:target result)]
     (let [sessions-store (or (store/registered-store)
                              (sidecar/create-store (nexus/get :root)))
-          key            (str (name (keyword (:comm record))) ":" channel)]
+          key            (str (name (keyword (:comm record))) ":" target)]
       (doseq [session (store/list-sessions sessions-store)
-              :when (and (contains? (:channels session) key)
+              :when (and (contains? (:comms session) key)
                          (not= (:session record) (:id session)))]
         (store/append-message! sessions-store (:id session)
                                {:role "assistant"
@@ -104,7 +104,7 @@
         (do
           (log/info :comm.delivery/delivered
                     (assoc (audit-fields record) :attempts (:attempts record 0)))
-          (note-channel! record result)
+          (note-target! record result)
           (queue/delete-pending! (:id record)))
 
         (:defer? result)
