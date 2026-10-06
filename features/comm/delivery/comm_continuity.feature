@@ -90,7 +90,6 @@ Feature: A delivery lands in the transcript of the session that talks on its com
     When the delivery worker ticks
     Then session "ada-dm" has 1 transcript entries
 
-  @wip
   Scenario: a comm's marker leads the note, so the crew can place it
     A comm whose target has sub-places (gchat threads) reports :marker on
     its send result, the same tag an inbound line from that place carries.

@@ -548,8 +548,12 @@ retrying or already dead-lettered, not silently lost.
 Inbound comms record the conversation's `"<comm>:<target>"` in the
 session's system-managed `:comms` set. Successful queued sends that report
 `:target` append `[sent here by crew <crew> from session <session>] <content>`
-as an assistant entry to the session that owns that target, unless it was
-sent by the same session. A failed send or an unowned target appends nothing.
+as an assistant entry. If the comm also reports `:marker`, the note starts
+`<marker> [sent here by crew <crew> from session <session>] <content>`
+(the same place marker inbound messages carry, such as a gchat thread). Without
+`:marker` the note remains plain. The entry goes to the session owning that
+target, unless it was sent by the same session. A failed send or an unowned
+target appends nothing.
 This keeps cron and cross-session posts visible even when the comm drops self
 echoes.
 

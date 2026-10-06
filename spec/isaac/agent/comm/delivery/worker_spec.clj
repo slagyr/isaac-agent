@@ -11,6 +11,8 @@
     [isaac.foundation.scheduler.runtime :as scheduler]
     [isaac.agent.spec-helper :as helper]
     [isaac.agent.resource-pool :as pool]
+    [isaac.agent.session.store.sidecar :as sidecar]
+    [isaac.agent.session.store.spi :as store]
     [speclj.core :refer :all])
   (:import
     (java.time Instant)))
@@ -56,6 +58,17 @@
     (it "returns permanent failure when no comm is registered for that key"
       (should= {:ok false :transient? false}
                (sut/send! {:comm :pigeon :target "L1" :content "Hello"}))))
+
+  (it "leads a delivered note with the comm's place marker"
+    (let [sessions (sidecar/create-store "/test/isaac")]
+      (store/open-session! sessions "ada-dm" {:crew "lookout"})
+      (store/update-session! sessions "ada-dm" {:comms #{"stub:C999"}})
+      (comm-registry/register-instance! "stub" (->StubComm {:ok true :target "C999" :marker "[thread:T9]"}))
+      (queue/enqueue! {:id "7f3e" :comm :stub :target "C999" :crew "herald"
+                       :session "cron-heartbeat" :content "Your weekly digest."})
+      (sut/tick! {:now (Instant/parse "2026-04-21T10:00:00Z")})
+      (should= "[thread:T9] [sent here by crew herald from session cron-heartbeat] Your weekly digest."
+               (get-in (last (store/get-transcript sessions "ada-dm")) [:message :content]))))
 
   (it "deletes a pending delivery after a successful send"
     (queue/enqueue! {:id      "7f3a"

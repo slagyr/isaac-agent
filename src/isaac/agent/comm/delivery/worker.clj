@@ -90,7 +90,8 @@
                          (not= (:session record) (:id session)))]
         (store/append-message! sessions-store (:id session)
                                {:role "assistant"
-                                :content (str "[sent here by crew " (:crew record)
+                                :content (str (when-let [marker (:marker result)] (str marker " "))
+                                              "[sent here by crew " (:crew record)
                                               " from session " (:session record) "] " (:content record))})))))
 
 (defn- process-record! [now record]
