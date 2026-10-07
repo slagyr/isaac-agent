@@ -110,7 +110,7 @@
      :model          (or (get-in ctx [:model-cfg :model])
                          (:model ctx))
      :provider       (ctx-provider-name ctx)
-     :tags           (or (:tags entry) #{})
+     :tags           (store/tags-of entry)
      :session-key    session-key
      :session-file   (when (:id entry) (str (:id entry) "/current.ednl"))
      :turns          turns
@@ -141,7 +141,7 @@
                (line "Crew"        (:crew data))
                (line "Model"       (str (:model data) " (" (:provider data) ")"))
                (line "Session"     (:session-key data))
-               (line "Tags"        (pr-str (:tags data)))
+               (line "Tags"        (pr-str (store/tags-of data)))
                (line "File"        (:session-file data))
                (line "Turns"       (:turns data))
                (line "Compactions" (:compactions data))

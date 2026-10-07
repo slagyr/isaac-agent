@@ -222,7 +222,7 @@
            :create?         true
            :create-identity (cond-> {}
                               (:crew frequencies) (assoc :crew (:crew frequencies))
-                              (:session-tags frequencies) (assoc :tags (:session-tags frequencies)))}
+                              (:session-tags frequencies) (assoc :tags (store/tags->set (:session-tags frequencies))))}
 
           (seq matches)
           (if-let [picked (pick-by-prefer (remove #(contains? busy (:id %)) matches) (:prefer frequencies))]
@@ -238,7 +238,7 @@
            :create?         true
            :create-identity (cond-> {}
                               (:crew frequencies) (assoc :crew (:crew frequencies))
-                              (:session-tags frequencies) (assoc :tags (:session-tags frequencies)))}))
+                              (:session-tags frequencies) (assoc :tags (store/tags->set (:session-tags frequencies))))}))
 
       :else
       {:error :no-match :message "no session selected"}))))

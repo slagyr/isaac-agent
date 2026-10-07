@@ -19,6 +19,14 @@
    {:type "message" :id "b" :role "assistant" :content "second reported a CI regression"}
    {:type "message" :id "c" :role "user"      :content "third"}])
 
+(describe "session.edn tag read"
+
+  (it "normalizes vector tags to a keyword set"
+    (let [entry (sut/with-session-defaults (constantly "2026-01-01T00:00:00")
+                                           identity
+                                           {:id "ops-room" :name "ops-room" :tags [:ops]})]
+      (should= #{:ops} (:tags entry)))))
+
 (describe "impl-common nested session paths"
 
   (it "nests a session directory under its crew"

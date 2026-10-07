@@ -70,6 +70,23 @@
     (let [conformed (sut/conform-read {:id "alpha" :name "Alpha"})]
       (should= #{} (:tags conformed))))
 
+  (it "coerces a vector of tags to a keyword set on read"
+    (should= #{:ops :wip}
+             (:tags (sut/conform-read {:id "alpha" :name "Alpha" :tags [:ops :wip]}))))
+
+  (it "coerces string tags to keywords on read"
+    (should= #{:ops :wip}
+             (:tags (sut/conform-read {:id "alpha" :name "Alpha" :tags ["ops" "wip"]}))))
+
+  (it "coerces a vector of tags to a keyword set on write"
+    (should= #{:ops :wip}
+             (:tags (sut/conform! {:id "alpha" :name "Alpha" :tags [:ops :wip]}))))
+
+  (it "refuses a tags value that is not a collection of keywords or strings"
+    (let [result (sut/conform-read {:id "alpha" :name "Alpha" :tags "not-a-set"})]
+      (should (schema/error? result))
+      (should= "must be a set of keywords" (get-in (schema/message-map result) [:tags]))))
+
   (it "returns readable schema errors for invalid read data"
     (let [result (sut/conform-read {:id "alpha" :name nil})]
       (should (schema/error? result))

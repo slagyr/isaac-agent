@@ -188,7 +188,6 @@ Feature: Prompt single-turn command
       | message | assistant    | Hello           |
 
   # isaac-e0t7: the selector sees vector tags too
-  @wip
   Scenario: --session-tag selects a session whose tags were written as a vector
     Given the following sessions exist:
       | name     | tags              |

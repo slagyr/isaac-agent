@@ -88,8 +88,27 @@
 (defn can-dispatch? [store session-id]
   (not (in-flight? store session-id)))
 
+(defn- keyword-tag [tag]
+  (cond
+    (keyword? tag) tag
+    (string? tag) (keyword tag)))
+
+(defn tags->set
+  "Nil becomes #{}. A set, vector, list, or seq becomes the set of its
+   members as keywords: strings become keywords and keywords stay.
+   Anything else is returned unchanged so a caller can refuse it."
+  [tags]
+  (cond
+    (nil? tags) #{}
+    (or (set? tags) (sequential? tags))
+    (let [members (map keyword-tag tags)]
+      (if (every? keyword? members)
+        (set members)
+        tags))
+    :else tags))
+
 (defn tags-of [session]
-  (or (:tags session) #{}))
+  (tags->set (:tags session)))
 
 (defn has-tag? [session tag]
   (contains? (tags-of session) tag))

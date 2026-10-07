@@ -11,6 +11,10 @@
   (it "returns true when a crew has a tag"
     (should (sut/has-tag? {:tags #{:role/worker}} :role/worker)))
 
+  (it "matches a tag on a crew whose tags are a vector"
+    (should (sut/has-tag? {:tags [:ops]} :ops))
+    (should-not (sut/has-tag? {:tags [:ops]} :wip)))
+
   (it "filters crews by required tags"
     (should= {"joe" {:tags #{:role/worker :project/chess}}}
              (sut/by-tags {"joe" {:tags #{:role/worker :project/chess}}

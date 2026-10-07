@@ -153,7 +153,7 @@
                             :updated-at        now
                             :crew              (:crew opts)
                             
-                            :tags              (or (:tags opts) #{})
+                            :tags              (store/tags->set (:tags opts))
                             :chat-type         (:chat-type opts)
                             :cwd               (or (:cwd opts) (System/getProperty "user.dir"))
                             :origin            (or (:origin opts) {:kind :cli})

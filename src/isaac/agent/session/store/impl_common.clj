@@ -691,7 +691,7 @@
           (update :cwd #(or % (System/getProperty "user.dir")))
           (update :created-at #(some-> % normalize-ts-fn))
           (update :updated-at #(or (some-> % normalize-ts-fn) (now-fn)))
-          (update :tags #(or % #{}))
+          (update :tags session-store/tags->set)
           (update :compaction-count #(or % 0))
           (update :segment #(or % 0))
           (update :input-tokens #(or % 0))
@@ -929,7 +929,7 @@
                                      :cwd               (or (:cwd opts) (System/getProperty "user.dir"))
                                      :crew              crew
                                      
-                                     :tags              (:tags opts)
+                                     :tags              (session-store/tags->set (:tags opts))
                                      :chat-type         (or (:chat-type opts) (:chatType opts))
                                      :compaction-count  0
                                      :segment           0

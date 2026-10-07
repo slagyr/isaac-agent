@@ -1,7 +1,8 @@
-(ns isaac.agent.crew.store)
+(ns isaac.agent.crew.store
+  (:require [isaac.agent.session.store.spi :as session-store]))
 
 (defn tags-of [crew-cfg]
-  (or (:tags crew-cfg) #{}))
+  (session-store/tags->set (:tags crew-cfg)))
 
 (defn has-tag? [crew-cfg tag]
   (contains? (tags-of crew-cfg) tag))

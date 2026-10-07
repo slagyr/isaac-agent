@@ -90,8 +90,36 @@
     (it "returns tags for a session"
       (should= #{:project/chess} (store/tags-of {:tags #{:project/chess}})))
 
+    (it "normalizes nil tags to an empty set"
+      (should= #{} (store/tags->set nil))
+      (should= #{} (store/tags-of {})))
+
+    (it "keeps a set of keyword tags"
+      (should= #{:ops :wip} (store/tags->set #{:ops :wip})))
+
+    (it "turns a vector of keyword tags into a set"
+      (should= #{:ops :wip} (store/tags->set [:ops :wip])))
+
+    (it "turns a list of keyword tags into a set"
+      (should= #{:ops} (store/tags->set '(:ops))))
+
+    (it "turns string tags into keywords"
+      (should= #{:ops :wip} (store/tags->set ["ops" "wip"])))
+
+    (it "turns mixed keyword and string tags into one keyword set"
+      (should= #{:ops :wip} (store/tags->set [:ops "wip"])))
+
     (it "returns true when a session has a tag"
       (should (store/has-tag? {:tags #{:project/chess}} :project/chess)))
+
+    (it "matches a tag on a session whose tags are a vector"
+      (should (store/has-tag? {:tags [:ops]} :ops))
+      (should-not (store/has-tag? {:tags [:ops]} :wip)))
+
+    (it "stores vector tags as a keyword set when opening a session"
+      (let [s (memory/create-store)]
+        (store/open-session! s "ops-room" {:tags [:ops "wip"]})
+        (should= #{:ops :wip} (:tags (store/get-session s "ops-room")))))
 
     (it "filters sessions by required tags"
       (let [s (memory/create-store)]

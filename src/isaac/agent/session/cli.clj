@@ -194,7 +194,7 @@
      :pct    pct
      :crew   (:crew entry)
      :context (clojure.core/name context)
-     :tags   (text-tags (:tags entry))
+     :tags   (text-tags (store/tags-of entry))
      :blocked (if-let [reason (get-in entry [:block :reason])]
                 (if (keyword? reason) (name reason) (str reason))
                 "-")}))
@@ -216,7 +216,7 @@
 (defn- session->payload [entry]
   (-> entry
       (assoc :name (or (:key entry) (:id entry)))
-      (update :tags #(or % #{}))))
+      (update :tags store/tags->set)))
 
 (defn list-all
   "Returns a vector of sessions sorted alphabetically by name. When
@@ -496,7 +496,7 @@
                                                 (:spec path-result)
                                                 (path-message path-str conformed updated-value)))
                           (do
-                            (store/update-session! session-store session-id {top-key       updated-value
+                            (store/update-session! session-store session-id {top-key       (get conformed top-key)
                                                                              :updated-at (str (memory/now))})
                             0))))))))))))))
 

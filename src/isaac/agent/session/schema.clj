@@ -1,6 +1,7 @@
 (ns isaac.agent.session.schema
   (:require
-    [c3kit.apron.schema :as schema]))
+    [c3kit.apron.schema :as schema]
+    [isaac.agent.session.store.spi :as store]))
 
 (def ^:dynamic *config*
   "Config bound around session conform so crew validation resolves the known
@@ -70,6 +71,7 @@
             :provider            (mutable {:type :string})
             :tags                (mutable {:type :ignore
                                            :set-type? true
+                                           :coerce store/tags->set
                                            :validate #(or (nil? %) (and (set? %) (every? keyword? %)))
                                            :message "must be a set of keywords"})
             :effort              (mutable {:type :int})
@@ -101,7 +103,7 @@
   (let [result (schema/conform Session (kebabize-legacy-keys entry))]
     (if (schema/error? result)
       result
-      (update result :tags #(or % #{})))))
+      (update result :tags store/tags->set))))
 
 (defn conform! [entry]
   (schema/conform! Session (kebabize-legacy-keys entry)))

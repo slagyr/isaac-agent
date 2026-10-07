@@ -4,6 +4,7 @@
     [cheshire.core :as json]
     [clojure.pprint :as pprint]
     [clojure.walk :as walk]
+    [isaac.agent.session.store.spi :as store]
     [isaac.foundation.cli.registry :as registry]))
 
 (defn- json-ready [value]
@@ -50,7 +51,7 @@
                             (cond-> {}
                               (:soul c)  (assoc :soul (:soul c))
                               (:model c) (assoc :model (:model c))
-                              (:tags c)  (assoc :tags (:tags c)))])
+                              (get c :tags) (assoc :tags (store/tags->set (get c :tags))))])
                           crew))
    :models (into {} (map (fn [[id m]]
                            [(str id)

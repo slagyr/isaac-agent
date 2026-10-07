@@ -136,7 +136,6 @@ Feature: Session tags
   # session created with vector tags ([:ops]) used to match no selector at
   # all, because has-tag? asked contains? of a vector (index lookup).
 
-  @wip
   Scenario: isaac sessions list --tag finds a session whose tags were written as a vector
     Given default Grover setup
     And the following sessions exist:

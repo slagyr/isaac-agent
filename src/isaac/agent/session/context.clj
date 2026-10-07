@@ -206,7 +206,7 @@
     (let [entry (store/open-session! store session-key {:chat-type (or (:chat-type opts) (:chatType opts))
                                                        :crew (:crew behavior)
                                                        :nonce (or (:nonce opts) (store-common/new-nonce))
-                                                       :tags (:tags opts)
+                                                       :tags (store/tags->set (:tags opts))
                                                        :cwd (:cwd behavior)
                                                        :history-retention (:history-retention behavior)
                                                        :config cfg

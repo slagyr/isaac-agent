@@ -74,7 +74,7 @@
               :model       model-name
               :provider    provider
               :soul        (:soul crew-member)
-              :tags        (or (:tags crew-member) #{})
+              :tags        (store/tags-of crew-member)
               :soul-source (soul-source crew-member)}))
          crew-map)))
 
@@ -117,8 +117,9 @@
   (when-let [soul (:soul row)]
     (println "Soul:")
     (println soul))
-  (when (seq (:tags row))
-    (println (str "Tags: " (text-tags (:tags row))))))
+  (let [tags (store/tags-of row)]
+    (when (seq tags)
+      (println (str "Tags: " (text-tags tags))))))
 
 (defn- render-show! [row opts]
   (cond
@@ -131,11 +132,11 @@
         excluded-tags (set (map keyword (:without-tag opts)))
         rows          (->> (resolve-crew opts)
                            (filter (fn [row]
-                                     (let [tags (:tags row)]
+                                     (let [tags (store/tags-of row)]
                                        (and (every? #(store/has-tag? row %) required-tags)
                                             (not-any? #(store/has-tag? row %) excluded-tags)
                                             (if (:untagged opts) (empty? tags) true)))))
-                           (map #(assoc % :tags-text (text-tags (:tags %)))))]
+                           (map #(assoc % :tags-text (text-tags (store/tags-of %)))))]
     (render-list! rows opts))
   0)
 

@@ -166,6 +166,21 @@
         (should= false (:create? result))
         (should= "recent" (:session-key result))))
 
+    (it "normalizes vector session-tags to a keyword set when creating"
+      (let [result (sut/resolve-session-targets {:session-tags [:ops]
+                                                 :create       :if-missing}
+                                                (store/registered-store))]
+        (should= true (:create? result))
+        (should= #{:ops} (get-in result [:create-identity :tags]))))
+
+    (it "normalizes vector session-tags to a keyword set when create is always"
+      (helper/create-session! "/test" "existing" {:crew "ketch" :tags #{:ops}})
+      (let [result (sut/resolve-session-targets {:session-tags [:ops]
+                                                 :create       :always}
+                                                (store/registered-store))]
+        (should= true (:create? result))
+        (should= #{:ops} (get-in result [:create-identity :tags]))))
+
     (it "creates a crew session when none match"
       (let [result (sut/resolve-session-targets {:crew   "ketch"
                                                  :create :if-missing}

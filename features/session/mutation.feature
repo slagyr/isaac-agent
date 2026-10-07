@@ -187,7 +187,6 @@ Feature: Session mutation
 
   # isaac-e0t7: a vector on the way in becomes the set on disk, instead of
   # "must be a set of keywords" (Micah hit this from the CLI before).
-  @wip
   Scenario: isaac sessions set <id>.tags accepts a vector and stores a set
     Given default Grover setup
     And the following sessions exist:

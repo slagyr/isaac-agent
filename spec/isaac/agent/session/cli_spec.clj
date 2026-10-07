@@ -136,6 +136,12 @@
     (should= #{:isaac :ci}
              (:tags (helper/get-session "/test/sessions" "joe"))))
 
+  (it "replaces tags from an EDN vector and stores a keyword set"
+    (helper/create-session! "/test/sessions" "joe" {:crew "main" :tags #{:project/x}})
+    (should= 0 (sut/run-fn {:home "/test" :_raw-args ["set" "joe.tags" "[:ops :wip]"]}))
+    (should= #{:ops :wip}
+             (:tags (helper/get-session "/test/sessions" "joe"))))
+
   (it "explains both supported forms when tags are not a keyword set"
     (helper/create-session! "/test/sessions" "joe" {:crew "main" :tags #{:project/x}})
     (let [err (binding [*err* (java.io.StringWriter.)]
