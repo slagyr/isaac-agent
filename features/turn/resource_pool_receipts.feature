@@ -99,3 +99,39 @@ Feature: Resource pool receipts
       | message | assistant    | Tied off        |
     When isaac is run with "turns list"
     Then the stdout does not contain "harbor"
+
+  @wip
+  Scenario: tools resolve paths against the turn's directory, not the session's (isaac-cd7e)
+    The charge carries one cwd: the pool's binding when it gives one, else
+    the session's. Boot files already read it; tools read the same one, so
+    a relative path lands in the leased directory and the :cwd directory
+    token means that directory.
+    Given the isaac EDN file "config/crew/keeper.edn" exists with:
+      | path                    | value      |
+      | model                   | grover     |
+      | tools.allow             | [:fs/read] |
+      | tools.directories.allow | [:cwd]     |
+    And the following sessions exist:
+      | name | crew   |
+      | lamp | keeper |
+    And the file "target/slip-a/chart.txt" exists with:
+      """
+      Eastern shoals ahead.
+      """
+    And the file "target/slip-b/chart.txt" exists with:
+      """
+      Western reef ahead.
+      """
+    And a scripted resource pool "slip" binds:
+      | key         | value         |
+      | session/cwd | target/slip-a |
+    And the following model responses are queued:
+      | type      | tool_call | arguments                            | content | model |
+      | tool_call | fs__read  | {"file_path": "chart.txt"}           |         | echo  |
+      | tool_call | fs__read  | {"file_path": "../slip-b/chart.txt"} |         | echo  |
+      | text      |           |                                      | Charted | echo  |
+    When the user sends "Read the chart" on session "lamp" with resource pools "slip"
+    Then session "lamp" has transcript matching:
+      | type    | message.role | message.content                         | message.isError |
+      | message | toolResult   | #"(?s).*Eastern shoals ahead.*"         |                 |
+      | message | toolResult   | #"(?s).*outside allowed directories.*"  | true            |
