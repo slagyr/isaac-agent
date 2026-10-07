@@ -111,7 +111,9 @@
         session-key (:session-key charge)]
     (if (or (:address-busy? charge)
             (and session-key (not (store/mark-in-flight! ss session-key))))
-      {:held true}
+      (do (when-let [id (:held-id charge)]
+            (queue/update-turn! id {:state :held}))
+          {:held true})
       (let [reserved? (boolean session-key)
             resolved (pool/resolve-submitted (:config charge) (:resource-pools charge))
             decision (if (:error resolved)

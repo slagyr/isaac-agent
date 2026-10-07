@@ -95,6 +95,20 @@
       (await-settled! "berth-1"))
     (should= :held (:state (queue/read-held "berth-1"))))
 
+  (it "parks a queued turn as held when its selected session is already in flight"
+    (queue/enqueue! {:id "berth-queued" :frequencies {:session-tags #{:project/warp} :create :never}
+                     :input "Seal leak" :state :queued})
+    (with-redefs [store/registered-store (fn [] :sessions)
+                  store/in-flight-sessions (fn [_] #{"engine-room"})
+                  isaac.agent.frequencies/resolve-session-targets
+                  (fn [_ _ _ busy]
+                    (should= #{"engine-room"} busy)
+                    {:busy? true})
+                  bridge/dispatch! (fn [_] (throw (ex-info "should not dispatch" {})))]
+      (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")})
+      (await-settled! "berth-queued"))
+    (should= :held (:state (queue/read-held "berth-queued"))))
+
   (it "creates a session for a create-enabled hail at admission with its tags and origin"
     (queue/enqueue! {:id "coil-1" :frequencies {:session-tags #{:project/warp}
                                                   :create :if-missing :with-crew "bartholomew"}
