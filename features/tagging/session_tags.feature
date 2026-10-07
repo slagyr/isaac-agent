@@ -131,3 +131,23 @@ Feature: Session tags
       | name | "joe"                            |
       | tags | ["project/chess", "role/worker"] |
     And the exit code is 0
+
+  # isaac-e0t7: tags are a set of keywords however they were written. A
+  # session created with vector tags ([:ops]) used to match no selector at
+  # all, because has-tag? asked contains? of a vector (index lookup).
+
+  @wip
+  Scenario: isaac sessions list --tag finds a session whose tags were written as a vector
+    Given default Grover setup
+    And the following sessions exist:
+      | name     | crew | tags              |
+      | ops-room | main | [:ops]            |
+      | joe      | main | #{:project/chess} |
+    When isaac is run with "sessions list --tag ops"
+    Then the stdout contains "ops-room"
+    And the stdout does not contain "joe"
+    And the exit code is 0
+    When isaac is run with "sessions show ops-room --json"
+    Then the stdout JSON contains:
+      | path | value   |
+      | tags | ["ops"] |

@@ -184,3 +184,21 @@ Feature: Session mutation
       | message | assistant    | Hello, first.   |
       | message | user         | second          |
       | message | assistant    | Hello, second.  |
+
+  # isaac-e0t7: a vector on the way in becomes the set on disk, instead of
+  # "must be a set of keywords" (Micah hit this from the CLI before).
+  @wip
+  Scenario: isaac sessions set <id>.tags accepts a vector and stores a set
+    Given default Grover setup
+    And the following sessions exist:
+      | name | crew | tags |
+      | joe  | main | #{}  |
+    When isaac is run with "sessions set joe.tags [:ops :wip]"
+    Then the exit code is 0
+    When isaac is run with "sessions show joe --json"
+    Then the stdout JSON contains:
+      | path | value          |
+      | tags | ["ops", "wip"] |
+    When isaac is run with "sessions list --tag ops"
+    Then the stdout contains "joe"
+    And the exit code is 0

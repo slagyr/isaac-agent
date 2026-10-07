@@ -187,6 +187,28 @@ Feature: Prompt single-turn command
       | message | user         | Hi              |
       | message | assistant    | Hello           |
 
+  # isaac-e0t7: the selector sees vector tags too
+  @wip
+  Scenario: --session-tag selects a session whose tags were written as a vector
+    Given the following sessions exist:
+      | name     | tags              |
+      | ops-room | [:ops]            |
+      | other    | #{:project/nav}   |
+    And session "ops-room" has transcript:
+      | type    | message.role | message.content |
+      | message | user         | Earlier         |
+      | message | assistant    | Aye             |
+    And the following model responses are queued:
+      | type | content | model |
+      | text | Hello   | echo  |
+    When isaac is run with "prompt --session-tag ops -m 'Hi'"
+    Then session "ops-room" has transcript matching:
+      | type    | message.role | message.content |
+      | message | user         | Earlier         |
+      | message | assistant    | Aye             |
+      | message | user         | Hi              |
+      | message | assistant    | Hello           |
+
   Scenario: repeated --session-tag AND-composes
     Given the following sessions exist:
       | name    | tags                            |
