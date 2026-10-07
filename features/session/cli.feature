@@ -409,3 +409,27 @@ Feature: Sessions Command
     And a turn marker exists for session "engine-room" with:
       | key       | value |
       | cancelled | true  |
+
+  @wip
+  Scenario: sessions list and show name a blocked session's reason (isaac-htix)
+    A blocked session takes no turns until its :block is cleared, and
+    finding one used to mean grepping session.edn files. The list grows a
+    BLOCKED column naming the reason; show prints the block and when it
+    happened.
+    Given the following sessions exist:
+      | name        | total-tokens | updated-at          | block.reason      | block.at             |
+      | stuck-chat  | 5000         | 2026-04-12T15:00:00 | compaction-failed | 2026-04-12T15:05:00Z |
+      | design-chat | 5000         | 2026-04-12T14:00:00 |                   |                      |
+    When isaac is run with "sessions list"
+    Then the stdout matches:
+      | pattern                              |
+      | SESSION .* BLOCKED                   |
+      | stuck-chat\s+.*\s+compaction-failed  |
+    And the stdout does not match:
+      | pattern                        |
+      | design-chat.*compaction-failed |
+    When isaac is run with "sessions show stuck-chat"
+    Then the stdout matches:
+      | pattern                                            |
+      | Blocked .* compaction-failed .* 2026-04-12T15:05   |
+    And the exit code is 0
