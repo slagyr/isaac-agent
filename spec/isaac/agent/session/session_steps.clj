@@ -827,13 +827,25 @@
              (fn [m] (assoc (or m {}) "ollama" {:base-url "http://localhost:99999"}))))
 
 (defn responses-queued [table]
-  (grover/reset-queue!)
+  (let [stream (grover/take-next-responses-stream!)]
+    (grover/reset-queue!)
+    (when stream (grover/set-next-responses-stream! stream)))
   (when (g/get :llm-delay-enabled?)
     (grover/enable-delay!))
   (let [responses (queued-responses table)
         pending   (g/get :pending-grover-responses)]
     (grover/enqueue! (into (vec pending) responses))
     (g/dissoc! :pending-grover-responses)))
+
+(defn next-responses-stream [table]
+  (grover/set-next-responses-stream!
+    (mapv (fn [row]
+            (reduce (fn [event [header value]]
+                      (if (str/blank? value)
+                        event
+                        (assoc-in event (mapv keyword (str/split header #"\.")) value)))
+                    {} (map vector (:headers table) row)))
+          (:rows table))))
 
 (defn grover-raw-response [content]
   (grover/reset-queue!)
@@ -1596,7 +1608,8 @@
       type (assoc :type type)
 
       (seq calls)
-      (assoc :name (:name (first calls)))
+      (assoc :name (:name (first calls))
+             :arguments (json/generate-string (:arguments (first calls))))
 
       (and include-compaction-message? (= "compaction" (:type entry)))
       (assoc :message {:content (:summary entry)})
@@ -1761,6 +1774,14 @@
                       (vec (remove #(= "session" (:type %)) transcript)))
          transcript   (mapv #(transcript-match-entry % include-compaction-message? denormalize-tool-call? denormalize-tool-result?)
                             transcript)
+         transcript   (if denormalize-tool-call?
+                        (vec (mapcat (fn [entry]
+                                       (if-let [calls (seq (transcript/tool-calls (:message entry)))]
+                                         (map (fn [call]
+                                                (assoc entry :name (:name call)
+                                                             :arguments (json/generate-string (:arguments call)))) calls)
+                                         [entry])) transcript))
+                        transcript)
          result       (if explicit-idx?
                        (match/match-entries table transcript)
                        (transcript-match-result table transcript))]
@@ -2181,6 +2202,8 @@
   "Sets the 'ollama' provider-config to an unreachable port (99999) so
    provider calls fail with connection-refused. Used to test
    connection-failure handling.")
+
+(defgiven "the next Responses stream is:" isaac.agent.session.session-steps/next-responses-stream)
 
 (defgiven "the following model responses are queued:" isaac.agent.session.session-steps/responses-queued
   "Clears and re-populates the grover response queue. Each table row is

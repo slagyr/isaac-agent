@@ -140,6 +140,20 @@
                                               :raw-args  ""})
         accumulated))
 
+    "response.output_item.done"
+    (let [item (:item data)]
+      (if (= "function_call" (:type item))
+        (update accumulated :tool-calls
+                (fn [calls]
+                  (mapv (fn [call]
+                          (if (= (:id call) (:id item))
+                            (-> call
+                                (assoc :name (:name item))
+                                (merge (parse-arguments (:arguments item)))
+                                (dissoc :raw-args))
+                            call)) calls)))
+        accumulated))
+
     "response.function_call_arguments.delta"
     (update accumulated :tool-calls
             (fn [tool-calls]
@@ -155,7 +169,7 @@
               (mapv (fn [tool-call]
                       (if (= (:id tool-call) (:item_id data))
                         (-> tool-call
-                            (merge (parse-arguments (:raw-args tool-call)))
+                            (merge (parse-arguments (or (:arguments data) (:raw-args tool-call))))
                             (dissoc :raw-args))
                         tool-call))
                     tool-calls)))
@@ -171,7 +185,13 @@
               :retry-after (or (:retry-after failure) (:retry-after data))}))
 
     "response.completed"
-    (let [response (:response data)]
+    (let [response (:response data)
+          accumulated (update accumulated :tool-calls
+                              (fn [calls]
+                                (mapv (fn [call]
+                                        (if (contains? call :raw-args)
+                                          (-> call (merge (parse-arguments (:raw-args call))) (dissoc :raw-args))
+                                          call)) calls)))]
       (cond-> accumulated
         true              (assoc :completed? true)
         response          (assoc :response response)

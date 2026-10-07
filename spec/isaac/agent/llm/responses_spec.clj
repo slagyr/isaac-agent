@@ -589,6 +589,40 @@
         (should= [{:id "fc_123" :name "read" :arguments {:filePath "trash-lid.txt"}}]
                  (:tool-calls done))))
 
+    (it "reads two parallel calls without argument deltas"
+      (let [events [{:type "response.output_item.added" :item {:type "function_call" :id "fc-1" :name "exec__run"}}
+                    {:type "response.function_call_arguments.done" :item_id "fc-1" :arguments "{\"command\":\"main\"}"}
+                    {:type "response.output_item.done" :item {:type "function_call" :id "fc-1" :name "exec__run"
+                                                               :arguments "{\"command\":\"main\"}"}}
+                    {:type "response.output_item.added" :item {:type "function_call" :id "fc-2" :name "exec__run"}}
+                    {:type "response.function_call_arguments.done" :item_id "fc-2" :arguments "{\"command\":\"jib\"}"}
+                    {:type "response.output_item.done" :item {:type "function_call" :id "fc-2" :name "exec__run"
+                                                               :arguments "{\"command\":\"jib\"}"}}]
+            result (reduce (fn [acc event] (@#'sut/process-responses-sse-event event acc))
+                           {:tool-calls []} events)]
+        (should= [{:id "fc-1" :name "exec__run" :arguments {:command "main"}}
+                  {:id "fc-2" :name "exec__run" :arguments {:command "jib"}}]
+                 (:tool-calls result))))
+
+    (it "prefers the finished item over progress deltas and arguments.done"
+      (let [events [{:type "response.output_item.added" :item {:type "function_call" :id "fc-1" :name "old"}}
+                    {:type "response.function_call_arguments.delta" :item_id "fc-1" :delta "{\"command\":\"delta\"}"}
+                    {:type "response.function_call_arguments.done" :item_id "fc-1" :arguments "{\"command\":\"done\"}"}
+                    {:type "response.output_item.done" :item {:type "function_call" :id "fc-1" :name "exec__run"
+                                                               :arguments "{\"command\":\"finished\"}"}}]
+            result (reduce (fn [acc event] (@#'sut/process-responses-sse-event event acc))
+                           {:tool-calls []} events)]
+        (should= [{:id "fc-1" :name "exec__run" :arguments {:command "finished"}}]
+                 (:tool-calls result))))
+
+    (it "uses delta arguments when a stream has no done events"
+      (let [events [{:type "response.output_item.added" :item {:type "function_call" :id "fc-1" :name "exec__run"}}
+                    {:type "response.function_call_arguments.delta" :item_id "fc-1" :delta "{\"command\":\"main\"}"}
+                    {:type "response.completed" :response {:model "snuffy-codex"}}]
+            result (reduce (fn [acc event] (@#'sut/process-responses-sse-event event acc))
+                           {:tool-calls []} events)]
+        (should= {:command "main"} (get-in result [:tool-calls 0 :arguments]))))
+
     (it "stores usage and model from response.completed"
       (let [acc    {:content "" :model nil :usage {} :response nil}
             result (@#'sut/process-responses-sse-event {:type "response.completed"

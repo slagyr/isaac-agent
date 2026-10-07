@@ -14,6 +14,7 @@
 ;; region ----- Response Queue -----
 
 (defonce ^:private queue (atom []))
+(defonce ^:private next-responses-stream* (atom nil))
 (defonce ^:private delay-enabled* (atom false))
 (defonce ^:private delay-started* (atom nil))
 (defonce ^:private delay-release* (atom nil))
@@ -27,6 +28,9 @@
 (defonce ^:private raw-response* (atom nil))
 (defonce ^:private wire-stop-reason* (atom nil))
 
+(defn set-next-responses-stream! [events]
+  (reset! next-responses-stream* events))
+
 (defn enqueue! [responses]
   (swap! queue into responses))
 
@@ -34,6 +38,7 @@
   (doseq [release (vals @wait-gates*)]
     (deliver release true))
   (reset! queue [])
+  (reset! next-responses-stream* nil)
   (reset! delay-enabled* false)
   (reset! delay-started* nil)
   (reset! delay-release* nil)
@@ -398,6 +403,10 @@
                                                 :function {:arguments (subs args split)}}]}}]}])))
        (apply concat)))
 
+(defn take-next-responses-stream! []
+  (let [[events _] (swap-vals! next-responses-stream* (constantly nil))]
+    events))
+
 (defn- reduce-provider-events [events on-chunk process-event initial]
   (reduce (fn [acc evt]
             (on-chunk evt)
@@ -408,8 +417,16 @@
 (defn post-sse!
   [provider url headers body on-chunk process-event initial]
   (capture-provider-request! provider url headers body)
-  (let [response (provider-response body nil)]
-    (if (:error response)
+  (let [stream   (when (str/ends-with? url "/responses") (take-next-responses-stream!))
+        response (when-not stream (provider-response body nil))]
+    (if stream
+      (reduce-provider-events
+        (map (fn [event]
+               (if (= "response.completed" (:type event))
+                 (update event :response #(merge {:model (:model body) :status "completed"} %))
+                 event)) stream)
+        on-chunk process-event initial)
+      (if (:error response)
       response
       (if (:stream-dropped? response)
         (let [event {:type "response.output_text.delta" :delta (get-in response [:message :content])}]
@@ -484,7 +501,7 @@
                                      :choices [{:delta {}
                                                 :finish_reason (or (:wire-stop-reason response)
                                                                    (if (seq tool-calls) "tool_calls" "stop"))}]}])]
-            (reduce-provider-events (if (:cut-off? response) (butlast events) events) on-chunk process-event initial))))))))
+            (reduce-provider-events (if (:cut-off? response) (butlast events) events) on-chunk process-event initial)))))))))
 
 ;; endregion ^^^^^ Response Building ^^^^^
 

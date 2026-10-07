@@ -1,4 +1,3 @@
-@wip
 Feature: OpenAI Responses API — tool call arguments (isaac-9qv9)
   A function call's arguments are whatever its done events say:
   response.function_call_arguments.done carries them as "arguments", and
