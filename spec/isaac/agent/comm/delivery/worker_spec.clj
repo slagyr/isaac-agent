@@ -70,6 +70,18 @@
       (should= "[thread:T9] [sent here by crew herald from session cron-heartbeat] Your weekly digest."
                (get-in (last (store/get-transcript sessions "ada-dm")) [:message :content]))))
 
+  (it "names an attention origin instead of an empty crew and session"
+    (let [sessions (sidecar/create-store "/test/isaac")]
+      (store/open-session! sessions "ada-dm" {:crew "lookout"})
+      (store/update-session! sessions "ada-dm" {:comms #{"stub:C999"}})
+      (comm-registry/register-instance! "stub" (->StubComm {:ok true :target "C999"}))
+      (queue/enqueue! {:id "7f3f" :comm :stub :target "C999"
+                       :origin {:kind :attention}
+                       :content "Session observer :episodes failed for x"})
+      (sut/tick! {:now (Instant/parse "2026-04-21T10:00:00Z")})
+      (should= "[sent here by attention] Session observer :episodes failed for x"
+               (get-in (last (store/get-transcript sessions "ada-dm")) [:message :content]))))
+
   (it "deletes a pending delivery after a successful send"
     (queue/enqueue! {:id      "7f3a"
                      :comm    :stub

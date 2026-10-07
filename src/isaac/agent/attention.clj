@@ -44,7 +44,8 @@
     (if-let [{:keys [comm target]} (notify-coords cfg)]
       (queue/enqueue! {:comm    (if (string? comm) (keyword comm) comm)
                        :target  target
-                       :content content})
+                       :content content
+                       :origin  {:kind :attention}})
       (log/warn :attention/unconfigured :content content))))
 
 (defn- clock-ms [override]

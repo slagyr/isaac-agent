@@ -40,6 +40,13 @@
       (should (str/includes? (:content (first pending)) "longwave"))
       (should-not (str/includes? (:content (first pending)) "Compaction disabled"))))
 
+  (it "stamps origin attention on every queued notice"
+    (sut/maybe-notify-conversation-blocked!
+     notify-cfg
+     "longwave"
+     {:reason :compaction-failed})
+    (should= {:kind :attention} (:origin (first (queue/list-pending)))))
+
   (it "enqueues turn-failed attention when notify is configured"
     (sut/maybe-notify-turn-failed!
      notify-cfg

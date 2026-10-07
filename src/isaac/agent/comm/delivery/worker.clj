@@ -80,6 +80,13 @@
                                                :next-attempt-at (str (.plusMillis now delay-ms))})))
       (dead-letter! record attempts :exhausted result))))
 
+(defn- sender-label [record]
+  (let [crew    (not-empty (str (:crew record)))
+        session (not-empty (str (:session record)))]
+    (if (and crew session)
+      (str "crew " crew " from session " session)
+      (name (get-in record [:origin :kind] :unknown)))))
+
 (defn- note-target! [record result]
   (when-let [target (:target result)]
     (let [sessions-store (or (store/registered-store)
@@ -91,8 +98,7 @@
         (store/append-message! sessions-store (:id session)
                                {:role "assistant"
                                 :content (str (when-let [marker (:marker result)] (str marker " "))
-                                              "[sent here by crew " (:crew record)
-                                              " from session " (:session record) "] " (:content record))})))))
+                                              "[sent here by " (sender-label record) "] " (:content record))})))))
 
 (defn- process-record! [now record]
   (when (due? record now)
