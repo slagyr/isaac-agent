@@ -23,7 +23,6 @@ Feature: An overloaded provider or a dropped connection is weather, not a turn-e
     Given default Grover setup
     And the built-in tools are registered
 
-  @wip
   Scenario Outline: <failure> on the head model continues the turn on the next model
     Given the isaac EDN file "config/models/head.edn" exists with:
       | path           | value      |
@@ -63,7 +62,6 @@ Feature: An overloaded provider or a dropped connection is weather, not a turn-e
       | a 504 gateway timeout            | grover:openai    | grover:anthropic | http-error       | 504    | Gateway timeout                                              | :overloaded      |
       | a connection reset mid-request   | grover:chatgpt   | grover:anthropic | connection-reset |        | Connection reset                                             | :connection-lost |
 
-  @wip
   Scenario Outline: <failure> with no fallback suspends the turn
     Given the isaac EDN file "config/models/snuffy.edn" exists with:
       | path           | value          |

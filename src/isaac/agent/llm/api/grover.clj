@@ -192,6 +192,12 @@
       (= "exception" (:type scripted))
       (throw (Exception. (or (:content scripted) "grover exception")))
 
+      (= "connection-reset" (:type scripted))
+      {:error :connection-lost :message (or (:content scripted) "Connection reset")}
+
+      (= "stream-failed" (:type scripted))
+      {:stream-failed? true :message (or (:content scripted) "stream failed")}
+
       (= "unavailable" (:type scripted))
       (cond-> {:unavailable? true
               :retry-after-ms (long (or (:retry-after-ms scripted) 0))}
@@ -428,6 +434,11 @@
         on-chunk process-event initial)
       (if (:error response)
       response
+      (if (:stream-failed? response)
+        (let [event {:type "response.failed"
+                     :response {:error {:message (or (:message response) "stream failed")}}}]
+          (on-chunk event)
+          (process-event event initial))
       (if (:stream-dropped? response)
         (let [event {:type "response.output_text.delta" :delta (get-in response [:message :content])}]
           (on-chunk event)
@@ -501,7 +512,7 @@
                                      :choices [{:delta {}
                                                 :finish_reason (or (:wire-stop-reason response)
                                                                    (if (seq tool-calls) "tool_calls" "stop"))}]}])]
-            (reduce-provider-events (if (:cut-off? response) (butlast events) events) on-chunk process-event initial)))))))))
+            (reduce-provider-events (if (:cut-off? response) (butlast events) events) on-chunk process-event initial))))))))))
 
 ;; endregion ^^^^^ Response Building ^^^^^
 

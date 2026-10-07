@@ -48,7 +48,7 @@
       (contains? #{401 403} (:status result))))
 
 (defn- stall-response? [result]
-  (contains? #{:stream-stalled :stream-ended-early} (:error result)))
+  (contains? #{:stream-stalled :stream-ended-early :overloaded :connection-lost} (:error result)))
 
 (defn- overflow-message? [message]
   (let [lower (some-> message str/lower-case)]
@@ -158,7 +158,7 @@
 (def fallback-reasons
   "Unavailable reasons that advance a crew's model chain. A contract
    :api-error and context overflow are not in this set."
-  #{:wall :auth :stream-stalled :stream-ended-early})
+  #{:wall :auth :stream-stalled :stream-ended-early :overloaded :connection-lost})
 
 (defonce ^:private walls* (atom {}))
 

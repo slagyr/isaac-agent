@@ -28,6 +28,22 @@
       (should= 429 (:status result))
       (should= 60 (:retry-after result))))
 
+  (it "emits a Responses response.failed event for a queued stream-failed"
+    (sut/enqueue! [{:type "stream-failed" :content "Our servers are currently overloaded. Please try again later."}])
+    (let [events (atom [])
+          result (sut/post-sse! "chatgpt" "https://example.com/responses" {} {} #(swap! events conj %)
+                                (fn [event acc] (conj acc event)) [])]
+      (should= [{:type "response.failed"
+                 :response {:error {:message "Our servers are currently overloaded. Please try again later."}}}]
+               @events)
+      (should= @events result)))
+
+  (it "returns the transport's :connection-lost result for a queued connection-reset"
+    (sut/enqueue! [{:type "connection-reset" :content "Connection reset"}])
+    (let [result (sut/post-sse! "chatgpt" "https://example.com/responses" {} {} identity (fn [_ a] a) nil)]
+      (should= :connection-lost (:error result))
+      (should= "Connection reset" (:message result))))
+
   ;; region ----- Echo Mode -----
 
   (describe "echo mode"

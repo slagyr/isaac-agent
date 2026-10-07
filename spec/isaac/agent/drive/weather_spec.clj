@@ -33,7 +33,9 @@
     (should= :wall (sut/weather-reason {:unavailable? true :reason :wall}))
     (should= :auth (sut/weather-reason {:unavailable? true :reason :auth}))
     (should= :stall (sut/weather-reason {:unavailable? true :reason :stream-stalled}))
-    (should= :mcp-unavailable (sut/weather-reason {:unavailable? true :reason :mcp-unavailable})))
+    (should= :mcp-unavailable (sut/weather-reason {:unavailable? true :reason :mcp-unavailable}))
+    (should= :overloaded (sut/weather-reason {:unavailable? true :reason :overloaded}))
+    (should= :connection-lost (sut/weather-reason {:unavailable? true :reason :connection-lost})))
 
   (it "does not treat blocked or exhausted conversations as weather"
     (should-be-nil (sut/weather-reason {:unavailable? true :reason :blocked}))

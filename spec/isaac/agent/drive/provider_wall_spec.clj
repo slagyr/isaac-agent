@@ -71,6 +71,14 @@
           weather (sut/fallback-weather result {} "chatgpt")]
       (should= {:unavailable? true :reason :stream-ended-early :provider "chatgpt"} weather)))
 
+  (it "classifies :overloaded as fallback weather like a stall"
+    (let [weather (sut/fallback-weather {:error :overloaded :message "busy"} {} "chatgpt")]
+      (should= {:unavailable? true :reason :overloaded :provider "chatgpt"} weather)))
+
+  (it "classifies :connection-lost as fallback weather like a stall"
+    (let [weather (sut/fallback-weather {:error :connection-lost :message "Connection reset"} {} "chatgpt")]
+      (should= {:unavailable? true :reason :connection-lost :provider "chatgpt"} weather)))
+
   (it "classifies a prompt-too-long 400 as overflow, not weather"
     (let [result {:error :context-overflow
                   :status 400

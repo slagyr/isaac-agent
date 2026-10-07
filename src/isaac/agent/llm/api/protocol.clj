@@ -108,8 +108,8 @@
             :_headers      {:type :ignore}}})
 
 (def error-kinds
-  #{:auth-missing :auth-failed :refresh-failed :connection-refused :timeout :stream-stalled :stream-ended-early
-    :cancelled :context-overflow :rate-limited :api-error :llm-error :provider-contract
+  #{:auth-missing :auth-failed :refresh-failed :connection-refused :connection-lost :timeout :stream-stalled :stream-ended-early
+    :cancelled :context-overflow :rate-limited :overloaded :api-error :llm-error :provider-contract
     :unknown-provider :unknown})
 
 (def error
@@ -181,6 +181,8 @@
         lower   (str/lower-case message)
         kind    (cond
                   (= 429 status) :rate-limited
+                  (contains? #{502 504 529} status) :overloaded
+                  (str/includes? lower "overloaded") :overloaded
                   (and (contains? #{400 413} status)
                        (or (str/includes? lower "context")
                            (str/includes? lower "maximum prompt length")

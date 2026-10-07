@@ -31,6 +31,8 @@
       :stream-stalled :stall
       :stream-ended-early :stream-ended-early
       :mcp-unavailable :mcp-unavailable
+      :overloaded :overloaded
+      :connection-lost :connection-lost
       nil)))
 
 (defn backoff-ms

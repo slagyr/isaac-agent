@@ -682,6 +682,19 @@
             (should= :auth-failed (:error result))
             (should-not (:content result))))))
 
+    (it "classifies a response.failed overloaded message as :overloaded"
+      (let [token (jwt-with-account-id "acct-123")]
+        (with-redefs [llm-http/post-sse! (fn [_ _ _ on-chunk process-event initial & _]
+                                           (reduce (fn [acc event] (on-chunk event) (process-event event acc))
+                                                   initial
+                                                   [{:type "response.failed"
+                                                     :response {:error {:message "Our servers are currently overloaded. Please try again later."}}}]))
+                      auth-store/load-tokens (fn [_ _ _] {:access token :expires (+ (System/currentTimeMillis) 1800000)})
+                      auth-store/token-expired? (fn [_] false)]
+          (let [result (sut/chat-stream {:model "test" :messages []} identity "chatgpt" oauth-device-config)]
+            (should= :overloaded (:error result))
+            (should-not (:content result))))))
+
     (it "streams codex responses output for oauth-device"
       (let [chunks       (atom [])
             captured-url (atom nil)

@@ -8,7 +8,8 @@
     [isaac.agent.llm.api.grover :as grover]
     [isaac.foundation.logger :as log]
     [isaac.agent.bridge.cancellation :as bridge])
-  (:import (java.net ConnectException)))
+  (:import (java.io IOException)
+           (java.net ConnectException)))
 
 (def ^:private pending ::pending)
 (def ^:private default-stream-idle-timeout-ms 90000)
@@ -194,6 +195,10 @@
                           (let [result {:error :connection-refused :message (str "Could not connect to " url)}]
                             (log-http-error! url headers body false result)
                             result))
+                        (catch IOException e
+                          (let [result {:error :connection-lost :message (.getMessage e)}]
+                            (log-http-error! url headers body false result)
+                            result))
                         (catch Exception e
                           (let [result {:error :unknown :message (.getMessage e)}]
                             (log-http-error! url headers body false result)
@@ -275,6 +280,18 @@
                              (let [result {:error :connection-refused :message (str "Could not connect to " url)}]
                                (log-http-error! url headers body true result)
                                result))
+                           (catch IOException e
+                             (cond
+                               (cancelled-result session-key)
+                               (cancelled-result session-key)
+
+                               @stalled?
+                               (stalled-result activity)
+
+                               :else
+                               (let [result {:error :connection-lost :message (.getMessage e)}]
+                                 (log-http-error! url headers body true result)
+                                 result)))
                            (catch Exception e
                              (cond
                                (cancelled-result session-key)
@@ -351,6 +368,11 @@
                              {:error :connection-refused :message (str "Could not connect to " url)})
                            (catch IllegalArgumentException _
                              {:error :connection-refused :message (str "Could not connect to " url)})
+                           (catch IOException e
+                             (cond
+                               (cancelled-result session-key) (cancelled-result session-key)
+                               @stalled? (stalled-result activity)
+                               :else {:error :connection-lost :message (.getMessage e)}))
                            (catch Exception e
                              (cond
                                (cancelled-result session-key) (cancelled-result session-key)

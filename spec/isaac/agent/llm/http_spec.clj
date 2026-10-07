@@ -8,7 +8,7 @@
      [isaac.agent.llm.http :as sut]
      [speclj.core :refer :all])
   (:import (java.io ByteArrayInputStream)
-           (java.net ConnectException)))
+           (java.net ConnectException SocketException)))
 
 (defn- mock-response [status body]
   {:status status :body (json/generate-string body)})
@@ -44,6 +44,12 @@
       (with-redefs [http/post (fn [_ _] (throw (ConnectException.)))]
         (let [result (sut/post-json! "http://test" {} {})]
           (should= :connection-refused (:error result)))))
+
+    (it "returns :connection-lost on a mid-request SocketException Connection reset"
+      (with-redefs [http/post (fn [_ _] (throw (SocketException. "Connection reset")))]
+        (let [result (sut/post-json! "http://test" {} {})]
+          (should= :connection-lost (:error result))
+          (should= "Connection reset" (:message result)))))
 
     (it "returns :connection-refused on invalid port (IllegalArgumentException)"
       (let [result (sut/post-json! "http://localhost:99999" {} {})]
@@ -185,6 +191,12 @@
       (with-redefs [http/post (fn [_ _] (throw (ConnectException.)))]
         (let [result (sut/post-sse! "http://test" {} {} identity (fn [_ a] a) nil)]
           (should= :connection-refused (:error result)))))
+
+    (it "returns :connection-lost on a mid-request SocketException Connection reset"
+      (with-redefs [http/post (fn [_ _] (throw (SocketException. "Connection reset")))]
+        (let [result (sut/post-sse! "http://test" {} {} identity (fn [_ a] a) nil)]
+          (should= :connection-lost (:error result))
+          (should= "Connection reset" (:message result)))))
 
     (it "includes request headers in error response"
       (with-redefs [http/post (fn [_ _] {:status 401
@@ -370,6 +382,12 @@
       (with-redefs [http/post (fn [_ _] (throw (ConnectException.)))]
         (let [result (sut/post-ndjson-stream! "http://test" {} {} identity)]
           (should= :connection-refused (:error result)))))
+
+    (it "returns :connection-lost on a mid-request SocketException Connection reset"
+      (with-redefs [http/post (fn [_ _] (throw (SocketException. "Connection reset")))]
+        (let [result (sut/post-ndjson-stream! "http://test" {} {} identity)]
+          (should= :connection-lost (:error result))
+          (should= "Connection reset" (:message result)))))
 
     (it "returns :auth-failed on 401"
       (with-redefs [http/post (fn [_ _] {:status 401

@@ -92,7 +92,23 @@
 
     (it "rejects provider-specific error kinds"
       (should= {:error "is invalid"}
-               (schema/validate-message-map sut/error {:error :overloaded :message "busy"})))
+               (schema/validate-message-map sut/error {:error :server-busy :message "busy"})))
+
+    (it "accepts :overloaded and :connection-lost as weather error kinds"
+      (should-not (schema/error? (sut/validate-error {:error :overloaded :message "busy"})))
+      (should-not (schema/error? (sut/validate-error {:error :connection-lost :message "Connection reset"}))))
+
+    (it "maps 529, 502, and 504 to :overloaded"
+      (should= :overloaded (:error (sut/normalize-error {:error :api-error :status 529 :message "Overloaded"})))
+      (should= :overloaded (:error (sut/normalize-error {:error :api-error :status 502 :message "Bad gateway"})))
+      (should= :overloaded (:error (sut/normalize-error {:error :api-error :status 504 :message "Gateway timeout"}))))
+
+    (it "maps an overloaded error message to :overloaded"
+      (should= :overloaded (:error (sut/normalize-error {:error :api-error
+                                                        :message "Our servers are currently overloaded. Please try again later."}))))
+
+    (it "does not remap a 400 contract error"
+      (should= :api-error (:error (sut/normalize-error {:error :api-error :status 400 :message "invalid request: unknown field"}))))
 
     (it "validates turn usage and loop results"
       (let [response {:content "done" :tool-calls [] :stop-reason :end-turn :model "echo"
