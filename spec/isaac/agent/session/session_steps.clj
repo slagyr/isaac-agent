@@ -926,7 +926,10 @@
                             (get row-map "input-tokens")  (assoc :input-tokens (parse-long (get row-map "input-tokens")))
                             (get row-map "output-tokens") (assoc :output-tokens (parse-long (get row-map "output-tokens")))
                             (get row-map "compaction-count") (assoc :compaction-count (parse-long (get row-map "compaction-count")))
-                            (get row-map "block.reason") (assoc :block {:reason (keyword (str/replace (get row-map "block.reason") #"^:" ""))})
+                            (not (str/blank? (get row-map "block.reason")))
+                            (assoc :block (cond-> {:reason (keyword (str/replace (get row-map "block.reason") #"^:" ""))}
+                                            (not (str/blank? (get row-map "block.at")))
+                                            (assoc :at (get row-map "block.at"))))
                             (get row-map "nonce") (assoc :nonce (get row-map "nonce"))
                             tags (assoc :tags tags)
                             comms (assoc :comms comms)
@@ -2249,7 +2252,8 @@
   "Creates sessions on disk via the file-backed SessionStore (NOT the :crew
     test atom). Columns: name (session key), optionally crew/agent,
     cwd, updated-at, total-tokens, input-tokens, output-tokens,
-    compaction-count, compaction.strategy/threshold/tail/async?. Writes
+    compaction-count, compaction.strategy/threshold/tail/async?,
+    block.reason/block.at (blank = no block). Writes
     the transcript directory and session index.")
 
 (defgiven #"session \"([^\"]+)\" is in flight" isaac.agent.session.session-steps/session-is-in-flight)

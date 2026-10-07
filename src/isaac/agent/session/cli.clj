@@ -194,7 +194,10 @@
      :pct    pct
      :crew   (:crew entry)
      :context (clojure.core/name context)
-     :tags   (text-tags (:tags entry))}))
+     :tags   (text-tags (:tags entry))
+     :blocked (if-let [reason (get-in entry [:block :reason])]
+                (if (keyword? reason) (name reason) (str reason))
+                "-")}))
 
 (defn- effective-color? [options]
   (cond
@@ -251,7 +254,10 @@
         columns       (cond
                         (some (comp seq :tags) sessions) tagged-session-columns
                         crew-filter                      session-columns
-                        :else                            default-session-columns)]
+                        :else                            default-session-columns)
+        columns       (cond-> columns
+                        (some :block sessions)
+                        (conj {:key :blocked :header "BLOCKED" :align :left}))]
     (println (table/render {:columns columns
                             :rows    rows
                             :zebra?  true
@@ -310,6 +316,8 @@
                           (tool-registry/tool-definitions allowed (:module-index config)))
                 status  (bridge/status-data session-id (assoc ctx :allowed-tools allowed))]
             (println (bridge/format-status status))
+            (when-let [{:keys [reason at]} (:block session)]
+              (println "Blocked    " (if (keyword? reason) (name reason) reason) "at" at))
             0))))))
 
 (defn- run-delete [opts session-id]

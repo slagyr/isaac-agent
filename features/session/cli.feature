@@ -410,7 +410,6 @@ Feature: Sessions Command
       | key       | value |
       | cancelled | true  |
 
-  @wip
   Scenario: sessions list and show name a blocked session's reason (isaac-htix)
     A blocked session takes no turns until its :block is cleared, and
     finding one used to mean grepping session.edn files. The list grows a
