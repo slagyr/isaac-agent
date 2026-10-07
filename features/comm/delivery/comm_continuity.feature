@@ -109,3 +109,23 @@ Feature: A delivery lands in the transcript of the session that talks on its com
     Then session "ada-dm" has transcript matching:
       | type    | message.role | message.content                                                                              |
       | message | assistant    | #"\[thread:T9\] \[sent here by crew herald from session cron-heartbeat\] Your weekly digest\." |
+
+  @wip
+  Scenario: an attention notice is named as attention, not an empty crew and session
+    Yopp, 2026-10-07: an attention notice landed as "[sent here by crew  from
+    session ] …". Attention deliveries carry no crew or session; they carry
+    :origin {:kind :attention}, and the note names that instead.
+    Given the comm "stub" returns:
+      | ok   | target |
+      | true | C999   |
+    And the isaac EDN file comm/delivery/pending/7f3f.edn exists with:
+      | path        | value                                        |
+      | id          | 7f3f                                         |
+      | comm        | stub                                         |
+      | target      | C999                                         |
+      | content     | Session observer :episodes failed for x      |
+      | origin.kind | :attention                                   |
+    When the delivery worker ticks
+    Then session "ada-dm" has transcript matching:
+      | type    | message.role | message.content                                                         |
+      | message | assistant    | #"\[sent here by attention\] Session observer :episodes failed for x" |
