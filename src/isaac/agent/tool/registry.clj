@@ -153,7 +153,7 @@
   (into {}
         (keep (fn [[k v]]
                 (let [kw (if (string? k) (keyword k) k)]
-                  (when (not= kw :session_key)
+                  (when-not (contains? #{:session_key :turn_cwd} kw)
                     [kw v]))))
         arguments))
 
@@ -162,7 +162,7 @@
       (get arguments :session_key)))
 
 (defn- tool-cwd [arguments]
-  (fs-bounds/session-workdir (session-key-of arguments)))
+  (fs-bounds/session-workdir arguments))
 
 (defn- snapshot-caps []
   (let [cfg (or (loader/snapshot "tool output caps — ambient fallback when caller passes no caps") {})]
@@ -327,7 +327,7 @@
 (defn- handler-arguments [tool arguments]
   (if (builtin-tool? tool)
     arguments
-    (dissoc arguments "crew" "session_key" "state_dir" :crew :session_key :state_dir)))
+    (dissoc arguments "crew" "session_key" "state_dir" "turn_cwd" :crew :session_key :state_dir :turn_cwd)))
 
 (defn- run-handler-result [name caps cwd log-args value]
   ;; Post-processing shared by the synchronous and future-backed call paths:

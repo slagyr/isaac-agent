@@ -20,6 +20,14 @@
       (fs/mkdirs fs* (fs/parent path))
       (fs/spit fs* path content)))
 
+  (it "discovers prompts in the leased turn directory rather than the session directory"
+    (helper/create-session! "/test/isaac" "work-sess" {:crew "main" :cwd "/workspace/slip-b"})
+    (write-prompt! "/workspace/slip-a/.isaac/prompts/skills/chart/SKILL.md"
+                   "---\ndescription: Chart the shoals\n---\nEastern shoals ahead.")
+    (should= {:result "Eastern shoals ahead."}
+             (sut/load-prompt-tool {"session_key" "work-sess" "turn_cwd" "/workspace/slip-a"
+                                    "name" "chart"})))
+
   (it "loads a discovered skill body for the calling session"
     (helper/create-session! "/test/isaac" "work-sess" {:crew "main" :cwd "/workspace/project"})
     (write-prompt! "/test/isaac/prompts/skills/greenhouse-protocol/SKILL.md"

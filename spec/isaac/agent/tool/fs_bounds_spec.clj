@@ -37,6 +37,18 @@
         (should-not (nil? (sut/ensure-path-allowed {"session_key" "chat-1"}
                                                    "/work/project/hello.txt"))))))
 
+  (it "uses the turn directory for path resolution and :cwd grants instead of the stored session directory"
+    (let [mem           (fs/mem-fs)
+          session-store (store/create nil :memory)
+          args          {"session_key" "lamp" "turn_cwd" "/work/slip-a"}]
+      (nexus/-with-nexus {:root "/test/runtime" :sessions {:store session-store} :fs mem}
+        (store/open-session! session-store "lamp" {:crew marigold/captain :cwd "/work/slip-b"})
+        (config/dangerously-install-config!
+          {:defaults {:crew {:tools {:directories {:allow [:cwd]}}}}} "spec")
+        (should= "/work/slip-a" (sut/session-workdir args))
+        (should-be-nil (sut/ensure-path-allowed args "/work/slip-a/chart.txt"))
+        (should (:isError (sut/ensure-path-allowed args "/work/slip-b/chart.txt"))))))
+
   (it "uses the turn crew instead of the stale session crew for directory policy"
     (let [mem           (fs/mem-fs)
           session-store (store/create nil :memory)]

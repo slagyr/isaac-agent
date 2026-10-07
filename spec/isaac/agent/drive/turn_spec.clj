@@ -1097,7 +1097,9 @@
                       :effort         5}]
         (with-redefs [sut/augment-provider (fn [_root p _session-key _context-window _model-cfg-overrides] p)]
           (let [turn (#'sut/build-turn charge)]
-            (should= charge (:charge turn))
+            (should= (assoc charge :cwd (get-in turn [:charge :cwd])) (:charge turn))
+            (should= (get-in (helper/get-session test-dir "wrap-test") [:cwd])
+                     (get-in turn [:charge :cwd]))
             (should= 5     (:effort turn))
             (should= ["spyglass"] (sort (:allowed-tools turn)))
             (should-not-be-nil (:root turn))

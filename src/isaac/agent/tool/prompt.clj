@@ -19,7 +19,7 @@
   (let [cfg     (or (loader/snapshot "prompt tools: prompt catalog resolution") {})
         session (session-entry args)]
     {:config    cfg
-     :cwd       (:cwd session)
+     :cwd       (bounds/session-workdir args)
      :fs        (bounds/filesystem args)
      :root (or (:root cfg) (bounds/root args))}))
 

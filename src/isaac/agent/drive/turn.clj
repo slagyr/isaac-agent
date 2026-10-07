@@ -1403,14 +1403,15 @@
                              (or (:session-store charge) (store/registered-store))
                              (when session-store* session-store*))
         session          (when sess (store/get-session sess session-key))
-        skill-disclosure (or (session-ctx/read-skill-disclosure (:config charge) root (or (:cwd charge) (:cwd session)))
+        charge           (assoc charge :cwd (or (:cwd charge) (:cwd session)))
+        skill-disclosure (or (session-ctx/read-skill-disclosure (:config charge) root (:cwd charge))
                              {:menu-text nil :tool-names #{}})
         crew-cfg         (get crew-members crew)
         recall-tools     nil
         allowed-tools    (merge-allowed-tools (allowed-tool-names crew-members crew (:config charge))
                                               (concat (:tool-names skill-disclosure) recall-tools))
-        boot-files       (session-ctx/read-boot-files (or (:cwd charge) (:cwd session)))
-        rules-text       (session-ctx/read-rules-text (:config charge) root (or (:cwd charge) (:cwd session)))
+        boot-files       (session-ctx/read-boot-files (:cwd charge))
+        rules-text       (session-ctx/read-rules-text (:config charge) root (:cwd charge))
         augmented        (augment-provider root provider session-key context-window
                                            (select-keys (or model-cfg {})
                                                         [:thinking-budget-max :think-mode :stateful :vision]))]
@@ -1425,7 +1426,7 @@
                :crew-cfg-keys (some-> (:crew-cfg charge) keys vec)
                :allowed-tools-count (count allowed-tools)
                :allowed-tools (some-> allowed-tools sort vec)
-               :cwd (or (:cwd charge) (:cwd session)))
+               :cwd (:cwd charge))
     (schema/conform! turn-schema
                      {:charge          charge
                       ;; convenience accessors for storage helpers — same value, derived via session-store helper
@@ -1577,6 +1578,7 @@
                             args      (cond-> (or (:arguments tc) {})
                                          true (assoc "session_key" session-key)
                                          true (assoc "caller_crew" crew)
+                                         (:cwd tool-ctx) (assoc "turn_cwd" (:cwd tool-ctx))
                                          (:turn-id tool-ctx) (assoc "request_id" (:turn-id tool-ctx))
                                          true (assoc :progress! progress!))
                             cache      (:window-cache tool-ctx)
@@ -1784,6 +1786,7 @@
                               (comm/on-cycle-end ch session-key cycle {:outcome :aside :text text :tool-calls tool-calls})
                               (comm/on-aside ch session-key cycle text)))
             tool-ctx      {:turn-id        *foreman-request-id*
+                            :cwd            (:cwd charge)
                             :comm           ch
                             :crew           crew
                             :session-key    session-key

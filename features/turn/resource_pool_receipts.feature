@@ -100,7 +100,6 @@ Feature: Resource pool receipts
     When isaac is run with "turns list"
     Then the stdout does not contain "harbor"
 
-  @wip
   Scenario: tools resolve paths against the turn's directory, not the session's (isaac-cd7e)
     The charge carries one cwd: the pool's binding when it gives one, else
     the session's. Boot files already read it; tools read the same one, so

@@ -69,21 +69,23 @@
       :else            default)))
 
 (defn session-workdir
-  "Return the session's cwd as a string. For exec, require a real OS directory.
-   For fs/* ACL expansion, return the configured cwd even on a mem filesystem."
+  "Return the turn's cwd (or the stored session cwd for standalone tool calls).
+   For exec, require a real OS directory; for fs/* ACL expansion, allow mem filesystems."
   ([session-key-or-args]
    (session-workdir session-key-or-args false))
   ([session-key-or-args require-os-dir?]
    (let [args        (if (map? session-key-or-args)
                        (string-key-map session-key-or-args)
                        {"session_key" session-key-or-args})
-         session-key (get args "session_key")
-         store       (session-store args)]
-     (when (and session-key store)
-       (when-let [cwd (:cwd (store/get-session store session-key))]
-         (if require-os-dir?
-           (when (.isDirectory (io/file cwd)) cwd)
-           cwd))))))
+         session-key (get args "session_key")]
+     (when-let [cwd (or (get args "turn_cwd")
+                        (when session-key
+                          (some-> (session-store args)
+                                  (store/get-session session-key)
+                                  :cwd)))]
+       (if require-os-dir?
+         (when (.isDirectory (io/file cwd)) cwd)
+         cwd)))))
 
 (defn resolve-path
   "Resolve a path against session-cwd:
@@ -110,7 +112,7 @@
         crew-id (or (get args "caller_crew")
                     (:crew session)
                     (defaults/crew-id (loader/snapshot "tool fs-bounds: default crew")))]
-    {:cwd      (or (:cwd session) (session-workdir args))
+    {:cwd      (session-workdir args)
      :quarters (when root (crew-quarters root crew-id))}))
 
 (defn path-outside-error [file-path]
