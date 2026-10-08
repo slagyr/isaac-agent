@@ -432,3 +432,14 @@ Feature: Sessions Command
       | pattern                                            |
       | Blocked .* compaction-failed .* 2026-04-12T15:05   |
     And the exit code is 0
+
+  @wip
+  Scenario: sessions list --since shows only sessions updated in the window (isaac-d3qj)
+    Given the following sessions exist:
+      | name       | crew | updated-at          |
+      | alpha-chat | main | 2026-04-12T15:00:00 |
+      | bravo-chat | main | 2026-04-10T10:00:00 |
+    When isaac is run with "sessions list --since 2026-04-12T00:00:00Z"
+    Then the stdout contains "alpha-chat"
+    And the stdout does not contain "bravo-chat"
+    And the exit code is 0
