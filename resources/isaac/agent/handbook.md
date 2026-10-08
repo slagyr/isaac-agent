@@ -501,6 +501,17 @@ models, and effort. `/model [id]` shows or switches the session's model.
 `/crew [id]` shows or switches the session's crew (soul, model, and
 provider all change together).
 
+The `:isaac.agent/slash-commands` berth accepts providers: each manifest entry
+`{<provider-id> {:factory <symbol> :rank <optional-int>}}` creates an object with
+`:commands` (a function of the session context returning command maps with
+`:name`, `:description`, and optional `:rank`) and `:handle` (a function of
+name, session key, parsed input and context). A handler returns a command reply,
+`{:input <expanded-text>}` to start a turn, or `nil` to let the next provider
+answer. Commands are advertised per session; when names collide, the lowest
+rank wins. Built-ins default to 100, module commands to 500, prompt-template
+commands to 900. A provider's entry rank applies unless the command overrides
+it. Unknown slash commands from autonomous origins still run as ordinary turns.
+
 `config:bridge.suspend-timeout-ms` (default 15000) bounds how long a clean
 shutdown waits for an in-flight turn to reach a cooperative cancel point
 before it's forced. A **suspended** turn is different from a **cancelled**

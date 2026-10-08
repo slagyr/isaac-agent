@@ -67,7 +67,7 @@
 
 (defn available-slash-commands-include [table]
   (let [cfg       (loader/snapshot "feature: available slash commands")
-        commands  (slash-registry/all-commands (:module-index cfg))
+        commands  (slash-registry/all-commands (:module-index cfg) {:config cfg :cwd (or (nexus/get :cwd) (root-dir)) :root (root-dir) :fs (mem-fs)})
         headers   (:headers table)]
     (doseq [row (:rows table)]
       (let [expected (zipmap headers row)

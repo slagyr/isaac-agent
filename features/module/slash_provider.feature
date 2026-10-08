@@ -1,4 +1,3 @@
-@wip
 Feature: Slash-command providers
   An entry on the :isaac.agent/slash-commands berth is a provider, not a
   single command. A provider lists the commands it offers for a session and

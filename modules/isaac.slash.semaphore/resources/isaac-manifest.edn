@@ -1,6 +1,5 @@
-{:id      :isaac.slash.echo
+{:id :isaac.slash.semaphore
  :version "0.1.0"
  :factory isaac.foundation.module.protocol/module
-
  :isaac.agent/slash-commands
- {:echo {:factory isaac.slash.echo/provider}}}
+ {:semaphore {:factory isaac.slash.semaphore/provider}}}

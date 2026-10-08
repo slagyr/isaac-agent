@@ -149,17 +149,18 @@
   {:description "Show or set session effort (0-10)"
    :handler     handle-effort})
 
-(defn ensure-registered!
-  "Make sure isaac.foundation's slash commands are installed in the slash
-   registry. Phase 7 of the berth epic (isaac-ho18) moved slash-command
-   registration into the :isaac.agent/slash-commands berth, so the
-   built-ins now flow through the berth's per-entry factory the same
-   way third-party contributions do."
-  []
+(defn provider []
+  (let [commands {"status" (status-command)
+                  "model" (model-command)
+                  "crew" (crew-command)
+                  "cwd" (cwd-command)
+                  "effort" (effort-command)}]
+    {:commands (fn [_] (map (fn [[name spec]] (assoc (select-keys spec [:description]) :name name)) commands))
+     :handle (fn [name session-key input ctx]
+               ((:handler (get commands name)) session-key
+                (str "/" name (when-let [args (:args input)] (str " " args))) ctx))}))
+
+(defn ensure-registered! []
   (module-loader/activate! :isaac.agent (module-loader/builtin-index))
-  (let [agent-entry (get (module-loader/builtin-index) :isaac.agent)
-        contribs     (get-in agent-entry [:manifest :isaac.agent/slash-commands])
-        register   (some-> 'isaac.agent.slash.registry/register-slash-entry!
-                           requiring-resolve var-get)]
-    (doseq [entry contribs]
-      (register entry))))
+  ((requiring-resolve 'isaac.agent.slash.registry/register-slash-entry!)
+   [:builtins {:factory 'isaac.agent.slash.builtin/provider :rank 100}]))

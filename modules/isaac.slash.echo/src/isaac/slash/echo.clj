@@ -15,3 +15,8 @@
   {:type    :command
    :command :echo
    :message (or (parse-args input) "")})
+
+(defn provider []
+  {:commands (fn [_] [{:name "echo" :description "Echo the input back unchanged"}])
+   :handle (fn [_ session-key {:keys [name args]} ctx]
+             (handle-echo session-key (str "/" name " " (or args "")) ctx))})

@@ -29,6 +29,7 @@
         isaac.comm.telly/isaac.comm.telly {:local/root "modules/isaac.comm.telly"}
         isaac.providers.kombucha/isaac.providers.kombucha {:local/root "modules/isaac.providers.kombucha"}
         isaac.slash.echo/isaac.slash.echo {:local/root "modules/isaac.slash.echo"}
+        isaac.slash.semaphore/isaac.slash.semaphore {:local/root "modules/isaac.slash.semaphore"}
         isaac.api.tin-can/isaac.api.tin-can {:local/root "modules/isaac.api.tin-can"}}
 
  :tasks

@@ -40,7 +40,7 @@
                    {:type :symbol, :validations [:present?]}}}}},
                :slash-commands
                {:description
-                "Slash commands installed into the bridge slash registry.",
+                "Slash-command providers: factories list commands and answer by name; lowest rank wins (built-ins 100, modules 500, templates 900).",
                 :schema
                 {:type :map,
                  :key-spec {:type :keyword},
@@ -49,7 +49,8 @@
                   :factory isaac.agent.slash.registry/register-slash-entry!,
                   :schema
                   {:factory
-                   {:type :symbol, :validations [:present?]}}}}},
+                   {:type :symbol, :validations [:present?]},
+                   :rank {:type :int}}}}},
                :provider
                {:description
                 "Materialized LLM providers — instances usable by models. Manifest contributions are third-party modules shipping a ready-to-use provider; user-instantiated providers in the [:providers] config slot also count toward this berth (see `[:registered-in? :isaac.agent/provider [:providers]]` use sites).",
@@ -212,11 +213,7 @@
             :flow :oidc-device-code
             :scope "api:access offline_access"}}}},
  :isaac.agent/slash-commands
- {:crew {:factory isaac.agent.slash.builtin/crew-command},
-  :cwd {:factory isaac.agent.slash.builtin/cwd-command},
-  :effort {:factory isaac.agent.slash.builtin/effort-command},
-  :model {:factory isaac.agent.slash.builtin/model-command},
-  :status {:factory isaac.agent.slash.builtin/status-command}},
+ {:builtins {:factory isaac.agent.slash.builtin/provider :rank 100}},
  :isaac.config/schema
  {:turn {:schema {:type :map :description "Provider weather turn suspension"
                   :schema {:suspended-attention-ms {:type :int :description "Milliseconds before repeated MCP suspension posts attention"}}}}

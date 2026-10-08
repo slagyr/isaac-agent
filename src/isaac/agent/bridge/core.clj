@@ -20,7 +20,6 @@
     [isaac.foundation.logger :as log]
     [isaac.agent.tool.memory :as memory]
     [isaac.foundation.nexus :as nexus]
-    [isaac.agent.prompt.catalog :as prompt-catalog]
     [isaac.agent.session.context :as session-ctx]
     [isaac.agent.session.context-mode :as context-mode]
     [isaac.agent.session.session-observer :as session-observer]
@@ -94,14 +93,6 @@
   (or (contains? #{:hail :cron} (:kind origin))
       (= :hail (:source origin))))
 
-(defn- prompt-catalog-opts [ctx]
-  {:config    (:config ctx)
-   :cwd       (:cwd ctx)
-   :fs        (or (nexus/get :fs) (fs/instance))
-   :root (or (get-in ctx [:config :root])
-                  (:root ctx)
-                  (nexus/get :root))})
-
 (defn- unknown-command-result [name args]
   {:type    :command
    :command :unknown
@@ -143,18 +134,15 @@
 ;; region ----- Slash Command Handlers -----
 
 (defn- handle-slash [session-key input ctx]
-  (let [{:keys [args name]} (slash-builtin/parse-command input)]
-    (if-let [command (slash-registry/lookup name (:module-index ctx))]
-      {:action :reply
-       :result ((:handler command) session-key input ctx)}
-      (if-let [{:keys [input]} (prompt-catalog/resolve-command-prompt (prompt-catalog-opts ctx) name args)]
-        {:action :turn
-         :charge (assoc ctx :input input)}
-        (if (autonomous-origin? (:origin ctx))
-          {:action :turn
-           :charge ctx}
-          {:action :reply
-           :result (unknown-command-result name args)})))))
+  (let [{:keys [args name] :as parsed} (slash-builtin/parse-command input)]
+    (if-let [response (slash-registry/answer name session-key parsed (:module-index ctx) ctx)]
+      (let [response response]
+        (if-let [expanded (:input response)]
+          {:action :turn :charge (assoc ctx :input expanded)}
+          {:action :reply :result response}))
+      (if (autonomous-origin? (:origin ctx))
+        {:action :turn :charge ctx}
+        {:action :reply :result (unknown-command-result name args)}))))
 
 ;; endregion ^^^^^ Slash Command Handlers ^^^^^
 

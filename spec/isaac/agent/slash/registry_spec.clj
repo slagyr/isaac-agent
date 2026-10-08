@@ -13,6 +13,10 @@
   {:description "Echo"
    :handler     identity})
 
+(defn echo-provider []
+  {:commands (fn [_] [{:name "echo" :description "Echo"}])
+   :handle (fn [_ _ _ _] {:message "Echo"})})
+
 (def ^:private root "/test-state")
 
 (defn- write-file! [path content]
@@ -30,111 +34,50 @@
     (nexus/-with-nested-nexus {:fs (fs/mem-fs)}
       (example)))
 
-  (it "registers and looks up a command by name"
-    (sut/register! {:name "echo" :description "Echo" :handler identity})
-    (let [command (sut/lookup "echo")]
-      (should= "echo" (:name command))
-      (should= "Echo" (:description command))))
+  (it "lists commands offered by a registered provider"
+    (sut/register! {:id :echo :rank 500
+                    :commands (fn [_] [{:name "echo" :description "Echo"}])
+                    :handle (fn [_ _ _ _] {:message "Echo"})})
+    (should= "Echo" (:description (sut/lookup "echo"))))
 
-  (it "returns commands sorted by name without handlers"
-    (sut/register! {:name "zecho" :description "ZEcho" :handler identity})
-    (sut/register! {:name "echo" :description "Echo" :handler identity})
-    (let [commands (mapv #(select-keys % [:name :description]) (sut/all-commands))]
-      (should= [{:name "echo" :description "Echo"}
-                {:name "zecho" :description "ZEcho"}]
-               (filterv #(contains? #{"echo" "zecho"} (:name %)) commands))))
+  (it "chooses the built-in over a module at default rank"
+    (sut/register! {:id :module :rank 500
+                    :commands (fn [_] [{:name "status" :description "Module status"}])})
+    (should= "Show session status" (:description (sut/lookup "status"))))
 
-  (it "does not log when a new command is registered (berth pass logs :berth/registration)"
-    (log/capture-logs
-      (sut/register! {:name "echo" :description "Echo" :handler identity})
-      (should= []
-               (mapv #(select-keys % [:level :event :command]) @log/captured-logs))))
+  (it "chooses an explicitly lower-ranked command over a built-in"
+    (sut/register! {:id :module :rank 500
+                    :commands (fn [_] [{:name "status" :rank 50 :description "Module status"}])})
+    (should= "Module status" (:description (sut/lookup "status"))))
 
-  (it "logs :slash/override and keeps the replacement when a name collides"
-    (sut/register! {:name "echo" :description "Built-in" :handler (constantly :builtin)})
-    (log/capture-logs
-      (sut/register! {:name "echo" :description "Module override" :handler (constantly :override)})
-      (should= :override ((:handler (sut/lookup "echo")) nil))
-      (should= [{:level :warn :event :slash/override :command "echo"}]
-               (->> @log/captured-logs
-                    (filter #(= :slash/override (:event %)))
-                    (mapv #(select-keys % [:level :event :command]))))))
+  (it "chooses the prompt-template command over a higher-ranked module command"
+    (nexus/-with-nested-nexus {:fs (fs/mem-fs)}
+      (write-file! (str root "/prompts/commands/work.md")
+                   "---\ntype: command\ndescription: Template work\n---\n\nStart work.")
+      (sut/register! {:id :module :rank 950
+                      :commands (fn [_] [{:name "work" :description "Module work"}])})
+      (should= "Template work" (:description (sut/lookup "work" nil {:root root :fs (nexus/get :fs)})))))
 
-  (it "does not warn when the same handler is registered twice"
-    (let [handler (constantly :same)]
-      (sut/register! {:name "echo" :description "Echo" :handler handler})
-      (log/capture-logs
-        (sut/register! {:name "echo" :description "Echo again" :handler handler})
-        (should= []
-                 (->> @log/captured-logs
-                      (filter #(= :slash/override (:event %)))
-                      (mapv #(select-keys % [:level :event :command])))))))
+  (it "asks the next provider when the lower-ranked one declines a command"
+    (sut/register! {:id :first :rank 40
+                    :commands (fn [_] [{:name "echo" :description "First echo"}])
+                    :handle (fn [_ _ _ _] nil)})
+    (sut/register! {:id :second :rank 500
+                    :commands (fn [_] [{:name "echo" :description "Second echo"}])
+                    :handle (fn [_ _ _ _] {:message "Second echo"})})
+    (should= {:message "Second echo"}
+             (sut/answer "echo" "session" {:args "hi"} nil nil)))
 
-  (it "does not warn when the same factory re-registers with a different handler ref"
-    (sut/register! {:name        "echo"
-                    :description "A"
-                    :handler     (constantly :a)
-                    :factory     'isaac.agent.slash.registry-spec/echo-command})
-    (log/capture-logs
-      (sut/register! {:name        "echo"
-                      :description "B"
-                      :handler     (constantly :b)
-                      :factory     'isaac.agent.slash.registry-spec/echo-command})
-      (should= []
-               (->> @log/captured-logs
-                    (filter #(= :slash/override (:event %)))
-                    (mapv #(select-keys % [:level :event :command]))))))
+  (it "advertises the winning command only"
+    (sut/register! {:id :module :rank 500
+                    :commands (fn [_] [{:name "status" :description "Module status"}])})
+    (should= [{:name "status" :description "Show session status"}]
+             (->> (sut/all-commands) (filter #(= "status" (:name %)))
+                  (mapv #(select-keys % [:name :description])))))
 
-  (it "does not warn when built-in slash commands are berth-processed twice"
-    (log/capture-logs
-      (module-loader/process-manifest-berths! (module-loader/builtin-index))
-      (module-loader/process-manifest-berths! (module-loader/builtin-index))
-      (should= 0 (count (filter #(= :slash/override (:event %)) @log/captured-logs)))))
-
-  (it "does not warn when CLI-init and server-boot both berth-process builtins"
-    (log/capture-logs
-      (let [mem (fs/mem-fs)]
-        (@#'main/register-module-cli-commands! nil mem "server")
-        (module-loader/process-manifest-berths! (module-loader/builtin-index)))
-      (should= 0 (count (filter #(= :slash/override (:event %)) @log/captured-logs)))))
-
-  (it "does not warn when berth processing precedes ensure-registered! and a second berth pass"
-    (log/capture-logs
-      (module-loader/process-manifest-berths! (module-loader/builtin-index))
-      (builtin/ensure-registered!)
-      (module-loader/process-manifest-berths! (module-loader/builtin-index))
-      (should= 0 (count (filter #(= :slash/override (:event %)) @log/captured-logs)))))
-
-  (it "does not warn when lookup activates builtins before a second berth pass"
-    (log/capture-logs
-      (module-loader/process-manifest-berths! (module-loader/builtin-index))
-      (sut/lookup "crew" (module-loader/builtin-index))
-      (module-loader/process-manifest-berths! (module-loader/builtin-index))
-      (should= 0 (count (filter #(= :slash/override (:event %)) @log/captured-logs)))))
-
-  (it "activates slash command modules before listing all commands"
-    (let [module-index {:isaac.slash.echo {:manifest {:slash-commands {:echo {}}}}}]
-      (with-redefs [module-loader/activate! (fn [_ _]
-                                              (sut/register! {:name "echo" :description "Echo" :handler identity})
-                                              :activated)]
-        (should= [{:name "echo" :description "Echo"}]
-                 (->> (sut/all-commands module-index)
-                      (map #(select-keys % [:name :description]))
-                      (filterv #(= "echo" (:name %))))))))
-
-  (it "activates slash command modules before lookup"
-    (let [module-index {:isaac.slash.echo {:manifest {:slash-commands {:echo {}}}}}]
-      (with-redefs [module-loader/activate! (fn [_ _]
-                                              (sut/register! {:name "echo" :description "Echo" :handler identity})
-                                              :activated)]
-        (should= "echo" (:name (sut/lookup "echo" module-index))))))
-
-  (it "registers a berth command under its berth-key name"
-    (let [module-index {:isaac.slash.echo {:manifest {:isaac.agent/slash-commands {:echo {:factory 'isaac.agent.slash.registry-spec/echo-command}}}}}]
-      (nexus/-with-nexus {:config (atom {})
-                           :fs (fs/mem-fs)}
-        (module-loader/clear-activations!)
-        (should= "echo" (:name (sut/lookup "echo" module-index))))))
+  (it "registers a provider through its berth factory"
+    (sut/register-slash-entry! [:echo {:factory 'isaac.agent.slash.registry-spec/echo-provider}])
+    (should= "Echo" (:description (sut/lookup "echo"))))
 
   (it "includes resolved prompt-template commands when listing advertised commands"
     (nexus/-with-nested-nexus {:fs (fs/mem-fs)}
