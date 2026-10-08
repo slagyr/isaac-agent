@@ -20,7 +20,7 @@
 (def ^:private ordered-built-in-tools
   ["fs__read" "fs__write" "fs__edit" "fs__multi_edit" "fs__grep" "fs__glob"
    "web__fetch" "web__search" "memory__write" "memory__get" "memory__search"
-   "exec__run" "turn__get" "session__info" "session__model" "prompt__load" "prompt__list"
+   "exec__run" "turn__get" "session__info" "session__model" "session__list" "session__read" "prompt__load" "prompt__list"
    "comm__send" "hail__send"])
 
 (def ^:private built-in-tool-specs
@@ -142,6 +142,20 @@
                       :description "Report the current session's crew, model, provider, origin, timing, context, and compaction count"
                       :parameters  {:type "object" :properties {}}
                       :handler     #'session/session-info-tool}
+   "session__list"   {:name "session__list"
+                      :description "List this crew's sessions with messages since a time"
+                      :parameters {:type "object" :properties {"since" {:type "string"}
+                                                             "until" {:type "string"}}
+                                   :required ["since"]}
+                      :handler #'session/session-list-tool}
+   "session__read"   {:name "session__read"
+                      :description "Read a crew session's transcript by time window"
+                      :parameters {:type "object" :properties {"session" {:type "string"}
+                                                             "since" {:type "string"}
+                                                             "until" {:type "string"}
+                                                             "offset" {:type "integer"}}
+                                   :required ["session" "since"]}
+                      :handler #'session/session-read-tool}
    "session__model"  {:name        "session__model"
                       :description "Switch or reset the calling session's model; returns new session state"
                       :parameters  {:type       "object"
@@ -171,6 +185,8 @@
 (defn turn-get-tool-factory [_] (spec-for "turn__get"))
 (defn session-info-tool-factory [_] (spec-for "session__info"))
 (defn session-model-tool-factory [_] (spec-for "session__model"))
+(defn session-list-tool-factory [_] (spec-for "session__list"))
+(defn session-read-tool-factory [_] (spec-for "session__read"))
 
 (defn- allowed-tool? [allowed-tools tool-name]
   (or (= ::all allowed-tools)

@@ -101,27 +101,21 @@
                          (matches? token wire)))
                    tokens))))
 
+(defn- explicit-history-grant? [global-tools crew-tools wire]
+  (or (allowed? (remove #{POLICY_ALL} (policy-list (:allow global-tools))) wire)
+      (allowed? (remove #{POLICY_ALL} (policy-list (:allow crew-tools))) wire)))
+
 (defn cascade-allowed?
-  "Four-step last-match-wins cascade (isaac-da0r):
-     1. global :allow
-     2. global :deny
-     3. crew :deny
-     4. crew :allow
-   Empty config (missing :allow) is deny-all. Crew overlays; a crew
-   :deny adds a deny and does not drop global denies. Nil crew-tools
-   means the crew omitted :tools and inherits the global result."
+  "Four-step last-match-wins cascade; session history also requires an explicit grant."
   [global-tools crew-tools wire]
   (let [global-tools (or global-tools {})
-        allowed?     (covers? (:allow global-tools) wire)
-        allowed?     (if (covers? (:deny global-tools) wire) false allowed?)
-        allowed?     (if (and (map? crew-tools)
-                              (covers? (:deny crew-tools) wire))
-                       false
-                       allowed?)]
-    (if (and (map? crew-tools)
-             (covers? (:allow crew-tools) wire))
-      true
-      allowed?)))
+        history? (#{"session__list" "session__read"} wire)
+        granted? (or (not history?) (explicit-history-grant? global-tools crew-tools wire))
+        allowed? (covers? (:allow global-tools) wire)
+        allowed? (if (covers? (:deny global-tools) wire) false allowed?)
+        allowed? (if (and (map? crew-tools) (covers? (:deny crew-tools) wire)) false allowed?)]
+    (and granted?
+         (if (and (map? crew-tools) (covers? (:allow crew-tools) wire)) true allowed?))))
 
 (defn- collapse-dot-segments [path]
   (let [absolute? (str/starts-with? path "/")

@@ -151,6 +151,8 @@
  {:web/fetch {:factory isaac.agent.tool.builtin/web-fetch-tool-factory},
   :fs/read {:factory isaac.agent.tool.builtin/read-tool-factory},
   :exec/run {:factory isaac.agent.tool.builtin/exec-tool-factory},
+  :session/list {:factory isaac.agent.tool.builtin/session-list-tool-factory},
+  :session/read {:factory isaac.agent.tool.builtin/session-read-tool-factory},
   :session/model
   {:factory isaac.agent.tool.builtin/session-model-tool-factory},
   :fs/grep {:factory isaac.agent.tool.builtin/grep-tool-factory},

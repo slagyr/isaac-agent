@@ -96,3 +96,36 @@
                        (sut/session-model-tool {"session_key" "sm-nomodel" "model" "nonexistent"}))]
           (should (:isError result))
           (should (str/includes? (:error result) "unknown model: nonexistent")))))))
+
+(describe "Session history"
+  (around [example]
+    (store-helper/with-memory-store
+      (nexus/-with-nested-nexus {:root support/test-dir}
+        (example))))
+
+  (it "only lists the caller's crew messages since Tuesday"
+    (store-helper/create-session! support/test-dir "ours" {:crew "main"})
+    (store-helper/create-session! support/test-dir "theirs" {:crew "other"})
+    (store-helper/append-message! support/test-dir "ours" {:role "user" :content "hello"})
+    (store-helper/append-message! support/test-dir "theirs" {:role "user" :content "secret"})
+    (let [result (sut/session-list-tool {"session_key" "ours" "since" "2000-01-01T00:00:00Z"})]
+      (should-contain "ours 1 messages" (:result result))
+      (should-not-contain "theirs" (:result result))))
+
+  (it "does not reveal another crew's session on read"
+    (store-helper/create-session! support/test-dir "ours" {:crew "main"})
+    (store-helper/create-session! support/test-dir "theirs" {:crew "other"})
+    (should= {:isError true :error "no session theirs"}
+             (sut/session-read-tool {"session_key" "ours" "session" "theirs" "since" "2000-01-01T00:00:00Z"})))
+
+  (it "pages whole messages, without exposing tool results"
+    (store-helper/create-session! support/test-dir "ours" {:crew "main"})
+    (store-helper/append-message! support/test-dir "ours" {:role "user" :content "one"})
+    (store-helper/append-message! support/test-dir "ours" {:role "toolResult" :content "secret"})
+    (store-helper/append-message! support/test-dir "ours" {:role "assistant" :content "two"})
+    (let [args {"session_key" "ours" "session" "ours" "since" "2000-01-01T00:00:00Z"}
+          result (sut/session-read-tool (assoc args "max_lines" 1))]
+      (should-contain "user: one" (:result result))
+      (should-contain "1 of 2 messages; next offset 1" (:result result))
+      (should-not-contain "secret" (:result result))
+      (should-contain "assistant: two" (:result (sut/session-read-tool (assoc args "offset" 1)))))))

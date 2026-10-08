@@ -38,6 +38,8 @@
    [nil  "--edn"                "Output result as EDN"]
    [nil  "--tag TAG"            "Filter to sessions carrying this tag (repeatable)"
     :assoc-fn (fn [m k v] (update m k (fnil conj []) v))]
+   [nil  "--since ISO"         "Only sessions updated at or after this time"]
+   [nil  "--until ISO"         "Only sessions updated before this time"]
    [nil  "--in-flight"          "Show only in-flight sessions"]
    [nil  "--not-in-flight"      "Show only idle sessions"]
    [nil  "--no-color"           "Disable color output"]
@@ -524,6 +526,8 @@
         (let [required-tags (set (map keyword (:tag opts)))
               sessions      (->> (store/list-sessions session-store)
                                  (filter #(if crew-filter (= crew-filter (:crew %)) true))
+                                 (filter #(if (:since opts) (and (:updated-at %) (not (neg? (compare (:updated-at %) (str/replace (:since opts) #"Z$" ""))))) true))
+                                 (filter #(if (:until opts) (and (:updated-at %) (neg? (compare (:updated-at %) (str/replace (:until opts) #"Z$" "")))) true))
                                  (filter #(every? (fn [tag] (store/has-tag? % tag)) required-tags))
                                  (filter #(if (:in-flight opts) (store/in-flight? session-store (:id %)) true))
                                  (filter #(if (:not-in-flight opts) (not (store/in-flight? session-store (:id %))) true))

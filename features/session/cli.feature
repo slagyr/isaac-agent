@@ -433,7 +433,6 @@ Feature: Sessions Command
       | Blocked .* compaction-failed .* 2026-04-12T15:05   |
     And the exit code is 0
 
-  @wip
   Scenario: sessions list --since shows only sessions updated in the window (isaac-d3qj)
     Given the following sessions exist:
       | name       | crew | updated-at          |

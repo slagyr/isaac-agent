@@ -188,9 +188,29 @@ drops it (`:prune`). Either way the **live** transcript view a turn sees is
 a window over the full, append-only record — nothing is rewritten in
 place.
 
+A crew can review its own history with `session__list` (required `since`,
+optional `until`) and `session__read` (required `session` and `since`,
+optional `until` and `offset`). Times are ISO-8601 UTC; `since` is inclusive
+and `until` is exclusive. The list returns sessions with messages in the
+window, each with its message count and first..last message time. Read returns
+`<iso time> <role>: <text>` lines, dropping tool results and shortening tool
+calls to markers. Both tools are **crew-scoped**: another crew's sessions are
+neither listed nor readable. Neither is granted by default. An operator must
+allow `:session/list` and `:session/read` in `crew.<id>.tools.allow` (or
+`defaults.crew.tools.allow`); e.g. `config set crew.<id>.tools.allow
+"[:session/list :session/read]"`. If you cannot see `session__list`, you
+are missing the grant: ask the operator to enable it before reviewing history.
+`session__read` fills whole-message pages under `defaults.tools.max-lines` /
+`max-bytes`, prints `<n> of <total> messages; next offset <n>` when more
+remain, and accepts that offset on the next call. It reads retained segments
+as well as the live transcript; sessions using `history-retention :prune`
+cannot recover messages dropped during compaction.
+
 The session store is the record for every session. `isaac sessions list`
 shows the resolved context mode in its CONTEXT column (session override,
 then crew setting).
+
+`isaac sessions list --since <iso> [--until <iso>]` filters on the session's last update time.
 
 `isaac sessions` subcommands: `list`, `show <id>`, `set <id>.<path>
 <value>` / `unset <id>.<path>` (mutate a stored field — this is how you

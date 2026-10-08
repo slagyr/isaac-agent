@@ -1092,7 +1092,10 @@
   (g/assoc! :current-key key-str)
   (doseq [row (:rows table)]
     (let [row-map (zipmap (:headers table) row)]
-      (append-transcript-entry! key-str row-map))))
+      (if-let [timestamp (get row-map "timestamp")]
+        (binding [memory/*now* (java.time.Instant/parse timestamp)]
+          (append-transcript-entry! key-str row-map))
+        (append-transcript-entry! key-str row-map)))))
 
 (defn session-has-error-entry [key-str content]
   (with-feature-fs

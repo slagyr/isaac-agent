@@ -1,4 +1,3 @@
-@wip
 Feature: session_list and session_read tools
   A crew reads its own conversations by time window. session_list finds
   the crew's sessions with messages in the window; session_read returns

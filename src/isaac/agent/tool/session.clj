@@ -98,3 +98,103 @@
 
               :else
               (build-session-state session (resolve-model-alias session crew-cfg cfg) cfg))))))))
+
+(defn- parse-time [s]
+  (when s
+    (java.time.Instant/parse (if (str/ends-with? s "Z") s (str s "Z")))))
+
+(defn- history-context [args]
+  (let [session-store (bounds/session-store args)
+        caller        (store/get-session session-store (get args "session_key"))]
+    [session-store (:crew caller)]))
+
+(defn- history-messages [session-store session since until]
+  (->> (store/chronicle-transcript session-store (:id session))
+       (filter #(= "message" (:type %)))
+       (remove #(= "toolResult" (get-in % [:message :role])))
+       (filter (fn [{:keys [timestamp]}]
+                 (let [time (parse-time timestamp)]
+                   (and time (not (.isBefore time since))
+                        (or (nil? until) (.isBefore time until))))))
+       vec))
+
+(defn- iso [timestamp]
+  (str (parse-time timestamp)))
+
+(defn- text-of [message]
+  (let [content (:content message)]
+    (cond
+      (string? content) content
+      (sequential? content) (->> content
+                                 (map (fn [{:keys [type text name]}]
+                                        (case type
+                                          "text" text
+                                          "toolCall" (str "(tool " name ")")
+                                          nil)))
+                                 (remove nil?)
+                                 (str/join " "))
+      :else "")))
+
+(defn- message-line [{:keys [timestamp message]}]
+  (str (iso timestamp) " " (:role message) ": " (text-of message)))
+
+(defn session-list-tool [raw-args]
+  (let [args (bounds/string-key-map raw-args)]
+    (try
+      (let [[session-store crew] (history-context args)
+            since (parse-time (get args "since"))
+            until (parse-time (get args "until"))]
+        (if (or (nil? crew) (nil? since))
+          {:isError true :error "session and since are required"}
+          (let [lines (keep (fn [session]
+                              (let [messages (history-messages session-store session since until)]
+                                (when (seq messages)
+                                  (str (or (:key session) (:id session)) " " (count messages) " messages "
+                                       (iso (:timestamp (first messages))) ".."
+                                       (iso (:timestamp (last messages)))))))
+                            (store/list-sessions-by-agent session-store crew))]
+            {:result (str/join "\n" lines)})))
+      (catch Exception _ {:isError true :error "invalid time window"}))))
+
+(defn- byte-count [s]
+  (alength (.getBytes ^String s "UTF-8")))
+
+(defn- page [messages offset max-lines max-bytes]
+  (let [total (count messages)
+        lines (mapv message-line (drop offset messages))
+        line-limit (if (>= (count lines) max-lines) (max 1 (dec max-lines)) max-lines)
+        footer (fn [n] (str (+ offset n) " of " total " messages; next offset " (+ offset n)))]
+    (loop [selected [] remaining lines]
+      (if-let [line (first remaining)]
+        (let [candidate (conj selected line)
+              more? (< (+ offset (count candidate)) total)
+              output (str/join "\n" (cond-> candidate more? (conj (footer (count candidate)))))]
+          (if (and (seq selected) (or (> (count candidate) line-limit)
+                                      (> (byte-count output) max-bytes)))
+            {:result (str/join "\n" (conj selected (footer (count selected)))) :already-capped? true}
+            (if (and (empty? selected) (or (> (count (str/split-lines line)) max-lines)
+                                           (> (byte-count line) max-bytes)))
+              {:result line}
+              (recur candidate (next remaining)))))
+        {:result (str/join "\n" selected) :already-capped? true}))))
+
+(defn session-read-tool [raw-args]
+  (let [args (bounds/string-key-map raw-args)]
+    (try
+      (let [[session-store crew] (history-context args)
+            session-name (get args "session")
+            session (when crew (store/get-session session-store session-name))
+            since (parse-time (get args "since"))
+            until (parse-time (get args "until"))]
+        (cond
+          (or (nil? session) (not= crew (:crew session)))
+          {:isError true :error (str "no session " session-name)}
+          (nil? since) {:isError true :error "since is required"}
+          :else (let [cfg (loader/snapshot "session history output caps")
+                      caps (defaults/tool-caps cfg)
+                      messages (history-messages session-store session since until)
+                      offset (max 0 (or (bounds/arg-int args "offset" 0) 0))]
+                  (page messages offset
+                        (or (get args "max_lines") (:max-lines caps) 1000)
+                        (or (get args "max_bytes") (:max-bytes caps) 131072)))))
+      (catch Exception _ {:isError true :error "invalid time window"}))))

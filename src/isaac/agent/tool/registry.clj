@@ -349,7 +349,7 @@
     value
 
     (and (map? value) (contains? value :result))
-    (let [capped (cap-output caps (:result value))]
+    (let [capped (if (:already-capped? value) (:result value) (cap-output caps (:result value)))]
       (log/debug :tool/result (assoc (result-metadata capped) :tool name :cwd cwd))
       (assoc value :result capped))
 

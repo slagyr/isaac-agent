@@ -149,6 +149,12 @@
     (it "denies every tool when both layers are empty"
       (should-not (sut/cascade-allowed? {} {} "fs__read")))
 
+    (it "requires an explicit history grant even under global allow all"
+      (should-not (sut/cascade-allowed? {:allow :all} nil "session__read"))
+      (should-not (sut/cascade-allowed? {:allow :all} nil "session__list"))
+      (should (sut/cascade-allowed? {:allow [:session/read]} nil "session__read"))
+      (should (sut/cascade-allowed? {:allow :all} {:allow [:session/list]} "session__list")))
+
     (it "inherits a global :allow :all when the crew omits :tools"
       (should (sut/cascade-allowed? {:allow :all} nil "exec__run"))
       (should (sut/cascade-allowed? {:allow :all} nil "fs__read")))
