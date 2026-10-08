@@ -63,6 +63,8 @@
                                        :resource-pools   (:resource-pools charge)
                                        :crew         (:crew charge)
                                        :origin       (:origin charge)
+                                       :from         (:from charge)
+                                       :for          (:for charge)
                                        :cwd          (:cwd charge)
                                        :observers    (or (:observer-refs charge) (:observers charge))
                                        :key          (:key charge)
@@ -265,6 +267,8 @@
                             :resource-pools (:resource-pools charge)
                             :crew       (:crew charge)
                             :origin     (:origin charge)
+                            :from       (:from charge)
+                            :for        (:for charge)
                             :cwd        (:cwd charge)
                             :observers  (or (:observer-refs charge) (:observers charge))
                             :message    (:message decision)
@@ -400,6 +404,8 @@
                    (turn-queue/enqueue! {:session (:session-key charge)
                                          :input (:input charge)
                                          :origin (:origin charge)
+                                         :from (:from charge)
+                                         :for (:for charge)
                                          :state :running}))]
       (try
         (let [result (dispatch-charge! (assoc charge :turn-id (:id record)))]

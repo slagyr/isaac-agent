@@ -37,10 +37,13 @@
       (subs 0 8)))
 
 (defn- normalize-record [record]
-  (-> record
+  (let [sender (or (:from record) {:kind :submit})]
+    (-> record
+      (assoc :from sender)
+      (cond-> (and (= :handle (:kind sender)) (nil? (:for record))) (assoc :for sender))
       (update :id #(or % (new-id)))
       (update :state #(or % :held))
-      (update :created-at #(or % (str (memory/now))))))
+      (update :created-at #(or % (str (memory/now)))))))
 
 ;; A live comm channel cannot be written to an EDN record, but a turn parked
 ;; by a still-running process (a continuation, isaac-xpkf) should wake on the

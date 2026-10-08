@@ -61,6 +61,16 @@
         (should= [[:died "harbor" "dropped"]] @events)
         (finally (observer/unregister! :witness)))))
 
+  (it "shows sender and beneficiary fields alongside origin without changing their maps"
+    (queue/enqueue! {:id "tide-9" :origin {:kind :hail}
+                     :from {:kind :handle :comm :logbook :id "cordelia-7" :authenticated true}
+                     :for {:kind :crew :id "bartholomew"}})
+    (let [output (with-out-str (sut/run-fn {:_raw-args ["show" "tide-9"] :root "/test/isaac"}))]
+      (doseq [fragment ["origin.kind: hail" "from.kind: handle" "from.comm: logbook"
+                        "from.id: cordelia-7" "from.authenticated: true"
+                        "for.kind: crew" "for.id: bartholomew"]]
+        (should (str/includes? output fragment)))))
+
   (it "reports an unknown turn id"
     (let [err (java.io.StringWriter.)
           output (binding [*err* err]

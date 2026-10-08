@@ -376,6 +376,22 @@ held request so it never runs. Only one turn runs per session at a time —
 there is no crew-wide concurrency cap anymore, just per-session
 serialization.
 
+A turn record keeps `:from` (always present: who started it) and optional
+`:for` (the outside party it serves) beside the opaque, unchanged `:origin`.
+These are identity references, not resolved contacts: `{:kind :handle :comm
+:gchat :id "users/123" :name "…" :email "…" :authenticated true}` names an
+outside sender exactly as the comm knows them. A handle requires `:comm` and
+`:id`; `:name`, `:email`, and the comm's `:authenticated` verification claim
+are optional. Other references are `{:kind :crew :id "yopp"}`, `{:kind :cron
+:id "nightly-dream"}`, `{:kind :cli}`, and `{:kind :http :id "<principal>"}`.
+The Agent stores these maps without interpreting them. A handle supplied as
+`:from` becomes `:for` too unless the caller explicitly names `:for`; otherwise
+`:for` is absent. The `isaac prompt` entry point stamps `{:kind :cli}`;
+other submitters that don't name `:from` get `{:kind :submit}` until their
+entry points adopt their own identity. `isaac turns show <id>` prints them as
+`from.<key>` and `for.<key>` alongside `origin.<key>`; `turn__get` returns the
+record including these fields.
+
 An observer can be attached per turn (`--observer lookout`, or
 `name:params`) to narrate lifecycle events (turn started/ended, with
 outcome) as they happen; an unknown observer name is refused before the

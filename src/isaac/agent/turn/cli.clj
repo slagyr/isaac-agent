@@ -110,7 +110,10 @@
           :when (contains? record field)]
     (println (str (name field) ": " (display-value (get record field)))))
   (doseq [[key value] (sort-by (fn [[k _]] [(case k :thread-id 0 :reply-to 1 2) (str k)]) (:origin record))]
-    (println (str "origin." (name key) ": " (display-value value)))))
+    (println (str "origin." (name key) ": " (display-value value))))
+  (doseq [field [:from :for]
+          [key value] (sort-by (comp str key) (get record field))]
+    (println (str (name field) "." (name key) ": " (display-value value)))))
 
 (defn- run-show [opts id]
   (with-queue-root opts

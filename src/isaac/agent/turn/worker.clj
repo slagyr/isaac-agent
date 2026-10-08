@@ -65,6 +65,8 @@
                          :input       (:input record)
                          :now         now
                          :origin      (or (:origin record) {:kind :queue})
+                         :from        (:from record)
+                         :for         (:for record)
                          :config      cfg}
                   (:preamble record) (assoc :preamble (:preamble record))
                   (:cycle record) (assoc :cycle (:cycle record))
@@ -104,6 +106,8 @@
     (assoc first-record
            :input (str/join "\n" (map :input records))
            :origin (:origin last-record)
+           :from (:from last-record)
+           :for (:for last-record)
            :held-ids (mapv :id records))))
 
 (defn- admit! [charge]

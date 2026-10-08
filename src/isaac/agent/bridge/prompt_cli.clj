@@ -264,7 +264,7 @@
               accepted (binding [turn-queue/*root* root*]
                          (turn-queue/enqueue! (cond-> {:session session-key :input (:message opts)
                                                        :state (if (:queue opts) :queued :running)
-                                                       :origin {:kind :cli}}
+                                                       :origin {:kind :cli} :from {:kind :cli}}
                                                 (:key opts) (assoc :key (:key opts)))))
               result (when-not (or (:queue opts) (:already-accepted? accepted))
                        (bridge/dispatch!
@@ -275,6 +275,7 @@
                                                      :model-override        (or (:with-model override) (:model opts))
                                                      :context-mode-override (:with-context-mode override)
                                                      :origin                {:kind :cli}
+                                                     :from                  {:kind :cli}
                                                      :comm                  comm
                                                      :session-store         session-store}
                                                     (seq obs-refs) (assoc :observers obs-refs)
@@ -368,7 +369,7 @@
                                    (turn-queue/enqueue! {:input (:message opts)
                                                          :frequencies (frequencies-cli/build-frequencies opts)
                                                          :resource-pools refs
-                                                         :origin {:kind :cli} :state :held}))]
+                                                         :origin {:kind :cli} :from {:kind :cli} :state :held}))]
                     (println (str "held: " (:id accepted)))
                     0)))
 

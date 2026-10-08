@@ -11,7 +11,7 @@
 
 (defn submit!
   "Accept one durable, keyed turn without running it. Returns its stable request record."
-  [{:keys [root config frequencies resource-pools observers prompt preamble cycle id key origin]}]
+  [{:keys [root config frequencies resource-pools observers prompt preamble cycle id key origin from] :as request}]
   (let [cfg         (or config (loader/snapshot "turn submit"))
         pool-refs   (mapv keyword resource-pools)
         pools       (pool/resolve-submitted cfg pool-refs)
@@ -24,6 +24,8 @@
                       (frequencies/resolve-session-targets frequencies (sessions/registered-store) cfg))
         obs         (when (and resolved (not (:error resolved)))
                       (observer/resolve-submitted observers))
+        sender      (or from {:kind :submit})
+        for-party   (or (:for request) (when (= :handle (:kind sender)) sender))
         error       (or (:error pools) (:error resolved) (:error obs))]
     (when error
       (throw (ex-info (or (:message pools) (:message resolved) (:message obs) (name error))
@@ -31,8 +33,9 @@
     (when (and (:session frequencies) (not (:session-key resolved)))
       (throw (ex-info "turn submission requires an existing session" {:frequencies frequencies})))
     (binding [queue/*root* (or root (loader/root))]
-      (queue/enqueue! (cond-> {:input prompt :key key :origin (or origin {:kind :submit})
+      (queue/enqueue! (cond-> {:input prompt :key key :origin (or origin {:kind :submit}) :from sender
                               :resource-pools pool-refs :observers observers :state :queued}
+                        for-party (assoc :for for-party)
                         (some? id) (assoc :id id)
                         (some? preamble) (assoc :preamble preamble)
                         (some? cycle) (assoc :cycle cycle)

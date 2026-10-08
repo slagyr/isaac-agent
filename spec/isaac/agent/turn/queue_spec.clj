@@ -29,6 +29,12 @@
              (select-keys (sut/read-held "berth-1")
                           [:id :session :resource-pools :input :state])))
 
+  (it "identifies a bare queued turn without inferring it from opaque origin"
+    (let [record (sut/enqueue! {:id "tide-9" :origin {:kind :cron}})]
+      (should= {:kind :submit} (:from record))
+      (should-not (contains? record :for))
+      (should= {:kind :submit} (:from (sut/read-held "tide-9")))))
+
   (it "stores the held file at turns/<id>.edn"
     (sut/enqueue! {:id "berth-1" :session "harbor" :state :held})
     (should (fs/exists? (nexus/get :fs) "/test/isaac/turns/berth-1.edn")))

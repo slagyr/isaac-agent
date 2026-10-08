@@ -106,6 +106,16 @@
                     session-ctx/resolve-behavior (fn [_ _] (stub-behavior "main" "You are Atticus." test-model-id 4096))]
         (should (sut/charge? (sut/build {:session-key "s1" :input "hi"})))))
 
+    (it "carries explicit sender and beneficiary beside opaque origin"
+      (with-redefs [loader/snapshot (fn [_] base-cfg)
+                    session-ctx/resolve-behavior (fn [_ _] (stub-behavior "main" "You are Atticus." test-model-id 4096))]
+        (let [from {:kind :handle :comm :logbook :id "cordelia-7"}
+              for-party {:kind :crew :id "bartholomew"}
+              ch (sut/build {:session-key "s1" :input "hi" :origin {:kind :hail}
+                             :from from :for for-party})]
+          (should= from (:from ch))
+          (should= for-party (:for ch)))))
+
     (it "builds a resolved charge from session-key and input"
       (with-redefs [loader/snapshot             (fn [_] base-cfg)
                     session-ctx/resolve-behavior (fn [_ _] (stub-behavior "main" "You are Atticus." test-model-id 4096))]

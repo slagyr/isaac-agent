@@ -227,6 +227,24 @@
                   (g/assoc! :submit-error (ex-message e))
                   nil)))))))))
 
+(defn turn-submitted-with [table]
+  (let [fields (reduce (fn [m [key value]]
+                         (let [path (mapv keyword (str/split key #"\."))
+                               v (if (= :kind (last path)) (keyword value)
+                                     (if (= :authenticated (last path)) (= "true" value) value))]
+                           (assoc-in m path v))) {} (:rows table))]
+    (session-steps/with-feature-config! "attributed turn submit"
+      (fn []
+        (with-feature-fs
+          (fn []
+            (nexus/-with-nested-nexus {:root (root-dir) :fs (mem-fs)}
+              (config/dangerously-install-config! (g/get :feature-config) "feature: attributed turn submit")
+              (binding [queue/*root* (root-dir)]
+                (submit/submit! (-> fields
+                                    (assoc :root (root-dir) :config (g/get :feature-config)
+                                           :prompt (:input fields) :frequencies {:session (:session fields)})
+                                    (dissoc :input :session)))))))))))
+
 (defn turn-submitted-with-frequencies [input table]
   (let [frequencies (into {} (map (fn [[key value]]
                                     [(keyword key) (if (= key "create") (keyword value) value)])
@@ -334,3 +352,5 @@
   isaac.agent.turn.queue-steps/model-releases-session
   "isaac.agent.llm.api.grover/release-wait! for that session — unblocks the turn a
    prior 'is waiting on the model' step found parked there (isaac-e9jl).")
+
+(defwhen "a turn is submitted with:" isaac.agent.turn.queue-steps/turn-submitted-with)

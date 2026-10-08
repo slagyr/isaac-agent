@@ -1,4 +1,3 @@
-@wip
 Feature: Turn attribution — who started a turn, and on whose behalf
   Every turn record carries :from, who started it, and optionally :for,
   the outside party it is done for. Each is a map with a :kind:

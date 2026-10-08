@@ -56,6 +56,30 @@
           (should= origin (:origin accepted))
           (should= origin (:origin (queue/read-held (:id accepted))))))))
 
+  (it "records an outside handle as both sender and beneficiary by default"
+    (with-redefs [sessions/registered-store (fn [] :sessions)
+                  frequencies/resolve-session-targets (fn [_ _ _] {:session-key "lamp-room"})]
+      (let [handle {:kind :handle :comm :logbook :id "cordelia-7" :authenticated true}
+            accepted (sut/submit! {:root "/isaac-state" :config {} :frequencies {:session "lamp-room"}
+                                   :prompt "Light lamp" :from handle})]
+        (should= handle (:from accepted))
+        (should= handle (:for (queue/read-held (:id accepted)))))))
+
+  (it "honors an explicit beneficiary rather than the sender"
+    (with-redefs [sessions/registered-store (fn [] :sessions)
+                  frequencies/resolve-session-targets (fn [_ _ _] {:session-key "lamp-room"})]
+      (let [accepted (sut/submit! {:root "/isaac-state" :config {} :frequencies {:session "lamp-room"}
+                                   :prompt "Light lamp" :from {:kind :handle :comm :logbook :id "cordelia-7"}
+                                   :for {:kind :crew :id "bartholomew"}})]
+        (should= {:kind :crew :id "bartholomew"} (:for accepted)))))
+
+  (it "identifies an anonymous submission without inferring identity from origin"
+    (with-redefs [sessions/registered-store (fn [] :sessions)
+                  frequencies/resolve-session-targets (fn [_ _ _] {:session-key "lamp-room"})]
+      (should= {:kind :submit}
+               (:from (sut/submit! {:root "/isaac-state" :config {} :frequencies {:session "lamp-room"}
+                                    :prompt "Light lamp" :origin {:kind :hail}})))))
+
   (it "preserves a generic turn preamble through durable submission"
     (with-redefs [sessions/registered-store (fn [] :sessions)
                   frequencies/resolve-session-targets (fn [_ _ _] {:session-key "lamp-room"})]
