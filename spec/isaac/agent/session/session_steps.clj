@@ -2333,6 +2333,10 @@
 (defwhen #"the user sends \"(.+)\" on session \"([^\"]+)\" with coalesce key \"([^\"]+)\" without waiting via memory comm"
   isaac.agent.session.session-steps/user-sends-on-session-with-coalesce-key)
 
+(defwhen #"the delayed response starts on session \"([^\"]+)\""
+  isaac.agent.session.session-steps/delayed-response-starts
+  "Waits for Grover to receive the first request, before a later send races admission.")
+
 (defwhen #"the turns on session \"([^\"]+)\" finish"
   isaac.agent.session.session-steps/turns-on-session-finish)
 
@@ -2356,6 +2360,12 @@
     (when (and (not running?) (= 1 (count (or (g/get :turn-futures) []))))
       (grover/await-delay-start)
       (grover/disable-delay!))))
+
+(defn delayed-response-starts [key-str]
+  (helper/await-condition #(some (fn [request] (= key-str (:session-key request)))
+                                 (grover/requests)) 5000)
+  (g/should (some (fn [request] (= key-str (:session-key request)))
+                  (grover/requests))))
 
 (defn user-sends-on-session-without-waiting [content key-str]
   (send-without-waiting! content key-str nil))

@@ -17,6 +17,7 @@ Feature: A busy session queues its next messages; same-thread prompts consolidat
       | echo  | text | Answered one.  |
       | echo  | text | Answered two.  |
     When the user sends "one" on session "dm" without waiting via memory comm
+    And the delayed response starts on session "dm"
     And the user sends "two" on session "dm" without waiting via memory comm
     And the turns on session "dm" finish
     Then session "dm" has transcript matching:
@@ -39,6 +40,7 @@ Feature: A busy session queues its next messages; same-thread prompts consolidat
       | echo  | text | Answered one.  |
       | echo  | text | Both answered. |
     When the user sends "one" on session "dm" without waiting via memory comm
+    And the delayed response starts on session "dm"
     And the user sends "two" on session "dm" with coalesce key "t1" without waiting via memory comm
     And the user sends "three" on session "dm" with coalesce key "t1" without waiting via memory comm
     And the turns on session "dm" finish
