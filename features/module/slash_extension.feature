@@ -5,9 +5,9 @@ Feature: Slash command extension
   crew, model, cwd) use the same registry, so module-declared and
   built-in commands coexist in available-commands.
 
-  Name collisions are last-wins with a warning — a module declaring a
-  built-in's name overrides it, logged so it does not happen silently
-  (see the registry spec).
+  Name collisions are settled by rank, not by load order — see
+  slash_provider.feature (isaac-quji). Until that lands, a module
+  declaring a built-in's name overrides it with a warning.
 
   Scenario: A module-declared slash command is invokable
     Given an empty Isaac root at "/tmp/isaac"
