@@ -307,13 +307,13 @@
       (str/join "\n" lines))))
 
 (defn build-system-text
-  ([soul boot-files rules-text skill-menu-text nonce]
-   (build-system-text soul boot-files rules-text skill-menu-text nil nil nonce true))
-  ([soul boot-files rules-text skill-menu-text session-name crew nonce]
-   (build-system-text soul boot-files rules-text skill-menu-text session-name crew nonce true))
-  ([soul boot-files rules-text skill-menu-text session-name crew nonce include-tool-batching-hint?]
+  ([soul sections nonce]
+   (build-system-text soul sections nil nil nonce true))
+  ([soul sections session-name crew nonce]
+   (build-system-text soul sections session-name crew nonce true))
+  ([soul sections session-name crew nonce include-tool-batching-hint?]
    (str/join "\n\n" (remove str/blank?
-                            (cond-> [soul boot-files rules-text skill-menu-text]
+                            (cond-> (into [soul] (map :text sections))
                               include-tool-batching-hint?
                               (conj turn-instructions/parallel-tool-calls-hint)
                               :always
@@ -374,8 +374,8 @@
 
 (defn- build-messages
   "Compose the messages array: system prompt + history (or compacted summary + post-compaction)."
-  [soul boot-files rules-text skill-menu-text session-name crew nonce guidance origin preamble transcript context-window filter-fn include-tool-batching-hint?]
-  (let [system-text (cond-> (build-system-text soul boot-files rules-text skill-menu-text session-name crew nonce include-tool-batching-hint?)
+  [soul sections session-name crew nonce guidance origin preamble transcript context-window filter-fn include-tool-batching-hint?]
+  (let [system-text (cond-> (build-system-text soul sections session-name crew nonce include-tool-batching-hint?)
                       (seq preamble) (str "\n\n" preamble))
         compaction  (find-last-compaction transcript)]
     (if compaction
@@ -421,22 +421,26 @@
 
 (def estimate-tokens llm-api/estimate-tokens)
 
+(defn- legacy-sections [boot-files rules-text skill-menu-text]
+  [{:id :boot-files :text boot-files} {:id :rules :text rules-text} {:id :skill-menu :text skill-menu-text}])
+
 (defn build
   "Build a prompt request compatible with the target provider.
    Options:
      :model          - resolved model string (e.g. \"qwen3-coder:30b\")
      :nonce          - session nonce used to trust internal blocks and sanitize user content
      :soul           - system prompt text
-     :boot-files     - optional AGENTS.md / boot file text appended to soul
+     :sections       - ordered system prefix sections appended to soul
+     :boot-files     - legacy boot file text (when sections are absent)
      :rules-text     - optional always-on prepared-rule text appended to soul
      :skill-menu-text - optional skill menu text appended to soul
      :transcript     - vector of transcript entries
      :tools          - vector of tool definitions (optional)
      :context-window - context window size for tool result truncation (optional)
      :filter-fn      - message filter function (default filter-messages)"
-  [{:keys [boot-files crew guidance model nonce origin rules-text session-name skill-menu-text soul preamble transcript tools context-window filter-fn include-tool-batching-hint?]}]
+  [{:keys [boot-files crew guidance model nonce origin rules-text session-name skill-menu-text soul preamble transcript tools context-window filter-fn include-tool-batching-hint? sections]}]
   (let [include-hint? (if (nil? include-tool-batching-hint?) true include-tool-batching-hint?)
-        messages (build-messages soul boot-files rules-text skill-menu-text session-name crew nonce guidance origin preamble transcript context-window (or filter-fn filter-messages) include-hint?)]
+        messages (build-messages soul (or sections (legacy-sections boot-files rules-text skill-menu-text)) session-name crew nonce guidance origin preamble transcript context-window (or filter-fn filter-messages) include-hint?)]
     (cond-> {:model    model
              :messages messages}
       (seq tools) (assoc :tools (mapv llm-api/wrapped-function-tool tools)))))

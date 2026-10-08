@@ -1,0 +1,2 @@
+{:id :isaac.section.squall :version "0.1.0" :factory isaac.foundation.module.protocol/module
+ :isaac.agent/system-sections {:squall {:factory isaac.section.squall/section}}}

@@ -1,4 +1,3 @@
-@wip
 Feature: System-section extension
   Modules contribute sections of the system prompt by declaring
   :isaac.agent/system-sections {<id> {:factory ... :order N}} in their

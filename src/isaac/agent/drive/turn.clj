@@ -25,6 +25,7 @@
     [isaac.foundation.nexus :as nexus]
     [isaac.agent.session.compaction :as compaction]
     [isaac.agent.session.context :as session-ctx]
+    [isaac.agent.system-sections :as system-sections]
 
     [isaac.agent.session.context-mode :as context-mode]
     [isaac.agent.session.session-observer :as session-observer]
@@ -1188,6 +1189,7 @@
            {:boot-files      boot-files
             :rules-text      rules-text
             :skill-menu-text skill-menu-text
+            :sections        (:sections ctx)
             :compaction      compaction
             :context-mode    context-mode
             :model           model
@@ -1210,6 +1212,7 @@
         transcript (context-mode/select-transcript context-mode transcript module-index)
         tools       (active-tools provider allowed-tools module-index)]
     (build-chat-request provider {:boot-files      boot-files
+                                  :sections        (:sections ctx)
                                   :crew            crew
                                   :effort          effort
                                   :guidance        guidance
@@ -1336,8 +1339,9 @@
 (defn- merge-allowed-tools [crew-tools auto-tools]
   (not-empty (into (set (or crew-tools [])) auto-tools)))
 
-(defn build-chat-request [p {:keys [boot-files crew effort guidance model nonce origin preamble rules-text session-name skill-menu-text soul transcript tools]}]
+(defn build-chat-request [p {:keys [boot-files crew effort guidance model nonce origin preamble rules-text session-name skill-menu-text soul transcript tools sections]}]
   (let [prompt-out (api/build-prompt p {:boot-files      boot-files
+                                        :sections        sections
                                         :crew            crew
                                         :guidance        guidance
                                         :model           model
@@ -1386,6 +1390,7 @@
             :allowed-tools   {:type :ignore :description "Set of tool keywords allowed for this turn's crew"}
             :boot-files      {:type :ignore :description "Boot-file contents read from the discovered project root"}
             :rules-text      {:type :ignore :description "Always-on prepared rule bodies read from global/project roots"}
+            :sections        {:type :ignore :description "Ordered system prompt sections"}
             :skill-menu-text {:type :ignore :description "Advertised skill descriptions injected into the cached system prompt"}
             :provider        {:type :ignore :description "Tools-augmented LLM provider for this turn"}}})
 
@@ -1404,14 +1409,15 @@
                              (when session-store* session-store*))
         session          (when sess (store/get-session sess session-key))
         charge           (assoc charge :cwd (or (:cwd charge) (:cwd session)))
-        skill-disclosure (or (session-ctx/read-skill-disclosure (:config charge) root (:cwd charge))
-                             {:menu-text nil :tool-names #{}})
+        sections         (system-sections/resolve-sections {:crew crew :cwd (:cwd charge)
+                                                             :config (:config charge) :root root
+                                                             :module-index (:module-index charge)})
         crew-cfg         (get crew-members crew)
         recall-tools     nil
         allowed-tools    (merge-allowed-tools (allowed-tool-names crew-members crew (:config charge))
-                                              (concat (:tool-names skill-disclosure) recall-tools))
-        boot-files       (session-ctx/read-boot-files (:cwd charge))
-        rules-text       (session-ctx/read-rules-text (:config charge) root (:cwd charge))
+                                              (concat (mapcat :tools sections) recall-tools))
+        boot-files       (:text (first (filter #(= :boot-files (:id %)) sections)))
+        rules-text       (:text (first (filter #(= :rules (:id %)) sections)))
         augmented        (augment-provider root provider session-key context-window
                                            (select-keys (or model-cfg {})
                                                         [:thinking-budget-max :think-mode :stateful :vision]))]
@@ -1437,7 +1443,8 @@
                       :allowed-tools   allowed-tools
                       :boot-files      boot-files
                       :rules-text      rules-text
-                      :skill-menu-text (:menu-text skill-disclosure)
+                      :skill-menu-text (:text (first (filter #(= :skill-menu (:id %)) sections)))
+                      :sections        sections
                       :provider        augmented})))
 
 (def ^:dynamic *foreman-request-id* nil)
@@ -1696,6 +1703,7 @@
                             :else nil)
           build-start-ns  (System/nanoTime)
           request         (build-chat-request p {:boot-files      boot-files
+                                                 :sections        (:sections ctx)
                                                  :crew            crew
                                                  :effort          effort
                                                  :guidance        guidance
@@ -1738,6 +1746,7 @@
             ;; in the transcript (isaac-5nx5).
             parts       {:soul            soul
                          :boot-files      boot-files
+                         :sections        (:sections ctx)
                          :rules-text      rules-text
                          :skill-menu-text skill-menu-text}
             acct-info   (fn []
@@ -1858,6 +1867,7 @@
                               ;; previous-response-id belongs to the model that stored it.
                               (dissoc (build-chat-request (:provider link)
                                                          {:boot-files      boot-files
+                                                          :sections        (:sections ctx)
                                                           :crew            crew
                                                           :effort          effort
                                                           :guidance        guidance
@@ -2026,6 +2036,7 @@
             (let [compact-result (check-compaction! ctx session-key {:boot-files      boot-files
                                                                      :rules-text      rules-text
                                                                      :skill-menu-text skill-menu-text
+                                                                     :sections        (:sections ctx)
                                                                      :compaction      compaction
                                                                      :context-mode    context-mode
                                                                      :model           model

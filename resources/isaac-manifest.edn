@@ -4,7 +4,14 @@
  :factory isaac.agent.module/create-module,
  :handbook "isaac/agent/handbook.md",
  :berths
- #:isaac.agent{:tools
+ #:isaac.agent{:system-sections
+               {:description "Ordered, provider-neutral system prompt section contributors."
+                :schema {:type :map :key-spec {:type :keyword}
+                         :value-spec {:type :map
+                                      :factory isaac.agent.system-sections/register-entry!
+                                      :schema {:factory {:type :symbol :validations [:present?]}
+                                               :order {:type :int}}}}}
+               :tools
                {:description "LLM tool factories.",
                 :schema
                 {:type :map,

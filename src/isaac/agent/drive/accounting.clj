@@ -45,29 +45,34 @@
   "The tokens one request carries, broken down by the parts that built it.
 
    `parts` are the same values `build-chat-request` was handed — :soul,
-   :boot-files, :rules-text, :skill-menu-text. Whatever of the system prefix
+   :sections (or the legacy named pieces). Whatever of the system prefix
    they do not account for is :framing-tokens (the injection guard, the session
    identity block, the tool-batching hint)."
-  [request {:keys [soul boot-files rules-text skill-menu-text]}]
+  [request {:keys [soul boot-files rules-text skill-menu-text sections]}]
   (let [messages    (vec (:messages request))
         system      (text-tokens (system-text request))
         soul*       (text-tokens soul)
-        boot*       (text-tokens boot-files)
-        rules*      (text-tokens rules-text)
-        skills*     (text-tokens skill-menu-text)
+        by-section  (if sections
+                      (into {} (map (fn [{:keys [id text]}] [(keyword (str (name id) "-tokens")) (text-tokens text)]) sections))
+                      {:boot-files-tokens (text-tokens boot-files)
+                       :rules-tokens (text-tokens rules-text)
+                       :skill-menu-tokens (text-tokens skill-menu-text)})
+        boot*       (get by-section :boot-files-tokens 0)
+        rules*      (get by-section :rules-tokens 0)
+        skills*     (get by-section :skill-menu-tokens 0)
         tools*      (wire-tokens (vec (:tools request)))
         transcript* (wire-tokens (vec (remove system-role? messages)))]
-    {:total-tokens      (+ system tools* transcript*)
+    (merge {:total-tokens      (+ system tools* transcript*)
      :system-tokens     system
      :soul-tokens       soul*
      :boot-files-tokens boot*
      :rules-tokens      rules*
      :skill-menu-tokens skills*
-     :framing-tokens    (max 0 (- system (+ soul* boot* rules* skills*)))
+     :framing-tokens    (max 0 (- system soul* (reduce + (vals by-section))))
      :tools-tokens      tools*
      :transcript-tokens transcript*
      :messages          (count messages)
-     :tool-count        (count (:tools request))}))
+     :tool-count        (count (:tools request))} by-section)))
 
 (defn reconcile
   "What the provider charged against what Isaac assembled. Nil when the

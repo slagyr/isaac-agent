@@ -33,6 +33,7 @@
     [isaac.agent.bridge.suspend :as bridge-suspend]
     [isaac.agent.bridge.resume :as bridge-resume]
     [isaac.agent.session.context :as session-ctx]
+    [isaac.agent.system-sections :as system-sections]
     [isaac.foundation.logger :as log]
     [isaac.agent.comm.memory :as memory-comm]
     [isaac.agent.comm.registry :as comm-registry]
@@ -486,7 +487,7 @@
       (grover/last-request)))
 
 (defn- prompt-tools []
-  (vec (or (:tools (last-llm-request)) [])))
+  (vec (or (:tools (last-llm-request)) (:tools (g/get :built-prompt)) [])))
 
 (defn- prompt-tool-name [tool]
   (or (:name tool)
@@ -1891,7 +1892,14 @@
                           :boot-files      (session-ctx/read-boot-files (:cwd session))
                           :rules-text      (session-ctx/read-rules-text cfg (root-dir) (:cwd session) (mem-fs))
                           :skill-menu-text (:menu-text skill-disclosure))]
+    (let [sections (system-sections/resolve-sections {:crew agent-id :cwd (:cwd session)
+                                                      :config cfg :root (root-dir) :fs (mem-fs)
+                                                      :module-index (:module-index cfg)})
+          grants (set (mapcat :tools sections))
+          _ (tool-registry/ensure-policy-tools! (:module-index cfg) grants)
+          tools (or (seq tools) (tool-registry/tool-definitions grants (:module-index cfg)))]
     (builder {:boot-files     (:boot-files ctx)
+              :sections       sections
               :context-window (:context-window model-cfg)
               :crew           agent-id
               :filter-fn      (when openai? prompt/filter-messages-openai)
@@ -1904,13 +1912,15 @@
               :skill-menu-text (:skill-menu-text ctx)
               :soul           (:soul ctx)
               :tools          tools
-              :transcript     transcript})))
+              :transcript     transcript}))))
 
 (defn prompt-on-session-matches [content key-str table]
   (g/assoc! :current-key key-str)
   (with-feature-fs
     (fn []
-      (let [result (match/match-object table (build-session-prompt content key-str))]
+      (let [prompt (build-session-prompt content key-str)
+            _ (g/assoc! :built-prompt prompt)
+            result (match/match-object table prompt)]
         (g/should= [] (:failures result))))))
 
 (defn prompt-on-session-with-framing-matches [content key-str origin-edn guidance table]

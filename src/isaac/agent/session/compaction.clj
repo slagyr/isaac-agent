@@ -136,7 +136,7 @@
 (defn estimate-prompt-tokens
   "Estimate tokens for the outbound prompt from the live transcript (and
    optional pending user input), not lagging session counters."
-  [session-key {:keys [session-store charge soul boot-files rules-text skill-menu-text
+  [session-key {:keys [session-store charge soul boot-files rules-text skill-menu-text sections
                        context-window model tools nonce guidance origin input
                        transcript context-mode caller]
                 :or   {soul ""}}]
@@ -160,6 +160,7 @@
                                              :boot-files        boot-files
                                              :rules-text        rules-text
                                              :skill-menu-text   skill-menu-text
+                                             :sections          sections
                                              :nonce             nonce
                                              :guidance          guidance
                                              :origin            origin

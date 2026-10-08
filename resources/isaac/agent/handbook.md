@@ -591,3 +591,13 @@ has no effect. `[verify]`
   `attention.notify` is actually set — an unconfigured attention target
   logs a warning internally instead of failing, so a missing bulletin
   often just means nobody ever pointed it anywhere.
+
+## System prompt sections
+
+Modules may contribute `:isaac.agent/system-sections` entries keyed by section id,
+with `:factory` (a symbol) and optional `:order` (default 500). Each factory
+receives the turn's crew, cwd, config, root and fs, and returns a map with
+`:text` and optional `:tools` (wire names). Sections appear after the soul,
+sorted by ascending order then id. Built-ins are boot files (100), rules
+(200), and skill menu (300). A failed contributor is skipped and warned about;
+it cannot prevent a turn. Section tokens are logged separately per request.

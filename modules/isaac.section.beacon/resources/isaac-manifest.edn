@@ -1,0 +1,3 @@
+{:id :isaac.section.beacon :version "0.1.0" :factory isaac.foundation.module.protocol/module
+ :isaac.agent/system-sections {:beacon {:factory isaac.section.beacon/section}}
+ :isaac.agent/tools {:beacon/ping {:factory isaac.section.beacon/ping-tool}}}

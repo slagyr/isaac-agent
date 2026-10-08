@@ -41,7 +41,7 @@
   (build-prompt
     [this opts]
     "Build a prompt request map for this api from turn opts.
-     opts keys: :boot-files :model :soul :transcript :tools :context-window.
+     opts keys: :sections :model :soul :transcript :tools :context-window.
      Returns a map with :model :messages and optionally :system :max-tokens :tools.")
 
   (format-tools
