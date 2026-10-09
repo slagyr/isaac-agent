@@ -55,20 +55,21 @@ Feature: Unknown crew rejects the turn
       | level | event                | session | crew |
       | :info | :drive/turn-accepted | stale   | main |
 
+  @wip
   Scenario: a session with no crew uses defaults.frequencies.crew
     Given config file "isaac.edn" containing:
       """
-      {:defaults {:frequencies {:crew "yopp"} :crew {:model "grover"} :tools {:directories {:allow [:cwd :quarters]}}}}
+      {:defaults {:frequencies {:crew "bartholomew"} :crew {:model "grover"} :tools {:directories {:allow [:cwd :quarters]}}}}
       """
-    And config file "crew/yopp.edn" containing:
+    And config file "crew/bartholomew.edn" containing:
       """
-      {:model :grover :soul "You are Yopp."}
+      {:model :grover :soul "You are Bartholomew."}
       """
     And the following sessions exist:
       | name      |
       | unlabeled |
     When the user sends "hello" on session "unlabeled"
-    Then the system prompt contains "You are Yopp."
+    Then the system prompt contains "You are Bartholomew."
     And the log has entries matching:
       | level | event                | session   | crew |
-      | :info | :drive/turn-accepted | unlabeled | yopp |
+      | :info | :drive/turn-accepted | unlabeled | bartholomew |

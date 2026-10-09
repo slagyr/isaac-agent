@@ -159,7 +159,7 @@ Feature: Session mutation
     And the exit code is 1
 
   # Changing a session's crew must not strand its files under the old crew's
-  # folder (isaac-2jjb): four yopp sessions repointed from main lost their history to
+  # folder (isaac-2jjb): four of one crew's sessions repointed from main lost their history to
   # an empty folder and every turn failed.
 
   Scenario: isaac sessions set <id>.crew keeps the session's transcript — the next turn still sees the history (isaac-2jjb)

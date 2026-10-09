@@ -2,7 +2,7 @@ Feature: A delivery lands in the transcript of the session that talks on its com
   A delivery queue only posts. When a cron job, an attention notice, or
   another session's comm__send posts to a comm target where a crew talks
   with someone, that crew's session never saw it, and the crew answers
-  out of context (yopp, 2026-10-06: a cron-style DM, then "I got it."
+  out of context (field, 2026-10-06: a cron-style DM, then "I got it."
   read as a reply to something else).
   Inbound records which comm targets a session talks on: the session
   carries :comms, "<comm>:<target>" strings, written by the comm when a
@@ -111,7 +111,7 @@ Feature: A delivery lands in the transcript of the session that talks on its com
       | message | assistant    | #"\[thread:T9\] \[sent here by crew herald from session cron-heartbeat\] Your weekly digest\." |
 
   Scenario: an attention notice is named as attention, not an empty crew and session
-    Yopp, 2026-10-07: an attention notice landed as "[sent here by crew  from
+    Field, 2026-10-07: an attention notice landed as "[sent here by crew  from
     session ] …". Attention deliveries carry no crew or session; they carry
     :origin {:kind :attention}, and the note names that instead.
     Given the comm "stub" returns:

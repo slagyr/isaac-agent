@@ -67,7 +67,7 @@ Feature: Config Command
     Given config file "isaac.edn" containing:
       """
       {:defaults  {:crew {:model :llama}}
-       :crew      {:yopp {}}
+       :crew      {:bartholomew {}}
        :models    {:llama {:model "llama3.3:1b" :provider :anthropic}}
        :providers {:anthropic {}}}
       """

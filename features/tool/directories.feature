@@ -223,7 +223,7 @@ Feature: Global and crew directory allow/deny
   # space's :crew). A session created under another crew — or under one that
   # no longer exists in config — keeps that stale name on its record. The
   # directory policy must follow the crew the turn actually runs as, not the
-  # record (isaac-dm session on yopp stored "main", ran as yopp, every path
+  # record (an isaac-dm session on one host stored "main", ran as its own crew, every path
   # refused — 2026-09-25).
 
   Scenario: the directory policy follows the crew the turn runs as, not the stale crew on the session record (isaac-kleb)

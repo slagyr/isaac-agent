@@ -54,7 +54,7 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
       | :info | :turn/ended | cancel  | :cancelled |
 
   Scenario: a provider wall ends with :provider-unavailable, not :context-exhausted (isaac-zveu)
-    Field 2026-09-17: yopp's claude-code provider returned HTTP 429 "You've hit
+    Field 2026-09-17: a deployment's claude-code provider returned HTTP 429 "You've hit
     your session limit · resets 6:40pm (UTC)" and the turn reported context
     exhaustion, sending the operator to compact a session that had plenty of
     room. A wall is unavailability, not a full context.
