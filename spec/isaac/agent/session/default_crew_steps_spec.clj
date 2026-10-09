@@ -14,13 +14,13 @@
                                 "{:tools {:web_search {:provider :brave}}}"))))
 
   (it "uses the only configured crew as the fixture default without replacing its config"
-    (should= {:crew     {:yopp {:soul "You are Yopp."}}
-              :defaults {:frequencies {:crew :yopp}}}
+    (should= {:crew     {:bartholomew {:soul "You are Bartholomew."}}
+              :defaults {:frequencies {:crew :bartholomew}}}
              (edn/read-string (#'sut/stamp-fixture-default-crew
                                 "isaac.edn"
-                                "{:crew {:yopp {:soul \"You are Yopp.\"}}}"))))
+                                "{:crew {:bartholomew {:soul \"You are Bartholomew.\"}}}"))))
 
   (it "does not alter the scenario that verifies defaults.crew is required"
-    (let [content "{:defaults {:crew {:model :llama}} :crew {:yopp {}}}"]
+    (let [content "{:defaults {:crew {:model :llama}} :crew {:bartholomew {}}}"]
       (should= content (#'sut/stamp-fixture-default-crew "isaac.edn" content))))
   )

@@ -382,7 +382,7 @@ These are identity references, not resolved contacts: `{:kind :handle :comm
 :gchat :id "users/123" :name "…" :email "…" :authenticated true}` names an
 outside sender exactly as the comm knows them. A handle requires `:comm` and
 `:id`; `:name`, `:email`, and the comm's `:authenticated` verification claim
-are optional. Other references are `{:kind :crew :id "yopp"}`, `{:kind :cron
+are optional. Other references are `{:kind :crew :id "bartholomew"}`, `{:kind :cron
 :id "nightly-dream"}`, `{:kind :cli}`, and `{:kind :http :id "<principal>"}`.
 The Agent stores these maps without interpreting them. A handle supplied as
 `:from` becomes `:for` too unless the caller explicitly names `:for`; otherwise
