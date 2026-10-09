@@ -72,6 +72,8 @@
                   (:cycle record) (assoc :cycle (:cycle record))
                   (get-in record [:frequencies :with-crew]) (assoc :crew (get-in record [:frequencies :with-crew]))
                   (get-in record [:frequencies :with-model]) (assoc :model-override (get-in record [:frequencies :with-model]))
+                  (get-in record [:frequencies :with-context-mode])
+                  (assoc :context-mode-override (keyword (get-in record [:frequencies :with-context-mode])))
                   (:crew record) (assoc :crew (:crew record))
                   (queue/live-comm (:id record)) (assoc :comm (queue/live-comm (:id record)))
                   (:observers record) (assoc :observers (:observers record))

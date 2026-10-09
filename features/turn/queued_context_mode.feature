@@ -1,4 +1,3 @@
-@wip
 Feature: A queued turn honors :with-context-mode
   A turn submitted by frequencies (a hail, cron, any queue producer) may carry
   :with-context-mode to pick how that one turn's context is built. It beats

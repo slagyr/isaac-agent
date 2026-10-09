@@ -161,6 +161,32 @@
         (await-settled! "coil-1"))
       (should= {:limit 1 :checkpoint-every 1} (:cycle @seen))))
 
+  (it "forwards a string :with-context-mode to charge/build as a keyword override"
+    (queue/enqueue! {:id "coil-mode" :session "mooring" :input "Status report"
+                     :frequencies {:session "mooring" :with-context-mode "full"}})
+    (let [seen (atom nil)]
+      (with-redefs [store/in-flight-sessions (fn [_] #{})
+                    isaac.agent.frequencies/resolve-session-targets
+                    (fn [_ _ _ _] {:session-key "mooring"})
+                    charge/build (fn [request] (reset! seen request) request)
+                    bridge/dispatch! (fn [_] {})]
+        (sut/tick! {:now (Instant/parse "2026-10-09T09:15:00Z")})
+        (await-settled! "coil-mode"))
+      (should= :full (:context-mode-override @seen))))
+
+  (it "forwards a keyword :with-context-mode to charge/build unchanged"
+    (queue/enqueue! {:id "coil-mode-kw" :session "crows-nest" :input "Status report"
+                     :frequencies {:session "crows-nest" :with-context-mode :reset}})
+    (let [seen (atom nil)]
+      (with-redefs [store/in-flight-sessions (fn [_] #{})
+                    isaac.agent.frequencies/resolve-session-targets
+                    (fn [_ _ _ _] {:session-key "crows-nest"})
+                    charge/build (fn [request] (reset! seen request) request)
+                    bridge/dispatch! (fn [_] {})]
+        (sut/tick! {:now (Instant/parse "2026-10-09T09:15:00Z")})
+        (await-settled! "coil-mode-kw"))
+      (should= :reset (:context-mode-override @seen))))
+
   (it "uses sequential session naming when the loaded configuration requests it"
     (queue/enqueue! {:id "coil-2" :frequencies {:session-tags #{:project/warp} :create :if-missing
                                                    :with-crew "bartholomew"}
