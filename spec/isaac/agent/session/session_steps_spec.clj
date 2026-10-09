@@ -10,6 +10,7 @@
     [isaac.foundation.root-steps :as froot]
     [isaac.foundation.fs :as fs]
     [isaac.agent.llm.api.grover :as grover]
+    [isaac.agent.llm.providers-steps :as providers-steps]
     [isaac.foundation.nexus :as nexus]
     [isaac.agent.session.session-steps :as sut]
     [isaac.agent.session.store.sidecar :as sidecar-store]
@@ -150,6 +151,41 @@
       (should (< (/ (- (System/nanoTime) started-at) 1000000.0)
                  500.0)))
     (should= {:ok true} (g/get :llm-result)))
+
+  (it "waits for a queued turn woken by the completed send before reading its transcript"
+    (let [turn (future {:output "done" :request {} :result {:ok true}})
+          worker-done (atom false)]
+      (g/assoc! :turn-future turn)
+      (g/assoc! :turn-futures-by-session {"fence-test" turn})
+      (with-redefs [isaac.agent.turn.worker/await-idle! (fn [] (reset! worker-done true))
+                    sut/get-transcript (fn [_]
+                                         (should @worker-done)
+                                         [{:type "message" :message {:role "assistant" :content "done"}}])]
+        (sut/session-transcript-matching "fence-test"
+          {:headers ["type" "message.role" "message.content"]
+           :rows [["message" "assistant" "done"]]}))))
+
+  (it "does not wait for a Grover-gated turn while inspecting its transcript"
+    (let [turn (promise)]
+      (g/assoc! :turn-future turn)
+      (g/assoc! :turn-futures-by-session {"fence-test" turn})
+      (with-redefs [grover/waiting? (fn [key-str] (= "fence-test" key-str))
+                    isaac.agent.turn.worker/await-idle! (fn [] (throw (ex-info "parked turn must not be awaited" {})))
+                    sut/get-transcript (fn [_] [{:type "message" :message {:role "assistant" :content "partial"}}])]
+        (sut/session-transcript-matching "fence-test"
+          {:headers ["type" "message.role" "message.content"]
+           :rows [["message" "assistant" "partial"]]}))
+      (should-not (realized? turn))
+      (deliver turn {:output "" :request {} :result {:ok true}})))
+
+  (it "waits for a queued turn before matching a later turn's HTTP request"
+    (let [worker-done (atom false)]
+      (g/assoc! :outbound-http-requests [{:body {:previous_response_id "resp-3"}}])
+      (with-redefs [isaac.agent.turn.worker/await-idle! (fn [] (reset! worker-done true))]
+        (providers-steps/outbound-http-request-n-matches "1"
+          {:headers ["key" "value"]
+           :rows [["body.previous_response_id" "resp-3"]]})
+        (should @worker-done))))
 
   (it "awaits an active session's turn before matching its transcript"
     (let [turn (future {:output "done" :request {} :result {:ok true}})]

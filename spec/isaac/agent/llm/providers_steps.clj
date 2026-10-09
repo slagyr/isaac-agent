@@ -203,6 +203,7 @@
 
 (defn outbound-http-request-n-matches [n table]
   (session-steps/await-turn!)
+  (session-steps/await-completed-turn-work! (g/get :current-key))
   (let [idx       (dec (long (if (string? n) (parse-long n) n)))
         requests  (vec (outbound-http-requests))
         raw       (nth requests idx nil)
@@ -213,6 +214,7 @@
 
 (defn outbound-http-request-n-lacks-path [n path]
   (session-steps/await-turn!)
+  (session-steps/await-completed-turn-work! (g/get :current-key))
   (let [idx     (dec (long (if (string? n) (parse-long n) n)))
         request (request-for-match (nth (vec (outbound-http-requests)) idx nil))]
     (g/should= nil (match/get-path request path))))

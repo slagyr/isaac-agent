@@ -1759,6 +1759,14 @@
     (when-not (seq (g/get :turn-futures-by-session))
       (await-turn!))))
 
+(defn await-completed-turn-work!
+  "Wait for queue work started by a finished send, but never wait on an
+   intentionally parked Grover turn (which requires a later step to release it)."
+  [key-str]
+  (when (and (not (grover/waiting? key-str))
+             (not (some grover/waiting? (keys (g/get :turn-futures-by-session)))))
+    (turn-worker/await-idle!)))
+
 (defn- transcript-matching-failures
   "Pure(ish) check: awaits any in-process turn machinery, then returns the
    list of table-vs-transcript mismatches (empty when it matches). Shared by
@@ -1767,6 +1775,7 @@
   [transcript-fn key-str table]
   (await-transcript-turn! key-str)
   (await-acp-turn!)
+  (await-completed-turn-work! key-str)
   (let [table (normalize-transcript-table table)
         transcript (with-feature-fs #(transcript-fn key-str))
          explicit-idx? (some #(contains? % "#index") (map #(zipmap (:headers table) %) (:rows table)))
