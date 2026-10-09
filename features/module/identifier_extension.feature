@@ -1,4 +1,3 @@
-@wip
 Feature: Identifier extension — a module names the party behind a handle
   A handle is how one comm names the party on the other end of a message:
   {:kind :handle :comm … :id …}. Agent does not know who that is. Modules

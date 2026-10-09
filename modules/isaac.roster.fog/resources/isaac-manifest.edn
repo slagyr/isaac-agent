@@ -1,0 +1,2 @@
+{:id :isaac.roster.fog :version "0.1.0" :factory isaac.foundation.module.protocol/module
+ :isaac.agent/identifiers {:fog {:factory isaac.roster.fog/identify}}}

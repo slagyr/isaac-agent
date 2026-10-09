@@ -5,11 +5,12 @@
     [clojure.edn :as edn]
     [clojure.pprint :as pprint]
     [clojure.string :as str]
+    [isaac.agent.identifiers :as identifiers]
+    [isaac.agent.tool.memory :as memory]
+    [isaac.agent.turn.store :as store]
     [isaac.foundation.config.loader :as loader]
     [isaac.foundation.fs :as fs]
-    [isaac.foundation.logger :as log]
-    [isaac.agent.tool.memory :as memory]
-    [isaac.agent.turn.store :as store])
+    [isaac.foundation.logger :as log])
   (:import
     (java.util UUID)))
 
@@ -70,6 +71,10 @@
   (let [fs*    (filesystem)
         comm   (:comm record)
         record (normalize-record (dissoc record :comm))
+        index  (:module-index (loader/snapshot "turn enqueue"))
+        record (cond-> record
+                 (:from record) (update :from #(identifiers/identify index %))
+                 (:for record) (update :for #(identifiers/identify index %)))
         path   (held-path (:id record))]
     (fs/mkdirs fs* (fs/parent path))
     (let [accepted (store/submit! (store/file-store fs* (runtime-root)) record)]

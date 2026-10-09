@@ -4,7 +4,13 @@
  :factory isaac.agent.module/create-module,
  :handbook "isaac/agent/handbook.md",
  :berths
- #:isaac.agent{:system-sections
+ #:isaac.agent{:identifiers
+               {:description "In-memory, nonblocking party identifiers for turn handles."
+                :schema {:type :map :key-spec {:type :keyword}
+                         :value-spec {:type :map
+                                      :factory isaac.agent.identifiers/register-entry!
+                                      :schema {:factory {:type :symbol :validations [:present?]}}}}}
+               :system-sections
                {:description "Ordered, provider-neutral system prompt section contributors."
                 :schema {:type :map :key-spec {:type :keyword}
                          :value-spec {:type :map

@@ -1,10 +1,16 @@
 (ns isaac.agent.turn.queue-spec
   (:require
+    [isaac.foundation.config.loader :as loader]
     [isaac.foundation.fs :as fs]
     [isaac.foundation.nexus :as nexus]
+    [isaac.foundation.module.loader :as module-loader]
     [isaac.agent.spec-helper :as helper]
     [isaac.agent.turn.queue :as sut]
-    [speclj.core :refer :all]))
+    [speclj.core :refer [around describe it should should= should-not]]))
+
+(defn identify-cordelia [handle]
+  (when (= "cordelia-7" (:id handle))
+    {:kind :contact :id "cordelia" :authenticated true}))
 
 (describe "turn.queue"
 
@@ -34,6 +40,22 @@
       (should= {:kind :submit} (:from record))
       (should-not (contains? record :for))
       (should= {:kind :submit} (:from (sut/read-held "tide-9")))))
+
+  (it "identifies each handle before storing a turn without trusting an identifier's authentication"
+    (let [handle {:kind :handle :comm :logbook :id "cordelia-7" :authenticated false}
+          index {:isaac.roster.almanac {:manifest {:isaac.agent/identifiers
+                                                   {:almanac {:factory 'isaac.agent.turn.queue-spec/identify-cordelia}}}}}]
+      (with-redefs [loader/snapshot (fn [& _] {:module-index index})
+                    module-loader/activate! (fn [& _] nil)]
+        (let [record (sut/enqueue! {:id "tide-9" :from handle :for handle})]
+          (should= {:kind :contact :id "cordelia" :authenticated false} (:from record))
+          (should= (:from record) (:for (sut/read-held "tide-9")))))))
+
+  (it "leaves non-handles and unknown handles unchanged"
+    (let [crew {:kind :crew :id "marvin"}
+          handle {:kind :handle :comm :logbook :id "unknown"}]
+      (should= crew (:from (sut/enqueue! {:id "crew" :from crew})))
+      (should= handle (:from (sut/enqueue! {:id "unknown" :from handle})))))
 
   (it "stores the held file at turns/<id>.edn"
     (sut/enqueue! {:id "berth-1" :session "harbor" :state :held})

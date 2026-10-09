@@ -628,6 +628,29 @@ has no effect. `[verify]`
   logs a warning internally instead of failing, so a missing bulletin
   often just means nobody ever pointed it anywhere.
 
+## Parties and turn identification
+
+A **party** is a person or machine on the other end of a message, never a comm,
+space, channel or session. A **handle** is how one comm names a party (for
+example `{:kind :handle :comm :gchat :id "users/123"}`); the same party may
+have different handles on different comms. iMessage also calls a phone number
+or email a "handle" in its own data: that is one narrower kind of comm handle,
+not a different definition of party. A **contact** is a party known by name
+across comms. An **identifier** is a module that names the party behind a
+handle.
+
+A module declares `:isaac.agent/identifiers {<id> {:factory <symbol>}}` in its
+manifest. At turn submission, before storage, the agent calls each installed
+identifier with each handle in `:from` and `:for`. The first non-nil replacement
+map is stored; other party kinds are not offered for identification. If no
+identifier knows the handle, the original is stored unchanged. If an identifier
+throws, the agent logs `:identifier/failed` at warn with its module name and
+continues; identification never prevents a turn from being stored. The agent
+copies the original handle's `:authenticated` claim to the replacement,
+ignoring any value the identifier returns: naming a party cannot vouch for it.
+Identifier factories must perform **plain in-memory, nonblocking lookups**;
+there is no timeout machinery at this berth.
+
 ## System prompt sections
 
 Modules may contribute `:isaac.agent/system-sections` entries keyed by section id,
