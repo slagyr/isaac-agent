@@ -91,11 +91,11 @@
                            :usage   {:prompt-tokens 3 :output-tokens 1}}])
           followup-fn  (recording-followup calls)
           tool-fn      (fn [_ {:keys [path]}]
-                         (let [paths (swap! started conj path)]
-                           (when (= 2 (count paths))
-                             (deliver started-two true)))
+                         (swap! started conj path)
                          (let [now (swap! in-flight inc)]
-                           (swap! peak max now))
+                           (swap! peak max now)
+                           (when (= 2 now)
+                             (deliver started-two true)))
                          (if (#{"a" "b"} path)
                            (do
                              (deref release 1000 :timeout)
