@@ -57,6 +57,20 @@
       (should= crew (:from (sut/enqueue! {:id "crew" :from crew})))
       (should= handle (:from (sut/enqueue! {:id "unknown" :from handle})))))
 
+  (it "delegated submissions replace a tool's claimed sender and beneficiary"
+    (binding [sut/*delegator* {:crew "ketch" :for {:kind :contact :id "cordelia"}}]
+      (let [record (sut/enqueue! {:id "gull-2" :from {:kind :cli}
+                                  :for {:kind :contact :id "hieronymus"}})]
+        (should= {:kind :crew :id "ketch"} (:from record))
+        (should= {:kind :contact :id "cordelia"} (:for record)))))
+
+  (it "delegation for nobody drops even an explicitly claimed beneficiary"
+    (binding [sut/*delegator* {:crew "ketch"}]
+      (let [record (sut/enqueue! {:id "gull-2" :from {:kind :cli}
+                                  :for {:kind :contact :id "hieronymus"}})]
+        (should= {:kind :crew :id "ketch"} (:from record))
+        (should-not (contains? record :for)))))
+
   (it "stores the held file at turns/<id>.edn"
     (sut/enqueue! {:id "berth-1" :session "harbor" :state :held})
     (should (fs/exists? (nexus/get :fs) "/test/isaac/turns/berth-1.edn")))

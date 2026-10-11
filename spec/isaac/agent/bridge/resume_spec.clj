@@ -95,6 +95,23 @@
       (should= (:id new-record) (:resumed-by old-record))
       (should= "t-orig" (:resumes new-record))))
 
+  (it "keeps the original sender and beneficiary on a resumed turn"
+    (helper/create-session! test-root "logbook")
+    (let [from {:kind :crew :id "ketch"}
+          for-party {:kind :handle :comm :logbook :id "cordelia-7"}]
+      (queue/enqueue! {:id "t-orig" :session "logbook" :input "Daily check"
+                       :state :running :from from :for for-party})
+      (store/record-turn-marker! (store/registered-store) "logbook"
+                                 {:source :comm :session-id "logbook"
+                                  :started-at "2026-04-21T09:59:30Z"})
+      (sut/resume-interrupted-turns! {:session-store (store/registered-store)
+                                      :root test-root :cfg {}
+                                      :now (Instant/parse "2026-04-21T10:00:00Z")})
+      (let [record (first (remove #(= "t-orig" (:id %))
+                                  (binding [queue/*root* test-root] (queue/all-turns))))]
+        (should= from (:from record))
+        (should= for-party (:for record)))))
+
   (it "returns the orphaned dock lease before requeueing the interrupted turn"
     (helper/create-session! test-root "logbook")
     (let [released (atom [])]

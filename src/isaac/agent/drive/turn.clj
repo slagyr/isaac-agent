@@ -1518,6 +1518,8 @@
                           :input-persisted? true
                           :origin  (assoc (or (:origin charge) {:kind :queue})
                                           :continuation continuation)
+                          :from    (:from charge)
+                          :for     (:for charge)
                           :comm    ch
                           :crew    (:crew charge)
                           :cwd     (:cwd charge)
@@ -1590,12 +1592,13 @@
                                          true (assoc :progress! progress!))
                             cache      (:window-cache tool-ctx)
                             cycle-n    (or (some-> tool-ctx :cycle* deref :n) 1)
-                            raw-result (if-let [parse-error (:arguments-error tc)]
-                                         {:isError true
-                                          :error (str "Invalid arguments for " (:name tc) ": " parse-error)}
-                                         (if cache
-                                           (tool-registry/execute (:name tc) args allowed-tools module-index caps cache cycle-n)
-                                           (tool-registry/execute (:name tc) args allowed-tools module-index caps)))]
+                            raw-result (binding [turn-queue/*delegator* {:crew crew :for (:for tool-ctx)}]
+                                         (if-let [parse-error (:arguments-error tc)]
+                                           {:isError true
+                                            :error (str "Invalid arguments for " (:name tc) ": " parse-error)}
+                                           (if cache
+                                             (tool-registry/execute (:name tc) args allowed-tools module-index caps cache cycle-n)
+                                             (tool-registry/execute (:name tc) args allowed-tools module-index caps))))]
                         (when (= :cancelled (:error raw-result))
                           (when (compare-and-set! tool-state :running :cancelled)
                             (comm/on-tool-cancel ch session-key tc))
@@ -1795,6 +1798,7 @@
                               (comm/on-cycle-end ch session-key cycle {:outcome :aside :text text :tool-calls tool-calls})
                               (comm/on-aside ch session-key cycle text)))
             tool-ctx      {:turn-id        *foreman-request-id*
+                            :for            (:for charge)
                             :cwd            (:cwd charge)
                             :comm           ch
                             :crew           crew

@@ -23,6 +23,7 @@
     [isaac.foundation.nexus :as nexus]
     [isaac.agent.tool.builtin :as builtin]
     [isaac.agent.tool.registry :as tool-registry]
+    [isaac.agent.turn.queue :as turn-queue]
     [isaac.agent.resource-pool :as pool]
     [speclj.core :refer [around describe it should should-be-nil should-not should-not-be-nil should-throw should=]]))
 
@@ -1859,6 +1860,19 @@
                  (#'sut/continuation-plan wrapped 2 2))
         (should= {:action :exhausted :continuation 0 :budget 0}
                  (#'sut/continuation-plan wrapped 0 0))))
+
+    (it "copies both identities to a continuation without delegating it"
+      (let [from {:kind :handle :comm :logbook :id "cordelia-7"}
+            for-party {:kind :contact :id "cordelia"}
+            seen (atom nil)]
+        (with-redefs [store/append-message! (fn [& _] nil)
+                      turn-queue/enqueue! (fn [record] (reset! seen record))]
+          (#'sut/enqueue-continuation! {:root test-dir :from from :for for-party
+                                         :crew "ketch" :origin {:kind :memory}}
+                                        {:session-store :sessions} null-comm/channel "harbor"
+                                        {:continuation 1 :budget 2}))
+        (should= from (:from @seen))
+        (should= for-party (:for @seen))))
 
     (it "the continuation note tells the model to continue from its own wrap-up note"
       (should (re-find #"continue" sut/continuation-note))

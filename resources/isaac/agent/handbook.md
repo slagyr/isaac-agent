@@ -390,7 +390,12 @@ The Agent stores these maps without interpreting them. A handle supplied as
 other submitters that don't name `:from` get `{:kind :submit}` until their
 entry points adopt their own identity. `isaac turns show <id>` prints them as
 `from.<key>` and `for.<key>` alongside `origin.<key>`; `turn__get` returns the
-record including these fields.
+record including these fields. A turn submitted by a tool during a running
+turn is attributed to the crew running that turn (`:from {:kind :crew :id
+"<crew>"}`), and inherits the running turn's `:for` unchanged, including its
+absence. Tool-supplied `:from` and `:for` cannot override this delegation.
+Continuations and turns resumed after a restart are not new delegations: they
+copy both `:from` and `:for` unchanged from the turn they continue.
 
 An observer can be attached per turn (`--observer lookout`, or
 `name:params`) to narrate lifecycle events (turn started/ended, with

@@ -20,6 +20,9 @@
 
 (def ^:dynamic *root* nil)
 
+;; Bound only while a crew's tool executes; carry-over enqueues happen outside this scope.
+(def ^:dynamic *delegator* nil)
+
 (defn- runtime-root []
   (or *root* (loader/root) (throw (ex-info "turn queue requires :root" {}))))
 
@@ -70,7 +73,11 @@
 (defn enqueue! [record]
   (let [fs*    (filesystem)
         comm   (:comm record)
-        record (normalize-record (dissoc record :comm))
+        record (normalize-record (if *delegator*
+                                   (cond-> (assoc (dissoc record :comm :for)
+                                                  :from {:kind :crew :id (:crew *delegator*)})
+                                     (:for *delegator*) (assoc :for (:for *delegator*)))
+                                   (dissoc record :comm)))
         index  (:module-index (loader/snapshot "turn enqueue"))
         record (cond-> record
                  (:from record) (update :from #(identifiers/identify index %))

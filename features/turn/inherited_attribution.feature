@@ -38,7 +38,6 @@ Feature: Inherited attribution — delegated and carried-over turns keep their o
       | mooring    | ketch   |
       | crows-nest | lookout |
 
-  @wip
   Scenario: a turn a crew starts from inside a turn is from the crew and for the original party
     Given the following model responses are queued:
       | type      | tool_call    | arguments                                                       | content | model |
@@ -66,7 +65,6 @@ Feature: Inherited attribution — delegated and carried-over turns keep their o
       | (?m)^for\.id: cordelia-7$ |
       | for.authenticated: true   |
 
-  @wip
   Scenario: a turn started from inside a turn that is for nobody is for nobody
     Given the following model responses are queued:
       | type      | tool_call    | arguments                                                       | content | model |
@@ -84,7 +82,6 @@ Feature: Inherited attribution — delegated and carried-over turns keep their o
       | (?m)^from\.id: ketch$ |
     And the stdout does not contain "for."
 
-  @wip
   Scenario: a tool cannot claim to act for someone else
     Given the following model responses are queued:
       | type      | tool_call    | arguments                                                                          | content | model |
@@ -109,7 +106,6 @@ Feature: Inherited attribution — delegated and carried-over turns keep their o
       | (?m)^for\.id: cordelia-7$ |
     And the stdout does not contain "hieronymus"
 
-  @wip
   Scenario: a continuation keeps who the turn is from and for
     Given the memory comm answers :wrap-up on exhaustion
     And the isaac EDN file "config/crew/oscar.edn" exists with:
@@ -139,7 +135,6 @@ Feature: Inherited attribution — delegated and carried-over turns keep their o
       | for.kind            | handle     |
       | for.id              | cordelia-7 |
 
-  @wip
   Scenario: a resumed turn keeps who the turn is from and for
     Given the following sessions exist:
       | name   |

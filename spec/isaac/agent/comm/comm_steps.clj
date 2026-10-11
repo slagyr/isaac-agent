@@ -174,7 +174,14 @@
                                  (reset! result {:error :exception :message (.getMessage e)}))))))))))]
     [@result output]))
 
-(defn user-sends-via-memory-channel [content key-str]
+(declare user-sends-via-memory-channel)
+
+(defn user-sends-via-memory-channel-as-handle [content key-str comm id]
+  (user-sends-via-memory-channel content key-str {:from {:kind :handle :comm (keyword comm) :id id}}))
+
+(defn user-sends-via-memory-channel
+  ([content key-str] (user-sends-via-memory-channel content key-str {}))
+  ([content key-str charge-attrs]
   (grover/clear-provider-requests!)
   (llm-http/clear-outbound-requests!)
   (drive-dispatch/clear-last-request!)
@@ -185,7 +192,7 @@
         existing  (with-feature-fs #(get-session key-str))
         crew      (or (:crew existing) (:agent existing) (get-in cfg [:defaults :frequencies :crew]) "main")
         _         (with-feature-fs #(store/open-session! (session-store) key-str {:crew crew}))
-        opts      (channel-send-opts key-str channel)
+        opts      (merge (channel-send-opts key-str channel) charge-attrs)
         armed     (g/get :cancel-after-n-tool-calls)]
     (g/assoc! :current-key key-str)
     (g/assoc! :channel-events events)
@@ -209,7 +216,7 @@
           (g/dissoc! :turn-future)
           (record-memory-turn! events captured* (first outcome) (second outcome))))
       (let [[result output] (run-memory-dispatch! (root) cfg opts captured* content key-str)]
-        (record-memory-turn! events captured* result output)))))
+        (record-memory-turn! events captured* result output))))))
 
 (defn users-send-via-memory-channel-simultaneously [content first-key second-key]
   (grover/clear-provider-requests!)
@@ -289,6 +296,8 @@
   "Sets the memory comm's on-exhausted reply (:stop or :wrap-up) for the next turn.")
 
 (defwhen "the user sends \"{content:string}\" on session \"{key:string}\" via memory comm" isaac.agent.comm.comm-steps/user-sends-via-memory-channel)
+(defwhen "the user sends \"{content:string}\" on session \"{key:string}\" via memory comm as handle \"{comm:string}/{id:string}\""
+  isaac.agent.comm.comm-steps/user-sends-via-memory-channel-as-handle)
 
 (defwhen "the user sends \"{content:string}\" on sessions \"{first-key:string}\" and \"{second-key:string}\" at the same time via memory comm"
   isaac.agent.comm.comm-steps/users-send-via-memory-channel-simultaneously)

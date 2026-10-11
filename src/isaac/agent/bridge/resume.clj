@@ -121,7 +121,9 @@
                                                 :origin  {:kind :resume :source (:source marker)}
                                                 :root    root
                                                 :resource-pools (mapv (comp keyword :pool) (:leases marker))}
-                                          old-record (assoc :resumes (:id old-record))))]
+                                          old-record (assoc :resumes (:id old-record)
+                                                            :from (:from old-record)
+                                                            :for (:for old-record))))]
         (when old-record
           (queue/update-turn! (:id old-record)
                               {:state      :finished

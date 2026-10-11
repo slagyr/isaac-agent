@@ -353,4 +353,17 @@
   "isaac.agent.llm.api.grover/release-wait! for that session — unblocks the turn a
    prior 'is waiting on the model' step found parked there (isaac-e9jl).")
 
+(defn latest-turn-on-session-matches [session table]
+  (let [record (->> (with-feature-fs #(binding [queue/*root* (root-dir)] (queue/all-turns)))
+                    (filter #(= session (:session %)))
+                    (sort-by :created-at)
+                    last)]
+    (g/should-not-be-nil record)
+    (doseq [[path expected] (:rows table)]
+      (let [actual (get-in record (mapv keyword (str/split path #"\.")))]
+        (g/should= expected (if (keyword? actual) (name actual) (str actual)))))))
+
+(defthen "the latest turn on session \"{key:string}\" matches:"
+  isaac.agent.turn.queue-steps/latest-turn-on-session-matches)
+
 (defwhen "a turn is submitted with:" isaac.agent.turn.queue-steps/turn-submitted-with)
