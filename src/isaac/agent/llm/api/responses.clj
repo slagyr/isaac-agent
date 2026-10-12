@@ -174,12 +174,13 @@
                         tool-call))
                     tool-calls)))
 
-    "response.failed"
+    ("response.failed" "error")
     (let [failure (or (get-in data [:response :error]) (:error data))]
       (assoc accumulated :stream-error
              {:error   (if (contains? #{401 403} (or (:status failure) (:status data)))
                          :auth-failed :api-error)
               :status  (or (:status failure) (:status data))
+              :code    (or (:code failure) (:code data))
               :message (or (:message failure) "responses stream failed")
               :body    failure
               :retry-after (or (:retry-after failure) (:retry-after data))}))

@@ -107,6 +107,30 @@
       (should= :overloaded (:error (sut/normalize-error {:error :api-error
                                                         :message "Our servers are currently overloaded. Please try again later."}))))
 
+    (it "recognizes the provider's own failure code without reading its message"
+      (should= :server-error (:error (sut/normalize-error {:error :api-error :code "server_error" :message "broken"}))))
+
+    (it "recognizes a code-less Responses failure as server weather"
+      (should= :server-error (:error (sut/normalize-error {:error :api-error :body {:message "broken"}}))))
+
+    (it "recognizes HTTP 500 as server weather"
+      (should= :server-error (:error (sut/normalize-error {:error :api-error :status 500 :message "broken"}))))
+
+    (it "does not mistake a blamed request for server weather"
+      (should= :api-error (:error (sut/normalize-error {:error :api-error :code "invalid_prompt" :body {:code "invalid_prompt"} :message "broken"}))))
+
+    (it "does not trust overloaded wording when the failure code blames the request"
+      (should= :api-error (:error (sut/normalize-error {:error :api-error :code "invalid_prompt"
+                                                        :body {:code "invalid_prompt"}
+                                                        :message "server overloaded"}))))
+
+    (it "preserves auth and rate-limit status over a server code"
+      (should= :api-error (:error (sut/normalize-error {:error :api-error :status 401 :code "server_error" :message "bad"})))
+      (should= :rate-limited (:error (sut/normalize-error {:error :api-error :status 429 :code "server_error" :message "slow"}))))
+
+    (it "validates server weather as a normal error"
+      (should-not (schema/error? (sut/validate-error {:error :server-error :message "broken" :code "server_error"}))))
+
     (it "does not remap a 400 contract error"
       (should= :api-error (:error (sut/normalize-error {:error :api-error :status 400 :message "invalid request: unknown field"}))))
 

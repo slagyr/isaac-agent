@@ -682,6 +682,18 @@
             (should= :auth-failed (:error result))
             (should-not (:content result))))))
 
+    (it "keeps the provider code from a top-level error event"
+      (let [token (jwt-with-account-id "acct-123")]
+        (with-redefs [llm-http/post-sse! (fn [_ _ _ on-chunk process-event initial & _]
+                                           (let [event {:type "error" :error {:code "invalid_prompt" :message "bad input"}}]
+                                             (on-chunk event)
+                                             (process-event event initial)))
+                      auth-store/load-tokens (fn [_ _ _] {:access token :expires (+ (System/currentTimeMillis) 1800000)})
+                      auth-store/token-expired? (fn [_] false)]
+          (let [result (sut/chat-stream {:model "test" :messages []} identity "chatgpt" oauth-device-config)]
+            (should= "invalid_prompt" (:code result))
+            (should= :api-error (:error result))))))
+
     (it "classifies a response.failed overloaded message as :overloaded"
       (let [token (jwt-with-account-id "acct-123")]
         (with-redefs [llm-http/post-sse! (fn [_ _ _ on-chunk process-event initial & _]

@@ -555,6 +555,9 @@
       (some? (get m "message"))
       (assoc :message (get m "message"))
 
+      (not (str/blank? (get m "code")))
+      (assoc :code (get m "code"))
+
       status
       (assoc :status status)
 

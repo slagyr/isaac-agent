@@ -230,6 +230,8 @@
              :session session-key
              :provider provider
              :error (:error result)
+             :code (:code result)
+             :status (:status result)
              :message (error-message result)))
 
 (defn- report-error! [ctx session-key provider result opts]

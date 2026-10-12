@@ -38,6 +38,12 @@
                @events)
       (should= @events result)))
 
+  (it "includes the scripted code in a Responses failure event"
+    (sut/enqueue! [{:type "stream-failed" :content "broken" :code "server_error"}])
+    (let [events (sut/post-sse! "chatgpt" "https://example.com/responses" {} {} identity
+                                (fn [event acc] (conj acc event)) [])]
+      (should= "server_error" (get-in (first events) [:response :error :code]))))
+
   (it "returns the transport's :connection-lost result for a queued connection-reset"
     (sut/enqueue! [{:type "connection-reset" :content "Connection reset"}])
     (let [result (sut/post-sse! "chatgpt" "https://example.com/responses" {} {} identity (fn [_ a] a) nil)]

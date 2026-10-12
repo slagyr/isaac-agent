@@ -196,7 +196,7 @@
       {:error :connection-lost :message (or (:content scripted) "Connection reset")}
 
       (= "stream-failed" (:type scripted))
-      {:stream-failed? true :message (or (:content scripted) "stream failed")}
+      {:stream-failed? true :message (or (:content scripted) "stream failed") :code (:code scripted)}
 
       (= "unavailable" (:type scripted))
       (cond-> {:unavailable? true
@@ -436,7 +436,8 @@
       response
       (if (:stream-failed? response)
         (let [event {:type "response.failed"
-                     :response {:error {:message (or (:message response) "stream failed")}}}]
+                     :response {:error (cond-> {:message (or (:message response) "stream failed")}
+                                         (seq (:code response)) (assoc :code (:code response)))}}]
           (on-chunk event)
           (process-event event initial))
       (if (:stream-dropped? response)

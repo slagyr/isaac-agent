@@ -109,7 +109,7 @@
 
 (def error-kinds
   #{:auth-missing :auth-failed :refresh-failed :connection-refused :connection-lost :timeout :stream-stalled :stream-ended-early
-    :cancelled :context-overflow :rate-limited :overloaded :api-error :llm-error :provider-contract
+    :cancelled :context-overflow :rate-limited :overloaded :server-error :api-error :llm-error :provider-contract
     :unknown-provider :unknown})
 
 (def error
@@ -117,6 +117,7 @@
    :schema {:error          {:type :keyword :validations [schema/required] :validate error-kinds}
             :message        {:type :string :validations [schema/required]}
             :status         {:type :long}
+            :code           {:type :string}
             :retry-after-ms {:type :long}
             :usage          usage
             :body           {:type :ignore}}})
@@ -177,12 +178,17 @@
 
 (defn normalize-error [value]
   (let [status  (:status value)
+        code    (or (:code value) (get-in value [:body :code]))
         message (error-message value)
         lower   (str/lower-case message)
         kind    (cond
                   (= 429 status) :rate-limited
                   (contains? #{502 504 529} status) :overloaded
-                  (str/includes? lower "overloaded") :overloaded
+                  (and (nil? code) (str/includes? lower "overloaded")) :overloaded
+                  (or (= 500 status)
+                      (and (nil? status)
+                           (or (= "server_error" code)
+                               (and (nil? code) (map? (:body value)))))) :server-error
                   (and (contains? #{400 413} status)
                        (or (str/includes? lower "context")
                            (str/includes? lower "maximum prompt length")

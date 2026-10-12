@@ -31,7 +31,6 @@ Feature: A provider's own server error is weather, not a turn-ending error
       | provider       | grover:anthropic |
       | context-window | 128000           |
 
-  @wip
   Scenario Outline: <failure> on the head model continues the turn on the next model
     Given the isaac EDN file "config/crew/ketch.edn" exists with:
       | path           | value    |
@@ -59,7 +58,6 @@ Feature: A provider's own server error is weather, not a turn-ending error
       | a stream failure with no code    | stream-failed |        |              | Something went wrong. |
       | an HTTP 500                      | http-error    | 500    |              | Something went wrong. |
 
-  @wip
   Scenario: a server error with no fallback suspends the turn
     Given the isaac EDN file "config/crew/oscar.edn" exists with:
       | path  | value |
@@ -79,7 +77,6 @@ Feature: A provider's own server error is weather, not a turn-ending error
       | suspended-on.provider | chatgpt              |
       | retry-at              | 2026-04-21T10:00:30Z |
 
-  @wip
   Scenario Outline: <failure> is the request's fault and still ends the turn
     Given the isaac EDN file "config/crew/ketch.edn" exists with:
       | path           | value    |

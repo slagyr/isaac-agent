@@ -558,7 +558,7 @@ shutdown waits for an in-flight turn to reach a cooperative cancel point
 before it's forced. A **suspended** turn is different from a **cancelled**
 one: cancellation (any channel — Ctrl-C, an ACP cancel) deletes the turn
 marker outright ("stop, don't come back"), while suspension — on shutdown,
-or on "weather" (a provider wall, an auth failure, or a mid-stream stall) —
+or on "weather" (a provider wall, an auth failure, a mid-stream stall, or :server-error (HTTP 500 or a Responses failure with server_error/no code)) —
 preserves the marker with a reason and, for weather, a `retry-at`, so a
 scheduler sweep resumes it automatically once conditions clear. Repeated
 weather suspensions on the same turn are normal, not failures.
