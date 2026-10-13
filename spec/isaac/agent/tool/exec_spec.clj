@@ -25,6 +25,7 @@
       (with-redefs [loader/snapshot (fn [_] {:tools {:exec {:forward-env ["PATH"]}}})
                     env/env (fn [_] "dotenv-path")]
         (let [process (sut/start-process {"command" "printf %s \"$PATH\""})]
+          (should (sut/process-finished? process 30000))
           (should= inherited (str/trim (sut/read-process-output process)))
           (should= 0 (sut/process-exit-value process))))))
 
@@ -33,6 +34,7 @@
                   env/env (fn [name] (get {"ISAAC_T2O2_HARBOR" "tide-pool-7"
                                            "ISAAC_T2O2_EMPTY" ""} name))]
       (let [process (sut/start-process {"command" "printf '%s' \"${ISAAC_T2O2_HARBOR-unset}:${ISAAC_T2O2_EMPTY-unset}:${ISAAC_T2O2_OTHER-unset}\""})]
+        (should (sut/process-finished? process 30000))
         (should= "tide-pool-7:unset:unset" (sut/read-process-output process))
         (should= 0 (sut/process-exit-value process)))))
 
