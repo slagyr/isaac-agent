@@ -4,7 +4,7 @@ Feature: exec/run forwards named .env keys
   a script a crew runs cannot see a token that lives there. The operator
   names the keys to forward:
 
-    {:exec {:forward-env ["HARBOR_TOKEN"]}}
+    {:tools {:exec {:forward-env ["HARBOR_TOKEN"]}}}
 
   Only the named keys are copied into the command's environment. Nothing
   is forwarded by default, and a named key with no value is left unset
@@ -23,8 +23,8 @@ Feature: exec/run forwards named .env keys
   @wip
   Scenario: a named key reaches the command, and an unnamed key does not
     Given the isaac EDN file "config/isaac.edn" exists with:
-      | path             | value            |
-      | exec.forward-env | ["HARBOR_TOKEN"] |
+      | path                   | value            |
+      | tools.exec.forward-env | ["HARBOR_TOKEN"] |
     When the tool "exec__run" is called with:
       | command | echo "harbor=[$HARBOR_TOKEN] lighthouse=[$LIGHTHOUSE_KEY]" |
     Then the tool result is not an error
@@ -40,8 +40,8 @@ Feature: exec/run forwards named .env keys
   @wip
   Scenario: a named key with no value is left unset
     Given the isaac EDN file "config/isaac.edn" exists with:
-      | path             | value                           |
-      | exec.forward-env | ["EMPTY_TOKEN" "FOGHORN_TOKEN"] |
+      | path                   | value                           |
+      | tools.exec.forward-env | ["EMPTY_TOKEN" "FOGHORN_TOKEN"] |
     When the tool "exec__run" is called with:
       | command | echo "empty=${EMPTY_TOKEN-unset} foghorn=${FOGHORN_TOKEN-unset}" |
     Then the tool result is not an error
