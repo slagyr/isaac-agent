@@ -20,7 +20,6 @@ Feature: exec/run forwards named .env keys
       EMPTY_TOKEN=
       """
 
-  @wip
   Scenario: a named key reaches the command, and an unnamed key does not
     Given the isaac EDN file "config/isaac.edn" exists with:
       | path                   | value            |
@@ -30,14 +29,12 @@ Feature: exec/run forwards named .env keys
     Then the tool result is not an error
     And the tool result contains "harbor=[tide-pool-7] lighthouse=[]"
 
-  @wip
   Scenario: nothing is forwarded unless it is named
     When the tool "exec__run" is called with:
       | command | echo "harbor=[$HARBOR_TOKEN]" |
     Then the tool result is not an error
     And the tool result contains "harbor=[]"
 
-  @wip
   Scenario: a named key with no value is left unset
     Given the isaac EDN file "config/isaac.edn" exists with:
       | path                   | value                           |

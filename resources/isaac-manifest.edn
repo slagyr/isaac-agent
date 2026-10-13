@@ -1,5 +1,5 @@
 {:id :isaac.agent,
- :version "0.1.94",
+ :version "0.1.95",
  :builtin? true,
  :factory isaac.agent.module/create-module,
  :handbook "isaac/agent/handbook.md",
@@ -418,6 +418,11 @@
      {:type :map,
       :description "Retired: per-tool defaults now live at :defaults :tools."
       :validations [[:retired? "use :defaults :tools"]]}
+     :exec
+     {:type :map,
+      :description "Exec tool configuration",
+      :schema {:forward-env {:type :seq, :spec {:type :string},
+                             :description "Names of environment keys from the locked .env snapshot to forward to exec/run children when absent from the process environment. Empty by default; missing or blank values are omitted."}}}
      :web_search
      {:type :map,
       :description "Web search tool config",

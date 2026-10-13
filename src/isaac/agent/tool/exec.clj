@@ -1,11 +1,13 @@
 ;; mutation-tested: 2026-05-06
 (ns isaac.agent.tool.exec
   (:require
-    [clojure.string :as str]
     [clojure.java.io :as io]
+    [clojure.string :as str]
     [isaac.agent.bridge.cancellation :as bridge]
     [isaac.agent.bridge.suspend :as suspend]
-    [isaac.agent.tool.fs-bounds :as bounds])
+    [isaac.agent.tool.fs-bounds :as bounds]
+    [isaac.foundation.config.env :as env]
+    [isaac.foundation.config.loader :as loader])
   (:import
     [java.util.concurrent TimeUnit]))
 
@@ -40,6 +42,12 @@
                   (.redirectErrorStream true))]
     (when workdir
       (.directory pb (io/file workdir)))
+    (let [process-env (.environment pb)]
+      (doseq [name (get-in (loader/snapshot "tool exec: forward-env") [:tools :exec :forward-env])]
+        (when-not (.containsKey process-env name)
+          (let [value (env/env name)]
+            (when (and (string? value) (not (str/blank? value)))
+              (.put process-env name value))))))
     (let [proc (.start pb)]
       {:proc   proc
        :output (future (slurp (.getInputStream proc)))})))

@@ -109,6 +109,16 @@ filesystem root) otherwise logs — it doesn't change what's allowed.
 
 Tool-level knobs, not directory-related:
 
+- `config:tools.exec.forward-env` is a list of environment variable names to
+  forward to `exec/run` child processes (for example, `["HARBOR_TOKEN"]`).
+  It defaults to `[]`: nothing from the root `.env` is forwarded unless named.
+  `.env` feeds `${VAR}` config substitution and named forwarding, **not**
+  Isaac's process environment. Existing process variables win over `.env`;
+  absent or blank values are omitted. Changing the list hot-reloads, but
+  adding a key to `.env` requires a config reload to refresh its snapshot.
+  `exec/run` has no filesystem allowlist: forwarding is not a security
+  boundary for crews permitted to run shell commands.
+
 - `config:tools.web_search.provider` / `config:tools.web_search.api-key` —
   the only registered web search backend is `:brave`; the key is required
   once a provider is set.

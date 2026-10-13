@@ -3,6 +3,8 @@
     [clojure.java.io :as io]
     [clojure.string :as str]
     [isaac.agent.bridge.cancellation :as bridge]
+    [isaac.foundation.config.env :as env]
+    [isaac.foundation.config.loader :as loader]
     [isaac.agent.session.spec-helper :as helper]
     [isaac.foundation.nexus :as nexus]
     [isaac.agent.tool.exec :as sut]
@@ -17,6 +19,22 @@
     (helper/with-memory-store
       (nexus/-with-nested-nexus {:root support/test-dir}
         (example))))
+
+  (it "keeps the process PATH ahead of a named dotenv value"
+    (let [inherited (System/getenv "PATH")]
+      (with-redefs [loader/snapshot (fn [_] {:tools {:exec {:forward-env ["PATH"]}}})
+                    env/env (fn [_] "dotenv-path")]
+        (let [process (sut/start-process {"command" "printf %s \"$PATH\""})]
+          (should= inherited (str/trim (sut/read-process-output process)))
+          (should= 0 (sut/process-exit-value process))))))
+
+  (it "forwards only named nonblank keys from the locked dotenv snapshot"
+    (with-redefs [loader/snapshot (fn [_] {:tools {:exec {:forward-env ["ISAAC_T2O2_HARBOR" "ISAAC_T2O2_EMPTY"]}}})
+                  env/env (fn [name] (get {"ISAAC_T2O2_HARBOR" "tide-pool-7"
+                                           "ISAAC_T2O2_EMPTY" ""} name))]
+      (let [process (sut/start-process {"command" "printf '%s' \"${ISAAC_T2O2_HARBOR-unset}:${ISAAC_T2O2_EMPTY-unset}:${ISAAC_T2O2_OTHER-unset}\""})]
+        (should= "tide-pool-7:unset:unset" (sut/read-process-output process))
+        (should= 0 (sut/process-exit-value process)))))
 
   (it "runs a shell command and returns output"
     (let [result (with-redefs [sut/start-process (fn [_] ::proc)

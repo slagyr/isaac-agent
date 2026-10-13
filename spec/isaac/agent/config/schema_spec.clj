@@ -124,6 +124,15 @@
       (should= [[:retired? "use :defaults :crew :tools :allow"]]
                (get-in sut/field-tools [:schema :allow :validations])))
 
+    (it "conforms named exec environment keys"
+      (should= {:exec {:forward-env ["HARBOR_TOKEN"]}}
+               (lexicon/conform (runtime-spec sut/field-tools)
+                                {:exec {:forward-env ["HARBOR_TOKEN"]}})))
+
+    (it "rejects non-string exec environment keys"
+      (should (schema/error? (schema/validate (:schema (runtime-spec sut/field-tools))
+                                              {:exec {:forward-env [42]}}))))
+
     (it "defaults.crew.tools conforms max-parallel"
       (should= {:crew {:tools {:max-parallel 2}}}
                (lexicon/conform (runtime-spec sut/defaults)
