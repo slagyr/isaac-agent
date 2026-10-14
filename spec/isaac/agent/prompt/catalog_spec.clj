@@ -185,6 +185,34 @@
       (should (number? (:file-count entry)))
       (should (number? (:elapsed-ms entry)))))
 
+  (it "leaves malformed YAML out of the catalog and warns while keeping valid skills"
+    (write-config-file! "prompts/skills/tide-log.md"
+                        "---\ndescription: Tide log: high, low\n---\nBroken.")
+    (write-config-file! "prompts/skills/greenhouse.md"
+                        "---\ndescription: Healthy greenhouse\n---\nHealthy.")
+    (let [catalog (resolve-catalog)
+          broken  (first (:broken catalog))
+          warning (first (filter #(= :prompt/header-invalid (:event %)) @log/captured-logs))]
+      (should= "Healthy greenhouse" (get-in catalog [:skills "greenhouse" :description]))
+      (should-be-nil (get-in catalog [:skills "tide-log"]))
+      (should= (str root "/prompts/skills/tide-log.md") (:path broken))
+      (should (seq (:error broken)))
+      (should= :warn (:level warning))
+      (should= "prompts/skills/tide-log.md" (:path warning))
+      (should= (:error broken) (:error warning))
+      (should= (str "- greenhouse (skill): Healthy greenhouse\n"
+                    "- prompts/skills/tide-log.md (broken): its header does not parse; see the log")
+               (sut/resolve-prompt-menu {:fs (nexus/get :fs) :root root}))))
+
+  (it "leaves a non-map header out and preserves other commands"
+    (write-config-file! "prompts/commands/bad.md" "---\n- not\n- a map\n---\nBroken.")
+    (write-config-file! "prompts/commands/good.md" "---\ndescription: Good command\n---\nRun.")
+    (let [catalog (resolve-catalog)]
+      (should= "Good command" (get-in catalog [:commands "good" :description]))
+      (should-be-nil (get-in catalog [:commands "bad"]))
+      (should= (str root "/prompts/commands/bad.md") (get-in catalog [:broken 0 :path]))
+      (should (seq (get-in catalog [:broken 0 :error])))))
+
   (it "resolves command prompt text with params substituted"
     (write-config-file! "prompts/commands/work.md"
                         (str "---\n"

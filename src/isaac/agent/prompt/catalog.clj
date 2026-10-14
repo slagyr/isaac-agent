@@ -3,10 +3,10 @@
   (:require
     [clj-yaml.core :as yaml]
     [clojure.string :as str]
-    [isaac.foundation.fs :as fs]
-    [isaac.foundation.logger :as log]
     [isaac.agent.prompt.template :as template]
-    [isaac.agent.tool.fs-bounds :as fs-bounds]))
+    [isaac.agent.tool.fs-bounds :as fs-bounds]
+    [isaac.foundation.fs :as fs]
+    [isaac.foundation.logger :as log]))
 
 (def ^:private default-prompt-dir-names
   {"commands" :command
@@ -20,8 +20,10 @@
 
 (defn- parse-frontmatter [content]
   (when-let [{:keys [body frontmatter]} (split-frontmatter content)]
-    {:body body
-     :data (yaml/parse-string frontmatter :keywords true)}))
+    (let [data (yaml/parse-string frontmatter :keywords true)]
+      (when-not (map? data)
+        (throw (ex-info "Prompt header must be a YAML map" {:data data})))
+      {:body body :data data})))
 
 (defn- normalize-type [value]
   (when (some? value)
@@ -115,26 +117,39 @@
   (when (and explicit inferred (not= explicit inferred))
     (log/warn :prompt/type-conflict :name name :explicit-type explicit :inferred-type inferred)))
 
-(defn- file-entry [fs* dir-names {:keys [default-type layer root path]}]
-  (when-let [{:keys [data]} (parse-frontmatter (fs/slurp fs* path))]
-    (let [name          (entry-name path)
-          explicit-type (normalize-type (:type data))
-          inferred-path (path-type dir-names root path default-type)
-          inferred-user (user-type data)
-          type          (effective-type explicit-type inferred-user inferred-path)]
-      (warn-on-conflict! name explicit-type (or inferred-user inferred-path))
-      (if type
-        {:body-loader  (fn [] (:body (parse-frontmatter (fs/slurp fs* path))))
-         :description  (:description data)
-         :layer        layer
-         :name         name
-         :params       (:params data)
-         :path         path
-         :skills       (:skills data)
-         :type         type}
-        (do
-          (log/warn :prompt/missing-type-signal :path path)
-          nil)))))
+(defn- file-entry [fs* dir-names {:keys [default-type isaac-root layer root path]}]
+  (let [parsed (try
+                 (parse-frontmatter (fs/slurp fs* path))
+                 (catch Exception e
+                   (let [error (.getMessage e)]
+                     (log/warn :prompt/header-invalid
+                               :path (let [prefix (str isaac-root "/")]
+                                       (if (str/starts-with? path prefix)
+                                         (subs path (count prefix))
+                                         path))
+                               :error error)
+                     {:broken {:path path :error error}})))]
+    (if (:broken parsed)
+      parsed
+      (when-let [{:keys [data]} parsed]
+        (let [name          (entry-name path)
+              explicit-type (normalize-type (:type data))
+              inferred-path (path-type dir-names root path default-type)
+              inferred-user (user-type data)
+              type          (effective-type explicit-type inferred-user inferred-path)]
+          (warn-on-conflict! name explicit-type (or inferred-user inferred-path))
+          (if type
+            {:body-loader  (fn [] (:body (parse-frontmatter (fs/slurp fs* path))))
+             :description  (:description data)
+             :layer        layer
+             :name         name
+             :params       (:params data)
+             :path         path
+             :skills       (:skills data)
+             :type         type}
+            (do
+              (log/warn :prompt/missing-type-signal :path path)
+              nil)))))))
 
 (defn- entry-body [entry]
   (when-let [load-body (:body-loader entry)]
@@ -245,6 +260,7 @@
 
 (defn resolve-catalog [{:keys [config cwd fs root]}]
   (let [fs*           fs
+        root-path     root
         config        (or config {})
         dir-names     (normalize-prompt-dir-names config)
         project-root* (discover-project-root cwd fs* config)
@@ -253,10 +269,12 @@
                               (project-roots project-root* config))
         file-specs    (->> root-specs
                            (mapcat (fn [root]
-                                     (map #(merge root %) (root-file-specs fs* root dir-names))))
+                                     (map #(merge root % {:isaac-root root-path}) (root-file-specs fs* root dir-names))))
                            dedupe-file-specs)
         entries       (keep #(file-entry fs* dir-names %) file-specs)
-        catalog       (reduce index-entry {:commands {} :rules {} :skills {}} entries)
+        catalog       (reduce index-entry {:commands {} :rules {} :skills {}
+                                           :broken (vec (keep :broken entries))}
+                              (remove :broken entries))
         elapsed-ms    (/ (- (System/nanoTime) start-ns) 1000000.0)]
     (log/debug :prompt/catalog-resolved
                :elapsed-ms elapsed-ms
@@ -341,15 +359,20 @@
            (str ": " description)))))
 
 (defn resolve-prompt-menu
-  "Every catalog entry (skill, command, rule) with its kind and
-   description, sorted by name, one `- <name> (<kind>): <description>`
-   line per entry. For the prompt__list tool."
+  "Every catalog entry with its kind and description, plus one line per
+   broken header relative to the Isaac root. For the prompt__list tool."
   [{:keys [config cwd fs root]}]
-  (let [entries (->> (resolve-catalog {:config config :cwd cwd :fs fs :root root})
-                     all-entries
-                     (sort-by :name))]
-    (when (seq entries)
-      (str/join "\n" (map prompt-menu-line entries)))))
+  (let [catalog (resolve-catalog {:config config :cwd cwd :fs fs :root root})
+        entries (->> (all-entries catalog) (sort-by :name) (map prompt-menu-line))
+        broken  (for [{:keys [path]} (:broken catalog)]
+                  (let [prefix (str root "/")
+                        relative (if (str/starts-with? path prefix)
+                                   (subs path (count prefix))
+                                   path)]
+                    (str "- " relative " (broken): its header does not parse; see the log")))
+        lines   (concat entries broken)]
+    (when (seq lines)
+      (str/join "\n" lines))))
 
 (defn resolve-skill-resource [{:keys [config cwd fs root]} skill-name resource-name]
   (let [catalog    (resolve-catalog {:config config :cwd cwd :fs fs :root root})

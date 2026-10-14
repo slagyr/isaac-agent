@@ -75,6 +75,14 @@ or `isaac config set`/`unset` like any other.
   the session's working directory; it grants no filesystem access by
   itself. See Tools and directories.
 
+## Prompt headers: troubleshooting
+
+- **A prompt is missing from `prompt__list`, or its header is reported as broken.**
+  Look for `:prompt/header-invalid` in the log (it names the file and the YAML
+  parser error), then quote descriptions containing `: `, for example
+  `description: "How to log tides: high, low, and slack"`. A broken skill,
+  command, or rule is skipped; other prompts continue to load.
+
 ## Tools and directories
 
 Config uses namespaced keywords for tool identity (`:fs/read`); the model

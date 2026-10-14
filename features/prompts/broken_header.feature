@@ -51,7 +51,6 @@ Feature: A prompt whose header does not parse is left out, not fatal
       Walk every bay and log what you find.
       """
 
-  @wip
   Scenario: the catalog leaves the broken skill out and keeps the rest
     When the prompt catalog is resolved
     Then the prompt catalog contains:
@@ -61,7 +60,6 @@ Feature: A prompt whose header does not parse is left out, not fatal
       | level | event                  | path                     |
       | :warn | :prompt/header-invalid | #"prompts/skills/tide-log.md$" |
 
-  @wip
   Scenario: a slash command still runs when another prompt's header is broken
     Given the following model responses are queued:
       | model  | type | content           |
@@ -76,7 +74,6 @@ Feature: A prompt whose header does not parse is left out, not fatal
       | status  | Show session status    |
       | inspect | Inspect the greenhouse |
 
-  @wip
   Scenario: prompt__list names the broken file so the crew can fix it
     Given the following model responses are queued:
       | model  | type      | content | tool_call    | arguments |
