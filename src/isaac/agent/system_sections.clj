@@ -24,7 +24,7 @@
             {:id id :order (or order 500) :factory factory :module module})))
 
 (defn resolve-sections
-  "Call each contributor once with crew, cwd, config, root and fs. Bad contributors are skipped."
+  "Call each contributor once with crew, session-key, cwd, config, root and fs. Bad contributors are skipped."
   [{:keys [module-index] :as facts}]
   (let [facts (assoc facts :fs (or (:fs facts) (fs/instance)))]
     (->> (entries module-index)

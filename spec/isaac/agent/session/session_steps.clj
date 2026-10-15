@@ -1907,7 +1907,7 @@
                           :boot-files      (session-ctx/read-boot-files (:cwd session))
                           :rules-text      (session-ctx/read-rules-text cfg (root-dir) (:cwd session) (mem-fs))
                           :skill-menu-text (:menu-text skill-disclosure))]
-    (let [sections (system-sections/resolve-sections {:crew agent-id :cwd (:cwd session)
+    (let [sections (system-sections/resolve-sections {:crew agent-id :session-key key-str :cwd (:cwd session)
                                                       :config cfg :root (root-dir) :fs (mem-fs)
                                                       :module-index (:module-index cfg)})
           grants (set (mapcat :tools sections))

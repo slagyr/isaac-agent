@@ -110,7 +110,6 @@ Feature: System-section extension
       | level | event               | berth                        | entry  | module               |
       | :info | :berth/registration | :isaac.agent/system-sections | beacon | isaac.section.beacon |
 
-  @wip
   Scenario: a contributor is handed the turn's session
     A module can tell its own turns apart only if it knows the session
     (isaac-vmlf).

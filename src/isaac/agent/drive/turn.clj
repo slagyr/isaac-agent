@@ -1411,7 +1411,7 @@
                              (when session-store* session-store*))
         session          (when sess (store/get-session sess session-key))
         charge           (assoc charge :cwd (or (:cwd charge) (:cwd session)))
-        sections         (system-sections/resolve-sections {:crew crew :cwd (:cwd charge)
+        sections         (system-sections/resolve-sections {:crew crew :session-key session-key :cwd (:cwd charge)
                                                              :config (:config charge) :root root
                                                              :module-index (:module-index charge)})
         crew-cfg         (get crew-members crew)

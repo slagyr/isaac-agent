@@ -20,6 +20,7 @@
     [isaac.agent.session.context :as session-ctx]
     [isaac.agent.session.store.spi :as store]
     [isaac.agent.session.spec-helper :as helper]
+    [isaac.agent.system-sections :as system-sections]
     [isaac.foundation.nexus :as nexus]
     [isaac.agent.tool.builtin :as builtin]
     [isaac.agent.tool.registry :as tool-registry]
@@ -1079,6 +1080,26 @@
       (nexus/-with-nexus {:root test-dir :fs (fs/mem-fs)}
         (helper/with-memory-store
           (example))))
+
+    (it "hands a contributor the current turn's session key"
+      (helper/create-session! test-dir "greenhouse")
+      (let [provider (->TestProvider marigold/quantum-anvil {:api marigold/anvil-api})
+            charge   {:charge/type    :charge
+                      :session-key    "greenhouse"
+                      :input          "Status?"
+                      :comm           :test-comm
+                      :config         {:root test-dir}
+                      :crew           "main"
+                      :crew-members   {"main" {:model "spark"}}
+                      :context-window 32768
+                      :model          "helm-spark-1.0"
+                      :provider       provider
+                      :soul           "You are Isaac."}
+            facts    (atom nil)]
+        (with-redefs [sut/augment-provider (fn [_root p _session-key _context-window _model-cfg-overrides] p)
+                      system-sections/resolve-sections (fn [args] (reset! facts args) [])]
+          (#'sut/build-turn charge)
+          (should= "greenhouse" (:session-key @facts)))))
 
     (it "wraps the charge and exposes per-turn derived fields"
       (helper/create-session! test-dir "wrap-test")

@@ -33,6 +33,7 @@
         isaac.roster.almanac/isaac.roster.almanac {:local/root "modules/isaac.roster.almanac"}
         isaac.roster.fog/isaac.roster.fog {:local/root "modules/isaac.roster.fog"}
         isaac.section.beacon/isaac.section.beacon {:local/root "modules/isaac.section.beacon"}
+        isaac.section.lantern/isaac.section.lantern {:local/root "modules/isaac.section.lantern"}
         isaac.section.squall/isaac.section.squall {:local/root "modules/isaac.section.squall"}
         isaac.api.tin-can/isaac.api.tin-can {:local/root "modules/isaac.api.tin-can"}}
 
