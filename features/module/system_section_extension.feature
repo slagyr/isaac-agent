@@ -2,7 +2,7 @@ Feature: System-section extension
   Modules contribute sections of the system prompt by declaring
   :isaac.agent/system-sections {<id> {:factory ... :order N}} in their
   manifest. Each turn the agent asks every contributor for its text, handing
-  it the turn's facts (crew, cwd, config), and joins the results after the
+  it the turn's facts (crew, session, cwd, config), and joins the results after the
   soul in ascending :order (section id breaks ties), so an unchanged set of
   sections never busts the prompt cache.
 
@@ -15,6 +15,8 @@ Feature: System-section extension
   Fixtures: isaac.section.beacon contributes the section "Beacon lit for
   <crew id>." and the tool beacon__ping, which that section grants.
   isaac.section.squall contributes a section whose contributor always throws.
+  isaac.section.lantern contributes the section "Lantern lit on <session
+  key>."
 
   Background:
     Given an Isaac root at "target/test-state"
@@ -107,3 +109,15 @@ Feature: System-section extension
     Then the log has entries matching:
       | level | event               | berth                        | entry  | module               |
       | :info | :berth/registration | :isaac.agent/system-sections | beacon | isaac.section.beacon |
+
+  @wip
+  Scenario: a contributor is handed the turn's session
+    A module can tell its own turns apart only if it knows the session
+    (isaac-vmlf).
+    Given the isaac file "isaac.edn" exists with:
+      """
+      {:modules {:isaac.section.lantern {:local/root "modules/isaac.section.lantern"}}}
+      """
+    Then the prompt "Status?" on session "greenhouse" matches:
+      | key            | value                                  | #comment                           |
+      | system[0].text | #"(?s).*Lantern lit on greenhouse\..*" | contributor was handed the session |
