@@ -94,8 +94,7 @@ Feature: Provider wall classification
     When the user sends "knock knock" on session "trash-can"
     Then the turn result is unavailable with retry-after-ms 300000 and reason auth
 
-  @wip
-  Scenario: a provider 400 for prompt length classifies as context-exhausted
+  Scenario: a provider 400 for prompt length that survives the compact-and-retry classifies as context-exhausted
     Given the isaac EDN file "config/models/snuffy.edn" exists with:
       | path           | value          |
       | model          | snuffy-codex   |
@@ -108,15 +107,16 @@ Feature: Provider wall classification
       | name      | crew  |
       | trash-can | oscar |
     And the following model responses are queued:
-      | model        | type       | status | message                                                     |
-      | snuffy-codex | http-error | 400    | maximum prompt length is 128000 but request contains 130000 |
+      | model        | type       | status | message                                                     | content                 |
+      | snuffy-codex | http-error | 400    | maximum prompt length is 128000 but request contains 130000 |                         |
+      | snuffy-codex | text       |        |                                                             | summary of the bin      |
+      | snuffy-codex | http-error | 400    | maximum prompt length is 128000 but request contains 131000 |                         |
     When the user sends "knock knock" on session "trash-can"
     Then the turn result is unavailable with retry-after-ms 300000 and reason context-exhausted
     And the log has entries matching:
-      | level | event                            | provider | status |
-      | :warn | :chat/provider-context-exhausted | chatgpt  | 400    |
+      | level | event                    | session   |
+      | :warn | :drive/context-exhausted | trash-can |
 
-  @wip
   Scenario: a generic provider 400 stays an api-error
     Given the isaac EDN file "config/models/snuffy.edn" exists with:
       | path           | value          |
@@ -135,11 +135,10 @@ Feature: Provider wall classification
     When the user sends "knock knock" on session "trash-can"
     Then the turn result is "api-error"
     And the log has no entries matching:
-      | level | event                            |
-      | :warn | :chat/provider-context-exhausted |
+      | level | event                    |
+      | :warn | :drive/context-exhausted |
 
-  @wip
-  Scenario: overflow weather does not leave the rejected user turn on the transcript
+  Scenario: overflow weather after the compact-and-retry does not leave the rejected user turn on the transcript
     Given the isaac EDN file "config/models/snuffy.edn" exists with:
       | path           | value          |
       | model          | snuffy-codex   |
@@ -152,8 +151,10 @@ Feature: Provider wall classification
       | name      | crew  |
       | trash-can | oscar |
     And the following model responses are queued:
-      | model        | type       | status | message                                                     |
-      | snuffy-codex | http-error | 400    | maximum prompt length is 128000 but request contains 130000 |
+      | model        | type       | status | message                                                     | content                 |
+      | snuffy-codex | http-error | 400    | maximum prompt length is 128000 but request contains 130000 |                         |
+      | snuffy-codex | text       |        |                                                             | summary of the bin      |
+      | snuffy-codex | http-error | 400    | maximum prompt length is 128000 but request contains 131000 |                         |
     When the user sends "knock knock" on session "trash-can"
     Then the turn result is unavailable with retry-after-ms 300000 and reason context-exhausted
     And session "trash-can" has no transcript entries with role "user"
