@@ -27,6 +27,14 @@
                                            {:id "ops-room" :name "ops-room" :tags [:ops]})]
       (should= #{:ops} (:tags entry)))))
 
+(describe "transcript entry cap"
+  (it "caps text blocks as well as plain strings without dropping tool calls"
+    (let [result (sut/cap-message "marigold" {:role "assistant"
+                                                  :content [{:type "text" :text (str "HEAD" (apply str (repeat 300000 "x")) "TAIL")}
+                                                            {:type "toolCall" :id "call-1"}]})]
+      (should (str/includes? (get-in result [:content 0 :text]) "bytes truncated; byte cap hit"))
+      (should= {:type "toolCall" :id "call-1"} (get-in result [:content 1])))))
+
 (describe "impl-common nested session paths"
 
   (it "nests a session directory under its crew"

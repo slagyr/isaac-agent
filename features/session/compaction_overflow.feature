@@ -129,7 +129,6 @@ Feature: Compact from the last provider count; overflow compact-and-retry
     Then the turn result is unavailable with retry-after-ms 300000 and reason blocked
     And grover records zero provider requests
 
-  @wip
   Scenario: an entry bigger than the window is left out of the summary and the rest compacts (isaac-ebup)
     A chunk cannot be smaller than one message, so a single entry larger than
     the window used to make compaction infeasible forever: isaac-work-2 held a
@@ -167,7 +166,6 @@ Feature: Compact from the last provider count; overflow compact-and-retry
       | compaction |              |                 | Summary of weeks one-two |
       | message    | assistant    | Logged.         |                          |
 
-  @wip
   Scenario: a reply bigger than the transcript cap is stored as its head and tail (isaac-ebup)
     No entry may be written at a size that can wedge a session. A parse
     failure once wrote 2.2 MB of stream-json in as a reply. The cap is

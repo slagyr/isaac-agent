@@ -30,7 +30,8 @@
     [isaac.foundation.naming :as naming]
     [isaac.agent.session.schema :as session-schema]
     [isaac.agent.session.store.spi :as session-store]
-    [isaac.agent.session.transcript :as transcript])
+    [isaac.agent.session.transcript :as transcript]
+    [isaac.agent.tool.output-cap :as output-cap])
   (:import
     (java.util UUID)))
 
@@ -1099,6 +1100,24 @@
                            (update :updated-at normalize-ts-fn))))
                    fs))
 
+(defn cap-message [session-id message]
+  (let [content   (:content message)
+        max-bytes (or (get-in (loader/snapshot "transcript entry cap") [:defaults :transcript :max-bytes]) 262144)
+        cap-text  (fn [text]
+                    (if (> (alength (.getBytes ^String text "UTF-8")) max-bytes)
+                      (do
+                        (log/warn :session/entry-truncated :session session-id :role (:role message))
+                        (output-cap/cap-result text Long/MAX_VALUE max-bytes))
+                      text))]
+    (cond
+      (string? content) (update message :content cap-text)
+      (vector? content) (update message :content
+                                (fn [blocks] (mapv (fn [block]
+                                                     (if (and (= "text" (:type block)) (string? (:text block)))
+                                                       (update block :text cap-text)
+                                                       block)) blocks)))
+      :else message)))
+
 (defn append-message! [get-session-fn update-entry-fn now-fn root identifier message fs]
   (let [entry            (get-session-fn root identifier fs)
         id               (:id entry)
@@ -1108,8 +1127,8 @@
         resolved-agent   (or (:crew message)
                              (when (#{"assistant" "error" "toolResult"} (:role message)) (:crew entry)))
         normalized-msg   (stamp-message-tokens
-                           (normalize-message (cond-> message
-                                                resolved-agent (assoc :crew resolved-agent))))
+                           (normalize-message (cap-message id (cond-> message
+                                                        resolved-agent (assoc :crew resolved-agent)))))
         transcript-entry {:type      "message"
                           :id        msg-id
                           :parentId  parent-id

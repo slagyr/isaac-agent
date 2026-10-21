@@ -633,6 +633,12 @@
      {:type :map,
       :description "Template for every provider",
       :entity-template {:kind :providers, :except [:id :name]}},
+     :transcript
+     {:type :map,
+      :description "Global transcript entry limits",
+      :schema {:max-bytes {:type :int,
+                           :description "Maximum UTF-8 bytes in a transcript message before head-tail truncation (default 262144)",
+                           :validations [:positive?]}}},
      :tools
      {:type :map,
       :description "Global tool output caps and the default tool-call deadline applied at the turn boundary",

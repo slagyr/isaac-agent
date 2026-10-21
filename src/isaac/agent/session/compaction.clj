@@ -606,7 +606,13 @@
         behavior       (session-ctx/resolve-behavior key-str (assoc ctx :context-window context-window))
         transcript      (store/get-transcript sess key-str)
         history-entries (effective-history-entries transcript)
-        compactables    (compactables history-entries context-window)
+        compactables    (mapv (fn [item]
+                                (if (> (:tokens item) context-window)
+                                  (assoc-in item [:message :content]
+                                            (str "[entry omitted: " (:tokens item) " tokens, larger than the "
+                                                 context-window "-token window]"))
+                                  item))
+                              (compactables history-entries context-window))
         messages        (mapv :message compactables)
         strategy        (:compaction behavior)
         model-cfg       (or (:model-cfg behavior) {})

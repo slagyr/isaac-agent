@@ -130,6 +130,7 @@ Tool-level knobs, not directory-related:
 - `config:tools.web_search.provider` / `config:tools.web_search.api-key` —
   the only registered web search backend is `:brave`; the key is required
   once a provider is set.
+- `defaults.transcript.max-bytes` (default 262144) caps the UTF-8 bytes in each stored message. Oversized messages retain their head and tail with a truncation marker; the original is not saved elsewhere. Already oversized entries remain in the transcript but are stubbed only in the compaction summary request, so an existing wedged session can retry after `sessions unset <id>.block`.
 - `defaults.tools.max-lines` / `defaults.tools.max-bytes` — global caps on
   a tool result string before head-tail truncation. `defaults.crew.tools
   .max-parallel` caps concurrent tool calls from one model response batch,

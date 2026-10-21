@@ -304,8 +304,8 @@
           resolved-agent (or (:crew message)
                              (when (#{"assistant" "error" "toolResult"} (:role message)) (:crew session)))
           normalized-msg (c/stamp-message-tokens
-                           (c/normalize-message (cond-> message
-                                                 resolved-agent (assoc :crew resolved-agent))))
+                           (c/normalize-message (c/cap-message id (cond-> message
+                                                          resolved-agent (assoc :crew resolved-agent)))))
           entry          {:type      "message"
                           :id        msg-id
                           :parentId  parent-id
