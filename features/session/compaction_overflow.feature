@@ -128,3 +128,72 @@ Feature: Compact from the last provider count; overflow compact-and-retry
     When the user sends "one more" on session "wedged"
     Then the turn result is unavailable with retry-after-ms 300000 and reason blocked
     And grover records zero provider requests
+
+  @wip
+  Scenario: an entry bigger than the window is left out of the summary and the rest compacts (isaac-ebup)
+    A chunk cannot be smaller than one message, so a single entry larger than
+    the window used to make compaction infeasible forever: isaac-work-2 held a
+    511,568-token assistant entry (raw claude-code stream-json written as the
+    reply) against a 200k window. The entry stays in the transcript; only the
+    summary request stands a one-line stub in its place.
+    Given the isaac EDN file "config/models/local.edn" exists with:
+      | path           | value      |
+      | model          | test-model |
+      | provider       | grover     |
+      | context-window | 4000       |
+    And the isaac EDN file "config/crew/main.edn" exists with:
+      | path  | value            |
+      | model | local            |
+      | soul  | You are Atticus. |
+    And the following sessions exist:
+      | name       | last-input-tokens |
+      | log-keeper | 0                 |
+    And session "log-keeper" has transcript:
+      | type    | message.role | message.content                                            | tokens |
+      | message | user         | Week one: the Marigold cleared port under Cordelia         | 100    |
+      | message | assistant    | {"type":"system","subtype":"init"} {"type":"stream_event"} | 5000   |
+      | message | user         | Week two: Joe rerouted the quantum-anvil coolant           | 100    |
+      | message | assistant    | Logged week two with the coolant reroute                   | 100    |
+    And the following model responses are queued:
+      | type | content                  | model      | usage.input_tokens |
+      | text | Summary of weeks one-two | test-model | 30                 |
+      | text | Logged.                  | test-model | 30                 |
+    When the user sends "and week three?" on session "log-keeper"
+    Then the compaction request matches:
+      | key                 | value                                                                                                          |
+      | messages[1].content | #"(?s)(?=.*Week one)(?=.*Week two)(?=.*\[entry omitted: 5000 tokens, larger than the 4000-token window\])(?!.*stream_event).*" |
+    And session "log-keeper" has transcript matching:
+      | type       | message.role | message.content | summary                  |
+      | compaction |              |                 | Summary of weeks one-two |
+      | message    | assistant    | Logged.         |                          |
+
+  @wip
+  Scenario: a reply bigger than the transcript cap is stored as its head and tail (isaac-ebup)
+    No entry may be written at a size that can wedge a session. A parse
+    failure once wrote 2.2 MB of stream-json in as a reply. The cap is
+    defaults.transcript.max-bytes (default 262144) and keeps the head and
+    tail the way the tool output cap does.
+    Given the isaac EDN file "config/models/local.edn" exists with:
+      | path           | value      |
+      | model          | test-model |
+      | provider       | grover     |
+      | context-window | 100000     |
+    And the isaac EDN file "config/crew/main.edn" exists with:
+      | path  | value            |
+      | model | local            |
+      | soul  | You are Atticus. |
+    And config:
+      | defaults.transcript.max-bytes | 64 |
+    And the following sessions exist:
+      | name       |
+      | log-keeper |
+    And the following model responses are queued:
+      | type | content                                                                                                   | model      |
+      | text | HEAD of the dump, then a long middle that runs on well past the cap and keeps going, then the TAIL of it | test-model |
+    When the user sends "dump it" on session "log-keeper"
+    Then session "log-keeper" has transcript matching:
+      | type    | message.role | message.content                                           |
+      | message | assistant    | #"(?s)^HEAD of the dump.*bytes truncated; byte cap hit.*the TAIL of it$" |
+    And the log has entries matching:
+      | level | event                    | session    | role      |
+      | :warn | :session/entry-truncated | log-keeper | assistant |
