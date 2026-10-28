@@ -20,6 +20,7 @@
     [isaac.agent.drive.weather :as weather]
     [isaac.agent.step-tables :as match]
     [isaac.foundation.fs :as fs]
+    [isaac.agent.drive.request :as turn-request]
     [isaac.agent.drive.turn :as single-turn]
     [isaac.agent.llm.provider :as llm-provider]
     [isaac.agent.llm.api.grover :as grover]
@@ -2123,7 +2124,7 @@
                                     (g/get :provider-configs))
                               (current-provider))
             provider-cfg  (get (g/get :provider-configs) provider-name)
-            built-request (single-turn/build-chat-request
+            built-request (turn-request/build-chat-request
                             (llm-provider/make-provider provider-name provider-cfg)
                             {:boot-files (:boot-files ctx)
                              :model      (:model model-cfg)

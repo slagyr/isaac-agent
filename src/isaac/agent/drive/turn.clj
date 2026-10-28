@@ -1,6 +1,5 @@
 (ns isaac.agent.drive.turn
   (:require
-    [c3kit.apron.schema :as schema]
     [clojure.string :as str]
     [isaac.agent.attention :as attention]
     [isaac.agent.bridge.cancellation :as bridge]
@@ -14,24 +13,22 @@
     [isaac.agent.drive.dispatch :as dispatch]
     [isaac.agent.drive.observer :as observer]
     [isaac.agent.drive.provider-wall :as provider-wall]
+    [isaac.agent.drive.request :as turn-request]
+    [isaac.agent.drive.tools-config :as tools-config]
     [isaac.agent.drive.weather :as weather]
     [isaac.foundation.fs :as fs]
     [isaac.agent.llm.api.protocol :as api]
     [isaac.agent.llm.followup :as followup]
-    [isaac.agent.llm.provider :as llm-provider]
     [isaac.agent.llm.tool-loop :as tool-loop]
     [isaac.agent.llm.usage :as usage]
     [isaac.foundation.logger :as log]
     [isaac.foundation.nexus :as nexus]
     [isaac.agent.session.compaction :as compaction]
     [isaac.agent.session.context :as session-ctx]
-    [isaac.agent.system-sections :as system-sections]
-
     [isaac.agent.session.context-mode :as context-mode]
     [isaac.agent.session.session-observer :as session-observer]
     [isaac.agent.session.store.spi :as store]
     [isaac.agent.tool.memory :as memory]
-    [isaac.agent.tool.names :as names]
     [isaac.agent.tool.registry :as tool-registry]
     [isaac.agent.turn.queue :as turn-queue]
     [isaac.agent.resource-pool :as pool])
@@ -527,58 +524,6 @@
                       (let [joined (emit-response-content! channel-impl session-key (cycle-now) result)]
                         (assoc result :content joined)))))))))
 
-(defn- parse-long-or-raw [raw]
-  (cond
-    (number? raw) (long raw)
-    (string? raw) (parse-long raw)
-    :else raw))
-
-(defn- crew-cycle [config crew crew-cfg]
-  (or (:cycle crew-cfg)
-      (get-in config [:crew (keyword crew) :cycle])
-      (get-in config [:crew crew :cycle])
-      {}))
-
-(def default-continuations
-  "How many times a wrapped-up turn re-drives itself when the crew says
-   nothing. Continuations are a last resort — checkpoints inside the turn are
-   the save point (isaac-tic5)."
-  2)
-
-(defn- resolve-cycle [{:keys [cycle config crew crew-cfg]}]
-  (let [defaults      (or (defaults/cycle-knobs config) {})
-        layered       (merge defaults (crew-cycle config crew crew-cfg) (or cycle {}))
-        limit         (or (:limit layered)
-                          tool-loop/default-max-loops)
-        continuations (if (some? (:continuations layered))
-                        (:continuations layered)
-                        default-continuations)]
-    (assoc layered
-           :limit (parse-long-or-raw limit)
-           :continuations (parse-long-or-raw continuations))))
-
-(defn- resolve-cycle-limit [opts]
-  (:limit (resolve-cycle opts)))
-
-(defn- resolve-max-parallel-tools [{:keys [config crew crew-cfg]}]
-  (let [raw (or (get-in crew-cfg [:tools :max-parallel])
-                (get-in config [:crew (keyword crew) :tools :max-parallel])
-                (get-in config [:crew crew :tools :max-parallel])
-                (defaults/max-parallel config)
-                tool-loop/default-max-parallel-tools)]
-    (parse-long-or-raw raw)))
-
-(defn- resolve-tool-timeout-ms
-  "Crew override of the tool-call deadline, else the global default
-   (:defaults :tools :timeout-ms). Nil here is fine — the registry falls
-   back to its own hard-coded default when neither is configured; a tool's
-   own declared :timeout-ms still outranks both (isaac-4g2k)."
-  [{:keys [config crew crew-cfg]}]
-  (parse-long-or-raw
-    (or (get-in crew-cfg [:tools :timeout-ms])
-        (get-in config [:crew (keyword crew) :tools :timeout-ms])
-        (get-in config [:crew crew :tools :timeout-ms])
-        (defaults/tool-timeout-ms config))))
 
 (def ended-by-values #{:reply :cycle-limit :cancelled :error :context-exhausted :provider-unavailable :suspended})
 
@@ -900,7 +845,7 @@
                  (assoc state session-key {:lock lock})))))
     (when @claimed? lock)))
 
-(declare run-compaction-check! active-tools build-chat-request)
+(declare run-compaction-check!)
 
 (defn- perform-compaction! [session-key attempt prompt-tokens {:keys [compaction-llm-done context-window model provider soul splice-ready transcript-lock] ch :comm :as opts}]
   (let [provider-name (api/display-name provider)]
@@ -1049,7 +994,7 @@
 (defn- compaction-tools-opts [{:keys [provider allowed-tools module-index] :as opts}]
   (if (contains? opts :tools)
     opts
-    (assoc opts :tools (when provider (active-tools provider allowed-tools module-index)))))
+    (assoc opts :tools (when provider (tools-config/active-tools provider allowed-tools module-index)))))
 
 (defn- session-transcript [session-key opts]
   (when-let [sess (session-store opts)]
@@ -1212,8 +1157,8 @@
         sess       (session-store ctx)
         transcript (with-transcript-lock session-key #(store/active-transcript sess session-key))
         transcript (context-mode/select-transcript context-mode transcript module-index)
-        tools       (active-tools provider allowed-tools module-index)]
-    (build-chat-request provider {:boot-files      boot-files
+        tools       (tools-config/active-tools provider allowed-tools module-index)]
+    (turn-request/build-chat-request provider {:boot-files      boot-files
                                   :sections        (:sections ctx)
                                   :crew            crew
                                   :effort          effort
@@ -1285,169 +1230,6 @@
 
 ;; endregion ^^^^^ Context Compaction ^^^^^
 
-;; region ----- Request Building -----
-
-(defn- tool-name [tool]
-  (or (:name tool)
-      (get-in tool [:function :name])))
-
-(defn- declared-wire-names [tools]
-  (->> (concat (names/policy-list (:allow tools))
-               (names/policy-list (:deny tools)))
-       (remove #{names/POLICY_ALL})
-       (remove names/glob-token?)
-       (keep (fn [token]
-               (or (names/wire-name token)
-                   (cond
-                     (keyword? token) (name token)
-                     (string? token)  token
-                     :else            (str token)))))))
-
-(defn- allowed-tool-names
-  "Wire names allowed for this turn via the four-step cascade (isaac-da0r).
-   Empty/missing :allow is deny-all. Crew overlays global; omit crew :tools
-   inherits the global result. Skill auto-tools are merged by the caller.
-   Candidates are registered tools plus any exact tokens declared in policy
-   (test fixtures / not-yet-activated modules)."
-  [crew-members crew-id config]
-  (let [global-tools (defaults/tools config)
-        crew-tools   (get-in crew-members [crew-id :tools])
-        observers    (map keyword (or (get-in crew-members [crew-id :observers]) []))
-        _            (tool-registry/ensure-policy-tools! (:module-index config)
-                                                         (concat (names/policy-list (:allow global-tools))
-                                                                 (names/policy-list (:allow crew-tools))
-                                                                 (when (some #{:episodes} observers)
-                                                                   ["recall__search" "recall__scene"])))
-        registered   (map :name (tool-registry/all-tools))
-        declared     (concat (declared-wire-names global-tools)
-                             (declared-wire-names crew-tools))
-        candidates   (distinct (concat registered declared))]
-    (let [allowed (->> candidates
-                       (filter #(names/cascade-allowed? global-tools crew-tools %))
-                       set)
-          observers (map keyword (or (get-in crew-members [crew-id :observers]) []))
-          deny (names/policy-list (:deny crew-tools))
-          recall-ok? (and (some #{:episodes} observers)
-                          (not (names/covers? deny "recall/*"))
-                          (not (names/covers? deny "recall__search")))]
-      (cond-> allowed
-        recall-ok? (into #{"recall__search" "recall__scene"})))))
-
-(defn- active-tools [_p allowed-tools module-index]
-  (not-empty (if module-index
-               (tool-registry/tool-definitions allowed-tools module-index)
-               (tool-registry/tool-definitions allowed-tools))))
-
-(defn- merge-allowed-tools [crew-tools auto-tools]
-  (not-empty (into (set (or crew-tools [])) auto-tools)))
-
-(defn build-chat-request [p {:keys [boot-files crew effort guidance model nonce origin preamble rules-text session-name skill-menu-text soul transcript tools sections]}]
-  (let [prompt-out (api/build-prompt p {:boot-files      boot-files
-                                        :sections        sections
-                                        :crew            crew
-                                        :guidance        guidance
-                                        :model           model
-                                        :nonce           nonce
-                                        :origin          origin
-                                        :preamble        preamble
-                                        :rules-text      rules-text
-                                        :session-name    session-name
-                                        :skill-menu-text skill-menu-text
-                                        :soul            soul
-                                        :transcript      transcript
-                                        :tools           tools})
-        stateful   (get (api/config p) :stateful)]
-    (cond-> {:model (:model prompt-out) :messages (:messages prompt-out)}
-            (:system prompt-out) (assoc :system (:system prompt-out))
-            (:max-tokens prompt-out) (assoc :max-tokens (:max-tokens prompt-out))
-            (:tools prompt-out) (assoc :tools (:tools prompt-out))
-            (some? effort) (assoc :effort effort)
-            (some? stateful) (assoc :stateful stateful)
-            session-name (assoc :session-key session-name))))
-
-;; endregion ^^^^^ Request Building ^^^^^
-
-;; region ----- Public API -----
-
-(defn- augment-provider
-  "Wrap an upstream Api with per-turn runtime values (root,
-   session-key, context-window, and model-cfg overrides) merged into
-   its config. Returns a new Api instance — the upstream one is unchanged."
-  [root p session-key context-window model-cfg-overrides]
-  (when p
-    (let [cfg (merge (or (api/config p) {})
-                     model-cfg-overrides
-                     {:root           root
-                      :session-key    session-key
-                      :context-window context-window})]
-      (llm-provider/make-provider (api/display-name p) cfg))))
-
-(def turn-schema
-  {:name   :turn
-   :type   :map
-   :schema {:charge          {:type :ignore :description "Resolved charge — the comm-supplied inputs"}
-            :session-store   {:type :ignore :description "Session store backing this turn (derived from charge or root)"}
-            :root            {:type :string :description "Isaac state directory"}
-            :effort          {:type :long :description "Per-turn effort budget, nil when model disallows effort"}
-            :allowed-tools   {:type :ignore :description "Set of tool keywords allowed for this turn's crew"}
-            :boot-files      {:type :ignore :description "Boot-file contents read from the discovered project root"}
-            :rules-text      {:type :ignore :description "Always-on prepared rule bodies read from global/project roots"}
-            :sections        {:type :ignore :description "Ordered system prompt sections"}
-            :skill-menu-text {:type :ignore :description "Advertised skill descriptions injected into the cached system prompt"}
-            :provider        {:type :ignore :description "Tools-augmented LLM provider for this turn"}}})
-
-(defn- build-turn
-  "Wraps a resolved charge with per-turn derived state. Charge already holds
-   the resolved behavior (model, provider, soul, compaction, effort, etc.),
-   so this only computes the genuinely per-turn fields and the
-   tools-augmented provider that drive needs."
-  [charge]
-  (let [{:keys [session-key crew crew-members context-window
-                model model-cfg provider]} charge
-        root             (or (nexus/get :root) (get-in charge [:config :root]))
-        session-store*   (or (:session-store charge) (nexus/get-in [:sessions :store]))
-        sess             (or (:session-store charge)
-                             (or (:session-store charge) (store/registered-store))
-                             (when session-store* session-store*))
-        session          (when sess (store/get-session sess session-key))
-        charge           (assoc charge :cwd (or (:cwd charge) (:cwd session)))
-        sections         (system-sections/resolve-sections {:crew crew :session-key session-key :cwd (:cwd charge)
-                                                             :config (:config charge) :root root
-                                                             :module-index (:module-index charge)})
-        crew-cfg         (get crew-members crew)
-        recall-tools     nil
-        allowed-tools    (merge-allowed-tools (allowed-tool-names crew-members crew (:config charge))
-                                              (concat (mapcat :tools sections) recall-tools))
-        boot-files       (:text (first (filter #(= :boot-files (:id %)) sections)))
-        rules-text       (:text (first (filter #(= :rules (:id %)) sections)))
-        augmented        (augment-provider root provider session-key context-window
-                                           (select-keys (or model-cfg {})
-                                                        [:thinking-budget-max :think-mode :stateful :vision]))]
-    (log/debug :turn/context-resolved
-               :session session-key
-               :crew crew
-               :model model
-               :provider (some-> provider api/display-name)
-               :effort (:effort charge)
-               :context-window context-window
-               :crew-keys (vec (keys crew-members))
-               :crew-cfg-keys (some-> (:crew-cfg charge) keys vec)
-               :allowed-tools-count (count allowed-tools)
-               :allowed-tools (some-> allowed-tools sort vec)
-               :cwd (:cwd charge))
-    (schema/conform! turn-schema
-                     {:charge          charge
-                      ;; convenience accessors for storage helpers — same value, derived via session-store helper
-                      :session-store   session-store*
-                      :root            root
-                      :effort          (when (get (or model-cfg {}) :allows-effort true)
-                                         (:effort charge))
-                      :allowed-tools   allowed-tools
-                      :boot-files      boot-files
-                      :rules-text      rules-text
-                      :skill-menu-text (:text (first (filter #(= :skill-menu (:id %)) sections)))
-                      :sections        sections
-                      :provider        augmented})))
 
 (def ^:dynamic *foreman-request-id* nil)
 
@@ -1555,7 +1337,7 @@
   [charge ctx ch session-key result]
   (try
     (let [{:keys [crew config crew-cfg cycle]} charge
-          budget (:continuations (resolve-cycle {:cycle cycle :config config
+          budget (:continuations (tools-config/resolve-cycle {:cycle cycle :config config
                                                  :crew crew :crew-cfg crew-cfg}))
           n      (continuation-count charge)]
       (when-let [plan (continuation-plan result n budget)]
@@ -1660,7 +1442,7 @@
 (defn- chain-link [cfg crew-id model-id root session-key]
   (let [resolved (config-resolve/resolve-crew-context cfg crew-id {:model-override model-id})
         window   (:context-window resolved)
-        provider (augment-provider root (:provider resolved) session-key window
+        provider (turn-request/augment-provider root (:provider resolved) session-key window
                                    (select-keys (or (:model-cfg resolved) {})
                                                 [:thinking-budget-max :think-mode :stateful :vision]))]
     {:id             model-id
@@ -1688,12 +1470,12 @@
   (let [{:keys [provider allowed-tools effort boot-files rules-text skill-menu-text]} ctx
         charge        (:charge ctx)
         {:keys [crew guidance model module-index nonce origin preamble soul context-mode comm config crew-cfg cycle]} charge
-        cycle-cfg     (resolve-cycle {:cycle cycle :config config :crew crew :crew-cfg crew-cfg})
+        cycle-cfg     (tools-config/resolve-cycle {:cycle cycle :config config :crew crew :crew-cfg crew-cfg})
         cycle-budget  (:limit cycle-cfg)
-        max-parallel  (resolve-max-parallel-tools {:config config :crew crew :crew-cfg crew-cfg})
+        max-parallel  (tools-config/resolve-max-parallel-tools {:config config :crew crew :crew-cfg crew-cfg})
         caps          {:max-lines  (:max-lines (defaults/tool-caps config))
                        :max-bytes  (:max-bytes (defaults/tool-caps config))
-                       :timeout-ms (resolve-tool-timeout-ms {:config config :crew crew :crew-cfg crew-cfg})}
+                       :timeout-ms (tools-config/resolve-tool-timeout-ms {:config config :crew crew :crew-cfg crew-cfg})}
         ch            (or comm null-comm/channel)
         p             provider]
     (context-mode/wait-for! context-mode session-key)
@@ -1701,13 +1483,13 @@
       (append-message! ctx session-key {:role "user" :content (context-mode/wrap-input context-mode input) :cwd (:cwd charge)}))
     (let [transcript      (with-transcript-lock session-key #(store/active-transcript (session-store ctx) session-key))
           transcript      (context-mode/select-transcript context-mode transcript module-index)
-          tools           (active-tools p allowed-tools module-index)
+          tools           (tools-config/active-tools p allowed-tools module-index)
           tool-reason     (cond
                             (empty? allowed-tools) :no-allowed-tools
                             (empty? tools) :no-registered-tools
                             :else nil)
           build-start-ns  (System/nanoTime)
-          request         (build-chat-request p {:boot-files      boot-files
+          request         (turn-request/build-chat-request p {:boot-files      boot-files
                                                  :sections        (:sections ctx)
                                                  :crew            crew
                                                  :effort          effort
@@ -1732,7 +1514,7 @@
                                      :messages-count (count (:messages request))
                                      :allowed-tools-count (count allowed-tools)
                                      :selected-tools-count (count tools)
-                                     :selected-tools (some->> tools (map tool-name) sort vec)
+                                     :selected-tools (some->> tools (map tools-config/tool-name) sort vec)
                                      :tool-selection-reason tool-reason
                                      :request-keys (-> request keys sort vec))
           current-request (atom request)
@@ -1869,9 +1651,9 @@
             request-for   (fn [link]
                             (let [transcript (with-transcript-lock session-key #(store/active-transcript (session-store ctx) session-key))
                                   transcript (context-mode/select-transcript context-mode transcript module-index)
-                                  tools      (active-tools (:provider link) allowed-tools module-index)]
+                                  tools      (tools-config/active-tools (:provider link) allowed-tools module-index)]
                               ;; previous-response-id belongs to the model that stored it.
-                              (dissoc (build-chat-request (:provider link)
+                              (dissoc (turn-request/build-chat-request (:provider link)
                                                          {:boot-files      boot-files
                                                           :sections        (:sections ctx)
                                                           :crew            crew
@@ -2091,7 +1873,7 @@
         input       (:input charge)
         turn-id     (bridge/begin-turn! session-key)
         request-id  (or (:turn-id charge) (str (java.util.UUID/randomUUID)))
-        ctx         (build-turn charge)
+        ctx         (turn-request/build-turn charge)
         ch          (or (:comm charge) null-comm/channel)
         observers   (observer/for-turn (:observers charge))
         finish!     #(-> (finish-turn! ch session-key % observers (:origin charge) request-id (:session-observers charge) (:config charge))

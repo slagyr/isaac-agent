@@ -8,6 +8,8 @@
     [isaac.foundation.config.api :as config]
     [isaac.agent.drive.dispatch :as dispatch]
     [isaac.agent.drive.observer :as observer]
+    [isaac.agent.drive.request :as turn-request]
+    [isaac.agent.drive.tools-config :as tools-config]
     [isaac.agent.drive.turn :as sut]
     [isaac.foundation.fs :as fs]
     [isaac.agent.llm.api.protocol :as api]
@@ -532,11 +534,11 @@
         (let [crew-members {"main" {:tools {:allow [:lens/*]}}}
               config       {:module-index {:isaac.tool.lens {:manifest {:isaac.agent/tool-providers {:lens {:ensure! 'isaac.agent.drive.turn-spec/lens-provider}}}}}}]
           (should= #{"lens__catalog" "lens__read"}
-                   (#'sut/allowed-tool-names crew-members "main" config)))))
+                   (#'tools-config/allowed-tool-names crew-members "main" config)))))
 
     (it "a glob allow without a module index offers nothing"
       (nexus/-with-nexus {:tool-registry (atom {})}
-        (should= #{} (#'sut/allowed-tool-names {"main" {:tools {:allow [:lens/*]}}} "main" {})))))
+        (should= #{} (#'tools-config/allowed-tool-names {"main" {:tools {:allow [:lens/*]}}} "main" {})))))
 
   (describe "mid-loop transcript flush"
     #_{:clj-kondo/ignore [:unresolved-symbol]}
@@ -676,7 +678,7 @@
                        (build-prompt [_ opts]
                          (reset! seen opts)
                          {:model (:model opts) :messages []}))]
-        (sut/build-chat-request provider {:model "spark" :soul "You are Isaac." :nonce "N0NCE-abc123" :transcript []})
+        (turn-request/build-chat-request provider {:model "spark" :soul "You are Isaac." :nonce "N0NCE-abc123" :transcript []})
         (should= "N0NCE-abc123" (:nonce @seen))))
 
     (it "passes origin and guidance through to the provider prompt builder"
@@ -691,7 +693,7 @@
                        (build-prompt [_ opts]
                          (reset! seen opts)
                          {:model (:model opts) :messages []}))]
-        (sut/build-chat-request provider {:guidance   "Autonomous hail; the user may not see your reply."
+        (turn-request/build-chat-request provider {:guidance   "Autonomous hail; the user may not see your reply."
                                           :model      "spark"
                                           :nonce      "N0NCE-abc123"
                                           :origin     {:kind :hail :hail-id "hail-1"}
@@ -710,7 +712,7 @@
                        (display-name [_] "test")
                        (format-tools [_ tools] tools)
                        (build-prompt [_ opts] (reset! seen opts) {:model (:model opts) :messages []}))]
-        (sut/build-chat-request provider {:model "spark" :soul "You are Isaac."
+        (turn-request/build-chat-request provider {:model "spark" :soul "You are Isaac."
                                           :preamble "Bridge watch" :transcript []})
         (should= "Bridge watch" (:preamble @seen))))
 
@@ -726,7 +728,7 @@
                        (build-prompt [_ opts]
                          (reset! seen opts)
                          {:model (:model opts) :messages []}))]
-        (sut/build-chat-request provider {:model           "spark"
+        (turn-request/build-chat-request provider {:model           "spark"
                                           :skill-menu-text "Available skills:\n- greenhouse-protocol: Use when tending specimens"
                                           :soul            "You are Isaac."
                                           :transcript      []})
@@ -1096,9 +1098,9 @@
                       :provider       provider
                       :soul           "You are Isaac."}
             facts    (atom nil)]
-        (with-redefs [sut/augment-provider (fn [_root p _session-key _context-window _model-cfg-overrides] p)
+        (with-redefs [turn-request/augment-provider (fn [_root p _session-key _context-window _model-cfg-overrides] p)
                       system-sections/resolve-sections (fn [args] (reset! facts args) [])]
-          (#'sut/build-turn charge)
+          (#'turn-request/build-turn charge)
           (should= "greenhouse" (:session-key @facts)))))
 
     (it "wraps the charge and exposes per-turn derived fields"
@@ -1117,8 +1119,8 @@
                       :provider       provider
                       :soul           "You are Isaac."
                       :effort         5}]
-        (with-redefs [sut/augment-provider (fn [_root p _session-key _context-window _model-cfg-overrides] p)]
-          (let [turn (#'sut/build-turn charge)]
+        (with-redefs [turn-request/augment-provider (fn [_root p _session-key _context-window _model-cfg-overrides] p)]
+          (let [turn (#'turn-request/build-turn charge)]
             (should= (assoc charge :cwd (get-in turn [:charge :cwd])) (:charge turn))
             (should= (get-in (helper/get-session test-dir "wrap-test") [:cwd])
                      (get-in turn [:charge :cwd]))
@@ -1142,11 +1144,11 @@
                       :model          "helm-spark-1.0"
                       :provider       provider
                       :soul           "You are Isaac."}]
-        (with-redefs [sut/augment-provider (fn [_root p _session-key _context-window _model-cfg-overrides] p)
+        (with-redefs [turn-request/augment-provider (fn [_root p _session-key _context-window _model-cfg-overrides] p)
                       session-ctx/read-skill-disclosure (fn [& _]
                                                           {:menu-text  nil
                                                            :tool-names #{"prompt__list" "prompt__load"}})]
-          (let [turn (#'sut/build-turn charge)]
+          (let [turn (#'turn-request/build-turn charge)]
             (should= ["prompt__list" "prompt__load"] (sort (:allowed-tools turn)))))))
 
     (it "inherits global :allow :all when the crew omits :tools"
@@ -1167,9 +1169,9 @@
                       :model          "helm-spark-1.0"
                       :provider       provider
                       :soul           "You are Isaac."}]
-        (with-redefs [sut/augment-provider (fn [_root p _session-key _context-window _model-cfg-overrides] p)
+        (with-redefs [turn-request/augment-provider (fn [_root p _session-key _context-window _model-cfg-overrides] p)
                       session-ctx/read-skill-disclosure (fn [& _] {:menu-text nil :tool-names #{}})]
-          (let [turn (#'sut/build-turn charge)]
+          (let [turn (#'turn-request/build-turn charge)]
             (should= ["exec__run" "fs__read"] (sort (:allowed-tools turn)))))))
 
     (it "lets crew allow re-enable a globally denied tool"
@@ -1190,9 +1192,9 @@
                       :model          "helm-spark-1.0"
                       :provider       provider
                       :soul           "You are Isaac."}]
-        (with-redefs [sut/augment-provider (fn [_root p _session-key _context-window _model-cfg-overrides] p)
+        (with-redefs [turn-request/augment-provider (fn [_root p _session-key _context-window _model-cfg-overrides] p)
                       session-ctx/read-skill-disclosure (fn [& _] {:menu-text nil :tool-names #{}})]
-          (let [turn (#'sut/build-turn charge)]
+          (let [turn (#'turn-request/build-turn charge)]
             (should= ["exec__run" "fs__read"] (sort (:allowed-tools turn)))))))
 
     (it "overlays crew deny without dropping a global deny"
@@ -1214,9 +1216,9 @@
                       :model          "helm-spark-1.0"
                       :provider       provider
                       :soul           "You are Isaac."}]
-        (with-redefs [sut/augment-provider (fn [_root p _session-key _context-window _model-cfg-overrides] p)
+        (with-redefs [turn-request/augment-provider (fn [_root p _session-key _context-window _model-cfg-overrides] p)
                       session-ctx/read-skill-disclosure (fn [& _] {:menu-text nil :tool-names #{}})]
-          (let [turn (#'sut/build-turn charge)]
+          (let [turn (#'turn-request/build-turn charge)]
             (should= ["web__fetch"] (sort (:allowed-tools turn))))))))
 
   (describe "context-mode"
@@ -1415,7 +1417,7 @@
                       :provider       provider
                       :soul           "You are Isaac."
                       :context-window 4096}]
-        (with-redefs [sut/build-turn       (fn [c]
+        (with-redefs [turn-request/build-turn       (fn [c]
                                              (should= charge c)
                                              (base-execution-ctx provider c))
                       tool-loop/run        (fn [_ _ request _ _]
@@ -1466,7 +1468,7 @@
                       :provider       provider
                       :soul           "You are Isaac."
                       :context-window 4096}]
-        (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+        (with-redefs [turn-request/build-turn        (fn [c] (base-execution-ctx provider c))
                       tool-loop/run         (fn [& _] (throw (Exception. "wire format mismatch")))
                       sut/process-response! (fn [& _] nil)]
           (log/capture-logs
@@ -1495,7 +1497,7 @@
                       :provider       provider
                       :soul           "You are Isaac."
                       :context-window 4096}]
-        (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+        (with-redefs [turn-request/build-turn        (fn [c] (base-execution-ctx provider c))
                       tool-loop/run         (fn [& _] (throw (Error. "stack overflow")))
                       sut/process-response! (fn [& _] nil)]
           (let [result (sut/run-turn! charge)
@@ -1525,7 +1527,7 @@
                       :soul           "You are Isaac."
                       :context-window 4096
                       :observers      [obs]}]
-        (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+        (with-redefs [turn-request/build-turn        (fn [c] (base-execution-ctx provider c))
                       tool-loop/run         (fn [& _] {:response {:content "Land ho ahead" :model "test-model" :tool-calls []
                                                                     :stop-reason :end-turn
                                                                     :usage {:prompt-tokens 1 :output-tokens 1}}
@@ -1555,7 +1557,7 @@
                       :soul           "You are Isaac."
                       :context-window 4096
                       :observers      [obs]}]
-        (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+        (with-redefs [turn-request/build-turn        (fn [c] (base-execution-ctx provider c))
                       tool-loop/run         (fn [& _] (throw (Exception. "fog rolled in")))
                       sut/process-response! (fn [& _] nil)]
           (sut/run-turn! charge))
@@ -1581,7 +1583,7 @@
                       :soul           "You are Isaac."
                       :context-window 4096
                       :observers      [obs]}]
-        (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+        (with-redefs [turn-request/build-turn        (fn [c] (base-execution-ctx provider c))
                       tool-loop/run         (fn [& _] (throw (Error. "stack overflow")))
                       sut/process-response! (fn [& _] nil)]
           (sut/run-turn! charge))
@@ -1607,7 +1609,7 @@
                       :soul           "You are Isaac."
                       :context-window 4096
                       :observers      [obs]}]
-        (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+        (with-redefs [turn-request/build-turn        (fn [c] (base-execution-ctx provider c))
                       tool-loop/run         (fn [& _] {:error :http-error :status 403 :message "fog rolled in"})
                       sut/process-response! (fn [_ _ result _] result)]
           (sut/run-turn! charge))
@@ -1637,7 +1639,7 @@
                       :context-window 4096}]
         (try
           (observer/attach! ambient)
-          (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+          (with-redefs [turn-request/build-turn        (fn [c] (base-execution-ctx provider c))
                         tool-loop/run         (fn [& _] (throw (Exception. "crow's nest exploded")))
                         sut/process-response! (fn [& _] nil)]
             (sut/run-turn! charge))
@@ -1669,7 +1671,7 @@
                        :soul           "You are Isaac."
                        :context-window 4096
                        :observers      [exploding witness]}]
-        (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+        (with-redefs [turn-request/build-turn        (fn [c] (base-execution-ctx provider c))
                       tool-loop/run         (fn [& _] (throw (Exception. "fog rolled in")))
                       sut/process-response! (fn [& _] nil)]
           (log/capture-logs
@@ -1701,7 +1703,7 @@
                       :context-window 4096}]
         (try
           (observer/attach! ambient)
-          (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+          (with-redefs [turn-request/build-turn        (fn [c] (base-execution-ctx provider c))
                         tool-loop/run         (fn [& _] {:response {:content "Land ho ahead" :model "test-model" :tool-calls []
                                                                       :stop-reason :end-turn
                                                                       :usage {:prompt-tokens 1 :output-tokens 1}}
@@ -1739,7 +1741,7 @@
                        :observers      [submitted]}]
         (try
           (observer/attach! ambient)
-          (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+          (with-redefs [turn-request/build-turn        (fn [c] (base-execution-ctx provider c))
                         tool-loop/run         (fn [& _] {:response {:content "Land ho ahead" :model "test-model" :tool-calls []
                                                                       :stop-reason :end-turn
                                                                       :usage {:prompt-tokens 1 :output-tokens 1}}
@@ -1777,7 +1779,7 @@
                        :observers      [submitted]}]
         (try
           (observer/attach! ambient)
-          (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+          (with-redefs [turn-request/build-turn        (fn [c] (base-execution-ctx provider c))
                         tool-loop/run         (fn [& _] {:response {:content "Land ho ahead" :model "test-model" :tool-calls []
                                                                       :stop-reason :end-turn
                                                                       :usage {:prompt-tokens 1 :output-tokens 1}}
@@ -1814,7 +1816,7 @@
                       :soul              "You are Isaac."
                       :context-window    4096
                       :pool-leases  [{:resource-pool gate :token token}]}]
-        (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+        (with-redefs [turn-request/build-turn        (fn [c] (base-execution-ctx provider c))
                       tool-loop/run         (fn [& _] {:response {:content "Land ho ahead" :model "test-model" :tool-calls []
                                                                     :stop-reason :end-turn
                                                                     :usage {:prompt-tokens 1 :output-tokens 1}}
@@ -1825,22 +1827,22 @@
         (should= [[:release token]] @events)))
 
     (it "prefers charge cycle limit over crew and defaults"
-      (should= 12 (#'sut/resolve-cycle-limit {:cycle       {:limit 12}
+      (should= 12 (#'tools-config/resolve-cycle-limit {:cycle       {:limit 12}
                                               :crew-cfg    {:cycle {:limit 3}}
                                               :crew        "oscar"
                                               :config      {:defaults {:crew {:cycle {:limit 5}}}
                                                             :crew     {"oscar" {:cycle {:limit 3}}}}}))
-      (should= 3 (#'sut/resolve-cycle-limit {:crew-cfg {:cycle {:limit 3}}
+      (should= 3 (#'tools-config/resolve-cycle-limit {:crew-cfg {:cycle {:limit 3}}
                                             :crew     "oscar"
                                             :config   {:defaults {:crew {:cycle {:limit 5}}}
                                                        :crew     {"oscar" {:cycle {:limit 8}}}}}))
-      (should= 5 (#'sut/resolve-cycle-limit {:crew   "oscar"
+      (should= 5 (#'tools-config/resolve-cycle-limit {:crew   "oscar"
                                             :config {:defaults {:crew {:cycle {:limit 5}}}}}))
       (should= tool-loop/default-max-loops
-               (#'sut/resolve-cycle-limit {:crew "oscar" :config {}})))
+               (#'tools-config/resolve-cycle-limit {:crew "oscar" :config {}})))
 
     (it "layers charge cycle map over crew and defaults"
-      (let [cycle (#'sut/resolve-cycle {:cycle    {:checkpoint-every 1}
+      (let [cycle (#'tools-config/resolve-cycle {:cycle    {:checkpoint-every 1}
                                         :crew-cfg {:cycle {:limit 10 :checkpoint-every 5}}
                                         :crew     "oscar"
                                         :config   {:defaults {:crew {:cycle {:limit 100}}}}})]
@@ -1848,19 +1850,19 @@
         (should= 1 (:checkpoint-every cycle))))
 
     (it "the continuation budget defaults to 2 and layers like the rest of :cycle"
-      (should= sut/default-continuations
-               (:continuations (#'sut/resolve-cycle {:crew "oscar" :config {}})))
-      (should= 2 sut/default-continuations)
-      (should= 5 (:continuations (#'sut/resolve-cycle {:crew   "oscar"
+      (should= tools-config/default-continuations
+               (:continuations (#'tools-config/resolve-cycle {:crew "oscar" :config {}})))
+      (should= 2 tools-config/default-continuations)
+      (should= 5 (:continuations (#'tools-config/resolve-cycle {:crew   "oscar"
                                                        :config {:defaults {:crew {:cycle {:continuations 5}}}}})))
-      (should= 3 (:continuations (#'sut/resolve-cycle {:crew-cfg {:cycle {:continuations 3}}
+      (should= 3 (:continuations (#'tools-config/resolve-cycle {:crew-cfg {:cycle {:continuations 3}}
                                                        :crew     "oscar"
                                                        :config   {:defaults {:crew {:cycle {:continuations 5}}}}})))
-      (should= 1 (:continuations (#'sut/resolve-cycle {:cycle    {:continuations 1}
+      (should= 1 (:continuations (#'tools-config/resolve-cycle {:cycle    {:continuations 1}
                                                        :crew-cfg {:cycle {:continuations 3}}
                                                        :crew     "oscar"
                                                        :config   {:defaults {:crew {:cycle {:continuations 5}}}}})))
-      (should= 4 (:continuations (#'sut/resolve-cycle {:crew   "oscar"
+      (should= 4 (:continuations (#'tools-config/resolve-cycle {:crew   "oscar"
                                                        :config {:defaults {:crew {:cycle {:continuations "4"}}}}}))))
 
     (it "reads the continuation count off the charge's origin"
@@ -1947,7 +1949,7 @@
                       :soul              "You are Isaac."
                       :context-window    4096
                       :pool-leases  [{:resource-pool gate :token token}]}]
-        (with-redefs [sut/build-turn        (fn [c] (base-execution-ctx provider c))
+        (with-redefs [turn-request/build-turn        (fn [c] (base-execution-ctx provider c))
                       tool-loop/run         (fn [& _] (throw (Exception. "fog rolled in")))
                       sut/process-response! (fn [& _] nil)]
           (sut/run-turn! charge))
@@ -1978,9 +1980,9 @@
                       :model          "helm-spark-1.0"
                       :provider       provider
                       :soul           "You are Isaac."}]
-        (with-redefs [sut/augment-provider (fn [_root p _session-key _context-window _model-cfg-overrides] p)]
+        (with-redefs [turn-request/augment-provider (fn [_root p _session-key _context-window _model-cfg-overrides] p)]
           (log/capture-logs
-            (#'sut/build-turn charge)
+            (#'turn-request/build-turn charge)
             (let [entry (first (filter #(= :turn/context-resolved (:event %)) @log/captured-logs))]
               (should-not-be-nil entry)
               (should= "context-log" (:session entry))
