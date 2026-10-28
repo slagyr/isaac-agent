@@ -10,6 +10,8 @@
     [isaac.foundation.root-steps :as froot]
     [isaac.foundation.fs :as fs]
     [isaac.agent.llm.api.grover :as grover]
+    [isaac.agent.llm.http :as llm-http]
+    [isaac.agent.auth-steps :as auth-steps]
     [isaac.agent.llm.providers-steps :as providers-steps]
     [isaac.foundation.nexus :as nexus]
     [isaac.agent.session.session-steps :as sut]
@@ -177,6 +179,27 @@
            :rows [["message" "assistant" "partial"]]}))
       (should-not (realized? turn))
       (deliver turn {:output "" :request {} :result {:ok true}})))
+
+  (it "keeps the turn's captured requests when a Grok login runs concurrently"
+    (let [started (promise)
+          resume  (promise)]
+      (llm-http/clear-outbound-requests!)
+      (let [turn (future
+                   (llm-http/record-outbound-request! "https://api.example/first" {} {:store true})
+                   (deliver started true)
+                   @resume
+                   (llm-http/record-outbound-request! "https://api.example/second" {} {:store true}))]
+        (try
+          (should= true (deref started 1000 ::timeout))
+          (auth-steps/with-stubbed-device-code-login
+            (fn [] (isaac.agent.llm.auth.device-code/request-user-code!
+                     isaac.agent.llm.auth.device-code/grok-descriptor)))
+          (deliver resume true)
+          (should (not= ::timeout (deref turn 1000 ::timeout)))
+          (should= ["https://api.example/first" "https://auth.x.ai/oauth2/device/code"
+                    "https://api.example/second"]
+                   (mapv :url (llm-http/outbound-requests)))
+          (finally (deliver resume true))))))
 
   (it "waits for a queued turn before matching a later turn's HTTP request"
     (let [worker-done (atom false)]

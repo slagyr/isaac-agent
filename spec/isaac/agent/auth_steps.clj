@@ -52,20 +52,20 @@
                                 :user_code "TEST-CODE"
                                 :interval 0})})
 
-(fcli/register-isaac-run-wrapper!
-  (fn [thunk]
-    (if (stubbed-device-code-login?)
-      (let [request-user-code! device-code/request-user-code!]
-        (llm-http/clear-outbound-requests!)
-        (with-redefs [device-code/request-user-code! (fn [descriptor]
-                                                       (if (= :oidc-device-code (:flow descriptor))
-                                                         (with-redefs [http/post stub-device-code-post]
-                                                           (request-user-code! descriptor))
-                                                         (stub-user-code-response descriptor)))
-                    device-code/poll-for-auth!   stub-auth-response
-                     device-code/exchange-tokens! stub-token-response]
-          (thunk)))
-      (thunk))))
+(defn with-stubbed-device-code-login [thunk]
+  (if (stubbed-device-code-login?)
+    (let [request-user-code! device-code/request-user-code!]
+      (with-redefs [device-code/request-user-code! (fn [descriptor]
+                                                     (if (= :oidc-device-code (:flow descriptor))
+                                                       (with-redefs [http/post stub-device-code-post]
+                                                         (request-user-code! descriptor))
+                                                       (stub-user-code-response descriptor)))
+                   device-code/poll-for-auth!     stub-auth-response
+                   device-code/exchange-tokens!  stub-token-response]
+        (thunk)))
+    (thunk)))
+
+(fcli/register-isaac-run-wrapper! with-stubbed-device-code-login)
 
 (helper! isaac.agent.auth-steps)
 
