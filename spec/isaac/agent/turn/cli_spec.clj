@@ -54,11 +54,11 @@
                                        (on-turn-started [_ _] (swap! events conj :started))
                                        (on-turn-ended [_ _ _] (swap! events conj :ended))
                                        (on-turn-died [_ ctx reason]
-                                         (swap! events conj [:died (:session-key ctx) reason])))))
+                                         (swap! events conj [:died (:session-key ctx) (:request-id ctx) reason])))))
       (try
         (queue/enqueue! {:id "berth-1" :session "harbor" :state :held :observers [:witness]})
         (with-out-str (should= 0 (sut/run-fn {:_raw-args ["drop" "berth-1"] :root "/test/isaac"})))
-        (should= [[:died "harbor" "dropped"]] @events)
+        (should= [[:died "harbor" "berth-1" "dropped"]] @events)
         (finally (observer/unregister! :witness)))))
 
   (it "shows sender and beneficiary fields alongside origin without changing their maps"

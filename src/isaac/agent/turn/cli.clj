@@ -89,7 +89,7 @@
             (queue/update-turn! id {:state :finished :outcome :dropped})
             (let [resolved (observer/resolve-submitted (:observers record))]
               (observer/notify! (observer/for-turn (:observers resolved))
-                                :on-turn-died {:session-key (:session record)} "dropped"))
+                                :on-turn-died {:session-key (:session record) :request-id id} "dropped"))
             (println (str "dropped " id))
             0)
           (do
