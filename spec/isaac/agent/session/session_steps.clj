@@ -640,8 +640,8 @@
     s))
 
 (defn- record-turn-result! [{:keys [output request result]}]
-  (let [outbound-requests (or (seq (isaac.agent.llm.http/outbound-requests))
-                              (seq (grover/provider-requests)))
+  (let [outbound-requests (or (seq (grover/provider-requests))
+                              (seq (isaac.agent.llm.http/outbound-requests)))
         outbound-requests (some-> outbound-requests vec)
         grover-request    (some-> (grover/last-request) (hash-map :body))
         tool-result       (some->> (g/get :channel-events)

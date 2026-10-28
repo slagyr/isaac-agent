@@ -201,6 +201,19 @@
                    (mapv :url (llm-http/outbound-requests)))
           (finally (deliver resume true))))))
 
+  (it "matches the simulated provider request rather than a concurrent OAuth capture"
+    (llm-http/clear-outbound-requests!)
+    (llm-http/record-outbound-request! "https://auth.x.ai/oauth2/device/code" {} {:client_id "isaac"})
+    (with-redefs [grover/provider-requests (fn [] [{:url "https://api.openai.com/v1/responses"
+                                                   :headers {}
+                                                   :body {:store true}}])]
+      (g/assoc! :turn-future (future {:output "" :request {} :result {:ok true}}))
+      (sut/await-turn!)
+      (should= ["https://api.openai.com/v1/responses"]
+               (mapv :url (g/get :outbound-http-requests)))
+      (providers-steps/outbound-http-request-n-matches "1"
+        {:headers ["key" "value"] :rows [["body.store" "true"]]})))
+
   (it "waits for a queued turn before matching a later turn's HTTP request"
     (let [worker-done (atom false)]
       (g/assoc! :outbound-http-requests [{:body {:previous_response_id "resp-3"}}])
