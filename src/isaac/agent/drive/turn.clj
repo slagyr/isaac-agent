@@ -7,12 +7,13 @@
     [isaac.agent.comm.null :as null-comm]
     [isaac.agent.comm.protocol :as comm]
     [isaac.agent.config.defaults :as defaults]
-    [isaac.agent.config.resolve :as config-resolve]
     [isaac.foundation.config.loader :as loader]
     [isaac.agent.drive.accounting :as accounting]
     [isaac.agent.drive.dispatch :as dispatch]
     [isaac.agent.drive.observer :as observer]
     [isaac.agent.drive.provider-wall :as provider-wall]
+    [isaac.agent.drive.continuation :as continuation]
+    [isaac.agent.drive.fallback :as fallback]
     [isaac.agent.drive.request :as turn-request]
     [isaac.agent.drive.tools-config :as tools-config]
     [isaac.agent.drive.turn-compaction :as turn-compaction]
@@ -24,7 +25,6 @@
     [isaac.agent.llm.usage :as usage]
     [isaac.foundation.logger :as log]
     [isaac.foundation.nexus :as nexus]
-    [isaac.agent.session.context :as session-ctx]
     [isaac.agent.session.context-mode :as context-mode]
     [isaac.agent.session.session-observer :as session-observer]
     [isaac.agent.session.store.spi :as store]
@@ -733,44 +733,6 @@
       (guard-empty-terminal-response chat-fn @current-request)
       (assoc :exhaustion :stopped)))
 
-(defn- apply-wrap-up-exhaustion [result chat-fn followup-fn current-request tool-ctx wrap-up-prompt]
-  (let [pending (or (seq (pending-tool-calls result))
-                    (seq (response-tool-calls* (:response result))))]
-    (when (seq pending)
-      (let [results  (execute-pending-tools! tool-ctx pending)
-            messages (followup-fn @current-request (or (:response result) result) pending results)]
-        (reset! current-request (assoc @current-request :messages messages))))
-    (let [wrap-req     (wrap-up-request @current-request (or wrap-up-prompt wrap-up-nudge))
-          wrap-resp    (chat-fn wrap-req)
-          wrap-calls   (or (seq (pending-tool-calls wrap-resp))
-                           (seq (response-tool-calls* wrap-resp)))
-          wrap-content (:content wrap-resp)]
-      (reset! current-request wrap-req)
-      (if (seq wrap-calls)
-        (let [results  (execute-pending-tools! tool-ctx wrap-calls)
-              messages (followup-fn wrap-req wrap-resp wrap-calls results)
-              note-req (assoc (assoc wrap-req :messages messages) :tools [])
-              note-resp (chat-fn note-req)
-              content   (:content note-resp)]
-          (reset! current-request note-req)
-          (if (str/blank? content)
-            (empty-wrap-up-failure)
-            (-> result
-                (assoc :content content
-                       :response note-resp
-                       :exhaustion :wrapped-up
-                       :loop-request? true)
-                (assoc :usage (merge-response-usage (:usage result) note-resp)))))
-        (if (str/blank? wrap-content)
-          (empty-wrap-up-failure)
-          (do
-            (reset! current-request (assoc wrap-req :tools []))
-            (-> result
-                (assoc :content wrap-content
-                       :response wrap-resp
-                       :exhaustion :wrapped-up
-                       :loop-request? true)
-                (assoc :usage (merge-response-usage (:usage result) wrap-resp)))))))))
 
 (defn- empty-terminal-response? [result]
   (and (not (:error result))
@@ -847,104 +809,6 @@
         (notify-observers! observers :on-turn-ended ctx (observer/outcome result))))
     result))
 
-;; region ----- Continuations -----
-
-(def continuation-note
-  "The continuation turn's input. The wrap-up note is the turn's last
-   assistant message (isaac-x0cw), so the model reads its own done/next note
-   straight above this line."
-  "Your previous turn ran out of cycles and wrapped up. Read your own wrap-up note above and continue from where it says to resume. Do not redo finished work.")
-
-(defn- wrapped-up? [result]
-  (and (= :cycle-limit (:ended-by result))
-       (= :wrapped-up (:exhaustion result))))
-
-(defn- continuation-count
-  "How many continuations this turn already is. The count rides on the
-   charge's origin, so it survives the queue without the drive keeping state."
-  [charge]
-  (or (get-in charge [:origin :continuation]) 0))
-
-(defn- continuation-plan
-  "What follows a finished turn: a fresh turn (:continue), the end of the
-   budget (:exhausted), or nothing at all. Only a wrapped-up cycle-limit turn
-   continues - a comm that answers :stop never does."
-  [result n budget]
-  (when (wrapped-up? result)
-    (if (< n budget)
-      {:action :continue :continuation (inc n) :budget budget}
-      {:action :exhausted :continuation n :budget budget})))
-
-(defn- turn-root [charge]
-  (or (:root charge)
-      (get-in charge [:config :root])
-      (nexus/get :root)
-      (loader/root)))
-
-(defn- enqueue-continuation!
-  "Park a fresh turn for this session on the durable turn queue - the same
-   waiting room a resumed or held turn parks in (isaac-yxch). The note is
-   persisted here, the way a parked CLI turn persists its user message at
-   submit time; the queue worker drives a :from-queue? charge and never
-   re-appends it. The origin carries the count and the original source, so
-   the next turn knows which continuation it is."
-  [charge ctx ch session-key {:keys [continuation budget]}]
-  (append-message! ctx session-key {:role "user" :content continuation-note})
-  (binding [turn-queue/*root* (turn-root charge)]
-    (turn-queue/enqueue! {:session session-key
-                          :input   continuation-note
-                          :input-persisted? true
-                          :origin  (assoc (or (:origin charge) {:kind :queue})
-                                          :continuation continuation)
-                          :from    (:from charge)
-                          :for     (:for charge)
-                          :comm    ch
-                          :crew    (:crew charge)
-                          :cwd     (:cwd charge)
-                          :root    (turn-root charge)}))
-  (log/info :turn/continued
-            :session session-key
-            :continuation continuation
-            :budget budget))
-
-(defn- continuations-exhausted!
-  "The budget is spent and the work is still unfinished. Loud on purpose: an
-   ERROR log, attention for the operator, and a bulletin so the comm that
-   asked for the wrap-up can say so in its own channel."
-  [charge ch session-key {:keys [continuation budget]}]
-  (log/error :turn/continuations-exhausted
-             :session session-key
-             :continuation continuation
-             :budget budget)
-  (attention/maybe-notify-continuations-exhausted!
-    (or (:config charge) (loader/snapshot "continuations-exhausted attention"))
-    session-key
-    {:continuation continuation :budget budget})
-  (comm/on-bulletin ch session-key
-                    {:kind :turn/continuations-exhausted
-                     :text (str "Session " session-key " ran out of continuations ("
-                                continuation " of " budget ") with work still unfinished")}))
-
-(defn- maybe-continue!
-  "Called once per finished turn. The drive owns continuations (isaac-xpkf);
-   nothing here knows what started the turn."
-  [charge ctx ch session-key result]
-  (try
-    (let [{:keys [crew config crew-cfg cycle]} charge
-          budget (:continuations (tools-config/resolve-cycle {:cycle cycle :config config
-                                                 :crew crew :crew-cfg crew-cfg}))
-          n      (continuation-count charge)]
-      (when-let [plan (continuation-plan result n budget)]
-        (if (= :continue (:action plan))
-          (enqueue-continuation! charge ctx ch session-key plan)
-          (continuations-exhausted! charge ch session-key plan))))
-    (catch Throwable t
-      (log/warn :turn/continuation-failed
-                :session session-key
-                :error (.getMessage t))))
-  result)
-
-;; endregion ^^^^^ Continuations ^^^^^
 
 (defn- announce-tool-call!
   [{:keys [session-key] ch :comm :as tool-ctx} tc]
@@ -1033,28 +897,6 @@
          :status   (or (:status result) (:status raw))
          :message  (or (:message result) (:message raw))}))))
 
-(defn- chain-link [cfg crew-id model-id root session-key]
-  (let [resolved (config-resolve/resolve-crew-context cfg crew-id {:model-override model-id})
-        window   (:context-window resolved)
-        provider (turn-request/augment-provider root (:provider resolved) session-key window
-                                   (select-keys (or (:model-cfg resolved) {})
-                                                [:thinking-budget-max :think-mode :stateful :vision]))]
-    {:id             model-id
-     :model          (:model resolved)
-     :model-cfg      (:model-cfg resolved)
-     :context-window window
-     :provider       provider
-     :provider-name  (when provider (api/display-name provider))}))
-
-(defn- fallback-links [ctx session-key]
-  (let [charge (:charge ctx)
-        cfg    (:config charge)
-        root   (:root ctx)
-        crew   (:crew charge)]
-    (mapv #(chain-link cfg crew % root session-key)
-          (->> (get-in charge [:crew-cfg :model-fallback])
-               (map session-ctx/normalize-model-ref)
-               (remove str/blank?)))))
 
 (defn- execute-llm-turn!
   "Build the chat request, drive the tool-loop, and persist the final
@@ -1288,17 +1130,11 @@
                             (reset! active* link)
                             (reset! current-request req)
                             req)
-            fallbacks     (fallback-links ctx session-key)
+            fallbacks     (fallback/fallback-links ctx session-key)
             head          @active*
             loop-result   (if (empty? fallbacks)
                             (attempt)
-                            (letfn [(search [links]
-                                      (loop [links links]
-                                        (when-let [link (first links)]
-                                          (if-let [req (prepared link true nil)]
-                                            [link req (rest links)]
-                                            (recur (rest links))))))
-                                    (exhausted! [link reason result]
+                            (letfn [(exhausted! [link reason result]
                                       (notify-chain-exhausted! config session-key
                                                                (:provider-name link)
                                                                (:model link)
@@ -1315,7 +1151,7 @@
                                                                         (:reason weather)
                                                                         (:retry-after-ms weather)
                                                                         (turn-now))
-                                            (if-let [[next next-req remaining*] (search remaining)]
+                                            (if-let [[next next-req remaining*] (fallback/search remaining #(prepared % true nil))]
                                               (do
                                                 (log-model-fallback! (:model link) (:model next) (:reason weather))
                                                 (drive! next next-req remaining*))
@@ -1324,7 +1160,7 @@
                                     head-req (prepared head false request)]
                                 (if-let [req head-req]
                                   (drive! head req fallbacks)
-                                  (if-let [[link req remaining] (search fallbacks)]
+                                  (if-let [[link req remaining] (fallback/search fallbacks #(prepared % true nil))]
                                     (do
                                       (log-model-fallback! (:model head) (:model link)
                                                            (:reason (provider-wall/active-wall (:provider-name head) now)))
@@ -1351,7 +1187,7 @@
                                                   (guard-empty-terminal-response chat-fn @current-request))
 
                                               (= :wrap-up policy)
-                                              (apply-wrap-up-exhaustion normalized chat-fn followup-fn current-request tool-ctx (:wrap-up-prompt cycle-cfg))
+                                              (continuation/apply-wrap-up-exhaustion normalized chat-fn followup-fn current-request tool-ctx (:wrap-up-prompt cycle-cfg))
 
                                               :else
                                               (apply-stop-exhaustion normalized chat-fn current-request input))]
@@ -1471,7 +1307,7 @@
         ch          (or (:comm charge) null-comm/channel)
         observers   (observer/for-turn (:observers charge))
         finish!     #(-> (finish-turn! ch session-key % observers (:origin charge) request-id (:session-observers charge) (:config charge))
-                         (as-> result (maybe-continue! charge ctx ch session-key result)))]
+                         (as-> result (continuation/maybe-continue! charge ctx ch session-key result)))]
     (try
       (comm/on-turn-start ch session-key input)
       (session-observer/publish! session-key (:session-observers charge)

@@ -8,6 +8,7 @@
     [isaac.foundation.config.api :as config]
     [isaac.agent.drive.dispatch :as dispatch]
     [isaac.agent.drive.observer :as observer]
+    [isaac.agent.drive.continuation :as continuation]
     [isaac.agent.drive.request :as turn-request]
     [isaac.agent.drive.tools-config :as tools-config]
     [isaac.agent.drive.turn :as sut]
@@ -1867,23 +1868,23 @@
                                                        :config {:defaults {:crew {:cycle {:continuations "4"}}}}}))))
 
     (it "reads the continuation count off the charge's origin"
-      (should= 0 (#'sut/continuation-count {}))
-      (should= 0 (#'sut/continuation-count {:origin {:kind :memory}}))
-      (should= 2 (#'sut/continuation-count {:origin {:kind :memory :continuation 2}})))
+      (should= 0 (#'continuation/continuation-count {}))
+      (should= 0 (#'continuation/continuation-count {:origin {:kind :memory}}))
+      (should= 2 (#'continuation/continuation-count {:origin {:kind :memory :continuation 2}})))
 
     (it "plans a continuation only for a wrapped-up turn, and only within budget"
       (let [wrapped {:ended-by :cycle-limit :exhaustion :wrapped-up}]
-        (should-be-nil (#'sut/continuation-plan {:ended-by :reply} 0 2))
-        (should-be-nil (#'sut/continuation-plan {:ended-by :cycle-limit :exhaustion :stopped} 0 2))
-        (should-be-nil (#'sut/continuation-plan {:ended-by :error :error :exception} 0 2))
+        (should-be-nil (#'continuation/continuation-plan {:ended-by :reply} 0 2))
+        (should-be-nil (#'continuation/continuation-plan {:ended-by :cycle-limit :exhaustion :stopped} 0 2))
+        (should-be-nil (#'continuation/continuation-plan {:ended-by :error :error :exception} 0 2))
         (should= {:action :continue :continuation 1 :budget 2}
-                 (#'sut/continuation-plan wrapped 0 2))
+                 (#'continuation/continuation-plan wrapped 0 2))
         (should= {:action :continue :continuation 2 :budget 2}
-                 (#'sut/continuation-plan wrapped 1 2))
+                 (#'continuation/continuation-plan wrapped 1 2))
         (should= {:action :exhausted :continuation 2 :budget 2}
-                 (#'sut/continuation-plan wrapped 2 2))
+                 (#'continuation/continuation-plan wrapped 2 2))
         (should= {:action :exhausted :continuation 0 :budget 0}
-                 (#'sut/continuation-plan wrapped 0 0))))
+                 (#'continuation/continuation-plan wrapped 0 0))))
 
     (it "copies both identities to a continuation without delegating it"
       (let [from {:kind :handle :comm :logbook :id "cordelia-7"}
@@ -1891,7 +1892,7 @@
             seen (atom nil)]
         (with-redefs [store/append-message! (fn [& _] nil)
                       turn-queue/enqueue! (fn [record] (reset! seen record))]
-          (#'sut/enqueue-continuation! {:root test-dir :from from :for for-party
+          (#'continuation/enqueue-continuation! {:root test-dir :from from :for for-party
                                          :crew "ketch" :origin {:kind :memory}}
                                         {:session-store :sessions} null-comm/channel "harbor"
                                         {:continuation 1 :budget 2}))
@@ -1899,8 +1900,8 @@
         (should= for-party (:for @seen))))
 
     (it "the continuation note tells the model to continue from its own wrap-up note"
-      (should (re-find #"continue" sut/continuation-note))
-      (should (re-find #"(?i)note" sut/continuation-note)))
+      (should (re-find #"continue" continuation/continuation-note))
+      (should (re-find #"(?i)note" continuation/continuation-note)))
 
     (it "default wrap-up and checkpoint prompts are task-agnostic"
       (doseq [word ["git" "commit" "branch" "bean" "test" "verify"]]
