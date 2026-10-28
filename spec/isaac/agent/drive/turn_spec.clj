@@ -11,6 +11,7 @@
     [isaac.agent.drive.request :as turn-request]
     [isaac.agent.drive.tools-config :as tools-config]
     [isaac.agent.drive.turn :as sut]
+    [isaac.agent.drive.turn-compaction :as turn-compaction]
     [isaac.foundation.fs :as fs]
     [isaac.agent.llm.api.protocol :as api]
     [isaac.agent.llm.prompt.builder :as prompt]
@@ -780,7 +781,7 @@
         (helper/append-message! test-dir session-key {:role "user" :content "Measure twice — naïve bytes."})
         (helper/append-message! test-dir session-key {:role "assistant" :content "Compact once."})
         (log/capture-logs
-          (#'sut/run-compaction-check! session-key {:compaction     {:threshold 0.8}
+          (#'turn-compaction/run-compaction-check! session-key {:compaction     {:threshold 0.8}
                                                     :context-window 10000
                                                     :model          "test-model"
                                                     :provider       provider
@@ -809,7 +810,7 @@
       (let [provider (->TestProvider marigold/starcore {:api marigold/sky-api})]
         (with-redefs [compaction/compact! (fn [& _] (throw (ex-info "should not compact" {})))]
           (log/capture-logs
-            (#'sut/perform-compaction! "attempt-limit" 4 1200 {:context-window 1000
+            (#'turn-compaction/perform-compaction! "attempt-limit" 4 1200 {:context-window 1000
                                                                  :model "test-model"
                                                                  :provider provider
                                                                  :soul "You are Isaac."})
@@ -826,7 +827,7 @@
         (helper/create-session! test-dir session-key)
         (helper/update-session! test-dir session-key {:compaction {:consecutive-failures 2}})
         (with-redefs [compaction/compact! (fn [& _] {:error :rate-limited :message "Please retry later"})]
-          (#'sut/perform-compaction! session-key 1 800 {:comm          (memory-comm/channel events)
+          (#'turn-compaction/perform-compaction! session-key 1 800 {:comm          (memory-comm/channel events)
                                                         :context-window 1000
                                                         :model         "test-model"
                                                         :provider      provider
@@ -857,8 +858,8 @@
                                                       :compaction        {:consecutive-failures 2}})
         (with-redefs [compaction/compact!               (fn [& _] {:summary "Shorter now"})
                       compaction/estimate-prompt-tokens (fn [_ _] 850)
-                      sut/run-compaction-check!         (fn [& _] (throw (ex-info "should not re-run" {})))]
-          (#'sut/perform-compaction! session-key 2 900 {:comm           (memory-comm/channel events)
+                      turn-compaction/run-compaction-check!         (fn [& _] (throw (ex-info "should not re-run" {})))]
+          (#'turn-compaction/perform-compaction! session-key 2 900 {:comm           (memory-comm/channel events)
                                                         :context-window 1000
                                                         :model          "test-model"
                                                         :provider       provider
@@ -884,8 +885,8 @@
                       compaction/estimate-prompt-tokens (fn [_ _] 850)
                       compaction/should-compact?        (fn [tokens _entry window]
                                                           (>= tokens (* 0.8 window)))
-                      sut/run-compaction-check!         (fn [& _] (throw (ex-info "should not re-run" {})))]
-          (#'sut/perform-compaction! session-key 1 900 {:comm           (memory-comm/channel events)
+                      turn-compaction/run-compaction-check!         (fn [& _] (throw (ex-info "should not re-run" {})))]
+          (#'turn-compaction/perform-compaction! session-key 1 900 {:comm           (memory-comm/channel events)
                                                         :context-window 1000
                                                         :model          "test-model"
                                                         :provider       provider
@@ -904,8 +905,8 @@
                       compaction/estimate-prompt-tokens (fn [_ _] 200)
                       compaction/should-compact?        (fn [tokens _entry window]
                                                           (>= tokens (* 0.8 window)))
-                      sut/run-compaction-check!         (fn [& _] (throw (ex-info "should not re-run" {})))]
-          (#'sut/perform-compaction! session-key 1 800 {:comm           (memory-comm/channel events)
+                      turn-compaction/run-compaction-check!         (fn [& _] (throw (ex-info "should not re-run" {})))]
+          (#'turn-compaction/perform-compaction! session-key 1 800 {:comm           (memory-comm/channel events)
                                                         :context-window 1000
                                                         :model          "test-model"
                                                         :provider       provider
@@ -923,9 +924,9 @@
         (helper/update-session! test-dir session-key {:last-input-tokens 800})
         (with-redefs [compaction/compact!               (fn [& _] {:summary "No progress"})
                       compaction/estimate-prompt-tokens (fn [_ _] 800)
-                      sut/run-compaction-check!         (fn [& _] (throw (ex-info "should not re-run" {})))]
+                      turn-compaction/run-compaction-check!         (fn [& _] (throw (ex-info "should not re-run" {})))]
           (log/capture-logs
-            (#'sut/perform-compaction! session-key 2 800 {:comm           (memory-comm/channel events)
+            (#'turn-compaction/perform-compaction! session-key 2 800 {:comm           (memory-comm/channel events)
                                                           :context-window 1000
                                                           :model          "test-model"
                                                           :provider       provider
@@ -947,9 +948,9 @@
         (with-redefs [compaction/compact!               (fn [_ _] {:summary "Shorter now"
                                                                    :successor-session-key "compact-successor"})
                       compaction/estimate-prompt-tokens (fn [_ _] 800)
-                      sut/run-compaction-check!         (fn [& _] (throw (ex-info "should not re-run" {})))]
+                      turn-compaction/run-compaction-check!         (fn [& _] (throw (ex-info "should not re-run" {})))]
           (log/capture-logs
-            (#'sut/perform-compaction! session-key 1 800 {:comm           (memory-comm/channel events)
+            (#'turn-compaction/perform-compaction! session-key 1 800 {:comm           (memory-comm/channel events)
                                                           :context-window 1000
                                                           :model          "test-model"
                                                           :provider       provider
@@ -974,9 +975,9 @@
         (with-redefs [compaction/compact!               (fn [_ _] {:summary "Full summary of prior"
                                                                    :successor-container "2026-03-01-1000-aaaa"})
                       compaction/estimate-prompt-tokens (fn [_ _] 800)
-                      sut/run-compaction-check!         (fn [& _] (throw (ex-info "should not re-run" {})))]
+                      turn-compaction/run-compaction-check!         (fn [& _] (throw (ex-info "should not re-run" {})))]
           (log/capture-logs
-            (#'sut/perform-compaction! session-key 1 800 {:comm           (memory-comm/channel events)
+            (#'turn-compaction/perform-compaction! session-key 1 800 {:comm           (memory-comm/channel events)
                                                           :context-window 1000
                                                           :model          "test-model"
                                                           :provider       provider
@@ -1000,9 +1001,9 @@
         (helper/create-session! test-dir session-key)
         (with-redefs [compaction/compact!               (fn [& _] {:summary "Chunked summary" :chunked true})
                       compaction/estimate-prompt-tokens (fn [_ _] 850)
-                      sut/run-compaction-check!         (fn [next-session-key next-opts next-attempt allow-async?]
+                      turn-compaction/run-compaction-check!         (fn [next-session-key next-opts next-attempt allow-async?]
                                                           (reset! follow-up [next-session-key next-opts next-attempt allow-async?]))]
-          (#'sut/perform-compaction! session-key 1 900 {:comm           (memory-comm/channel events)
+          (#'turn-compaction/perform-compaction! session-key 1 900 {:comm           (memory-comm/channel events)
                                                         :context-window 1000
                                                         :model          "test-model"
                                                         :provider       provider
@@ -1025,9 +1026,9 @@
                       compaction/estimate-prompt-tokens (fn [_ _] 850)
                       compaction/should-compact?        (fn [tokens _entry window]
                                                           (>= tokens (* 0.8 window)))
-                      sut/run-compaction-check!         (fn [next-session-key next-opts next-attempt allow-async?]
+                      turn-compaction/run-compaction-check!         (fn [next-session-key next-opts next-attempt allow-async?]
                                                           (reset! follow-up [next-session-key next-opts next-attempt allow-async?]))]
-          (#'sut/perform-compaction! session-key 1 900 {:comm           (memory-comm/channel events)
+          (#'turn-compaction/perform-compaction! session-key 1 900 {:comm           (memory-comm/channel events)
                                                         :context-window 1000
                                                         :model          "test-model"
                                                         :provider       provider
@@ -1048,7 +1049,7 @@
         (helper/update-session! test-dir session-key {:compaction {:consecutive-failures 0}})
         (with-redefs [compaction/compact!               (fn [& _] {:summary "Retried summary"})
                       compaction/estimate-prompt-tokens (fn [_ _] 200)]
-          (#'sut/perform-compaction! session-key 1 800 {:comm           (memory-comm/channel events)
+          (#'turn-compaction/perform-compaction! session-key 1 800 {:comm           (memory-comm/channel events)
                                                         :context-window 1000
                                                         :model          "test-model"
                                                         :provider       provider
@@ -1066,7 +1067,7 @@
         (helper/create-session! test-dir session-key)
         (helper/update-session! test-dir session-key {:compaction {:consecutive-failures 0}})
         (with-redefs [compaction/compact! (fn [& _] {:error :stream-stalled :message "closed"})]
-          (#'sut/perform-compaction! session-key 1 800 {:comm           (memory-comm/channel events)
+          (#'turn-compaction/perform-compaction! session-key 1 800 {:comm           (memory-comm/channel events)
                                                         :context-window 1000
                                                         :model          "test-model"
                                                         :provider       provider
@@ -1391,7 +1392,7 @@
                    :comm           null-comm/channel
                    :context-window 100
                    :config         {}})]
-        (let [result (#'sut/maybe-blocked-conversation! "skybeam" ctx)]
+        (let [result (#'turn-compaction/maybe-blocked-conversation! "skybeam" ctx)]
           (should= true (:unavailable? result))
           (should= :blocked (:reason result))))))
 
