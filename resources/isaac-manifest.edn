@@ -28,6 +28,10 @@
                   :schema
                   {:factory
                    {:type :symbol, :validations [:present?]}}}}},
+               :quota-meter
+               {:description "Subscription quota meter factories keyed by provider template type."
+                :schema {:type :map :key-spec {:type :keyword}
+                         :value-spec {:type :map :schema {:factory {:type :symbol :validations [:present?]}}}}}
                :tool-providers
                {:description
                 "Dynamic tool providers — asked to register tools for an allowed namespace nobody registered (e.g. MCP servers declared in config). Entry: {:ensure! sym}, (ensure! ns-str module-index) => registered wire names or nil.",
@@ -122,7 +126,9 @@
   :turn-queue      {:namespace isaac.agent.component}}
 
  :isaac/cli
- {:auth
+ {:quota {:usage "quota [--provider <id>]" :summary "Show subscription quota by provider"
+          :namespace isaac.agent.quota-cli :hosted true},
+  :auth
   {:usage "auth <subcommand> [options]",
    :summary "Manage authentication credentials",
    :namespace isaac.agent.llm.auth.cli
@@ -153,8 +159,12 @@
   :ollama {:factory isaac.agent.llm.api.ollama/make},
   :chat-completions {:factory isaac.agent.llm.api.chat-completions/make},
   :responses {:factory isaac.agent.llm.api.responses/make}},
+ :isaac.agent/quota-meter
+ {:chatgpt {:factory isaac.agent.quota/chatgpt-factory}
+  :grok {:factory isaac.agent.quota/grok-factory}},
  :isaac.agent/tools
- {:web/fetch {:factory isaac.agent.tool.builtin/web-fetch-tool-factory},
+ {:provider/quota {:factory isaac.agent.tool.builtin/provider-quota-tool-factory},
+   :web/fetch {:factory isaac.agent.tool.builtin/web-fetch-tool-factory},
   :fs/read {:factory isaac.agent.tool.builtin/read-tool-factory},
   :exec/run {:factory isaac.agent.tool.builtin/exec-tool-factory},
   :session/list {:factory isaac.agent.tool.builtin/session-list-tool-factory},

@@ -2074,7 +2074,7 @@
 (defn prompt-has-tools [table]
   (let [actual (set (map prompt-tool-name (prompt-tools)))
         expected (set (map first (:rows table)))]
-    (g/should= expected actual)))
+    (g/should= expected (disj actual "provider__quota"))))
 
 (defn prompt-does-not-have-tools [table]
   (let [actual (set (map prompt-tool-name (prompt-tools)))

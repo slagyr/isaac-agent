@@ -30,7 +30,6 @@ Feature: provider__quota — how much of each subscription is left
       | grok     | at-lookout   |               |
     And the current time is "2026-10-28T12:00:00Z"
 
-  @wip
   Scenario: ChatGPT reports both windows and its credits
     Given the URL "https://chatgpt.com/backend-api/wham/usage" has body:
       """
@@ -69,7 +68,6 @@ Feature: provider__quota — how much of each subscription is left
       | headers.Authorization      | Bearer at-ketch |
       | headers.chatgpt-account-id | acct-marigold |
 
-  @wip
   Scenario: Grok reports its weekly period, each product, and its prepaid balance
     Given the URL "https://cli-chat-proxy.grok.com/v1/billing?format=credits" has body:
       """
@@ -107,7 +105,6 @@ Feature: provider__quota — how much of each subscription is left
       | key                   | value             |
       | headers.Authorization | Bearer at-lookout |
 
-  @wip
   Scenario: A provider with no meter is unsupported
     When the tool "provider__quota" is called with:
       | provider | ollama |
@@ -118,7 +115,6 @@ Feature: provider__quota — how much of each subscription is left
       | providers[0].status   | unsupported |
       | providers[0].windows  | []          |
 
-  @wip
   Scenario: A meter that fails reports unknown with the reason
     Given the URL "https://chatgpt.com/backend-api/wham/usage" responds with:
       | status | 500 |
@@ -132,7 +128,6 @@ Feature: provider__quota — how much of each subscription is left
       | providers[0].error    | #"(?i).*500.*" |
       | providers[0].windows  | []        |
 
-  @wip
   Scenario: Reports are cached for two minutes
     Given the URL "https://chatgpt.com/backend-api/wham/usage" has body:
       """
@@ -159,7 +154,6 @@ Feature: provider__quota — how much of each subscription is left
       | providers[0].windows[0].used_percent | 55.0                 |
       | providers[0].checked_at              | 2026-10-28T12:03:00Z |
 
-  @wip
   Scenario: isaac quota prints the same report for people
     Given the URL "https://chatgpt.com/backend-api/wham/usage" has body:
       """

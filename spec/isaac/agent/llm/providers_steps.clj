@@ -81,6 +81,7 @@
 
 (defn- current-provider-request []
   (or (g/get :provider-request)
+      (last (llm-http/outbound-requests))
        (grover/last-provider-request)))
 
 (defn- current-outbound-http-request []
@@ -89,6 +90,7 @@
 
 (defn- outbound-http-requests []
   (or (g/get :outbound-http-requests)
+      (seq (llm-http/outbound-requests))
       (when-let [request (current-provider-request)]
         [request])))
 
@@ -131,8 +133,8 @@
                        (mapv request-for-match))
         rows      (cond->> (or (:rows table) [])
                     (and (= 2 (count (:headers table)))
-                         (not (#{{"key" "value"} {"path" "value"}}
-                               (set (:headers table)))))
+                         (not (contains? #{#{"key" "value"} #{"path" "value"}}
+                                         (set (:headers table)))))
                     (cons (:headers table)))
         idx-row   (some #(when (= "#index" (first %)) %) rows)
         idx       (some-> idx-row second ->index)

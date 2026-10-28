@@ -21,6 +21,8 @@
     [isaac.agent.tool.memory :as memory]
     [isaac.agent.tool.names :as names]
     [isaac.agent.tool.registry :as registry]
+    [isaac.agent.quota :as quota]
+    [isaac.agent.llm.http :as llm-http]
     [isaac.agent.tool.web-fetch :as web-fetch]
     [speclj.core :refer [pending]]))
 
@@ -92,7 +94,7 @@
 
 (defn- with-current-time [f]
   (if-let [current-time (g/get :current-time)]
-    (binding [memory/*now* current-time]
+    (binding [memory/*now* current-time quota/*now* current-time]
       (f))
     (f)))
 
@@ -191,7 +193,10 @@
   (let [stubs          (g/get :url-stubs)
         search-results (g/get :search-results)]
     (if (or stubs search-results)
-      (with-redefs [http/get (fn [url _opts]
+      (with-redefs [http/get (fn [url opts]
+                               (when (contains? #{"https://chatgpt.com/backend-api/wham/usage"
+                                                  "https://cli-chat-proxy.grok.com/v1/billing?format=credits"} url)
+                                 (llm-http/record-outbound-request! url (:headers opts)))
                                (or (get stubs url)
                                    (search-response (query-param url "q"))
                                    (throw (ex-info "no stubbed response for URL" {:url url}))))]

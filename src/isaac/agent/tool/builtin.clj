@@ -10,6 +10,7 @@
     [isaac.agent.tool.grep :as grep]
     [isaac.agent.tool.memory :as memory]
     [isaac.agent.tool.names :as names]
+    [isaac.agent.quota :as quota]
     [isaac.agent.tool.session :as session]
     [isaac.agent.tool.web-fetch :as web-fetch]
     [isaac.agent.tool.web-search :as web-search]
@@ -21,7 +22,7 @@
   ["fs__read" "fs__write" "fs__edit" "fs__multi_edit" "fs__grep" "fs__glob"
    "web__fetch" "web__search" "memory__write" "memory__get" "memory__search"
    "exec__run" "turn__get" "session__info" "session__model" "session__list" "session__read" "prompt__load" "prompt__list"
-   "comm__send" "hail__send"])
+   "comm__send" "hail__send" "provider__quota"])
 
 (def ^:private built-in-tool-specs
   {"fs__read"        {:name        "fs__read"
@@ -156,6 +157,11 @@
                                                              "offset" {:type "integer"}}
                                    :required ["session" "since"]}
                       :handler #'session/session-read-tool}
+   "provider__quota" {:name "provider__quota"
+                       :description "Report subscription quota for configured providers"
+                       :parameters {:type "object" :properties {"provider" {:type "string"}}
+                                    :required []}
+                       :handler #'quota/quota-tool}
    "session__model"  {:name        "session__model"
                       :description "Switch or reset the calling session's model; returns new session state"
                       :parameters  {:type       "object"
@@ -187,6 +193,7 @@
 (defn session-model-tool-factory [_] (spec-for "session__model"))
 (defn session-list-tool-factory [_] (spec-for "session__list"))
 (defn session-read-tool-factory [_] (spec-for "session__read"))
+(defn provider-quota-tool-factory [_] (spec-for "provider__quota"))
 
 (defn- allowed-tool? [allowed-tools tool-name]
   (or (= ::all allowed-tools)
