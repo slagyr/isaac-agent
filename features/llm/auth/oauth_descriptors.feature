@@ -21,3 +21,13 @@ Feature: OAuth provider descriptors
     When isaac is run with "auth login --provider chatgpt"
     Then the stdout contains "https://auth.openai.com/codex/device"
     And the exit code is 0
+
+  @wip
+  Scenario: Grok login asks for the grok-cli scope so the quota meter can read billing
+    Given the provider "grok" is configured with:
+      | key  | value |
+      | type | grok  |
+    When isaac is run with "auth login --provider grok"
+    Then an outbound HTTP request to "https://auth.x.ai/oauth2/device/code" matches:
+      | key        | value                                                                          |
+      | body.scope | #"(?=.*\bgrok-cli:access\b)(?=.*\bapi:access\b)(?=.*\boffline_access\b).*"     |
