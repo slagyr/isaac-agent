@@ -1,5 +1,6 @@
 (ns isaac.agent.auth-steps
   (:require
+    [babashka.http-client :as http]
     [cheshire.core :as json]
     [clojure.string :as str]
     [gherclj.core :as g :refer [defgiven defwhen defthen helper!]]
@@ -7,6 +8,7 @@
     [isaac.foundation.fs :as fs]
     [isaac.agent.llm.api.openai.shared :as openai-shared]
     [isaac.agent.llm.auth.device-code :as device-code]
+    [isaac.agent.llm.http :as llm-http]
     [isaac.agent.llm.auth.store :as auth-store]
     [isaac.foundation.nexus :as nexus]))
 
@@ -36,13 +38,33 @@
    :id_token      "id-stub"
    :expires_in    3600})
 
+(defn- form-fields [body]
+  (into {} (map (fn [part]
+                  (let [[key value] (str/split part #"=" 2)]
+                    [(java.net.URLDecoder/decode key "UTF-8")
+                     (java.net.URLDecoder/decode (or value "") "UTF-8")]))
+                (str/split body #"&"))))
+
+(defn- stub-device-code-post [url opts]
+  (llm-http/record-outbound-request! url (:headers opts) (form-fields (:body opts)))
+  {:status 200
+   :body (json/generate-string {:device_code "device-code-stub"
+                                :user_code "TEST-CODE"
+                                :interval 0})})
+
 (fcli/register-isaac-run-wrapper!
   (fn [thunk]
     (if (stubbed-device-code-login?)
-      (with-redefs [device-code/request-user-code! stub-user-code-response
+      (let [request-user-code! device-code/request-user-code!]
+        (llm-http/clear-outbound-requests!)
+        (with-redefs [device-code/request-user-code! (fn [descriptor]
+                                                       (if (= :oidc-device-code (:flow descriptor))
+                                                         (with-redefs [http/post stub-device-code-post]
+                                                           (request-user-code! descriptor))
+                                                         (stub-user-code-response descriptor)))
                     device-code/poll-for-auth!   stub-auth-response
-                    device-code/exchange-tokens! stub-token-response]
-        (thunk))
+                     device-code/exchange-tokens! stub-token-response]
+          (thunk)))
       (thunk))))
 
 (helper! isaac.agent.auth-steps)

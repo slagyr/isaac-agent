@@ -21,8 +21,10 @@
 (defn outbound-requests []
   @outbound-requests*)
 
-(defn record-outbound-request! [url headers]
-  (swap! outbound-requests* conj {:url url :headers headers}))
+(defn record-outbound-request!
+  ([url headers] (record-outbound-request! url headers nil))
+  ([url headers body]
+   (swap! outbound-requests* conj {:url url :headers headers :body body})))
 
 (defn- simulated-provider? [opts]
   (boolean (:simulate-provider opts)))

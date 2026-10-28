@@ -236,7 +236,7 @@
             :token-path "/oauth2/token"
             :verification-url "https://accounts.x.ai/oauth2/device"
             :flow :oidc-device-code
-            :scope "api:access offline_access"}}}},
+            :scope "openid profile email offline_access grok-cli:access api:access"}}}},
  :isaac.agent/slash-commands
  {:builtins {:factory isaac.agent.slash.builtin/provider :rank 100}},
  :isaac.config/schema

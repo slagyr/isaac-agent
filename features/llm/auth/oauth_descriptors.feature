@@ -22,7 +22,6 @@ Feature: OAuth provider descriptors
     Then the stdout contains "https://auth.openai.com/codex/device"
     And the exit code is 0
 
-  @wip
   Scenario: Grok login asks for the grok-cli scope so the quota meter can read billing
     Given the provider "grok" is configured with:
       | key  | value |

@@ -70,14 +70,18 @@
     :else (parse-long (str value))))
 
 (defn- request-for-match [request]
-  (update request :headers
-          (fn [headers]
-            (reduce (fn [acc [name value]]
-                      (cond-> acc
-                        true                          (assoc (keyword name) value)
-                        (str/includes? name "-")     (assoc-hyphenated-header name value)))
-                    {}
-                    headers))))
+  (-> request
+      (update :headers
+              (fn [headers]
+                (reduce (fn [acc [name value]]
+                          (cond-> acc
+                            true                      (assoc (keyword name) value)
+                            (str/includes? name "-") (assoc-hyphenated-header name value)))
+                        {}
+                        headers)))
+      (update :body #(if (map? %)
+                       (into {} (map (fn [[key value]] [(if (string? key) (keyword key) key) value])) %)
+                       %))))
 
 (defn- current-provider-request []
   (or (g/get :provider-request)

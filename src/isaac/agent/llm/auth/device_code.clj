@@ -31,7 +31,7 @@
    :token-path       "/oauth2/token"
    :verification-url "https://accounts.x.ai/oauth2/device"
    :flow             :oidc-device-code
-   :scope            "api:access offline_access"})
+   :scope            "openid profile email offline_access grok-cli:access api:access"})
 
 ;; endregion ^^^^^ Constants ^^^^^
 
