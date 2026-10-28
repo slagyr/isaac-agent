@@ -117,5 +117,9 @@
                       (println (format "lint: %d errors, %d warnings" error warning))
                       (when (pos? error) (System/exit 1))))}
 
+  ;; Manual CRAP report. Not wired into ci — coverage is a local measurement.
+  crap {:doc "Run crap4clj (clj -M:crap). Not part of bb ci."
+        :task (apply shell "clojure" "-M:crap" *command-line-args*)}
+
   hooks:install {:doc  "Configure git to use repo-tracked hooks"
                  :task (shell "git" "config" "core.hooksPath" ".githooks")}}}

@@ -25,6 +25,9 @@ profiles.clj
 # Test artifacts
 .specljs-timestamp
 
+# Local CRAP snapshot written by `bb crap` / crap4clj. Not a gate.
+.metrics/
+
 # Local agent / tooling caches
 .serena/
 .toolbox/
