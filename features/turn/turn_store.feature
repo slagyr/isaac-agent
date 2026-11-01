@@ -113,8 +113,11 @@ Feature: Turn store — every turn has a durable record and a stable id
       | finished |
       | ok       |
 
-  Scenario: merged waiting requests keep their own ids and share the turn's outcome
-    Given the following sessions exist:
+  Scenario: in queue mode merged waiting requests keep their own ids and share the turn's outcome (isaac-cgz9)
+    Given config:
+      | key                          | value  |
+      | defaults.crew.mid-turn-input | :queue |
+    And the following sessions exist:
       | name |
       | dm   |
     And the LLM response is delayed by 2 seconds
