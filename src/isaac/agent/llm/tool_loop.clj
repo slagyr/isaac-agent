@@ -93,7 +93,7 @@
 
 (defn -run-default
   "Isaac's built-in tool-call loop. Byte-for-byte the historical `run` body."
-  [chat-fn followup-fn request tool-fn {:keys [max-loops cancelled? after-tools max-parallel-tools on-cycle prepare-tool-call
+  [chat-fn followup-fn request tool-fn {:keys [max-loops cancelled? after-tools after-response max-parallel-tools on-cycle prepare-tool-call
                                                on-tool-batch on-tool-batch-results]
                                         :or   {max-loops          default-max-loops
                                                cancelled?         (constantly false)
@@ -163,10 +163,14 @@
                                  (assoc full-context :messages (:messages next-req))))))))
                 (do
                   (when on-cycle (on-cycle :end cycle-n response))
-                  {:response      response
-                   :tool-calls    all-tools
-                   :usage         new-usage
-                   :loop-request? (boolean (and (seq tool-calls) (not budget-left?)))})))))))))
+                  (if-let [next-req (when (and after-response (not (cancelled?)) budget-left?)
+                                      (after-response req response))]
+                    (recur next-req all-tools new-usage (inc loops) nil
+                           (assoc full-context :messages (:messages next-req)))
+                    {:response      response
+                     :tool-calls    all-tools
+                     :usage         new-usage
+                     :loop-request? (boolean (and (seq tool-calls) (not budget-left?)))}))))))))))
 
 (defn run
   "Drive one tool-call loop using the supplied hooks.

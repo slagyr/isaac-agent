@@ -529,6 +529,10 @@
       {:type :id,
        :description
        "Crew member id; must match filename when present"},
+      :mid-turn-input
+      {:type :keyword,
+       :description "Busy-session input: :join (default) adds it at the next model cycle; :queue runs it after the current turn. Subagent results always join.",
+       :validations [[:one-of? :join :queue]]},
       :context-mode
       {:type :keyword,
        :description "How much transcript history to replay each turn",

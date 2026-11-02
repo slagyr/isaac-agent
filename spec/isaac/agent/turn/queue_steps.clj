@@ -284,6 +284,11 @@
   "Delivers isaac.agent.llm.api.grover/release-wait! for that session's wait-gate,
    unblocking the turn that isaac.agent.llm.api.grover/waiting? found parked there."
   [session]
+  ;; Wait for the second send to park before releasing the model's final call.
+  (helper/await-condition
+    #(with-feature-fs
+       (fn [] (binding [queue/*root* (root-dir)]
+                (seq (queue/waiting-groups session))))) 5000)
   (grover/release-wait! session))
 
 (g/after-scenario

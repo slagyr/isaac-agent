@@ -898,6 +898,35 @@
          :message  (or (:message result) (:message raw))}))))
 
 
+(defn- absorb-waiting! [ctx session-key request & [before-append!]]
+  (let [{:keys [charge]} ctx
+        mode (or (get-in charge [:crew-cfg :mid-turn-input]) :join)
+        root (or (:root charge) (nexus/get :root) (loader/root))
+        records (binding [turn-queue/*root* root]
+                  (->> (turn-queue/waiting-groups session-key)
+                       (mapcat identity)
+                       (filter #(or (= :join mode) (= :subagent (get-in % [:origin :kind]))))))
+        absorbed (binding [turn-queue/*root* root]
+                   (keep (fn [record]
+                           (when-let [claimed (turn-queue/claim! (:id record))]
+                             (turn-queue/update-turn! (:id claimed) {:state :absorbed :outcome :ok})
+                             (turn-queue/forget-live-comm! (:id claimed))
+                             claimed)) records))]
+    (when (seq absorbed)
+      (when before-append! (before-append!))
+      (doseq [record absorbed]
+        (append-message! ctx session-key {:role "user" :content (:input record)}))
+      (log/info :turn/absorbed :session session-key :count (count absorbed))
+      (update request :messages into
+              (mapv (fn [record]
+                      {:role "user"
+                       :content (str "New information arrived during this turn (not a new task): "
+                                     (if (= :subagent (get-in record [:origin :kind]))
+                                       (str "subagent result " (or (get-in record [:from :id]) (:id record))
+                                            " " (pr-str (:stats record)))
+                                       (str "new message from " (or (get-in record [:from :id]) "person")))
+                                     "\n" (:input record))}) absorbed)))))
+
 (defn- execute-llm-turn!
   "Build the chat request, drive the tool-loop, and persist the final
    assistant response. Tool pairs are written mid-loop by record-tool-call!.
@@ -1053,7 +1082,10 @@
                                               :cancelled?         #(bridge/cancelled? session-key)
                                               :after-tools        (fn [req]
                                                                    (let [start-ns (System/nanoTime)
-                                                                         next     (turn-compaction/maybe-mid-turn-compact! session-key (model-ctx) req current-request)]
+                                                                         next     (turn-compaction/maybe-mid-turn-compact! session-key (model-ctx) req current-request)
+                                                                         next     (if (or (:error next) (:unavailable? next) (bridge/cancelled? session-key))
+                                                                                    next
+                                                                                    (or (absorb-waiting! ctx session-key next) next))]
                                                                      (when-let [ms @followup-elapsed*]
                                                                        (log/debug :turn/followup-built :elapsed-ms ms)
                                                                        (reset! followup-elapsed* nil))
@@ -1069,6 +1101,14 @@
                                                                              (reset! current-request nudged)
                                                                              nudged)
                                                                            next)))))
+                                              :after-response     (fn [req response]
+                                                                    (when-not (bridge/cancelled? session-key)
+                                                                      (let [text (or (:content response) "")
+                                                                            next (absorb-waiting! ctx session-key req
+                                                                                                  #(append-message! ctx session-key {:role "assistant" :content text}))]
+                                                                        (when next
+                                                                          (update next :messages #(into (vec (butlast %))
+                                                                                                       [{:role "assistant" :content text} (last %)]))))))
                                               :on-cycle           on-cycle
                                               :api                provider})))
             attempt       (fn []

@@ -367,6 +367,28 @@
           result      (sut/run chat-fn followup-fn {:messages []} tool-fn)]
       (should= {:requests 2 :prompt-tokens 14 :output-tokens 6} (:usage result))))
 
+  (it "takes a final-call arrival into one more cycle without a tool call"
+    (let [requests (atom [])
+          responses (atom [{:message {:role "assistant" :content "Red it is."} :usage {}}
+                           {:message {:role "assistant" :content "Blue, then."} :usage {}}])
+          chat (fn [req]
+                 (swap! requests conj req)
+                 (let [response (first @responses)]
+                   (swap! responses rest)
+                   response))
+          arrivals (atom 0)
+          result (sut/run chat (recording-followup (atom []))
+                          {:messages [{:role "user" :content "red"}]} (fn [_ _] nil)
+                          {:after-response (fn [req response]
+                                             (if (= 1 (swap! arrivals inc))
+                                               (assoc req :messages (conj (:messages req)
+                                                                          (:message response)
+                                                                          {:role "user" :content "blue"}))
+                                               nil))})]
+      (should= 2 (count @requests))
+      (should= "blue" (get-in (second @requests) [:messages 2 :content]))
+      (should= "Blue, then." (get-in result [:response :message :content]))))
+
   (it "does not invoke after-tools when the first response has no tool-calls"
     (let [after-calls (atom 0)
           chat-fn     (fn [_] {:message {:role "assistant" :content "done"} :usage {}})

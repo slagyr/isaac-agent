@@ -292,7 +292,10 @@
   (let [records (queue/list-held)
         waiting-sessions (distinct (map :session (filter #(= :waiting-session (:state %)) records)))
         waiting-ids (set (mapcat #(map :id (mapcat identity (queue/waiting-groups %))) waiting-sessions))]
-    (doseq [record (remove #(contains? waiting-ids (:id %)) records)]
+    (doseq [record (concat (remove #(or (contains? waiting-ids (:id %))
+                                         (= :subagent (get-in % [:origin :kind]))) records)
+                           (filter #(and (not (contains? waiting-ids (:id %)))
+                                         (= :subagent (get-in % [:origin :kind]))) records))]
       (claim-and-start! record now))
     (doseq [session waiting-sessions
             :when (not (store/in-flight? (or (nexus/get-in [:sessions :store])

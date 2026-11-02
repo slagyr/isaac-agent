@@ -19,7 +19,6 @@ Feature: Input that arrives during a running turn joins it; in queue mode it wai
   Background:
     Given default Grover setup
 
-  @wip
   Scenario: in queue mode a message that arrives while the turn runs waits and runs next (isaac-xoqn, isaac-cgz9)
     Given config:
       | key                          | value  |
@@ -46,7 +45,6 @@ Feature: Input that arrives during a running turn joins it; in queue mode it wai
       | level | event         | session |
       | :info | :turn/waiting | dm      |
 
-  @wip
   Scenario: in queue mode waiting messages with the same coalesce key run as one turn (isaac-xoqn, isaac-cgz9)
     Given config:
       | key                          | value  |
@@ -94,7 +92,6 @@ Feature: Input that arrives during a running turn joins it; in queue mode it wai
       | type    | message.role | message.content |
       | message | user         | one             |
 
-  @wip
   Scenario: a message that arrives between tool cycles joins the running turn (isaac-cgz9)
     Given the built-in tools are registered
     And the crew "main" allows tools: "exec/run"
@@ -126,7 +123,6 @@ Feature: Input that arrives during a running turn joins it; in queue mode it wai
       | level | event          | session | count |
       | :info | :turn/absorbed | dm      | 1     |
 
-  @wip
   Scenario: a message that arrives during the final model call gets one more cycle (isaac-cgz9)
     Given the following sessions exist:
       | name | crew |
@@ -150,7 +146,6 @@ Feature: Input that arrives during a running turn joins it; in queue mode it wai
       | key   | value    |
       | state | absorbed |
 
-  @wip
   Scenario: on an idle session a waiting subagent result runs after other waiting input (isaac-cgz9)
     Given the following sessions exist:
       | name   |
@@ -181,7 +176,6 @@ Feature: Input that arrives during a running turn joins it; in queue mode it wai
       | 3      | message | user         | Scout found three moorings. |
       | 4      | message | assistant    | The scout reports.          |
 
-  @wip
   Scenario: a cancelled turn absorbs nothing; the waiting message runs as its own turn (isaac-cgz9)
     Given the following sessions exist:
       | name | crew |

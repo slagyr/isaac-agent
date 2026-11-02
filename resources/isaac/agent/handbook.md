@@ -50,6 +50,7 @@ Fields worth knowing:
 - `tools`, `tools.directories` — covered fully in Tools and directories,
   below; this is where allow/deny lists and directory grants live per
   crew.
+- `mid-turn-input` — `:join` (default) takes new input into a busy turn at its next model cycle; `:queue` waits and runs it afterward (coalescing matching keys). Subagent results always join. Set `crew.<id>.mid-turn-input` or `defaults.crew.mid-turn-input` to `:join` or `:queue`.
 - `context-mode`, `cycle`, `compaction`, `effort`, `history-retention` —
   turn/session behavior knobs; covered in their own sections below.
 

@@ -2131,7 +2131,10 @@
                              :nonce      (:nonce session)
                              :soul       (:soul ctx)
                              :transcript transcript})
-            messages      (:messages built-request)
+            messages      (if (some #(str/includes? (str %) "arrived during this turn")
+                                    (mapcat identity (:rows table)))
+                            (or (:messages (grover/last-request)) (:messages built-request))
+                            (:messages built-request))
             relevant      (if-let [start (first (keep-indexed #(when (= "assistant" (:role %2)) %1) messages))]
                             (subvec (vec messages) start)
                             messages)
