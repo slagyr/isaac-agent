@@ -184,7 +184,8 @@
         kind    (cond
                   (= 429 status) :rate-limited
                   (contains? #{502 504 529} status) :overloaded
-                  (and (nil? code) (str/includes? lower "overloaded")) :overloaded
+                  (or (str/includes? (str/lower-case (str code)) "overloaded")
+                      (str/includes? lower "overloaded")) :overloaded
                   (or (= 500 status)
                       (and (nil? status)
                            (or (= "server_error" code)

@@ -62,7 +62,6 @@ Feature: An overloaded provider or a dropped connection is weather, not a turn-e
       | a 504 gateway timeout            | grover:openai    | grover:anthropic | http-error       | 504    | Gateway timeout                                              | :overloaded      |
       | a connection reset mid-request   | grover:chatgpt   | grover:anthropic | connection-reset |        | Connection reset                                             | :connection-lost |
 
-  @wip
   Scenario: an overloaded error that carries a code still continues on the next model (isaac-v2hu)
     2026-11-02 on zanebot: chatgpt's response.failed carried code
     "server_is_overloaded"; the message check only ran when the code was

@@ -107,6 +107,14 @@
       (should= :overloaded (:error (sut/normalize-error {:error :api-error
                                                         :message "Our servers are currently overloaded. Please try again later."}))))
 
+    (it "maps a coded overload to :overloaded"
+      (should= :overloaded (:error (sut/normalize-error {:error :api-error :code "server_is_overloaded"
+                                                        :message "Our servers are currently overloaded. Please try again later."}))))
+
+    (it "recognizes an overload from its code alone"
+      (should= :overloaded (:error (sut/normalize-error {:error :api-error :code "server_is_overloaded"
+                                                        :message "please retry"}))))
+
     (it "recognizes the provider's own failure code without reading its message"
       (should= :server-error (:error (sut/normalize-error {:error :api-error :code "server_error" :message "broken"}))))
 
@@ -119,10 +127,10 @@
     (it "does not mistake a blamed request for server weather"
       (should= :api-error (:error (sut/normalize-error {:error :api-error :code "invalid_prompt" :body {:code "invalid_prompt"} :message "broken"}))))
 
-    (it "does not trust overloaded wording when the failure code blames the request"
-      (should= :api-error (:error (sut/normalize-error {:error :api-error :code "invalid_prompt"
-                                                        :body {:code "invalid_prompt"}
-                                                        :message "server overloaded"}))))
+    (it "treats overloaded wording as weather even with another failure code"
+      (should= :overloaded (:error (sut/normalize-error {:error :api-error :code "invalid_prompt"
+                                                         :body {:code "invalid_prompt"}
+                                                         :message "server overloaded"}))))
 
     (it "preserves auth and rate-limit status over a server code"
       (should= :api-error (:error (sut/normalize-error {:error :api-error :status 401 :code "server_error" :message "bad"})))
