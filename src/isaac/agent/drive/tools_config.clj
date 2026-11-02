@@ -94,7 +94,10 @@
                              (declared-wire-names crew-tools))
         candidates   (distinct (concat registered declared))]
     (let [allowed (->> candidates
-                       (filter #(names/cascade-allowed? global-tools crew-tools %))
+                       (filter #(and (names/cascade-allowed? global-tools crew-tools %)
+                                     (or (not= "agent__spawn" %)
+                                         (names/allowed? (concat (remove #{:all} (names/policy-list (:allow global-tools)))
+                                                                 (remove #{:all} (names/policy-list (:allow crew-tools)))) %))))
                        set)
           observers (map keyword (or (get-in crew-members [crew-id :observers]) []))
           deny (names/policy-list (:deny crew-tools))

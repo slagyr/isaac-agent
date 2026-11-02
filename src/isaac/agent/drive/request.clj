@@ -84,6 +84,7 @@
         recall-tools     nil
         allowed-tools    (tools-config/merge-allowed-tools (tools-config/allowed-tool-names crew-members crew (:config charge))
                                               (concat (mapcat :tools sections) recall-tools))
+        allowed-tools    (if (:parent session) (disj allowed-tools "agent__spawn") allowed-tools)
         boot-files       (:text (first (filter #(= :boot-files (:id %)) sections)))
         rules-text       (:text (first (filter #(= :rules (:id %)) sections)))
         augmented        (augment-provider root provider session-key context-window

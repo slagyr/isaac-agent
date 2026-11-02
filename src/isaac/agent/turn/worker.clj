@@ -75,6 +75,7 @@
                   (get-in record [:frequencies :with-context-mode])
                   (assoc :context-mode-override (keyword (get-in record [:frequencies :with-context-mode])))
                   (:crew record) (assoc :crew (:crew record))
+                  (:effort record) (assoc :effort (:effort record))
                   (queue/live-comm (:id record)) (assoc :comm (queue/live-comm (:id record)))
                   (:observers record) (assoc :observers (:observers record))
                   (:resource-pools record) (assoc :resource-pools (:resource-pools record))
@@ -148,7 +149,8 @@
 
 (defn- process-record! [now cfg record admitted]
   (let [result (try
-                 (bridge/dispatch! admitted)
+                 (binding [pool/*defer-wake* (boolean (get-in record [:origin :parent]))]
+                   (bridge/dispatch! admitted))
                  (catch Throwable t
                    (log/warn :turn.queue/wake-failed
                              :id (:id record)
@@ -157,7 +159,8 @@
                  (finally
                    ;; The drive releases leases on its normal path; this also
                    ;; covers early errors and exceptions.
-                   (pool/release-all! (:pool-leases admitted))))
+                   (binding [pool/*defer-wake* (boolean (get-in record [:origin :parent]))]
+                     (pool/release-all! (:pool-leases admitted)))))
         ids (or (:held-ids record) [(:id record)])]
     (log/info :turn.queue/woke :id (:id record)
               :held? (boolean (still-held? result))
@@ -175,7 +178,8 @@
     ;; reclaim this record before it reaches :finished.
     (when (:session-reserved? admitted)
       (store/clear-in-flight! (:session-store admitted) (:session-key admitted))
-      (when (and (not (still-held? result)) (seq (queue/list-held))) (tick!)))))
+      (when (and (not (get-in record [:origin :parent]))
+                 (not (still-held? result)) (seq (queue/list-held))) (tick!)))))
 
 ;; A turn started asynchronously can itself trigger more async turn-queue
 ;; work before it settles — bridge.core's own-session drain-on-release

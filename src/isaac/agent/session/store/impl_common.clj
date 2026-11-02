@@ -929,6 +929,7 @@
                                      :updated-at        now
                                      :cwd               (or (:cwd opts) (System/getProperty "user.dir"))
                                      :crew              crew
+                                     :parent            (:parent opts)
                                      
                                      :tags              (session-store/tags->set (:tags opts))
                                      :chat-type         (or (:chat-type opts) (:chatType opts))

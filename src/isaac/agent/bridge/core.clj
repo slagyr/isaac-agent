@@ -385,7 +385,8 @@
                                                    (store/clear-in-flight! session-store* session-key)))
                               ;; A session's own waiting room drains as soon as its running
                               ;; turn releases it; avoid a bridge → worker load cycle.
-                              (when-let [root (charge-root charge)]
+                              (when-let [root (and (not (get-in charge [:origin :parent]))
+                                                  (charge-root charge))]
                                 (when (binding [turn-queue/*root* root]
                                         (or (some :frequencies (turn-queue/list-held))
                                              (seq (turn-queue/waiting-groups session-key))))

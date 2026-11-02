@@ -152,6 +152,7 @@
                             :created-at        now
                             :updated-at        now
                             :crew              (:crew opts)
+                            :parent            (:parent opts)
                             
                             :tags              (store/tags->set (:tags opts))
                             :chat-type         (:chat-type opts)

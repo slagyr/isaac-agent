@@ -253,6 +253,23 @@ in-progress turn marker, fire-and-forget).
 - **A turn refuses because its context mode requires an observer.** See
   Crews, Troubleshooting — add the observer to the session or crew.
 
+## Subagents
+
+`agent__spawn` delegates a prompt to a separate child session and immediately returns
+its queued turn handle and session id. The parent is free to keep working, finish its
+turn, or talk to a person; spawning does not wait for the child. Children inherit
+the parent's crew by default. Pass `crew` to use another crew's soul and settings,
+`model` to select a configured model alias (the tool description lists them), or
+`effort` to override the child's effort budget. An unknown alias fails before a
+child session is created. Children cannot spawn further subagents.
+
+The child is an ordinary queued turn: admission and resource pools apply normally.
+When it ends, its observer submits the final message and a stats line (crew, model,
+cycles, tokens, exhausted status when capped, child session id) to the parent with
+`origin.kind :subagent`. An idle parent gets a new turn; a busy parent receives the
+result through mid-turn input. The child session keeps its transcript for inspection.
+Cancelling the parent turn does not cancel a child already running in the background.
+
 ## Frequencies
 
 Isaac is a ship, and a turn doesn't just start — it's **hailed**. Every

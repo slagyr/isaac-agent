@@ -63,6 +63,7 @@
             :sessionId           (immutable {:type :string})
             :nonce               (mutable {:type :string})
             :origin              (immutable {:type :map :schema (:schema Origin)})
+            :parent              (immutable {:type :string :description "Parent session id for a subagent"})
             :crew                (mutable {:type :string
                                            :validate known-crew?
                                            :message "crew does not exist"})

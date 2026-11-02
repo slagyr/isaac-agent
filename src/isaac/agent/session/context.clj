@@ -205,6 +205,7 @@
    (binding [session-schema/*config* cfg]
     (let [entry (store/open-session! store session-key {:chat-type (or (:chat-type opts) (:chatType opts))
                                                        :crew (:crew behavior)
+                                                       :parent (:parent opts)
                                                        :nonce (or (:nonce opts) (store-common/new-nonce))
                                                        :tags (store/tags->set (:tags opts))
                                                        :cwd (:cwd behavior)

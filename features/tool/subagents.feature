@@ -1,4 +1,3 @@
-@wip
 Feature: Subagents
   agent__spawn starts a child turn on its own session and returns a handle
   at once; the parent stays free. When the child's turn ends, its result —

@@ -12,6 +12,7 @@
     [isaac.agent.tool.names :as names]
     [isaac.agent.quota :as quota]
     [isaac.agent.tool.session :as session]
+    [isaac.agent.tool.subagent :as subagent]
     [isaac.agent.tool.web-fetch :as web-fetch]
     [isaac.agent.tool.web-search :as web-search]
     [isaac.agent.turn.tool :as turn]))
@@ -21,7 +22,7 @@
 (def ^:private ordered-built-in-tools
   ["fs__read" "fs__write" "fs__edit" "fs__multi_edit" "fs__grep" "fs__glob"
    "web__fetch" "web__search" "memory__write" "memory__get" "memory__search"
-   "exec__run" "turn__get" "session__info" "session__model" "session__list" "session__read" "prompt__load" "prompt__list"
+   "exec__run" "agent__spawn" "turn__get" "session__info" "session__model" "session__list" "session__read" "prompt__load" "prompt__list"
    "comm__send" "hail__send" "provider__quota"])
 
 (def ^:private built-in-tool-specs
@@ -133,6 +134,15 @@
                                     :required   ["command"]}
                       :timeout-ms  #'exec/registry-timeout-ms
                       :handler     #'exec/exec-tool}
+   "agent__spawn" {:name "agent__spawn"
+                    :description "Start a child turn in a separate session and return its handle immediately"
+                    :parameters {:type "object"
+                                 :properties {"prompt" {:type "string" :description "Task for the child"}
+                                              "crew" {:type "string" :description "Optional crew override"}
+                                              "model" {:type "string" :description "Configured model alias override"}
+                                              "effort" {:type "integer" :description "Child effort override"}}
+                                 :required ["prompt"]}
+                    :handler #'subagent/spawn-tool}
    "turn__get"      {:name        "turn__get"
                       :description "Get a durable turn record by id"
                       :parameters  {:type "object"
@@ -188,6 +198,8 @@
 (defn memory-get-tool-factory [_] (spec-for "memory__get"))
 (defn memory-search-tool-factory [_] (spec-for "memory__search"))
 (defn exec-tool-factory [_] (spec-for "exec__run"))
+(defn subagent-tool-factory [_]
+  (assoc (spec-for "agent__spawn") :description (subagent/description)))
 (defn turn-get-tool-factory [_] (spec-for "turn__get"))
 (defn session-info-tool-factory [_] (spec-for "session__info"))
 (defn session-model-tool-factory [_] (spec-for "session__model"))

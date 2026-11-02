@@ -803,7 +803,8 @@
     (log-turn-ended! session-key result)
     (comm/on-turn-end ch session-key result)
     (session-observer/publish! session-key session-observers {:event :turn-ended :config cfg})
-    (let [ctx (observer-ctx session-key request-id (or (:content result) (get-in result [:response :content])))]
+    (let [ctx (assoc (observer-ctx session-key request-id (or (:content result) (get-in result [:response :content])))
+                     :result result :config cfg)]
       (if (= :exception (:error result))
         (notify-observers! observers :on-turn-died ctx (or (:message result) "unknown"))
         (notify-observers! observers :on-turn-ended ctx (observer/outcome result))))

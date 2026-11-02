@@ -139,7 +139,8 @@
 (defn ensure-builtins!
   "Register agent-owned observers. Safe to call repeatedly."
   []
-  (register! :lookout lookout))
+  (register! :lookout lookout)
+  (register! :subagent ((requiring-resolve 'isaac.agent.tool.subagent/observer-factory))))
 
 (defn unknown-observer-message [obs-ref]
   (str "unknown observer: " (name (ref-name obs-ref))))

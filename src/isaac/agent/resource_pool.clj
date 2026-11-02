@@ -113,13 +113,15 @@
 
 (defonce ^:private wake-hook* (atom nil))
 
+(def ^:dynamic *defer-wake* false)
+
 (defn set-wake-hook!
   "Register a zero-arg callback invoked after releasing leases."
   [f]
   (reset! wake-hook* f))
 
 (defn- nudge-wake! []
-  (when-let [hook @wake-hook*]
+  (when-let [hook (when-not *defer-wake* @wake-hook*)]
     (try
       (hook)
       (catch Throwable t

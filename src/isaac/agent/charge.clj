@@ -136,7 +136,7 @@
    context-mode, effort). On resolution failure (unknown crew error or no
    model) returns a charge marked :charge/unresolved with a :charge/reason
    keyword."
-  [{:keys [session-key input comm crew config model model-ref model-override model-cfg
+  [{:keys [session-key input comm crew config model model-ref model-override model-cfg effort
            provider provider-cfg context-window soul soul-prepend preamble guidance origin from turn-id key coalesce-key observers session-observers resource-pools cycle dispatch-error
            context-mode-override session-store] :as request}]
   (let [config*         (or (when (map? config) config) (loader/snapshot "charge build fallback — no :config passed (entry seed)") {})
@@ -185,7 +185,7 @@
                              :context-window (or context-window (:context-window @session-context))
                              :context-mode   (:context-mode @session-context)
                              :compaction     (:compaction @session-context)
-                             :effort         (:effort @session-context)
+                             :effort         (or effort (:effort @session-context))
                              :cwd            (:cwd @session-context)
                              :model          @model*
                              :model-cfg      (or model-cfg (:model-cfg @session-context))

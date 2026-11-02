@@ -11,7 +11,7 @@
 
 (defn submit!
   "Accept one durable, keyed turn without running it. Returns its stable request record."
-  [{:keys [root config frequencies resource-pools observers prompt preamble cycle id key origin from] :as request}]
+  [{:keys [root config frequencies resource-pools observers prompt preamble cycle id key origin from crew effort] :as request}]
   (let [cfg         (or config (loader/snapshot "turn submit"))
         pool-refs   (mapv keyword resource-pools)
         pools       (pool/resolve-submitted cfg pool-refs)
@@ -39,6 +39,8 @@
                         (some? id) (assoc :id id)
                         (some? preamble) (assoc :preamble preamble)
                         (some? cycle) (assoc :cycle cycle)
+                        (some? crew) (assoc :crew crew)
+                        (some? effort) (assoc :effort effort)
                         (:session frequencies) (assoc :session (:session-key resolved)
                                                       :frequencies frequencies)
                         (not (:session frequencies)) (assoc :frequencies frequencies))))))
