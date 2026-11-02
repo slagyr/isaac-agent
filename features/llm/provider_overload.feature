@@ -62,6 +62,41 @@ Feature: An overloaded provider or a dropped connection is weather, not a turn-e
       | a 504 gateway timeout            | grover:openai    | grover:anthropic | http-error       | 504    | Gateway timeout                                              | :overloaded      |
       | a connection reset mid-request   | grover:chatgpt   | grover:anthropic | connection-reset |        | Connection reset                                             | :connection-lost |
 
+  @wip
+  Scenario: an overloaded error that carries a code still continues on the next model (isaac-v2hu)
+    2026-11-02 on zanebot: chatgpt's response.failed carried code
+    "server_is_overloaded"; the message check only ran when the code was
+    nil, so the turn ended as :api-error instead of falling back.
+    Given the isaac EDN file "config/models/head.edn" exists with:
+      | path           | value          |
+      | model          | head-wire      |
+      | provider       | grover:chatgpt |
+      | context-window | 128000         |
+    And the isaac EDN file "config/models/relay.edn" exists with:
+      | path           | value            |
+      | model          | relay-wire       |
+      | provider       | grover:anthropic |
+      | context-window | 128000           |
+    And the isaac EDN file "config/crew/zane.edn" exists with:
+      | path           | value    |
+      | model          | head     |
+      | model-fallback | [:relay] |
+    And the following sessions exist:
+      | name | crew |
+      | dock | zane |
+    And the following model responses are queued:
+      | type          | code                 | content                                                       | model      |
+      | stream-failed | server_is_overloaded | Our servers are currently overloaded. Please try again later. | head-wire  |
+      | text          |                      | carried                                                       | relay-wire |
+    When the user sends "status?" on session "dock" via memory comm
+    Then the memory comm has events matching:
+      | event    | result.ended-by |
+      | turn-end | :reply          |
+    And the last chat request on session "dock" used model "relay-wire"
+    And the log has entries matching:
+      | level | event                | skipped-model | model      | reason      |
+      | :info | :turn/model-fallback | head-wire     | relay-wire | :overloaded |
+
   Scenario Outline: <failure> with no fallback suspends the turn
     Given the isaac EDN file "config/models/snuffy.edn" exists with:
       | path           | value          |
