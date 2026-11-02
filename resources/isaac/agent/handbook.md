@@ -270,6 +270,16 @@ cycles, tokens, exhausted status when capped, child session id) to the parent wi
 result through mid-turn input. The child session keeps its transcript for inspection.
 Cancelling the parent turn does not cancel a child already running in the background.
 
+`agent__list` returns this parent's children with their handles, crew, effective model,
+state (`queued`, `running`, `done`, `cancelled`, or `failed`), and cycle count.
+`agent__cancel` takes a child handle and cancels a queued or running child; the
+parent still receives a result turn saying it was cancelled. A parent can have at
+most four unfinished children by default (queued and running). Set the crew's
+`:max-subagents` to change the limit; attempts beyond it fail with the running
+handles. Child starts and ends are recorded as `:subagent/started` and
+`:subagent/ended` logs, including the parent and child session, crew, model,
+and, on completion, cycles, tokens, and outcome.
+
 ## Frequencies
 
 Isaac is a ship, and a turn doesn't just start — it's **hailed**. Every

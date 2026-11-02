@@ -482,7 +482,10 @@
                                  [k (parse-tool-value k v)])
                                 all-rows))
         args     (if timeout (assoc args "timeout" timeout) args)
-        args     (merge (base-tool-args) args)
+        args     (merge (base-tool-args)
+                        (into {} (map (fn [[k v]] [k (if (and (string? v) (str/starts-with? v "#"))
+                                                     (get (g/get :tool-captures) (subs v 1) v)
+                                                     v)]) args)))
         result   (execute-tool* tool-name args)]
     (g/assoc! :tool-result result)))
 
@@ -577,7 +580,8 @@
   (let [result (g/get :tool-result)
         parsed (json/parse-string (or (:result result) "{}") true)
         r      (match/match-object table parsed)]
-    (g/should= [] (:failures r))))
+    (g/should= [] (:failures r))
+    (g/assoc! :tool-captures (merge (g/get :tool-captures) (:captures r)))))
 
 (defn tool-result-is-error []
   ;; isaac-4g2k: a call that times out past the default/crew deadline can
