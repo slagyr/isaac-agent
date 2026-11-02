@@ -164,6 +164,8 @@
   :grok {:factory isaac.agent.quota/grok-factory}},
  :isaac.agent/tools
  {:agent/spawn {:factory isaac.agent.tool.builtin/subagent-tool-factory},
+  :agent/list {:factory isaac.agent.tool.builtin/subagent-list-tool-factory},
+  :agent/cancel {:factory isaac.agent.tool.builtin/subagent-cancel-tool-factory},
   :provider/quota {:factory isaac.agent.tool.builtin/provider-quota-tool-factory},
    :web/fetch {:factory isaac.agent.tool.builtin/web-fetch-tool-factory},
   :fs/read {:factory isaac.agent.tool.builtin/read-tool-factory},
@@ -468,7 +470,10 @@
     {:name :crew,
      :type :map,
      :schema
-     {:tags
+     {:max-subagents {:type :int
+                      :description "Maximum unfinished child turns per parent session (default 4)"
+                      :validations [:positive?]}
+      :tags
       {:type :ignore,
        :set-type? true,
        :description
