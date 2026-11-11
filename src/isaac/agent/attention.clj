@@ -97,12 +97,13 @@
   [_cfg _session-key _payload _now-ms]
   nil)
 
-(defn- parked-content [session-key {:keys [reason provider]}]
+(defn- parked-content [session-key {:keys [reason provider message]}]
   (str/join " "
             (remove str/blank?
                     [(str "Turn parked for session " session-key)
                      (str "suspended (" (name (or reason :wall)) ")")
                      (when provider (str "provider " provider))
+                     message
                      (when (= :auth reason) "— only a human can re-login")])))
 
 (defn maybe-notify-turn-parked!

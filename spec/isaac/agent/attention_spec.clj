@@ -47,6 +47,14 @@
      {:reason :compaction-failed})
     (should= {:kind :attention} (:origin (first (queue/list-pending)))))
 
+  (it "names the launch cause in a parked-turn notice"
+    (sut/maybe-notify-turn-parked! notify-cfg "trash-can"
+                                   {:reason :launch-failed :provider "claude-code"
+                                    :message "Cannot run program claude"} 0)
+    (let [content (:content (first (queue/list-pending)))]
+      (should (str/includes? content "launch-failed"))
+      (should (str/includes? content "Cannot run program claude"))))
+
   (it "enqueues turn-failed attention when notify is configured"
     (sut/maybe-notify-turn-failed!
      notify-cfg

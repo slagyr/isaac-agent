@@ -31,6 +31,7 @@
       :stream-stalled :stall
       :stream-ended-early :stream-ended-early
       :mcp-unavailable :mcp-unavailable
+      :launch-failed :launch-failed
       :overloaded :overloaded
       :server-error :server-error
       :connection-lost :connection-lost
@@ -59,10 +60,10 @@
    itself and a stall retries; only a human can re-login, so waiting out
    :suspended-attention-ms before saying so wastes the whole park. Throttled in
    isaac.agent.attention, so a park that keeps re-parking notifies at most hourly."
-  [cfg session-key reason provider now]
+  [cfg session-key reason provider message now]
   (when (= :auth reason)
     (attention/maybe-notify-turn-parked! cfg session-key
-                                         {:reason reason :provider provider}
+                                         {:reason reason :provider provider :message message}
                                          (.toEpochMilli ^Instant now))))
 
 (defn stamp-weather!
@@ -75,19 +76,20 @@
         wait-ms       (backoff-ms result suspend-count)
         retry-at      (plus-ms now* wait-ms)
         provider*     (or provider (get-in existing [:suspended-on :provider]))
-        notified?     (or (notify-auth-park! cfg session-key reason provider* now*)
-                          (when (and (= :mcp-unavailable reason)
+        notified?     (or (notify-auth-park! cfg session-key reason provider* (:message result) now*)
+                          (when (and (#{:mcp-unavailable :launch-failed} reason)
                                      (>= suspend-count 2)
                                      (>= (- (.toEpochMilli ^Instant now*)
                                             (.toEpochMilli (Instant/parse (:suspended-at existing))))
                                          (or (get-in cfg [:turn :suspended-attention-ms]) default-attention-ms)))
                             (attention/maybe-notify-turn-parked!
-                              cfg session-key {:reason reason :provider provider*}
+                              cfg session-key {:reason reason :provider provider* :message (:message result)}
                               (.toEpochMilli ^Instant now*))))
         marker        (cond-> (assoc (or existing {})
                                 :session-id     session-key
                                 :suspended      true
                                 :reason         reason
+                                :message        (:message result)
                                 :suspended-on   {:provider (or provider (get-in existing [:suspended-on :provider]))
                                                  :model    (or model (get-in existing [:suspended-on :model]))}
                                 :suspended-at   (or (:suspended-at existing) (iso now*))
@@ -126,7 +128,8 @@
   (attention/maybe-notify-turn-parked!
     cfg session-id
     {:reason   (:reason marker)
-     :provider (get-in marker [:suspended-on :provider])}
+     :provider (get-in marker [:suspended-on :provider])
+     :message  (:message marker)}
     (.toEpochMilli ^Instant now))
   (store/record-turn-marker! store session-id (assoc marker :attention-posted true)))
 

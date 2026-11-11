@@ -34,6 +34,7 @@
     (should= :auth (sut/weather-reason {:unavailable? true :reason :auth}))
     (should= :stall (sut/weather-reason {:unavailable? true :reason :stream-stalled}))
     (should= :mcp-unavailable (sut/weather-reason {:unavailable? true :reason :mcp-unavailable}))
+    (should= :launch-failed (sut/weather-reason {:unavailable? true :reason :launch-failed}))
     (should= :overloaded (sut/weather-reason {:unavailable? true :reason :overloaded}))
     (should= :connection-lost (sut/weather-reason {:unavailable? true :reason :connection-lost})))
 
@@ -47,6 +48,7 @@
 
   (around [example]
     (nexus/-with-nexus {:root "/test/isaac" :fs (fs/mem-fs)}
+      (isaac.agent.attention/clear-throttle!)
       (example)))
 
   (it "suspends a walled turn with retry-at and does not fabricate transcript content"
@@ -75,6 +77,18 @@
                           {:cfg cfg :provider "claude-code" :model "sonnet" :now now})
       (should-not (:attention-posted (isaac.agent.session.store.spi/get-turn-marker store "trash-can")))
       (sut/stamp-weather! store "trash-can" {:unavailable? true :reason :mcp-unavailable}
+                          {:cfg cfg :provider "claude-code" :model "sonnet" :now (.plusSeconds now 60)})
+      (should= true (:attention-posted (isaac.agent.session.store.spi/get-turn-marker store "trash-can")))))
+
+  (it "keeps the launch cause on the marker and alerts after a second park"
+    (let [store (mem-store/create-store)
+          now (Instant/parse "2026-04-21T10:00:00Z")
+          cfg {:turn {:suspended-attention-ms 0}}
+          failure {:unavailable? true :reason :launch-failed :message "Cannot run program claude"}]
+      (sut/stamp-weather! store "trash-can" failure
+                          {:cfg cfg :provider "claude-code" :model "sonnet" :now now})
+      (should= "Cannot run program claude" (:message (isaac.agent.session.store.spi/get-turn-marker store "trash-can")))
+      (sut/stamp-weather! store "trash-can" failure
                           {:cfg cfg :provider "claude-code" :model "sonnet" :now (.plusSeconds now 60)})
       (should= true (:attention-posted (isaac.agent.session.store.spi/get-turn-marker store "trash-can")))))
 

@@ -2174,7 +2174,9 @@
             raw      (or (get row-map "value") (second row))
             expected (parse-marker-value raw)]
         (when-not (= ::any expected)
-          (g/should= expected (marker-get marker path)))))))
+          (if (str/starts-with? (str/trim raw) "#\"")
+            (g/should (:match (match/match-value (str/trim raw) (marker-get marker path))))
+            (g/should= expected (marker-get marker path))))))))
 
 (defn no-turn-marker [session-name]
   (await-turn!)
