@@ -26,7 +26,8 @@
     [isaac.agent.tool.builtin :as builtin]
     [isaac.agent.tool.memory :as memory]
     [isaac.agent.resource-pool :as pool]
-    [isaac.agent.turn.queue :as turn-queue])
+    [isaac.agent.turn.queue :as turn-queue]
+    [isaac.agent.turn.worker :as worker])
   (:import (clojure.lang ExceptionInfo)))
 
 (defn- stderr-line! [text]
@@ -248,6 +249,35 @@
       (or (when sess (store/default-session sess crew-id {:cwd cwd :origin {:kind :cli}}))
           (:session-key target)))))
 
+(defn- drain-subagents! [root session-store session-key prior-ids]
+  (binding [turn-queue/*root* root]
+    (let [children (->> (turn-queue/all-turns)
+                        (remove #(contains? prior-ids (:id %)))
+                        (filter #(= session-key (get-in % [:origin :parent])))
+                        (map :session)
+                        set)]
+      (when (seq children)
+        (loop []
+          (worker/tick!)
+          (worker/await-idle!)
+          (let [pending (->> (turn-queue/all-turns)
+                             (remove #(contains? prior-ids (:id %)))
+                             (filter #(or (contains? children (:session %))
+                                          (and (= session-key (:session %))
+                                               (= :subagent (get-in % [:origin :kind]))
+                                               (contains? children (get-in % [:origin :session])))))
+                             (some #(not= :finished (:state %))))]
+            (when pending (recur))))
+        (->> (store/get-transcript session-store session-key)
+             (filter #(= "assistant" (get-in % [:message :role])))
+             last
+             :message
+             :content)))))
+
+(defn- turn-ids [root]
+  (binding [turn-queue/*root* root]
+    (set (map :id (turn-queue/all-turns)))))
+
 (defn- dispatch-prompt! [opts cfg session-store session-key session comm text]
   (let [obs-refs  (mapv observer/parse-ref (or (:observer opts) []))
         ts-refs   (mapv keyword (or (:pool opts) []))
@@ -261,6 +291,7 @@
       (do
         (host/ensure-runtime! {:install! builtin/register-all!})
         (let [root* (root-of opts)
+              prior-ids (when-not (:queue opts) (turn-ids root*))
               accepted (binding [turn-queue/*root* root*]
                          (turn-queue/enqueue! (cond-> {:session session-key :input (:message opts)
                                                        :state (if (:queue opts) :queued :running)
@@ -319,6 +350,8 @@
 
             :else
             (do
+              (when-let [reply (drain-subagents! root* session-store session-key prior-ids)]
+                (reset! text reply))
               (when (and (:usage opts) (not (:json opts)))
                 (report-usage! result))
               (cond

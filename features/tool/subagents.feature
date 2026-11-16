@@ -106,7 +106,6 @@ Feature: Subagents
     When the turn queue ticks at "2026-03-01T18:00:00"
     Then the last LLM request does not contain "subagent__spawn"
 
-  @wip
   Scenario: a standalone isaac prompt waits for its subagents and its reply to their results (isaac-a5pu)
     Given the crew "main" allows tools: "subagent/spawn"
     And the following model responses are queued:

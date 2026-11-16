@@ -13,6 +13,7 @@
     [isaac.agent.session.store.spi :as store]
     [isaac.agent.tool.builtin :as builtin]
     [isaac.agent.resource-pool :as pool]
+    [isaac.agent.turn.queue :as queue]
     [speclj.core :refer :all]))
 
 (def crew-name marigold/captain)
@@ -128,6 +129,17 @@
             (should= 1 (sut/run {:home "/tmp/missing-config" :message "Hi"}))))
         (should (str/includes? (str err) "no config found"))
         (should (str/includes? (str err) "/tmp/missing-config/.isaac/config/isaac.edn"))))
+
+    (it "does not wait for subagents from a previous prompt in the same session"
+      (helper/create-session! "/test/prompt" "harbor" {:crew crew-name})
+      (let [waited (atom false)]
+        (with-redefs [bridge/dispatch! (fake-dispatch! "New answer")
+                      queue/all-turns (fn [] [{:session "old-child" :origin {:parent "harbor"}
+                                               :state :finished}])
+                      isaac.agent.turn.worker/tick! (fn [] (reset! waited true))]
+          (let [output (with-out-str (sut/run (assoc base-opts :message "New question" :session "harbor")))]
+            (should-not @waited)
+            (should (str/includes? output "New answer"))))))
 
     (it "prints the response text and returns 0"
       (with-redefs [bridge/dispatch! (fake-dispatch! "Test response")]
