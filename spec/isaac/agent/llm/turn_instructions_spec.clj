@@ -35,8 +35,8 @@
     (should-contain "Fit the model to the work" sut/subagent-delegation-hint)
     (should-contain "Don't redo delegated work." sut/subagent-delegation-hint))
 
-  (it "detects agent__spawn in tool definitions or names"
-    (should (sut/spawn-tool? [{:name "fs__read"} {:name "agent__spawn"}]))
-    (should (sut/spawn-tool? ["agent__spawn"]))
+  (it "detects subagent__spawn in tool definitions or names"
+    (should (sut/spawn-tool? [{:name "fs__read"} {:name "subagent__spawn"}]))
+    (should (sut/spawn-tool? ["subagent__spawn"]))
     (should-not (sut/spawn-tool? [{:name "fs__read"}]))
     (should-not (sut/spawn-tool? nil))))

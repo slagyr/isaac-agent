@@ -22,7 +22,7 @@
 (def ^:private ordered-built-in-tools
   ["fs__read" "fs__write" "fs__edit" "fs__multi_edit" "fs__grep" "fs__glob"
    "web__fetch" "web__search" "memory__write" "memory__get" "memory__search"
-   "exec__run" "agent__spawn" "agent__list" "agent__cancel" "turn__get" "session__info" "session__model" "session__list" "session__read" "prompt__load" "prompt__list"
+   "exec__run" "subagent__spawn" "subagent__list" "subagent__cancel" "turn__get" "session__info" "session__model" "session__list" "session__read" "prompt__load" "prompt__list"
    "comm__send" "hail__send" "provider__quota"])
 
 (def ^:private built-in-tool-specs
@@ -134,7 +134,7 @@
                                     :required   ["command"]}
                       :timeout-ms  #'exec/registry-timeout-ms
                       :handler     #'exec/exec-tool}
-   "agent__spawn" {:name "agent__spawn"
+   "subagent__spawn" {:name "subagent__spawn"
                     :description "Start a child turn in a separate session and return its handle immediately"
                     :parameters {:type "object"
                                  :properties {"prompt" {:type "string" :description "Task for the child"}
@@ -143,11 +143,11 @@
                                               "effort" {:type "integer" :description "Child effort override"}}
                                  :required ["prompt"]}
                     :handler #'subagent/spawn-tool}
-   "agent__list" {:name "agent__list"
+   "subagent__list" {:name "subagent__list"
                    :description "List children spawned by this session and their state"
                    :parameters {:type "object" :properties {}}
                    :handler #'subagent/list-tool}
-   "agent__cancel" {:name "agent__cancel"
+   "subagent__cancel" {:name "subagent__cancel"
                      :description "Cancel one of this session's children"
                      :parameters {:type "object"
                                   :properties {"handle" {:type "string" :description "Child turn handle"}}
@@ -209,9 +209,9 @@
 (defn memory-search-tool-factory [_] (spec-for "memory__search"))
 (defn exec-tool-factory [_] (spec-for "exec__run"))
 (defn subagent-tool-factory [_]
-  (assoc (spec-for "agent__spawn") :description (subagent/description)))
-(defn subagent-list-tool-factory [_] (spec-for "agent__list"))
-(defn subagent-cancel-tool-factory [_] (spec-for "agent__cancel"))
+  (assoc (spec-for "subagent__spawn") :description (subagent/description)))
+(defn subagent-list-tool-factory [_] (spec-for "subagent__list"))
+(defn subagent-cancel-tool-factory [_] (spec-for "subagent__cancel"))
 (defn turn-get-tool-factory [_] (spec-for "turn__get"))
 (defn session-info-tool-factory [_] (spec-for "session__info"))
 (defn session-model-tool-factory [_] (spec-for "session__model"))

@@ -50,11 +50,11 @@
                                                   :config {}}))))
 
 (describe "allowed tool names"
-  (it "requires an explicit agent/spawn grant, not a blanket :all"
-    (nexus/-with-nexus {:tool-registry (atom {"agent__spawn" {:name "agent__spawn"}})}
+  (it "requires an explicit subagent/spawn grant, not a blanket :all"
+    (nexus/-with-nexus {:tool-registry (atom {"subagent__spawn" {:name "subagent__spawn"}})}
       (should= #{} (sut/allowed-tool-names {"main" {}} "main"
                                               {:defaults {:crew {:tools {:allow :all}}}}))
-      (should= #{"agent__spawn"} (sut/allowed-tool-names {"main" {:tools {:allow [:agent/spawn]}}}
+      (should= #{"subagent__spawn"} (sut/allowed-tool-names {"main" {:tools {:allow [:subagent/spawn]}}}
                                                            "main" {}))))
 
   (it "a ns/* allow makes the provider's tools candidates for the cascade"

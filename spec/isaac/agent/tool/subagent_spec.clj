@@ -13,7 +13,7 @@
     [isaac.foundation.config.loader :as loader]
     [speclj.core :refer [describe it should= should]]))
 
-(describe "agent__spawn"
+(describe "subagent__spawn"
   (it "queues a scout turn with its own crew and session"
     (let [queued (atom nil)
           opts (atom nil)

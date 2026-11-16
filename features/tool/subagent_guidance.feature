@@ -1,4 +1,3 @@
-@wip
 Feature: Subagent delegation guidance
   A crew whose turn has subagent__spawn gets standing guidance in its system
   prompt on when and how to delegate. The gate is the turn's effective tool

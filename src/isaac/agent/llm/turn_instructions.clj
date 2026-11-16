@@ -25,10 +25,10 @@
 
 
 (def subagent-delegation-hint
-  ;; Included only when agent__spawn is in the turn's effective tool list, so
+  ;; Included only when subagent__spawn is in the turn's effective tool list, so
   ;; subagent children (which lose the spawn tools) never get it. (isaac-fnyp)
   (str "Delegating to subagents:\n"
-       "- agent__spawn runs a task in a separate context and sends you its conclusion "
+       "- subagent__spawn runs a task in a separate context and sends you its conclusion "
        "when it finishes. Use it for work that would flood your context: sweeps across "
        "many files, broad searches, research that reads a lot to answer a little.\n"
        "- Don't spawn for what a few tool calls would answer; do that yourself.\n"
@@ -40,6 +40,6 @@
        "the person; the result arrives as its own message. Don't redo delegated work."))
 
 (defn spawn-tool?
-  "True when the tool list (definitions or names) includes agent__spawn."
+  "True when the tool list (definitions or names) includes subagent__spawn."
   [tools]
-  (boolean (some #(= "agent__spawn" (if (map? %) (:name %) (str %))) tools)))
+  (boolean (some #(= "subagent__spawn" (if (map? %) (:name %) (str %))) tools)))

@@ -33,9 +33,9 @@
           (should= "fs__grep" (:tool entry))
           (should= "available? returned false" (:reason entry))))))
 
-  (it "registers the spawn tool only for an explicit agent/spawn grant"
-    (sut/register-all! #{:agent/spawn})
-    (should= #{"agent__spawn"} (set (map :name (registry/all-tools)))))
+  (it "registers the spawn tool only for an explicit subagent/spawn grant"
+    (sut/register-all! #{:subagent/spawn})
+    (should= #{"subagent__spawn"} (set (map :name (registry/all-tools)))))
 
   (it "registers glob when it is allowed"
     (sut/register-all! #{:fs/glob})

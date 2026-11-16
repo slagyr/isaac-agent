@@ -1,4 +1,3 @@
-@wip
 Feature: Subagent control
   A parent sees and controls the children it spawned with subagent__spawn
   (features/tool/subagents.feature). subagent__list reports each child's

@@ -163,9 +163,9 @@
  {:chatgpt {:factory isaac.agent.quota/chatgpt-factory}
   :grok {:factory isaac.agent.quota/grok-factory}},
  :isaac.agent/tools
- {:agent/spawn {:factory isaac.agent.tool.builtin/subagent-tool-factory},
-  :agent/list {:factory isaac.agent.tool.builtin/subagent-list-tool-factory},
-  :agent/cancel {:factory isaac.agent.tool.builtin/subagent-cancel-tool-factory},
+ {:subagent/spawn {:factory isaac.agent.tool.builtin/subagent-tool-factory},
+  :subagent/list {:factory isaac.agent.tool.builtin/subagent-list-tool-factory},
+  :subagent/cancel {:factory isaac.agent.tool.builtin/subagent-cancel-tool-factory},
   :provider/quota {:factory isaac.agent.tool.builtin/provider-quota-tool-factory},
    :web/fetch {:factory isaac.agent.tool.builtin/web-fetch-tool-factory},
   :fs/read {:factory isaac.agent.tool.builtin/read-tool-factory},

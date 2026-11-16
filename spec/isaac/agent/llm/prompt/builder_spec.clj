@@ -118,14 +118,14 @@
         (should-contain turn-instructions/parallel-tool-calls-hint
                         (get-in p [:messages 0 :content]))))
 
-    (it "includes the delegation hint only when agent__spawn is in the tools"
+    (it "includes the delegation hint only when subagent__spawn is in the tools"
       (let [with    (sut/build {:model "test" :soul "S" :transcript sample-transcript
-                                :tools [{:name "agent__spawn" :description "d" :parameters {}}]})
+                                :tools [{:name "subagent__spawn" :description "d" :parameters {}}]})
             without (sut/build {:model "test" :soul "S" :transcript sample-transcript
                                 :tools [{:name "fs__read" :description "d" :parameters {}}]})
             compact (sut/build {:model "test" :soul "S" :transcript sample-transcript
                                 :include-tool-batching-hint? false
-                                :tools [{:name "agent__spawn" :description "d" :parameters {}}]})]
+                                :tools [{:name "subagent__spawn" :description "d" :parameters {}}]})]
         (should-contain turn-instructions/subagent-delegation-hint (get-in with [:messages 0 :content]))
         (should-not-contain "Delegating to subagents:" (get-in without [:messages 0 :content]))
         (should-not-contain "Delegating to subagents:" (get-in compact [:messages 0 :content]))))
