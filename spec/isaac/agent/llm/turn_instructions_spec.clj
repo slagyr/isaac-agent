@@ -21,3 +21,22 @@
   (it "keeps the locate-then-read and load-a-skill-once lines"
     (should-contain "Locate first with grep or glob" sut/parallel-tool-calls-hint)
     (should-contain "Load a skill once per turn" sut/parallel-tool-calls-hint)))
+
+(describe "subagent delegation hint (isaac-fnyp)"
+  (it "opens with the heading"
+    (should (.startsWith sut/subagent-delegation-hint "Delegating to subagents:\n")))
+
+  (it "says when to delegate and when not to"
+    (should-contain "work that would flood your context" sut/subagent-delegation-hint)
+    (should-contain "Don't spawn for what a few tool calls would answer" sut/subagent-delegation-hint))
+
+  (it "tells the crew to brief the child, fit the model, and not block"
+    (should-contain "The child sees only your prompt." sut/subagent-delegation-hint)
+    (should-contain "Fit the model to the work" sut/subagent-delegation-hint)
+    (should-contain "Don't redo delegated work." sut/subagent-delegation-hint))
+
+  (it "detects agent__spawn in tool definitions or names"
+    (should (sut/spawn-tool? [{:name "fs__read"} {:name "agent__spawn"}]))
+    (should (sut/spawn-tool? ["agent__spawn"]))
+    (should-not (sut/spawn-tool? [{:name "fs__read"}]))
+    (should-not (sut/spawn-tool? nil))))

@@ -22,3 +22,24 @@
        "file once, in a window large enough to cover what you need; do not page through "
        "it in small slices, and do not re-read a file you just edited.\n"
        "- Load a skill once per turn; the copy in your context stays valid until the turn ends."))
+
+
+(def subagent-delegation-hint
+  ;; Included only when agent__spawn is in the turn's effective tool list, so
+  ;; subagent children (which lose the spawn tools) never get it. (isaac-fnyp)
+  (str "Delegating to subagents:\n"
+       "- agent__spawn runs a task in a separate context and sends you its conclusion "
+       "when it finishes. Use it for work that would flood your context: sweeps across "
+       "many files, broad searches, research that reads a lot to answer a little.\n"
+       "- Don't spawn for what a few tool calls would answer; do that yourself.\n"
+       "- The child sees only your prompt. Brief it fully: the goal, what you already "
+       "know or ruled out, where to look, and what to report back.\n"
+       "- Fit the model to the work: a cheaper model for simple, mechanical tasks, a "
+       "stronger one for hard reasoning.\n"
+       "- Spawning doesn't block. Keep working, or end your turn and stay available to "
+       "the person; the result arrives as its own message. Don't redo delegated work."))
+
+(defn spawn-tool?
+  "True when the tool list (definitions or names) includes agent__spawn."
+  [tools]
+  (boolean (some #(= "agent__spawn" (if (map? %) (:name %) (str %))) tools)))

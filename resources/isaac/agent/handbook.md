@@ -263,6 +263,11 @@ the parent's crew by default. Pass `crew` to use another crew's soul and setting
 `effort` to override the child's effort budget. An unknown alias fails before a
 child session is created. Children cannot spawn further subagents.
 
+A crew whose turn has `agent__spawn` in its effective tool list gets a standing
+"Delegating to subagents" section in its system prompt: when to delegate, how to
+brief a child, fitting the model to the work, and that spawning doesn't block.
+Children never get it (they lose the spawn tools), nor do compaction requests.
+
 The child is an ordinary queued turn: admission and resource pools apply normally.
 When it ends, its observer submits the final message and a stats line (crew, model,
 cycles, tokens, exhausted status when capped, child session id) to the parent with

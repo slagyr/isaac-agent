@@ -32,6 +32,14 @@
         (should-contain turn-instructions/parallel-tool-calls-hint (get-in p [:system 0 :text]))
         (should= "ephemeral" (get-in p [:system 0 :cache_control :type]))))
 
+    (it "includes the delegation hint only when agent__spawn is in the tools"
+      (let [with    (sut/build {:model "m" :soul "S" :transcript sample-transcript
+                                :tools [{:name "agent__spawn" :description "d" :parameters {}}]})
+            without (sut/build {:model "m" :soul "S" :transcript sample-transcript
+                                :tools [{:name "fs__read" :description "d" :parameters {}}]})]
+        (should-contain turn-instructions/subagent-delegation-hint (get-in with [:system 0 :text]))
+        (should-not-contain "Delegating to subagents:" (get-in without [:system 0 :text]))))
+
     (it "extracts messages without system role"
       (let [p (sut/build {:model "claude-sonnet-4-6" :soul "You are Isaac." :transcript sample-transcript})]
         (should= 3 (count (:messages p)))

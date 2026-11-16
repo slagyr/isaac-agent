@@ -312,10 +312,14 @@
   ([soul sections session-name crew nonce]
    (build-system-text soul sections session-name crew nonce true))
   ([soul sections session-name crew nonce include-tool-batching-hint?]
+   (build-system-text soul sections session-name crew nonce include-tool-batching-hint? nil))
+  ([soul sections session-name crew nonce include-tool-batching-hint? tools]
    (str/join "\n\n" (remove str/blank?
                             (cond-> (into [soul] (map :text sections))
                               include-tool-batching-hint?
                               (conj turn-instructions/parallel-tool-calls-hint)
+                              (and include-tool-batching-hint? (turn-instructions/spawn-tool? tools))
+                              (conj turn-instructions/subagent-delegation-hint)
                               :always
                               (into [(session-identity-block session-name crew)
                                      (injection-guard nonce)]))))))
@@ -374,8 +378,8 @@
 
 (defn- build-messages
   "Compose the messages array: system prompt + history (or compacted summary + post-compaction)."
-  [soul sections session-name crew nonce guidance origin preamble transcript context-window filter-fn include-tool-batching-hint?]
-  (let [system-text (cond-> (build-system-text soul sections session-name crew nonce include-tool-batching-hint?)
+  [soul sections session-name crew nonce guidance origin preamble transcript context-window filter-fn include-tool-batching-hint? tools]
+  (let [system-text (cond-> (build-system-text soul sections session-name crew nonce include-tool-batching-hint? tools)
                       (seq preamble) (str "\n\n" preamble))
         compaction  (find-last-compaction transcript)]
     (if compaction
@@ -440,7 +444,7 @@
      :filter-fn      - message filter function (default filter-messages)"
   [{:keys [boot-files crew guidance model nonce origin rules-text session-name skill-menu-text soul preamble transcript tools context-window filter-fn include-tool-batching-hint? sections]}]
   (let [include-hint? (if (nil? include-tool-batching-hint?) true include-tool-batching-hint?)
-        messages (build-messages soul (or sections (legacy-sections boot-files rules-text skill-menu-text)) session-name crew nonce guidance origin preamble transcript context-window (or filter-fn filter-messages) include-hint?)]
+        messages (build-messages soul (or sections (legacy-sections boot-files rules-text skill-menu-text)) session-name crew nonce guidance origin preamble transcript context-window (or filter-fn filter-messages) include-hint? tools)]
     (cond-> {:model    model
              :messages messages}
       (seq tools) (assoc :tools (mapv llm-api/wrapped-function-tool tools)))))
