@@ -80,7 +80,7 @@
                   (:observers record) (assoc :observers (:observers record))
                   (:resource-pools record) (assoc :resource-pools (:resource-pools record))
                   (:key record) (assoc :key (:key record))
-                  (:id record) (assoc :turn-id (:id record))
+                  (:id record) (assoc :turn-id (or (:observer-turn-id record) (:id record)))
                   (:cwd record) (assoc :cwd (:cwd record))
                   (:input-persisted? record) (assoc :input-persisted? true))
         built   (try
@@ -95,7 +95,7 @@
            :now now
            :from-queue? true
            :held-id (:id record)
-           :turn-id (:id record)
+           :turn-id (or (:observer-turn-id record) (:id record))
            :root (or (:root record) (nexus/get :root) (loader/root))
            :session-store (or (nexus/get-in [:sessions :store]) (store/registered-store)))))
 
@@ -170,7 +170,8 @@
         (when (= :running (:state (queue/read-held id)))
           (queue/update-turn! id {:state :held})))
       (doseq [id ids]
-        (queue/update-turn! id (cond-> {:state :finished :outcome (if (:error result) :error :ok)}
+        (queue/update-turn! id (cond-> {:state (if (= "suspended" (:stopReason result)) :suspended :finished)
+                                        :outcome (if (:error result) :error :ok)}
                                  (not= id (:id record)) (assoc :merged-into (:id record))
                                  (:error result) (assoc :reason (or (:message result) (name (:error result))))))
         (queue/forget-live-comm! id)))

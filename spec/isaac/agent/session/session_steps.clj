@@ -2681,7 +2681,7 @@
 (defn resume-sweep-runs-at [iso]
   (with-feature-fs
     (fn []
-      (let [now   (java.time.Instant/parse iso)
+      (let [now   (java.time.Instant/parse (if (re-find #"[zZ]|[+-]\\d{2}:?\\d{2}$" iso) iso (str iso "Z")))
             store (session-store)
             cfg   (normalize-feature-config (loaded-config))]
         (g/assoc! :current-time now)

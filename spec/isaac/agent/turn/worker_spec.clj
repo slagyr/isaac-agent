@@ -81,6 +81,25 @@
       (should= 1 (count @ran))
       (should= "berth-1" (:id (queue/read-held "berth-1")))))
 
+  (it "leaves a weather-parked child suspended until its resumed turn ends"
+    (queue/enqueue! {:id "child-turn" :session "child" :input "Count moorings"
+                     :origin {:kind :subagent :parent "bridge"}})
+    (with-redefs [bridge/dispatch! (fn [_] {:stopReason "suspended" :unavailable? true})]
+      (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")})
+      (await-settled! "child-turn"))
+    (should= :suspended (:state (queue/read-held "child-turn"))))
+
+  (it "uses the original child handle for observer callbacks after a boot resume"
+    (queue/enqueue! {:id "resume-turn" :session "child" :input "Continue"
+                     :observers [[:subagent "bridge" "child" "scout" "parrot"]]
+                     :observer-turn-id "child-turn"})
+    (let [seen (atom nil)]
+      (with-redefs [bridge/dispatch! (fn [charge] (reset! seen charge) {})]
+        (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")})
+        (await-settled! "resume-turn"))
+      (should= "child-turn" (:turn-id @seen))
+      (should= [[:subagent "bridge" "child" "scout" "parrot"]] (:observers @seen))))
+
   (it "keeps a request held when its selected session is already in flight"
     (queue/enqueue! {:id "berth-1" :frequencies {:session-tags #{:project/warp} :create :never}
                      :input "Seal leak"})

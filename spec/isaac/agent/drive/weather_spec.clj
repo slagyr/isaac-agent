@@ -69,6 +69,18 @@
       (should= "2026-04-21T10:01:00Z" (:retry-at marker))
       (should= 1 (:suspend-count marker))))
 
+  (it "keeps the child's observer and original request id across weather parks"
+    (let [ss (mem-store/create-store)
+          now (Instant/parse "2026-04-21T10:00:00Z")
+          opts {:now now :observers [[:subagent "bridge" "child" "scout" "parrot"]]
+                :turn-id "child-turn"}]
+      (sut/stamp-weather! ss "child" {:unavailable? true :reason :wall} opts)
+      (sut/stamp-weather! ss "child" {:unavailable? true :reason :wall}
+                          {:now (.plusSeconds now 60)})
+      (let [marker (isaac.agent.session.store.spi/get-turn-marker ss "child")]
+        (should= (:observers opts) (:observers marker))
+        (should= "child-turn" (:turn-id marker)))))
+
   (it "posts attention after a second MCP suspension when the attention window has elapsed"
     (let [store (mem-store/create-store)
           now (Instant/parse "2026-04-21T10:00:00Z")

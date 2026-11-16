@@ -68,7 +68,7 @@
 
 (defn stamp-weather!
   "Merge weather fields onto the session's turn marker and return a suspended result."
-  [store session-key result {:keys [cfg provider model now model-override]}]
+  [store session-key result {:keys [cfg provider model now model-override observers turn-id]}]
   (let [reason        (or (weather-reason result) :wall)
         existing      (store/get-turn-marker store session-key)
         suspend-count (inc (or (:suspend-count existing) 0))
@@ -95,6 +95,10 @@
                                 :suspended-at   (or (:suspended-at existing) (iso now*))
                                 :retry-at       (iso retry-at)
                                 :suspend-count  suspend-count)
+                        (or observers (:observers existing))
+                        (assoc :observers (or observers (:observers existing)))
+                        (or turn-id (:turn-id existing))
+                        (assoc :turn-id (or turn-id (:turn-id existing)))
                         (or model-override (:model-override existing))
                         (assoc :model-override (or model-override (:model-override existing)))
                         (or notified? (:attention-posted existing))
@@ -147,7 +151,9 @@
                                    :input          "interrupted by provider weather; continue from the transcript."
                                    :comm           null-comm/channel
                                    :from-queue?    true
-                                   :model-override (:model-override marker)}))]
+                                   :model-override (:model-override marker)
+                                   :observers      (:observers marker)
+                                   :turn-id        (:turn-id marker)}))]
         (when-not (= "suspended" (:stopReason result))
           (store/clear-turn-marker! store session-id))
         result))))

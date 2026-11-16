@@ -51,6 +51,28 @@
       (should= "Three moorings.\ncrew: scout model: parrot cycles: 2 tokens: 15 session: child"
                (:prompt @delivered))))
 
+  (it "lists a weather-parked child as suspended"
+    (with-redefs [bounds/session-store (constantly :store)
+                  bounds/root (constantly "/harbor")
+                  queue/all-turns (constantly [{:id "one" :session "scout" :state :suspended
+                                                :origin {:kind :subagent :parent "bridge"}}])
+                  store/get-session (fn [_ _] {:crew "scout" :model "parrot"})]
+      (should= "suspended" (get-in (json/parse-string (:result (sut/list-tool {"session_key" "bridge"})) true)
+                                   [:children 0 :state]))))
+
+  (it "does not deliver a result or log completion when the child parks for weather"
+    (let [delivered (atom [])
+          changes   (atom [])
+          factory   (sut/observer-factory)]
+      (with-redefs [submit/submit! (fn [request] (swap! delivered conj request))
+                    queue/update-turn! (fn [id attrs] (swap! changes conj [id attrs]))]
+        (observer/on-turn-ended (factory ["bridge" "child" "scout" "parrot"])
+                                {:request-id "turn-1" :result {:stopReason "suspended"
+                                                                 :ended-by :provider-unavailable
+                                                                 :unavailable? true}} {:kind :error :reason "weather"}))
+      (should= [] @delivered)
+      (should= [["turn-1" {:state :suspended}]] @changes)))
+
   (it "lists only children owned by bridge with the effective model before their turn runs"
     (with-redefs [bounds/session-store (constantly :store)
                   bounds/root (constantly "/harbor")

@@ -121,6 +121,8 @@
                                                 :origin  {:kind :resume :source (:source marker)}
                                                 :root    root
                                                 :resource-pools (mapv (comp keyword :pool) (:leases marker))}
+                                          (:observers marker) (assoc :observers (:observers marker)
+                                                                     :observer-turn-id (:turn-id marker))
                                           old-record (assoc :resumes (:id old-record)
                                                             :from (:from old-record)
                                                             :for (:for old-record))))]

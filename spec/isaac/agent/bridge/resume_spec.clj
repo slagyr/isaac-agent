@@ -168,6 +168,19 @@
       (should= 1 (:dropped entry)))
     (should= nil (store/get-turn-marker (store/registered-store) "logbook")))
 
+  (it "retains the child's observer and original handle through a boot resume"
+    (helper/create-session! test-root "child")
+    (store/record-turn-marker! (store/registered-store) "child"
+                               {:session-id "child" :suspended true :source :subagent
+                                :retry-at "2026-04-21T09:59:00Z"
+                                :observers [[:subagent "bridge" "child" "scout" "parrot"]]
+                                :turn-id "child-turn"})
+    (sut/resume-interrupted-turns! {:session-store (store/registered-store)
+                                    :root test-root :now (java.time.Instant/parse "2026-04-21T10:00:00Z")})
+    (let [record (first (binding [queue/*root* test-root] (queue/list-held)))]
+      (should= [[:subagent "bridge" "child" "scout" "parrot"]] (:observers record))
+      (should= "child-turn" (:observer-turn-id record))))
+
   (it "enqueues a suspended hail marker like any other source, writing nothing under hail/"
     (helper/create-session! test-root "isaac-verify")
     (store/record-turn-marker! (store/registered-store) "isaac-verify"

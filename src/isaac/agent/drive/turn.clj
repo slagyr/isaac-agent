@@ -1260,7 +1260,9 @@
                                          :provider provider-name
                                          :model    model
                                          :now      (turn-now)
-                                         :model-override (:model-override charge)})
+                                         :model-override (:model-override charge)
+                                         :observers (:observers charge)
+                                         :turn-id (:turn-id charge)})
                 result))
 
             :else

@@ -45,12 +45,14 @@
               tokens  (+ (or (:prompt-tokens usage) 0) (or (:output-tokens usage) 0))
               outcome (if (= :cancelled (:ended-by result)) :cancelled
                           (if (= :ok outcome) :ok :failed))]
-          (queue/update-turn! (:request-id ctx) {:cycles cycles :tokens tokens
-                                                  :outcome outcome})
-          (log/info :subagent/ended :parent parent :session child :crew crew :model model
-                    :cycles cycles :tokens tokens :outcome (name outcome))
-          (deliver! parent child crew model
-                    (cond-> ctx (= :cancelled outcome) (assoc :content "Child cancelled.")))))
+          (if (= "suspended" (:stopReason result))
+            (queue/update-turn! (:request-id ctx) {:state :suspended})
+            (do
+              (queue/update-turn! (:request-id ctx) {:state :finished :cycles cycles :tokens tokens :outcome outcome})
+              (log/info :subagent/ended :parent parent :session child :crew crew :model model
+                        :cycles cycles :tokens tokens :outcome (name outcome))
+              (deliver! parent child crew model
+                        (cond-> ctx (= :cancelled outcome) (assoc :content "Child cancelled.")))))))
       (on-turn-died [_ ctx reason]
         (queue/update-turn! (:request-id ctx) {:outcome :failed})
         (log/info :subagent/ended :parent parent :session child :crew crew :model model
@@ -68,7 +70,7 @@
 (defn- child-state [turn]
   (if (= :finished (:state turn))
     (case (:outcome turn) :cancelled "cancelled" :ok "done" "failed")
-    (if (= :running (:state turn)) "running" "queued")))
+    (case (:state turn) :running "running" :suspended "suspended" "queued")))
 
 (defn- child-view [ss turn]
   (let [session (store/get-session ss (:session turn))

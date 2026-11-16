@@ -125,7 +125,6 @@ Feature: Subagent control
       | -2     | message | user         | #"(?s).*Three moorings\..*cycles: 2 .*" |
       | -1     | message | assistant    | Noted.                                 |
 
-  @wip
   Scenario: a child suspended by provider weather is waiting, not finished, and reports once when it completes (isaac-cpiz)
     Given the following model responses are queued:
       | model  | type       | status | retry-after |
