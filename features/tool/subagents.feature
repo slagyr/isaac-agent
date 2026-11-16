@@ -105,3 +105,24 @@ Feature: Subagents
     Then the tool result is not an error
     When the turn queue ticks at "2026-03-01T18:00:00"
     Then the last LLM request does not contain "subagent__spawn"
+
+  @wip
+  Scenario: a standalone isaac prompt waits for its subagents and its reply to their results (isaac-a5pu)
+    Given the crew "main" allows tools: "subagent/spawn"
+    And the following model responses are queued:
+      | model | tool_call       | arguments                         |
+      | echo  | subagent__spawn | {"prompt": "Count the moorings."} |
+      | model | type            | content                           |
+      | echo  | text            | Spawned a scout.                  |
+      | echo  | text            | Three moorings.                   |
+      | echo  | text            | The scout counted three.          |
+    When isaac is run with "prompt -m 'Count the moorings with a scout.' --session bridge"
+    Then the stdout contains "The scout counted three."
+    And session "bridge" has transcript matching:
+      | #index | type    | message.role | message.content             |
+      | -2     | message | user         | #"(?s).*Three moorings\..*" |
+      | -1     | message | assistant    | The scout counted three.    |
+    When the tool "subagent__list" is called
+    Then the tool result JSON has:
+      | path              | value |
+      | children[0].state | done  |

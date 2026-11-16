@@ -99,3 +99,66 @@ Feature: Subagent control
       | level | event             | parent | session | crew | model  | cycles | tokens | outcome |
       | :info | :subagent/started | bridge | #*      | main | parrot |        |        |         |
       | :info | :subagent/ended   | bridge | #*      | main | parrot | 1      | #*     | ok      |
+
+  @wip
+  Scenario: a child that goes through a tool cycle reports its real cycle count (isaac-1ja8)
+    Given the crew "main" allows tools: "fs/read"
+    And the following model responses are queued:
+      | model | tool_call | arguments                                     |
+      | echo  | fs__read  | {"file_path": "target/test-state/harbor.edn"} |
+      | model | type      | content                                       |
+      | echo  | text      | Three moorings.                               |
+      | echo  | text      | Noted.                                        |
+    When the tool "subagent__spawn" is called with:
+      | prompt | Count the moorings. |
+    And the turn queue ticks at "2026-03-01T18:00:00"
+    And the tool "subagent__list" is called
+    Then the tool result JSON has:
+      | path               | value |
+      | children[0].state  | done  |
+      | children[0].cycles | 2     |
+    And the log has entries matching:
+      | level | event           | parent | cycles | outcome |
+      | :info | :subagent/ended | bridge | 2      | ok      |
+    When the turn queue ticks at "2026-03-01T18:00:10"
+    Then session "bridge" has transcript matching:
+      | #index | type    | message.role | message.content                        |
+      | -2     | message | user         | #"(?s).*Three moorings\..*cycles: 2 .*" |
+      | -1     | message | assistant    | Noted.                                 |
+
+  @wip
+  Scenario: a child suspended by provider weather is waiting, not finished, and reports once when it completes (isaac-cpiz)
+    Given the following model responses are queued:
+      | model  | type       | status | retry-after |
+      | squawk | http-error | 429    | 60          |
+    When the tool "subagent__spawn" is called with:
+      | prompt | Count the moorings. |
+      | model  | parrot              |
+    And the turn queue ticks at "2026-03-01T18:00:00"
+    Then the log has entries matching:
+      | level | event           | reason |
+      | :warn | :turn/suspended | :wall  |
+    When the tool "subagent__list" is called
+    Then the tool result JSON has:
+      | path              | value     |
+      | children[0].state | suspended |
+    Given the following model responses are queued:
+      | type | content         | model  |
+      | text | Three moorings. | squawk |
+      | text | Noted.          | echo   |
+    When the resume sweep runs at "2026-03-01T18:02:00"
+    And the turn queue ticks at "2026-03-01T18:02:10"
+    And the tool "subagent__list" is called
+    Then the tool result JSON has:
+      | path              | value |
+      | children[0].state | done  |
+    And the log has exactly 1 entries matching:
+      | event           | parent |
+      | :subagent/ended | bridge |
+    And the log has entries matching:
+      | level | event           | parent | outcome |
+      | :info | :subagent/ended | bridge | ok      |
+    And session "bridge" has transcript matching:
+      | #index | type    | message.role | message.content             |
+      | -2     | message | user         | #"(?s).*Three moorings\..*" |
+      | -1     | message | assistant    | Noted.                      |
