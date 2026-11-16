@@ -84,6 +84,22 @@ or `isaac config set`/`unset` like any other.
   `description: "How to log tides: high, low, and slack"`. A broken skill,
   command, or rule is skipped; other prompts continue to load.
 
+## Session timers
+
+`timer__set {after, note}` schedules a check-in on the current session. The
+`after` delay is an integer from 60 to 3600 seconds; `note` becomes the input
+of a new turn with origin `:timer` when it is due. The returned `handle` and
+`due` identify the timer. The turn is persisted in the durable turn queue and
+survives service restarts; it does not block the current turn or conversation.
+`timer__list` shows pending timers for this session and `timer__cancel {handle}`
+cancels one before it fires. The crew's `max-timers` (or
+`defaults.crew.max-timers`) limits pending timers per session, default 10.
+Grant the tools with `:timer/*` in the crew's tool allow list.
+
+After spawning subagents, end the turn so the person can talk; conclusions
+arrive as new input. Never use `exec__run` to sleep-poll for children. To check
+on a stalled child later, set a timer and return to the conversation.
+
 ## Tools and directories
 
 Config uses namespaced keywords for tool identity (`:fs/read`); the model

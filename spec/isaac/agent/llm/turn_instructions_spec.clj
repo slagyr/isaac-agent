@@ -33,6 +33,8 @@
   (it "tells the crew to brief the child, fit the model, and not block"
     (should-contain "The child sees only your prompt." sut/subagent-delegation-hint)
     (should-contain "Fit the model to the work" sut/subagent-delegation-hint)
+    (should-contain "Never sleep or poll" sut/subagent-delegation-hint)
+    (should-contain "timer__set" sut/subagent-delegation-hint)
     (should-contain "Don't redo delegated work." sut/subagent-delegation-hint))
 
   (it "detects subagent__spawn in tool definitions or names"

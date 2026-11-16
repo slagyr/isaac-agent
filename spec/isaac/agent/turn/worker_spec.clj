@@ -67,6 +67,18 @@
         (should-throw Exception "binding failed" (sut/tick!)))
       (should= [[lease]] @released)))
 
+  (it "does not dispatch a durable timer until its due time"
+    (queue/enqueue! {:id "timed" :session "bridge" :input "Check scouts"
+                     :origin {:kind :timer} :due-at "2026-03-01T18:02:00Z" :state :queued})
+    (let [seen (atom [])]
+      (with-redefs [bridge/dispatch! (fn [charge] (swap! seen conj charge) {})]
+        (sut/tick! {:now (Instant/parse "2026-03-01T18:01:59Z")})
+        (should= [] @seen)
+        (should= :queued (:state (queue/read-held "timed")))
+        (sut/tick! {:now (Instant/parse "2026-03-01T18:02:00Z")})
+        (await-settled! "timed"))
+      (should= :timer (get-in (first @seen) [:origin :kind]))))
+
   (it "leaves a held turn parked when dispatch parks again"
     (queue/enqueue! {:id         "berth-1"
                      :session    "harbor"

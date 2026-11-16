@@ -303,7 +303,9 @@
                                          (= :subagent (get-in % [:origin :kind]))) records)
                            (filter #(and (not (contains? waiting-ids (:id %)))
                                          (= :subagent (get-in % [:origin :kind]))) records))]
-      (claim-and-start! record now))
+      (when (or (nil? (:due-at record))
+                (not (.isBefore ^java.time.Instant now (java.time.Instant/parse (:due-at record)))))
+        (claim-and-start! record now)))
     (doseq [session waiting-sessions
             :when (not (store/in-flight? (or (nexus/get-in [:sessions :store])
                                               (store/registered-store)) session))

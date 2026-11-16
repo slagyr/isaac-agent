@@ -37,7 +37,8 @@
        "- Fit the model to the work: a cheaper model for simple, mechanical tasks, a "
        "stronger one for hard reasoning.\n"
        "- Spawning doesn't block. Keep working, or end your turn and stay available to "
-       "the person; the result arrives as its own message. Don't redo delegated work."))
+       "the person; the result arrives as its own message. Never sleep or poll for children. "
+       "Use timer__set to check back if a child seems stuck. Don't redo delegated work."))
 
 (defn spawn-tool?
   "True when the tool list (definitions or names) includes subagent__spawn."

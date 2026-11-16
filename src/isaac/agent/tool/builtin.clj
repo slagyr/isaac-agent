@@ -13,6 +13,7 @@
     [isaac.agent.quota :as quota]
     [isaac.agent.tool.session :as session]
     [isaac.agent.tool.subagent :as subagent]
+    [isaac.agent.tool.timer :as timer]
     [isaac.agent.tool.web-fetch :as web-fetch]
     [isaac.agent.tool.web-search :as web-search]
     [isaac.agent.turn.tool :as turn]))
@@ -22,7 +23,7 @@
 (def ^:private ordered-built-in-tools
   ["fs__read" "fs__write" "fs__edit" "fs__multi_edit" "fs__grep" "fs__glob"
    "web__fetch" "web__search" "memory__write" "memory__get" "memory__search"
-   "exec__run" "subagent__spawn" "subagent__list" "subagent__cancel" "turn__get" "session__info" "session__model" "session__list" "session__read" "prompt__load" "prompt__list"
+   "exec__run" "timer__set" "timer__list" "timer__cancel" "subagent__spawn" "subagent__list" "subagent__cancel" "turn__get" "session__info" "session__model" "session__list" "session__read" "prompt__load" "prompt__list"
    "comm__send" "hail__send" "provider__quota"])
 
 (def ^:private built-in-tool-specs
@@ -134,6 +135,18 @@
                                     :required   ["command"]}
                       :timeout-ms  #'exec/registry-timeout-ms
                       :handler     #'exec/exec-tool}
+   "timer__set" {:name "timer__set"
+                  :description "Schedule a delayed check-in on this session (60..3600 seconds)"
+                  :parameters {:type "object"
+                               :properties {"after" {:type "integer" :description "Delay in seconds"}
+                                            "note" {:type "string" :description "Input for the check-in turn"}}
+                               :required ["after" "note"]}
+                  :handler #'timer/set-tool}
+   "timer__list" {:name "timer__list" :description "List pending timers on this session"
+                   :parameters {:type "object" :properties {}} :handler #'timer/list-tool}
+   "timer__cancel" {:name "timer__cancel" :description "Cancel a pending timer on this session"
+                     :parameters {:type "object" :properties {"handle" {:type "string"}}
+                                  :required ["handle"]} :handler #'timer/cancel-tool}
    "subagent__spawn" {:name "subagent__spawn"
                     :description "Start a child turn in a separate session and return its handle immediately"
                     :parameters {:type "object"
@@ -208,6 +221,9 @@
 (defn memory-get-tool-factory [_] (spec-for "memory__get"))
 (defn memory-search-tool-factory [_] (spec-for "memory__search"))
 (defn exec-tool-factory [_] (spec-for "exec__run"))
+(defn timer-set-tool-factory [_] (spec-for "timer__set"))
+(defn timer-list-tool-factory [_] (spec-for "timer__list"))
+(defn timer-cancel-tool-factory [_] (spec-for "timer__cancel"))
 (defn subagent-tool-factory [_]
   (assoc (spec-for "subagent__spawn") :description (subagent/description)))
 (defn subagent-list-tool-factory [_] (spec-for "subagent__list"))

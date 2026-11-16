@@ -38,6 +38,18 @@
         (should= "tide-pool-7:unset:unset" (sut/read-process-output process))
         (should= 0 (sut/process-exit-value process)))))
 
+  (it "refuses long foreground sleeps but allows short waits and sleeps within loops"
+    (doseq [command ["sleep 45" "sleep 90; echo done" "sleep 5 && echo done"]]
+      (let [result (sut/exec-tool {"command" command})]
+        (should (:isError result))
+        (should-contain "timer__set" (:error result))))
+    (with-redefs [sut/start-process (fn [_] ::proc)
+                  sut/process-finished? (fn [_ _] true)
+                  sut/read-process-output (fn [_] "ok")
+                  sut/process-exit-value (fn [_] 0)]
+      (should= "ok" (:result (sut/exec-tool {"command" "sleep 4"})))
+      (should= "ok" (:result (sut/exec-tool {"command" "while true; do sleep 45; done"})))))
+
   (it "runs a shell command and returns output"
     (let [result (with-redefs [sut/start-process (fn [_] ::proc)
                                sut/process-finished? (fn [_ _] true)

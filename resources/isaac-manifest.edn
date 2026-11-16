@@ -163,7 +163,10 @@
  {:chatgpt {:factory isaac.agent.quota/chatgpt-factory}
   :grok {:factory isaac.agent.quota/grok-factory}},
  :isaac.agent/tools
- {:subagent/spawn {:factory isaac.agent.tool.builtin/subagent-tool-factory},
+ {:timer/set {:factory isaac.agent.tool.builtin/timer-set-tool-factory},
+  :timer/list {:factory isaac.agent.tool.builtin/timer-list-tool-factory},
+  :timer/cancel {:factory isaac.agent.tool.builtin/timer-cancel-tool-factory},
+  :subagent/spawn {:factory isaac.agent.tool.builtin/subagent-tool-factory},
   :subagent/list {:factory isaac.agent.tool.builtin/subagent-list-tool-factory},
   :subagent/cancel {:factory isaac.agent.tool.builtin/subagent-cancel-tool-factory},
   :provider/quota {:factory isaac.agent.tool.builtin/provider-quota-tool-factory},
@@ -470,7 +473,10 @@
     {:name :crew,
      :type :map,
      :schema
-     {:max-subagents {:type :int
+     {:max-timers {:type :int
+                   :description "Maximum pending timers per session (default 10)"
+                   :validations [:positive?]}
+      :max-subagents {:type :int
                       :description "Maximum unfinished child turns per parent session (default 4)"
                       :validations [:positive?]}
       :tags

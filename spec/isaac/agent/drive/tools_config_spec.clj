@@ -57,6 +57,17 @@
       (should= #{"subagent__spawn"} (sut/allowed-tool-names {"main" {:tools {:allow [:subagent/spawn]}}}
                                                            "main" {}))))
 
+  (it "requires an explicit timer grant rather than blanket :all"
+    (nexus/-with-nexus {:tool-registry (atom {"timer__set" {:name "timer__set"}
+                                               "timer__list" {:name "timer__list"}
+                                               "timer__cancel" {:name "timer__cancel"}})}
+      (should= #{} (sut/allowed-tool-names {"main" {}} "main"
+                                          {:defaults {:crew {:tools {:allow :all}}}}))
+      (should= #{"timer__set" "timer__list" "timer__cancel"}
+               (sut/allowed-tool-names {"main" {:tools {:allow [:timer/*]}}} "main" {}))
+      (should= #{"timer__set"}
+               (sut/allowed-tool-names {"main" {:tools {:allow [:timer/set]}}} "main" {}))))
+
   (it "a ns/* allow makes the provider's tools candidates for the cascade"
     (nexus/-with-nexus {:tool-registry (atom {})}
       (let [crew-members {"main" {:tools {:allow [:lens/*]}}}

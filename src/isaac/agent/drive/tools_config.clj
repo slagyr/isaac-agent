@@ -95,7 +95,8 @@
         candidates   (distinct (concat registered declared))]
     (let [allowed (->> candidates
                        (filter #(and (names/cascade-allowed? global-tools crew-tools %)
-                                     (or (not (#{"subagent__spawn" "subagent__list" "subagent__cancel"} %))
+                                     (or (not (#{"subagent__spawn" "subagent__list" "subagent__cancel"
+                                                "timer__set" "timer__list" "timer__cancel"} %))
                                          (names/allowed? (concat (remove #{:all} (names/policy-list (:allow global-tools)))
                                                                  (remove #{:all} (names/policy-list (:allow crew-tools)))) %))))
                        set)

@@ -1,4 +1,3 @@
-@wip
 Feature: Timers
   A crew sets a timer to come back to something later instead of holding
   its turn: timer__set {after, note} queues a turn on the SAME session, due
