@@ -54,3 +54,18 @@
   "Return the live Comm instance registered for `impl-name`, or nil."
   [impl-name]
   (get-in @*registry* [:instances (->name impl-name)]))
+
+;; Process-local ACP attachments. Never persist a Comm in the session store.
+(defn attach-session! [session-id channel]
+  (swap! *registry* assoc-in [:attachments session-id] channel)
+  channel)
+
+(defn detach-session! [session-id channel]
+  (swap! *registry* update :attachments
+         (fn [attachments]
+           (if (identical? (get attachments session-id) channel)
+             (dissoc attachments session-id)
+             attachments))))
+
+(defn attached-comm [session-id]
+  (get-in @*registry* [:attachments session-id]))
