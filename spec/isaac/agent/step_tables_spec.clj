@@ -93,6 +93,9 @@
                      [{:items [{:name "bibelot"} {:name "doodad"}]}])]
         (should (:pass? result))))
 
+    (it "returns nil when an array index is requested on a map"
+      (should-be-nil (sut/get-path {:update {:content {:type "text"}}} "update.content[0].type")))
+
     (it "accesses nested array elements"
       (let [result (sut/match-entries
                      {:headers ["message.content[0].type"] :rows [["toolCall"]]}

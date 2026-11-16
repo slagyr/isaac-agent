@@ -34,7 +34,7 @@
         :idx (if (sequential? obj)
                (when-let [i (resolve-index v (count obj))]
                  (nth obj i nil))
-               (nth obj v nil))
+               nil)
         :count (when (or (sequential? obj) (map? obj) (string? obj))
                  (count obj))))
     entity
