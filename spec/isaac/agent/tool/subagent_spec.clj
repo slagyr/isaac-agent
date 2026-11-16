@@ -37,17 +37,18 @@
 
   (it "submits a result when the child's turn ends"
     (let [delivered (atom nil)
-          factory (sut/observer-factory)]
+          recorded  (atom nil)
+          factory   (sut/observer-factory)]
       (with-redefs [submit/submit! (fn [request] (reset! delivered request))
-                    queue/update-turn! (fn [_ _] nil)]
+                    queue/update-turn! (fn [_ attrs] (reset! recorded attrs))]
         (observer/on-turn-ended (factory ["bridge" "child" "scout" "parrot"])
                                 {:request-id "turn-1" :content "Three moorings."
-                                 :result {:usage {:prompt-tokens 10 :output-tokens 5}
-                                          :cycle-usages [{}]}} :ok))
+                                 :result {:usage {:requests 2 :prompt-tokens 10 :output-tokens 5}}} :ok))
+      (should= 2 (:cycles @recorded))
       (should= {:kind :subagent :session "child"} (:origin @delivered))
       (should= ["bridge"] (get-in @delivered [:frequencies :session]))
       (should= "subagent-child-turn-1" (:id @delivered))
-      (should= "Three moorings.\ncrew: scout model: parrot cycles: 1 tokens: 15 session: child"
+      (should= "Three moorings.\ncrew: scout model: parrot cycles: 2 tokens: 15 session: child"
                (:prompt @delivered))))
 
   (it "lists only children owned by bridge with the effective model before their turn runs"

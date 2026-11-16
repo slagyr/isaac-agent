@@ -21,7 +21,7 @@
 
 (defn- deliver! [parent child crew model {:keys [content result request-id]}]
   (let [submit! (requiring-resolve 'isaac.agent.turn.submit/submit!)
-        cycles  (max 1 (count (:cycle-usages result)))
+        cycles  (max 1 (or (get-in result [:usage :requests]) 0))
         usage   (:usage result)
         tokens  (+ (or (:prompt-tokens usage) 0) (or (:output-tokens usage) 0))
         stats   (str "crew: " crew " model: " model " cycles: " cycles
@@ -40,7 +40,7 @@
         (log/info :subagent/started :parent parent :session child :crew crew :model model))
       (on-turn-ended [_ ctx outcome]
         (let [result  (:result ctx)
-              cycles  (max 1 (count (:cycle-usages result)))
+              cycles  (max 1 (or (get-in result [:usage :requests]) 0))
               usage   (:usage result)
               tokens  (+ (or (:prompt-tokens usage) 0) (or (:output-tokens usage) 0))
               outcome (if (= :cancelled (:ended-by result)) :cancelled

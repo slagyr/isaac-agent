@@ -100,7 +100,6 @@ Feature: Subagent control
       | :info | :subagent/started | bridge | #*      | main | parrot |        |        |         |
       | :info | :subagent/ended   | bridge | #*      | main | parrot | 1      | #*     | ok      |
 
-  @wip
   Scenario: a child that goes through a tool cycle reports its real cycle count (isaac-1ja8)
     Given the crew "main" allows tools: "fs/read"
     And the following model responses are queued:
