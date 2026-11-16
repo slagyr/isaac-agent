@@ -15,7 +15,7 @@ Feature: Turn Cancellation
       | cancel-test |
     And the following model responses are queued:
       | tool_call | arguments               |
-      | exec__run | {"command": "sleep 30"} |
+      | exec__run | {"command": "while :; do sleep 1; done"} |
     When the user sends "run it" on session "cancel-test"
     And the turn is cancelled on session "cancel-test"
     Then the turn result is "cancelled"
@@ -35,7 +35,7 @@ Feature: Turn Cancellation
       | cancel-test |
     And the following model responses are queued:
       | tool_call | arguments               |
-      | exec__run | {"command": "sleep 30"} |
+      | exec__run | {"command": "while :; do sleep 1; done"} |
     When the user sends "run it" on session "cancel-test"
     And the turn is cancelled on session "cancel-test"
     Then the turn result is "cancelled"

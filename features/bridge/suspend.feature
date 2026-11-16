@@ -58,7 +58,7 @@ Feature: Suspend in-flight turns on shutdown
       | logbook |
     And the following model responses are queued:
       | tool_call | arguments               |
-      | exec__run | {"command": "sleep 30"} |
+      | exec__run | {"command": "while :; do sleep 1; done"} |
     When the user sends "run the diagnostic" on session "logbook"
     And in-flight turns are suspended with timeout 100ms
     Then a turn marker exists for session "logbook" with:

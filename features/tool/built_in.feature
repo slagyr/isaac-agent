@@ -240,6 +240,6 @@ Feature: Built-in Tools
   Scenario: Execute with timeout exceeded
     Given the exec timeout is set to 25 milliseconds
     When the tool "exec__run" is called with:
-      | command | sleep 10 |
+      | command | while :; do sleep 1; done |
     Then the tool result is an error
     And the tool result contains "timeout"
