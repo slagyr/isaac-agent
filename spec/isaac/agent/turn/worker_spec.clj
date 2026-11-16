@@ -1,6 +1,7 @@
 (ns isaac.agent.turn.worker-spec
   (:require
     [isaac.agent.bridge.core :as bridge]
+    [isaac.agent.comm.registry]
     [isaac.agent.charge :as charge]
     [isaac.foundation.config.loader :as loader]
     [isaac.agent.drive.weather :as weather]
@@ -516,3 +517,33 @@
       ;; actually ran, and could see whatever the now-restored outer scope
       ;; holds instead — including nothing at all.
       (should= :before-tick-returned @read-when))))
+
+(describe "attached session background turns"
+  (helper/with-captured-logs)
+  (around [example]
+    (nexus/-with-nexus {:root "/test/isaac" :fs (fs/mem-fs)}
+      (binding [isaac.agent.comm.registry/*registry* (atom (isaac.agent.comm.registry/fresh-registry))]
+        (with-redefs [store/mark-in-flight! (fn [_ _] true)
+                      store/clear-in-flight! (fn [_ _] nil)
+                      pool/resolve-submitted (fn [_ _] {:resource-pools []})]
+          (example)))))
+
+  (it "uses the attached comm for a subagent result on the parent session"
+    (let [seen (atom [])
+          attached :toad]
+      (isaac.agent.comm.registry/attach-session! "parent" attached)
+      (queue/enqueue! {:id "scout-result" :session "parent" :input "Three moorings."
+                       :origin {:kind :subagent}})
+      (with-redefs [bridge/dispatch! (fn [charge] (swap! seen conj charge) {})]
+        (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")})
+        (await-settled! "scout-result"))
+      (should= attached (:comm (first @seen)))))
+
+  (it "keeps a request's own comm ahead of the attachment"
+    (let [seen (atom [])]
+      (isaac.agent.comm.registry/attach-session! "parent" :toad)
+      (queue/enqueue! {:id "prompt" :session "parent" :input "Send a scout." :comm :prompt})
+      (with-redefs [bridge/dispatch! (fn [charge] (swap! seen conj charge) {})]
+        (sut/tick! {:now (Instant/parse "2026-03-01T18:00:00Z")})
+        (await-settled! "prompt"))
+      (should= :prompt (:comm (first @seen))))))

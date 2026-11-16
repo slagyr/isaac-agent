@@ -3,6 +3,7 @@
   (:require
     [clojure.string :as str]
     [isaac.agent.bridge.core :as bridge]
+    [isaac.agent.comm.registry :as comm-registry]
     [isaac.agent.charge :as charge]
     [isaac.foundation.config.loader :as loader]
     [isaac.agent.drive.weather :as weather]
@@ -76,7 +77,8 @@
                   (assoc :context-mode-override (keyword (get-in record [:frequencies :with-context-mode])))
                   (:crew record) (assoc :crew (:crew record))
                   (:effort record) (assoc :effort (:effort record))
-                  (queue/live-comm (:id record)) (assoc :comm (queue/live-comm (:id record)))
+                  (or (queue/live-comm (:id record)) (comm-registry/attached-comm session-key))
+                  (assoc :comm (or (queue/live-comm (:id record)) (comm-registry/attached-comm session-key)))
                   (:observers record) (assoc :observers (:observers record))
                   (:resource-pools record) (assoc :resource-pools (:resource-pools record))
                   (:key record) (assoc :key (:key record))
