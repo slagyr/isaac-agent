@@ -1,5 +1,6 @@
+@wip
 Feature: Subagents
-  agent__spawn starts a child turn on its own session and returns a handle
+  subagent__spawn starts a child turn on its own session and returns a handle
   at once; the parent stays free. When the child's turn ends, its result —
   final message, stats, child session — goes to the parent as a turn with
   origin :subagent (it joins a running turn per isaac-cgz9). The child
@@ -19,7 +20,7 @@ Feature: Subagents
     And the current session is "bridge"
 
   Scenario: spawn returns a handle at once and queues the child on its own session (isaac-p5d3)
-    When the tool "agent__spawn" is called with:
+    When the tool "subagent__spawn" is called with:
       | prompt | Find where the moorings are configured. |
     Then the tool result is not an error
     And the tool result JSON has:
@@ -36,7 +37,7 @@ Feature: Subagents
       | type | content                             | model |
       | text | Moorings live in config/harbor.edn. | echo  |
       | text | Noted, the scout found them.        | echo  |
-    When the tool "agent__spawn" is called with:
+    When the tool "subagent__spawn" is called with:
       | prompt | Find where the moorings are configured. |
     And the turn queue ticks at "2026-03-01T18:00:00"
     And the turn queue ticks at "2026-03-01T18:00:10"
@@ -53,7 +54,7 @@ Feature: Subagents
     Given the following model responses are queued:
       | type | content         | model  |
       | text | Three moorings. | squawk |
-    When the tool "agent__spawn" is called with:
+    When the tool "subagent__spawn" is called with:
       | prompt | Count the moorings. |
       | model  | parrot              |
       | effort | 3                   |
@@ -74,7 +75,7 @@ Feature: Subagents
     And the following model responses are queued:
       | type | content         | model  |
       | text | Three moorings. | squawk |
-    When the tool "agent__spawn" is called with:
+    When the tool "subagent__spawn" is called with:
       | prompt | Count the moorings. |
       | crew   | scout               |
     And the turn queue ticks at "2026-03-01T18:00:00"
@@ -88,7 +89,7 @@ Feature: Subagents
       | messages[0].content | #"(?s).*You are a scout.*" |
 
   Scenario: an unknown model fails the spawn and names the configured models (isaac-p5d3)
-    When the tool "agent__spawn" is called with:
+    When the tool "subagent__spawn" is called with:
       | prompt | Count the moorings. |
       | model  | albatross           |
     Then the tool result is an error
@@ -96,12 +97,12 @@ Feature: Subagents
     And the tool result contains "parrot"
     And the session count is 1
 
-  Scenario: a child's tools do not include agent__spawn (isaac-p5d3)
+  Scenario: a child's tools do not include subagent__spawn (isaac-p5d3)
     Given the following model responses are queued:
       | type | content | model |
       | text | Done.   | echo  |
-    When the tool "agent__spawn" is called with:
+    When the tool "subagent__spawn" is called with:
       | prompt | Look around. |
     Then the tool result is not an error
     When the turn queue ticks at "2026-03-01T18:00:00"
-    Then the last LLM request does not contain "agent__spawn"
+    Then the last LLM request does not contain "subagent__spawn"
