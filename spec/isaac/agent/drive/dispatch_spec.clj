@@ -12,6 +12,7 @@
     [isaac.agent.llm.api.protocol :as api]
     [isaac.agent.llm.providers :as providers]
     [isaac.foundation.nexus :as nexus]
+    [isaac.foundation.logger :as log]
     [speclj.core :refer :all]))
 
 (defn- broken-api [result]
@@ -162,3 +163,29 @@
 
     )
   )
+
+(describe "dispatch of a cancelled result (stop accounting)"
+  #_{:clj-kondo/ignore [:unresolved-symbol]}
+  (around [it] (nexus/-with-nested-nexus {:fs (fs/mem-fs)} (it)))
+  (after (sut/clear-last-request!))
+
+  (it "a Stop is not logged as a provider error"
+    (log/capture-logs
+      (let [result (sut/dispatch-chat-stream (broken-api {:error :cancelled :message "cancelled"
+                                                          :usage {:prompt-tokens 1500 :output-tokens 1}})
+                                             {:model "m"} (fn [_]))]
+        (should= :cancelled (:error result))
+        (should= [] (filterv #(= :error (:level %)) @log/captured-logs))
+        (should= [:info] (mapv :level (filter #(= :chat/cancelled (:event %)) @log/captured-logs)))))))
+
+(describe "dispatch of a bare cancelled result (stop accounting review)"
+  #_{:clj-kondo/ignore [:unresolved-symbol]}
+  (around [it] (nexus/-with-nested-nexus {:fs (fs/mem-fs)} (it)))
+  (after (sut/clear-last-request!))
+
+  (it "a bare {:error :cancelled} (grover, unnormalized providers) is not logged as an error"
+    (log/capture-logs
+      (let [result (sut/dispatch-chat-stream (broken-api {:error :cancelled}) {:model "m"} (fn [_]))]
+        (should= :cancelled (:error result))
+        (should= [] (mapv :event (filterv #(= :error (:level %)) @log/captured-logs)))
+        (should= [:info] (mapv :level (filter #(= :chat/cancelled (:event %)) @log/captured-logs)))))))

@@ -383,8 +383,14 @@
        (filter #(and (number? %) (pos? %)))
        last))
 
+(defn- kept-usage?
+  "A turn that never reaches store-response! but still spent tokens: it died
+   on a provider error, or the user stopped it. A Stop is not free."
+  [result]
+  (or (:error result) (:cancelled? result)))
+
 (defn- keep-cycle-usage* [ctx session-key result]
-  (when (:error result)
+  (when (kept-usage? result)
     (let [sess   (session-store ctx)
           tokens (extract-tokens result)
           input  (:input-tokens tokens 0)
@@ -522,6 +528,15 @@
                       (let [joined (emit-response-content! channel-impl session-key (cycle-now) result)]
                         (assoc result :content joined)))))))))
 
+
+(defn- interrupted-usage
+  "What a stopped turn cost, in the turn shape :turn/ended reports: a
+   provider's cancelled result counts its requests in :cycle-usages."
+  [loop-result]
+  (let [usage  (:usage loop-result)
+        cycles (:cycle-usages loop-result)]
+    (cond-> usage
+      (and (nil? (:requests usage)) (sequential? cycles)) (assoc :requests (count cycles)))))
 
 (def ended-by-values #{:reply :cycle-limit :cancelled :error :context-exhausted :provider-unavailable :suspended})
 
@@ -1184,7 +1199,9 @@
                                     (drive! [link req remaining]
                                       (engage! link req)
                                       (let [result  (attempt)
-                                            weather (provider-wall/fallback-weather result config (:provider-name link))]
+                                            weather (when-not (bridge/cancelled? session-key)
+                                                      (provider-wall/fallback-weather result config (:provider-name link)))]
+                                        ;; A Stop ends the turn: no wall, no next model.
                                         (if-not weather
                                           result
                                           (do
@@ -1216,7 +1233,7 @@
             ;; on its last request still burned the cycles that finished
             ;; (isaac-ewxh).
             _            (keep-cycle-usage! ctx session-key loop-result)
-            result       (if (:unavailable? loop-result)
+            result       (if (or (bridge/cancelled? session-key) (:unavailable? loop-result))
                            loop-result
                            (let [normalized (provider-wall/normalize loop-result config (:provider-name @active*))
                                  exhausted? (:loop-request? normalized)
@@ -1237,7 +1254,9 @@
                                  finalize-turn-result)))]
         (let [{:keys [model provider-name]} @active*
               answered result
-              result   (provider-wall/normalize result config provider-name)]
+              result   (if (bridge/cancelled? session-key)
+                         result
+                         (provider-wall/normalize result config provider-name))]
           (log/debug :turn/model-response-summary
                      :session session-key
                      :provider provider-name
@@ -1250,7 +1269,9 @@
                 (:cancelled? result)
                 (bridge/cancelled-response? result)
                 (bridge/cancelled? session-key))
-            (suspend/interrupt-result session-key)
+            ;; The turn's cost rides along so :turn/ended reports it.
+            (cond-> (suspend/interrupt-result session-key)
+              (map? (:usage loop-result)) (assoc :usage (interrupted-usage loop-result)))
 
             (weather/weather-reason result)
             (let [ss (or (:session-store ctx) (nexus/get-in [:sessions :store]))]

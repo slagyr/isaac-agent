@@ -28,6 +28,10 @@ Feature: Turn Cancellation
     When the user sends "think hard" on session "cancel-test"
     And the turn is cancelled on session "cancel-test"
     Then the turn result is "cancelled"
+    And the log has entries matching:
+      | level | event           |
+      | :info | :chat/cancelled |
+    And the log has 0 entries matching ":chat/stream-error"
 
   Scenario: session remains usable after cancel
     Given the following sessions exist:

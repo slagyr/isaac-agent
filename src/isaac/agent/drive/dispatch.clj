@@ -43,10 +43,18 @@
         (log/error :chat/provider-contract-violated :provider provider :errors messages)
         {:error :provider-contract :message (pr-str messages)}))))
 
+(defn- with-cancel-message
+  "A bare {:error :cancelled} (grover, or a provider that skips
+   api/normalize-error) is still a Stop, not a contract breach."
+  [result]
+  (cond-> result
+    (and (= :cancelled (:error result)) (nil? (:message result))) (assoc :message "cancelled")))
+
 (defn- validate-provider-result [provider result]
-  (if (:unavailable? result)
-    result
-    (or (contract-error provider result) result)))
+  (let [result (with-cancel-message result)]
+    (if (:unavailable? result)
+      result
+      (or (contract-error provider result) result))))
 
 (defn- broken-provider-error? [result]
   (contains? #{:api-error :llm-error} (:error result)))
@@ -83,10 +91,17 @@
 (defn- log-dispatch-result [p provider request result error-event response-event]
   (reset! last-result* result)
   (swap! results* conj result)
-  (if (:error result)
+  (cond
+    ;; A Stop is the user's choice, not a provider failure.
+    (= :cancelled (:error result))
+    (log/info :chat/cancelled :provider provider)
+
+    (:error result)
     (do
       (log/error error-event :provider provider :error (:error result) :status (:status result))
       (maybe-notify-broken! p provider request result))
+
+    :else
     (log/debug response-event (merge {:provider provider :model (:model result)}
                                      (response-preview result))))
   result)

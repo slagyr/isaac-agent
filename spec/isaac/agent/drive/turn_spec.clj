@@ -7,6 +7,8 @@
     [isaac.agent.comm.null :as null-comm]
     [isaac.foundation.config.api :as config]
     [isaac.agent.drive.dispatch :as dispatch]
+    [isaac.agent.drive.fallback :as fallback]
+    [isaac.agent.drive.provider-wall :as provider-wall]
     [isaac.agent.drive.observer :as observer]
     [isaac.agent.drive.continuation :as continuation]
     [isaac.agent.drive.request :as turn-request]
@@ -2248,3 +2250,130 @@
           (should= "assistant" (:role last-msg))
           (should= "Done: counted one can. Next: count lids" (:content last-msg)))))
     )
+
+(deftype CountingProvider [name calls]
+  api/Api
+  (chat [_ _] (swap! calls inc) {:content "relay" :model "relay-wire" :tool-calls [] :stop-reason :end-turn
+                                 :usage {:prompt-tokens 1 :output-tokens 1}})
+  (chat-stream [this req _] (api/chat this req))
+  (followup-messages [_ request _ _ _] (:messages request))
+  (config [_] {})
+  (display-name [_] name)
+  (format-tools [_ tools] (when (seq tools) (mapv api/wrapped-function-tool tools)))
+  (build-prompt [_ {:keys [model tools]}]
+    {:model model :messages [{:role "user" :content "hi"}] :tools tools}))
+
+(describe "stop accounting"
+  #_{:clj-kondo/ignore [:unresolved-symbol]}
+  (around [example]
+    (nexus/-with-nexus {:root test-dir :fs (fs/mem-fs)}
+      (helper/with-memory-store
+        (try (example)
+             (finally (bridge/clear!) (provider-wall/clear-walls!))))))
+
+  (it "keeps a cancelled turn's usage in the session, as a completed turn's would be"
+    ;; The provider driver's own cancelled shape: no :error, the turn's usage.
+    (helper/create-session! test-dir "stopped")
+    (helper/update-session! test-dir "stopped" {:input-tokens 1000 :output-tokens 10})
+    (with-redefs [tool-loop/run (fn [& _] {:response   nil
+                                           :tool-calls []
+                                           :usage      {:requests 1 :prompt-tokens 1500 :output-tokens 40
+                                                        :cache-read-tokens 300}
+                                           :cancelled? true})]
+      (let [result  (#'sut/execute-llm-turn! "stopped" "go" (base-execution-ctx (->TestProvider "test" {}) {:model "test-model" :soul "s" :crew "main" :comm null-comm/channel}))
+            session (helper/get-session test-dir "stopped")]
+        (should= "cancelled" (:stopReason result))
+        (should= 2500 (:input-tokens session))
+        (should= 50 (:output-tokens session))
+        (should= 300 (:cache-read session)))))
+
+  (it "keeps a provider's cancelled result's usage once"
+    (helper/create-session! test-dir "stopped-error")
+    (with-redefs [tool-loop/run (fn [& _] {:error :cancelled :cancelled? true
+                                           :usage {:prompt-tokens 1500 :output-tokens 1}
+                                           :cycle-usages [{:prompt-tokens 1500 :output-tokens 1}]})]
+      (let [result  (#'sut/execute-llm-turn! "stopped-error" "go" (base-execution-ctx (->TestProvider "test" {}) {:model "test-model" :soul "s" :crew "main" :comm null-comm/channel}))
+            session (helper/get-session test-dir "stopped-error")]
+        (should= "cancelled" (:stopReason result))
+        (should= 1500 (:input-tokens session))
+        (should= 1 (:output-tokens session)))))
+
+  (it "logs the cancelled turn's usage on :turn/ended"
+    (helper/create-session! test-dir "stopped-log")
+    (with-redefs [tool-loop/run (fn [& _] {:error :cancelled :cancelled? true
+                                           :usage {:prompt-tokens 1500 :output-tokens 1}
+                                           :cycle-usages [{:prompt-tokens 1500 :output-tokens 1}]})]
+      (let [result (#'sut/execute-llm-turn! "stopped-log" "go" (base-execution-ctx (->TestProvider "test" {}) {:model "test-model" :soul "s" :crew "main" :comm null-comm/channel}))]
+        (log/capture-logs
+          (#'sut/log-turn-ended! "stopped-log" result)
+          (let [entry (first (filter #(= :turn/ended (:event %)) @log/captured-logs))]
+            (should= :cancelled (:ended-by entry))
+            (should= 1 (:requests entry))
+            (should= 1500 (:prompt-tokens entry))
+            (should= 1 (:output-tokens entry)))))))
+
+  (it "never walls the provider or calls a fallback model when the turn was cancelled"
+    ;; A Stop that races provider weather (here a dropped connection, a
+    ;; fallback reason) must end the turn, not walk the crew's model chain.
+    (helper/create-session! test-dir "stopped-chain")
+    (bridge/begin-turn! "stopped-chain")
+    (let [relay-calls (atom 0)
+          loops       (atom 0)
+          relay       {:id "relay" :model "relay-wire" :context-window 128000
+                       :provider (->CountingProvider "relay" relay-calls) :provider-name "relay"}]
+      (with-redefs [fallback/fallback-links (fn [& _] [relay])
+                    tool-loop/run           (fn [& _]
+                                              (swap! loops inc)
+                                              (bridge/cancel! "stopped-chain")
+                                              {:error :connection-lost :unavailable? true :reason :connection-lost
+                                               :usage {:prompt-tokens 1500 :output-tokens 1}})]
+        (let [result (#'sut/execute-llm-turn! "stopped-chain" "go"
+                       (base-execution-ctx (->TestProvider "head" {}) {:model "test-model" :soul "s" :crew "main" :comm null-comm/channel}))]
+          (should= "cancelled" (:stopReason result))
+          (should= 1 @loops)
+          (should= 0 @relay-calls)
+          (should-be-nil (provider-wall/active-wall "head" nil)))))))
+
+(describe "stop accounting review"
+  #_{:clj-kondo/ignore [:unresolved-symbol]}
+  (around [example]
+    (nexus/-with-nexus {:root test-dir :fs (fs/mem-fs)}
+      (helper/with-memory-store
+        (try (example)
+             (finally (bridge/clear!) (provider-wall/clear-walls!))))))
+
+  (it "R2: a Stop that races a real provider error: cancel wins, usage kept, no wall, no fallback"
+    (helper/create-session! test-dir "race")
+    (bridge/begin-turn! "race")
+    (let [relay-calls (atom 0)
+          relay       {:id "relay" :model "relay-wire" :context-window 128000
+                       :provider (->CountingProvider "relay" relay-calls) :provider-name "relay"}]
+      (with-redefs [fallback/fallback-links (fn [& _] [relay])
+                    tool-loop/run           (fn [& _]
+                                              (bridge/cancel! "race")
+                                              {:error :rate-limited :status 429 :message "429 too many"
+                                               :usage {:prompt-tokens 1500 :output-tokens 1}})]
+        (log/capture-logs
+          (let [result  (#'sut/execute-llm-turn! "race" "go"
+                          (base-execution-ctx (->TestProvider "head" {}) {:model "test-model" :soul "s" :crew "main" :comm null-comm/channel}))
+                session (helper/get-session test-dir "race")]
+            (should= "cancelled" (:stopReason result))
+            (should= 1500 (:input-tokens session))
+            (should= 0 @relay-calls)
+            (should-be-nil (provider-wall/active-wall "head" nil))
+            (should= [] (filterv #(= :chat/provider-walled (:event %)) @log/captured-logs)))))))
+
+  (it "R5: a cancelled turn result reads as :ok to observers (Foreman's turn-observer)"
+    (should= :ok (observer/outcome (assoc (bridge/cancelled-result) :usage {:requests 1 :prompt-tokens 1500 :output-tokens 1}))))
+
+  (it "R7: driver no-error cancel shape reports :requests on :turn/ended"
+    (helper/create-session! test-dir "drv")
+    (with-redefs [tool-loop/run (fn [& _] {:response nil :tool-calls [] :cancelled? true
+                                           :usage {:requests 2 :prompt-tokens 3000 :output-tokens 40}})]
+      (let [result (#'sut/execute-llm-turn! "drv" "go" (base-execution-ctx (->TestProvider "test" {}) {:model "test-model" :soul "s" :crew "main" :comm null-comm/channel}))]
+        (log/capture-logs
+          (#'sut/log-turn-ended! "drv" result)
+          (let [entry (first (filter #(= :turn/ended (:event %)) @log/captured-logs))]
+            (should= :cancelled (:ended-by entry))
+            (should= 2 (:requests entry))
+            (should= 3000 (:prompt-tokens entry))))))))
