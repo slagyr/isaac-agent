@@ -2,6 +2,7 @@
   (:require
     [isaac.agent.bridge.resume :as sut]
     [isaac.foundation.config.api :as config]
+    [isaac.agent.drive.observer :as observer]
     [isaac.agent.drive.turn :as drive-turn]
     [isaac.foundation.fs :as fs]
     [isaac.foundation.logger :as log]
@@ -50,6 +51,54 @@
       (should= 1 (count turns))
       (should= "tide-9" (:id (first turns)))
       (should= :queued (:state (first turns)))))
+
+  (it "fails a markerless suspended scout and tells bridge why it died"
+    (helper/create-session! test-root "scout")
+    (queue/enqueue! {:id "scout-turn" :session "scout" :state :suspended
+                     :origin {:kind :subagent :parent "bridge"}
+                     :observers [[:subagent "bridge" "scout" "scout" "parrot"]]})
+    (let [deaths (atom [])]
+      (with-redefs [observer/notify! (fn [_ method ctx reason]
+                                       (swap! deaths conj [method (:request-id ctx) reason]))]
+        (sut/resume-interrupted-turns! {:session-store (store/registered-store)
+                                        :root test-root :cfg {}
+                                        :now (Instant/parse "2026-04-21T10:00:00Z")}))
+      (should= [[:on-turn-died "scout-turn" "interrupted by a restart"]] @deaths))
+    (let [record (first (binding [queue/*root* test-root] (queue/all-turns)))
+          entry  (first (filter #(= :subagent/orphaned (:event %)) @log/captured-logs))]
+      (should= :finished (:state record))
+      (should= :failed (:outcome record))
+      (should= :warn (:level entry))
+      (should= "bridge" (:parent entry))
+      (should= "scout" (:session entry))
+      (should= "scout-turn" (:turn-id entry))))
+
+  (it "fails a markerless running scout rather than requeuing it"
+    (helper/create-session! test-root "scout")
+    (queue/enqueue! {:id "scout-turn" :session "scout" :state :running
+                     :origin {:kind :subagent :parent "bridge"}
+                     :observers [[:subagent "bridge" "scout" "scout" "parrot"]]})
+    (with-redefs [observer/notify! (fn [& _] nil)]
+      (sut/resume-interrupted-turns! {:session-store (store/registered-store)
+                                      :root test-root :cfg {}
+                                      :now (Instant/parse "2026-04-21T10:00:00Z")}))
+    (should= :failed (:outcome (first (binding [queue/*root* test-root] (queue/all-turns)))))
+    (should= [] (binding [queue/*root* test-root] (queue/list-held))))
+
+  (it "leaves a marker-backed suspended scout for normal resume"
+    (helper/create-session! test-root "scout")
+    (queue/enqueue! {:id "scout-turn" :session "scout" :state :suspended
+                     :origin {:kind :subagent :parent "bridge"}
+                     :observers [[:subagent "bridge" "scout" "scout" "parrot"]]})
+    (store/record-turn-marker! (store/registered-store) "scout"
+                               {:session-id "scout" :suspended true :source :subagent
+                                :retry-at "2026-04-21T11:00:00Z"})
+    (with-redefs [observer/notify! (fn [& _] (throw (Exception. "not orphaned")))]
+      (sut/resume-interrupted-turns! {:session-store (store/registered-store)
+                                      :root test-root :cfg {}
+                                      :now (Instant/parse "2026-04-21T10:00:00Z")}))
+    (should= :suspended (:state (first (binding [queue/*root* test-root] (queue/all-turns)))))
+    (should= nil (first (filter #(= :subagent/orphaned (:event %)) @log/captured-logs))))
 
   (it "enqueues an interrupted comm turn on the turn queue instead of driving it on the scan thread"
     (helper/create-session! test-root "logbook")

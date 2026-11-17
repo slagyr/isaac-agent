@@ -99,6 +99,24 @@
         (sut/cancel-tool {"session_key" "bridge" "handle" "one"})
         (should= ["scout"] @cancelled))))
 
+  (it "cancels a suspended scout, clears its marker, and delivers cancellation to bridge"
+    (let [changes (atom [])
+          markers (atom [])
+          delivered (atom [])]
+      (with-redefs [bounds/session-store (constantly :store)
+                    bounds/root (constantly "/harbor")
+                    queue/all-turns (constantly [{:id "one" :session "scout" :state :suspended
+                                                  :origin {:kind :subagent :parent "bridge"}}])
+                    queue/update-turn! (fn [id attrs] (swap! changes conj [id attrs]))
+                    store/clear-turn-marker! (fn [_ session] (swap! markers conj session))
+                    store/get-session (fn [_ _] {:crew "scout" :model "parrot"})
+                    submit/submit! (fn [request] (swap! delivered conj request))]
+        (should= {:result "Child cancelled."} (sut/cancel-tool {"session_key" "bridge" "handle" "one"})))
+      (should= [["one" {:state :finished :outcome :cancelled}]] @changes)
+      (should= ["scout"] @markers)
+      (should= 1 (count @delivered))
+      (should= "Child cancelled." (first (clojure.string/split-lines (:prompt (first @delivered)))))))
+
   (it "does not call a wake hook while the child releases its leases"
     (let [wakes (atom 0)]
       (pool/set-wake-hook! #(swap! wakes inc))

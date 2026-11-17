@@ -54,7 +54,7 @@
               (deliver! parent child crew model
                         (cond-> ctx (= :cancelled outcome) (assoc :content "Child cancelled.")))))))
       (on-turn-died [_ ctx reason]
-        (queue/update-turn! (:request-id ctx) {:outcome :failed})
+        (queue/update-turn! (:request-id ctx) {:state :finished :outcome :failed})
         (log/info :subagent/ended :parent parent :session child :crew crew :model model
                   :cycles 0 :tokens 0 :outcome "failed")
         (deliver! parent child crew model (assoc ctx :content (str "Child failed: " reason)))))))
@@ -97,8 +97,10 @@
       (if-let [turn (some #(when (= handle (:id %)) %) (children parent))]
         (case (:state turn)
           :finished {:isError true :error "child already finished"}
-          (:queued :held :waiting-session)
-          (do (queue/update-turn! handle {:state :finished :outcome :cancelled})
+          (:queued :held :waiting-session :suspended)
+          (do (when (= :suspended (:state turn))
+                (store/clear-turn-marker! ss (:session turn)))
+              (queue/update-turn! handle {:state :finished :outcome :cancelled})
               (deliver! parent (:session turn) (:crew (store/get-session ss (:session turn)))
                         (:model (store/get-session ss (:session turn)))
                         {:request-id handle :content "Child cancelled." :result {}})

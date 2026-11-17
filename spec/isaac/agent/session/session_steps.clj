@@ -56,7 +56,8 @@
     [isaac.agent.spec-helper :as helper]
     [isaac.agent.tool.registry :as tool-registry]
     [isaac.agent.resource-pool :as pool]
-    [isaac.agent.turn.worker :as turn-worker]))
+    [isaac.agent.turn.worker :as turn-worker]
+    [isaac.agent.turn.queue :as turn-queue]))
 
 (helper! isaac.agent.session.session-steps)
 
@@ -1469,6 +1470,20 @@
   (when (and root store)
     (doseq [marker (session-impl-common/turn-markers* root (mem-fs))]
       (store/record-turn-marker! store (:session-id marker) marker))))
+
+(defn child-turn-left-suspended-by-shutdown []
+  (with-feature-fs
+    (fn []
+      (binding [turn-queue/*root* (root-dir)]
+        (let [children (filter #(= :subagent (get-in % [:origin :kind])) (turn-queue/all-turns))
+              child    (first children)]
+          (when-not (= 1 (count children))
+            (throw (ex-info "expected one child turn" {:children (count children)})))
+          (turn-queue/update-turn! (:id child) {:state :suspended})
+          (store/clear-turn-marker! (session-store) (:session child)))))))
+
+(defgiven "the child turn is left suspended by a shutdown"
+  isaac.agent.session.session-steps/child-turn-left-suspended-by-shutdown)
 
 (defn interrupted-turns-resumed [instant]
   (with-feature-fs

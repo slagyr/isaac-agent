@@ -6,6 +6,7 @@
     [isaac.foundation.logger :as log]
     [isaac.foundation.nexus :as nexus]
     [isaac.agent.resource-pool :as pool]
+    [isaac.agent.drive.observer :as observer]
 
     [isaac.agent.session.store.impl-common :as store-common]
     [isaac.agent.session.store.spi :as store]
@@ -198,6 +199,20 @@
           (finally
             (clear-marker! session-store root session-id)))))))
 
+(defn- fail-orphaned-subagents! [root markers]
+  (let [marked (set (map :session-id markers))]
+    (binding [queue/*root* root]
+      (doseq [record (queue/all-turns)
+              :when (and (= :subagent (get-in record [:origin :kind]))
+                         (#{:running :suspended} (:state record))
+                         (not (contains? marked (:session record))))]
+        (let [parent (get-in record [:origin :parent])]
+          (queue/update-turn! (:id record) {:state :finished :outcome :failed})
+          (log/warn :subagent/orphaned :parent parent :session (:session record) :turn-id (:id record))
+          (observer/ensure-builtins!)
+          (observer/notify! (keep observer/resolve-ref (:observers record))
+                            :on-turn-died {:request-id (:id record)} "interrupted by a restart"))))))
+
 (defn resume-interrupted-turns!
   [{:keys [session-store root now cfg resume-window-ms]
     :or   {resume-window-ms default-resume-window-ms}}]
@@ -220,6 +235,7 @@
         _          (binding [queue/*root* root]
                      (doseq [record (queue/all-turns)
                              :when (and (= :running (:state record))
+                                        (not= :subagent (get-in record [:origin :kind]))
                                         (not (some #(= (:session record) (:session-id %)) markers)))]
                        (queue/update-turn! (:id record) {:state :queued})))
         _          (doseq [marker markers]
@@ -230,6 +246,7 @@
                             :requeued 0
                             :dropped  0}
                            markers)]
+    (fail-orphaned-subagents! root markers)
     (log/info :resume/scan-complete
               :markers (:markers summary)
               :requeued (:requeued summary)

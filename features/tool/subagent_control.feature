@@ -161,7 +161,6 @@ Feature: Subagent control
       | -2     | message | user         | #"(?s).*Three moorings\..*" |
       | -1     | message | assistant    | Noted.                      |
 
-  @wip
   Scenario: cancelling a suspended child finishes it and frees its slot (isaac-hkfw)
     Given config:
       | key                         | value |
@@ -191,7 +190,6 @@ Feature: Subagent control
       | prompt | Count the buoys. |
     Then the tool result is not an error
 
-  @wip
   Scenario: a child left suspended with nothing to resume is failed at boot and frees its slot (isaac-hkfw)
     Given config:
       | key                         | value |
