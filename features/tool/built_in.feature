@@ -202,12 +202,14 @@ Feature: Built-in Tools
     And the tool result is not this process's group id
 
   @wip
-  Scenario: A timed-out command's background children stop with it (isaac-hqb6)
+  Scenario: A timed-out command's background child is stopped with it (isaac-hqb6)
+    Given a directory "bgdir" exists with files "marker.txt"
     When the tool "exec__run" is called with:
       | command | sleep 300 & echo $! > bg.pid; wait |
+      | workdir | bgdir                              |
       | timeout | 500                                |
     Then the tool result is an error
-    And the process recorded in file "bg.pid" is not running
+    And the process recorded in file "bgdir/bg.pid" is not running
 
   Scenario: Execute with a working directory
     Given a directory "subdir" exists with files "target.txt"
