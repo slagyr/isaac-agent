@@ -128,5 +128,10 @@
               (bounds/path-outside-error workdir))))
         (try
           (wait-for-process! (start-process args) session-key timeout-ms)
+          ;; An IOException here is the OS refusing the spawn (a bad workdir,
+          ;; a missing shell): the model's or the machine's problem, handed back.
+          ;; Anything else is Isaac failing while running the tool: a fault.
+          (catch java.io.IOException e
+            {:isError true :error (.getMessage e)})
           (catch Exception e
-            {:isError true :error (.getMessage e)})))))
+            {:isError true :error (.getMessage e) :fault true})))))

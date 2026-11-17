@@ -17,12 +17,16 @@ Feature: Tool execution logging
       | level  | event        | tool | result-chars |
       | :debug | :tool/result | fs__read | #"[1-9]\d*" |
 
-  Scenario: Tool failure is logged at error with tool context
+  Scenario: A tool's own error result is logged at info with tool context
     When tool "fs__read" is executed with:
       | file_path | /no/such/path/that/exists |
-    Then the log has entries matching:
-      | level  | event                | tool | arguments.file_path       |
-      | :error | :tool/execute-failed | fs__read | /no/such/path/that/exists |
+    Then the tool result should indicate an error
+    And the log has entries matching:
+      | level | event              | tool     | arguments.file_path       |
+      | :info | :tool/error-result | fs__read | /no/such/path/that/exists |
+    And the log has no entries matching:
+      | level  |
+      | :error |
 
   Scenario: Nil tool result is treated as an error
     Given a tool "nil-tool" that returns nil is registered

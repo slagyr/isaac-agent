@@ -334,9 +334,20 @@
   ;; Post-processing shared by the synchronous and future-backed call paths:
   ;; isError / nil / {:error :cancelled} pass through verbatim; everything
   ;; else gets capped and logged.
+  ;;
+  ;; An isError result is the tool working as designed — a non-zero exit, a
+  ;; path refused by policy, an edit that did not match — handed back to the
+  ;; model to recover from. That is turn data, not a server fault: info, under
+  ;; its own event. :tool/execute-failed at :error stays for the handler that
+  ;; threw or returned nil, and for an isError the handler marks :fault true
+  ;; (it caught its own crash); :fault never reaches the caller.
   (cond
-    (:isError value)
+    (and (:isError value) (:fault value))
     (do (log/error :tool/execute-failed :tool name :arguments log-args :cwd cwd :error (:error value))
+        (dissoc value :fault))
+
+    (:isError value)
+    (do (log/info :tool/error-result :tool name :arguments log-args :cwd cwd :error (:error value))
         value)
 
     (nil? value)

@@ -456,11 +456,23 @@
         (should-not-be-nil err)
         (should= :tool/execute-failed (:event err))))
 
-    (it "logs tool execute-failed when handler returns isError"
+    (it "logs an isError result at info as :tool/error-result, never at error"
       (sut/register! {:name "failer" :handler (fn [_] {:isError true :error "bad input"})})
       (sut/execute "failer" {})
+      (let [entry (first (filter #(= :tool/error-result (:event %)) @log/captured-logs))]
+        (should= :info (:level entry))
+        (should= "failer" (:tool entry))
+        (should= "bad input" (:error entry))
+        (should-not (some #(= :error (:level %)) @log/captured-logs))))
+
+    (it "returns the isError result to the caller unchanged"
+      (sut/register! {:name "failer" :handler (fn [_] {:isError true :error "bad input"})})
+      (should= {:isError true :error "bad input"} (sut/execute "failer" {})))
+
+    (it "logs tool execute-failed at error when handler returns nil"
+      (sut/register! {:name "nada" :handler (fn [_] nil)})
+      (sut/execute "nada" {})
       (let [err (first (filter #(= :error (:level %)) @log/captured-logs))]
-        (should-not-be-nil err)
         (should= :tool/execute-failed (:event err))))
 
     (it "logs tool error for unknown tool"
@@ -496,11 +508,11 @@
       (let [err (first (filter #(= :error (:level %)) @log/captured-logs))]
         (should= {:input "data"} (:arguments err))))
 
-    (it "includes arguments in :tool/execute-failed log when handler returns isError"
+    (it "includes arguments in :tool/error-result log when handler returns isError"
       (sut/register! {:name "failer" :handler (fn [_] {:isError true :error "bad input"})})
       (sut/execute "failer" {:key "val"})
-      (let [err (first (filter #(= :error (:level %)) @log/captured-logs))]
-        (should= {:key "val"} (:arguments err))))
+      (let [entry (first (filter #(= :tool/error-result (:event %)) @log/captured-logs))]
+        (should= {:key "val"} (:arguments entry))))
 
     (describe "cwd in log events"
 
