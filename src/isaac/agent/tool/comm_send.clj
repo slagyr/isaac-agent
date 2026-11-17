@@ -1,13 +1,15 @@
 (ns isaac.agent.tool.comm-send
   (:require
     [clojure.string :as str]
+    [isaac.agent.comm.allow :as allow]
     [isaac.agent.comm.delivery.queue :as queue]
     [isaac.agent.comm.factory :as comm-factory]
     [isaac.agent.config.defaults :as defaults]
     [isaac.agent.session.store.spi :as store]
     [isaac.agent.tool.fs-bounds :as bounds]
     [isaac.foundation.config.loader :as loader]
-    [isaac.foundation.fs :as fs]))
+    [isaac.foundation.fs :as fs]
+    [isaac.foundation.logger :as log]))
 
 (def ^:private attachments-description
   "Local file paths to attach. Only comms that accept attachments take them.")
@@ -157,8 +159,15 @@
                  [(arg-value args %)])
           (required-send-fields send-schema)))
 
+(defn- refuse-target! [comm-kw comm-str record]
+  (let [target (allow/record-target record)]
+    (log/warn :comm/outbound-refused :comm comm-kw :target target)
+    (error (str "comm " comm-str " refused target " (or target "(none)")
+                ": not on the outbound allow-list"))))
+
 (defn- enqueue-for-slot! [args comm-str content {comm-kw :record-key slot-cfg :cfg} module-index]
   (let [send-schema (send-schema-for-slot module-index comm-kw slot-cfg)
+        record      (build-record comm-kw content args send-schema)
         missing     (missing-send-fields args send-schema)
         attachments (attachment-args args)
         attaching?  (and (vector? attachments) (seq attachments))
@@ -169,6 +178,9 @@
                   (name (impl-keyword comm-kw slot-cfg))
                   ": "
                   (str/join ", " (map name missing))))
+
+      (not (allow/allowed? slot-cfg record))
+      (refuse-target! comm-kw comm-str record)
 
       (= ::invalid attachments)
       (error "attachments must be an array of file paths")
@@ -186,7 +198,7 @@
             crew        (when session-key
                           (or (:crew session)
                               (defaults/crew-id (loader/snapshot "comm_send: default crew"))))]
-        {:result (:id (queue/enqueue! (cond-> (build-record comm-kw content args send-schema)
+        {:result (:id (queue/enqueue! (cond-> record
                                         session-key (assoc :crew crew :session session-key)
                                         (seq (:paths resolved)) (assoc :attachments (:paths resolved)))))}))))
 

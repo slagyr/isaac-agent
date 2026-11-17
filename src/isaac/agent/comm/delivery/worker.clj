@@ -1,7 +1,9 @@
 (ns isaac.agent.comm.delivery.worker
   (:require
+    [isaac.agent.comm.allow :as allow]
     [isaac.agent.comm.delivery.queue :as queue]
     [isaac.agent.comm.protocol :as comm]
+    [isaac.foundation.config.loader :as loader]
     [isaac.agent.comm.registry :as comm-registry]
     [isaac.foundation.logger :as log]
     [isaac.foundation.nexus :as nexus]
@@ -24,26 +26,15 @@
 (defn- backoff-ms [attempts]
   (get delays-ms attempts))
 
-(defn- record-target
-  "The recipient this record actually carries. Comms name it in their own
-   keyword namespace (:imessage/target, :discord/target); the generic
-   :target is optional (comm_send and attention config write it). Reading
-   only :target logged `:target nil` on every iMessage line, which reads as
-   \"this record has no recipient\" — a live and misleading hypothesis to
-   hand someone diagnosing a dead delivery."
-  [record]
-  (or (:target record)
-      (some (fn [[k v]]
-              (when (and (keyword? k) (= "target" (name k))) v))
-            record)))
-
 (defn- audit-fields
   "Structured fields shared by the :comm.delivery/* audit events. The
    comm's :result carries the failure reason; without it the log says only
    that something failed."
   ([record] (audit-fields record nil))
   ([record result]
-   (let [target (record-target record)]
+   ;; Reading only :target logged `:target nil` on every iMessage line,
+   ;; which reads as "this record has no recipient" during diagnosis.
+   (let [target (allow/record-target record)]
      (cond-> {:id   (:id record)
               :comm (:comm record)}
        (some? target)          (assoc :target target)
@@ -59,9 +50,14 @@
                     :reason   reason)))
 
 (defn send! [record]
-  (if-let [comm-inst (comm-registry/comm-for (:comm record))]
-    (comm/send! comm-inst record)
-    {:ok false :transient? false}))
+  (let [slot-cfg (get-in (loader/snapshot "delivery worker tick") [:comms (:comm record)])]
+    (if-not (allow/allowed? slot-cfg record)
+      (do
+        (log/warn :comm/outbound-refused :comm (:comm record) :target (allow/record-target record))
+        {:ok false :transient? false :error :comm/outbound-refused})
+      (if-let [comm-inst (comm-registry/comm-for (:comm record))]
+        (comm/send! comm-inst record)
+        {:ok false :transient? false}))))
 
 (defn- due? [record now]
   (if-let [next-attempt-at (:next-attempt-at record)]

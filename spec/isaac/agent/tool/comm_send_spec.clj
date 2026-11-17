@@ -3,12 +3,14 @@
     [isaac.agent.comm.delivery.queue :as queue]
     [isaac.foundation.config.loader :as loader]
     [isaac.foundation.fs :as fs]
+    [isaac.foundation.logger :as log]
     [isaac.foundation.marigold :as marigold]
     [isaac.foundation.nexus :as nexus]
     [isaac.agent.session.spec-helper :as store-helper]
     [isaac.agent.spec-helper :as helper]
     [isaac.agent.session.store.spi :as store]
     [isaac.agent.tool.comm-send :as sut]
+    [isaac.agent.tool.registry :as registry]
     [speclj.core :refer :all]))
 
 (def ^:private api-safe-property-key-re
@@ -50,6 +52,15 @@
                                                  :telly/loft   {:type :string}}}}}}}}
         "comm_send spec")
       (example)))
+
+  (it "never logs a refused comm body through generic tool telemetry"
+    (loader/set-snapshot!
+      (assoc-in (loader/snapshot "comm_send spec") [:comms :tannoy :comm/allow-to] ["bridge"])
+      "comm_send refusal spec")
+    (registry/register! {:name "comm__send" :builtin? true :handler #'sut/comm-send-tool})
+    (registry/execute "comm__send" {"comm" "tannoy" "content" "Lantern is lit."
+                                     "telly.target" "stowaway"})
+    (should-not-contain "Lantern is lit." (pr-str @log/captured-logs)))
 
   (describe "build-parameters"
 
@@ -137,6 +148,57 @@
                                         "telly.loft"   "high"})]
         (should-not (:isError result))
         (should= 1 (count (queue/list-pending)))))
+
+    (describe "outbound allow-list (:comm/allow-to)"
+
+      #_{:clj-kondo/ignore [:unresolved-symbol]}
+      (around [example]
+        (loader/set-snapshot!
+          (assoc-in (loader/snapshot "comm_send spec") [:comms :tannoy :comm/allow-to] ["bridge"])
+          "comm_send spec allow-to")
+        (example))
+
+      (it "delivers to a target on the slot's allow-list"
+        (let [result (sut/comm-send-tool {"comm" "tannoy" "content" "Lantern is lit."
+                                          "telly.target" "bridge"})]
+          (should-not (:isError result))
+          (should= "bridge" (:telly/target (first (queue/list-pending))))))
+
+      (it "refuses a target not on the allow-list without enqueueing"
+        (let [result (sut/comm-send-tool {"comm" "tannoy" "content" "Lantern is lit."
+                                          "telly.target" "stowaway"})]
+          (should (:isError result))
+          (should= "comm tannoy refused target stowaway: not on the outbound allow-list"
+                   (:error result))
+          (should= [] (queue/list-pending))))
+
+      (it "logs a refused send at warn, naming the target but never the body"
+        (sut/comm-send-tool {"comm" "tannoy" "content" "Lantern is lit."
+                             "telly.target" "stowaway"})
+        (let [entry (first (filter #(= :comm/outbound-refused (:event %)) @log/captured-logs))]
+          (should= :warn (:level entry))
+          (should= :tannoy (:comm entry))
+          (should= "stowaway" (:target entry))
+          (should-not-contain "Lantern" (pr-str entry))))
+
+      (it "refuses a send that names no target once the list is enabled"
+        (let [result (sut/comm-send-tool {"comm" "tannoy" "content" "Lantern is lit."})]
+          (should (:isError result))
+          (should= [] (queue/list-pending))))
+
+      (it "refuses every target when the list is empty (fail-closed)"
+        (loader/set-snapshot!
+          (assoc-in (loader/snapshot "comm_send spec") [:comms :tannoy :comm/allow-to] [])
+          "comm_send spec empty allow-to")
+        (let [result (sut/comm-send-tool {"comm" "tannoy" "content" "Lantern is lit."
+                                          "telly.target" "bridge"})]
+          (should (:isError result))
+          (should= [] (queue/list-pending))))
+
+      (it "leaves slots without :comm/allow-to unfiltered"
+        (let [result (sut/comm-send-tool {"comm" "skybeam" "content" "Anyone there?"})]
+          (should-not (:isError result))
+          (should= 1 (count (queue/list-pending))))))
 
     (describe "attachments"
 

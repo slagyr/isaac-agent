@@ -4,6 +4,7 @@
     [isaac.agent.comm.delivery.worker :as sut]
     [isaac.agent.comm.protocol :as comm]
     [isaac.agent.comm.registry :as comm-registry]
+    [isaac.foundation.config.loader :as loader]
     [isaac.foundation.config.root :as root]
     [isaac.foundation.fs :as fs]
     [isaac.foundation.logger :as log]
@@ -58,6 +59,20 @@
     (it "returns permanent failure when no comm is registered for that key"
       (should= {:ok false :transient? false}
                (sut/send! {:comm :pigeon :target "L1" :content "Hello"}))))
+
+  (it "does not send an already queued record to a target removed from the allow-list"
+    (loader/set-snapshot! {:comms {:stub {:comm/allow-to ["bridge"]}}} "delivery allow-list spec")
+    (let [sent (atom nil)]
+      (comm-registry/register-instance! "stub" (->RecordingComm sent))
+      (queue/enqueue! {:id "7f3a" :comm :stub :target "stowaway" :content "secret"})
+      (sut/tick! {:now (Instant/parse "2026-04-21T10:00:00Z")})
+      (should-be-nil @sent)
+      (should-be-nil (queue/read-pending "7f3a"))
+      (should= 0 (:attempts (queue/read-failed "7f3a")))
+      (should= {:level :warn :event :comm/outbound-refused :comm :stub :target "stowaway"}
+               (select-keys (last (filter #(= :comm/outbound-refused (:event %)) @log/captured-logs))
+                            [:level :event :comm :target]))
+      (should-not-contain "secret" (pr-str @log/captured-logs))))
 
   (it "leads a delivered note with the comm's place marker"
     (let [sessions (sidecar/create-store "/test/isaac")]

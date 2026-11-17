@@ -149,11 +149,12 @@
                    (nil? result)    :nil
                    :else            :other)})
 
-(defn- log-arguments [arguments]
+(defn- log-arguments [name arguments]
   (into {}
         (keep (fn [[k v]]
                 (let [kw (if (string? k) (keyword k) k)]
-                  (when-not (contains? #{:session_key :turn_cwd} kw)
+                  (when-not (or (contains? #{:session_key :turn_cwd} kw)
+                                (and (= "comm__send" name) (= :content kw)))
                     [kw v]))))
         arguments))
 
@@ -361,7 +362,7 @@
 (defn- run-handler [name arguments caps]
   (if-let [tool (lookup name)]
     (let [cwd         (tool-cwd arguments)
-          log-args    (log-arguments arguments)
+          log-args    (log-arguments name arguments)
           caps*       (or caps (snapshot-caps))
           timeout-ms  (effective-timeout-ms tool arguments caps*)
           session-key (session-key-of arguments)]

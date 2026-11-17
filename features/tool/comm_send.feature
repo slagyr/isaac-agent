@@ -164,7 +164,6 @@ Feature: comm_send tool
   # Outbound allow-list (isaac-tnry): a comm slot may name the only targets it
   # will send to. The inbound allow-from lists never guarded the way out.
 
-  @wip
   Scenario: a send to a target on the slot's allow-list is enqueued (isaac-tnry)
     Given the telly comm module is registered
     And config:
@@ -183,7 +182,6 @@ Feature: comm_send tool
       | content      | Lantern is lit. |
       | telly/target | bridge          |
 
-  @wip
   Scenario: a send to a target off the allow-list is refused and logged without its body (isaac-tnry)
     Given the telly comm module is registered
     And config:
@@ -203,7 +201,6 @@ Feature: comm_send tool
       | warn  | :comm/outbound-refused | tannoy | stowaway |
     And the log has 0 entries matching "Lantern is lit"
 
-  @wip
   Scenario: an empty allow-list refuses every send (isaac-tnry)
     Given the telly comm module is registered
     And config:

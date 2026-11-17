@@ -10,7 +10,6 @@ Feature: one command adds an outbound recipient (isaac-tnry)
     And the user home directory is "/tmp/grover-home"
     And the telly comm module is registered
 
-  @wip
   Scenario: comms allow adds a target to the slot's allow-list
     Given config file "isaac.edn" containing:
       """
@@ -28,7 +27,6 @@ Feature: one command adds an outbound recipient (isaac-tnry)
     And the stdout contains "lookout"
     And the exit code is 0
 
-  @wip
   Scenario: comms allow on a slot that does not exist is refused
     Given config file "isaac.edn" containing:
       """

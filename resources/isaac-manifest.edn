@@ -148,6 +148,10 @@
    :summary "Inspect and evict held turn requests",
    :namespace isaac.agent.turn.cli
    :hosted true},
+  :comms
+  {:usage "comms allow <slot> [<target>]",
+   :summary "Manage comm slots' outbound allow-lists",
+   :namespace isaac.agent.comm.cli},
   :sessions
   {:usage "sessions [subcommand] [options]",
    :summary "Manage stored conversation sessions",
@@ -895,7 +899,10 @@
                                                   :validations  [[:registered-in? :isaac.agent/comm [:comms]]]}
                                            :crew {:type        :id
                                                   :description "Crew id this comm routes into"
-                                                  :validations [:crew-exists?]}}}}}}
+                                                  :validations [:crew-exists?]}
+                                           :comm/allow-to {:type        :seq
+                                                           :spec        {:type :string}
+                                                           :description "Outbound allowlist: the only targets comm_send may address on this slot. nil/missing = no filter; empty list = fail-closed. Add one with: isaac comms allow <slot> <target>"}}}}}}
 
  :isaac.agent/context-mode
  {:full {:factory isaac.agent.session.context-mode/identity-transcript}
