@@ -160,3 +160,61 @@ Feature: Subagent control
       | #index | type    | message.role | message.content             |
       | -2     | message | user         | #"(?s).*Three moorings\..*" |
       | -1     | message | assistant    | Noted.                      |
+
+  @wip
+  Scenario: cancelling a suspended child finishes it and frees its slot (isaac-hkfw)
+    Given config:
+      | key                         | value |
+      | defaults.crew.max-subagents | 1     |
+    And the following model responses are queued:
+      | type | content | model |
+      | text | Noted.  | echo  |
+    When the tool "subagent__spawn" is called with:
+      | prompt | Count the moorings. |
+    Then the tool result JSON has:
+      | path   | value        |
+      | handle | #"\S+":scout |
+    Given the child turn is left suspended by a shutdown
+    When the tool "subagent__cancel" is called with:
+      | handle | #scout |
+    Then the tool result is not an error
+    When the turn queue ticks at "2026-03-01T18:00:00"
+    Then session "bridge" has transcript matching:
+      | #index | type    | message.role | message.content      |
+      | -2     | message | user         | #"(?s).*cancelled.*" |
+      | -1     | message | assistant    | Noted.               |
+    When the tool "subagent__list" is called
+    Then the tool result JSON has:
+      | path              | value     |
+      | children[0].state | cancelled |
+    When the tool "subagent__spawn" is called with:
+      | prompt | Count the buoys. |
+    Then the tool result is not an error
+
+  @wip
+  Scenario: a child left suspended with nothing to resume is failed at boot and frees its slot (isaac-hkfw)
+    Given config:
+      | key                         | value |
+      | defaults.crew.max-subagents | 1     |
+    And the following model responses are queued:
+      | type | content | model |
+      | text | Noted.  | echo  |
+    When the tool "subagent__spawn" is called with:
+      | prompt | Count the moorings. |
+    Given the child turn is left suspended by a shutdown
+    When interrupted turns are resumed at "2026-03-01T18:00:00Z"
+    Then the log has entries matching:
+      | level | event              | parent |
+      | :warn | :subagent/orphaned | bridge |
+    When the turn queue ticks at "2026-03-01T18:00:00"
+    Then session "bridge" has transcript matching:
+      | #index | type    | message.role | message.content                                      |
+      | -2     | message | user         | #"(?s).*Child failed: interrupted by a restart.*"    |
+      | -1     | message | assistant    | Noted.                                               |
+    When the tool "subagent__list" is called
+    Then the tool result JSON has:
+      | path              | value  |
+      | children[0].state | failed |
+    When the tool "subagent__spawn" is called with:
+      | prompt | Count the buoys. |
+    Then the tool result is not an error
