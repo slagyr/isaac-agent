@@ -98,6 +98,16 @@
        (sort-by :created-at)
        last))
 
+(defn- resumed-observers
+  "The marker owns weather-parked observers; restart markers have none, so
+   carry the interrupted record's observers and its original request id."
+  [marker old-record]
+  (if (:observers marker)
+    {:observers (:observers marker) :observer-turn-id (:turn-id marker)}
+    (when (seq (:observers old-record))
+      {:observers        (:observers old-record)
+       :observer-turn-id (or (:observer-turn-id old-record) (:id old-record))})))
+
 (defn- enqueue-resume-turn!
   "Parks the resumed turn in the normal turn queue (isaac-yxch). Resume is
    recovery work, not boot work: the scan hands the turn over and returns, so
@@ -117,13 +127,12 @@
                             {:role "user" :content resume-note})
     (binding [queue/*root* root]
       (let [old-record (running-record-for-session session-id)
-            new-record (queue/enqueue! (cond-> {:session session-id
+            new-record (queue/enqueue! (cond-> (merge {:session session-id
                                                 :input   resume-note
                                                 :origin  {:kind :resume :source (:source marker)}
                                                 :root    root
                                                 :resource-pools (mapv (comp keyword :pool) (:leases marker))}
-                                          (:observers marker) (assoc :observers (:observers marker)
-                                                                     :observer-turn-id (:turn-id marker))
+                                                      (resumed-observers marker old-record))
                                           old-record (assoc :resumes (:id old-record)
                                                             :from (:from old-record)
                                                             :for (:for old-record))))]

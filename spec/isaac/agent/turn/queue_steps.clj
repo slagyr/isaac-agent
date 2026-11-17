@@ -60,7 +60,7 @@
 (fcli/register-isaac-run-postflight!
   (fn []
     (when-let [output (g/get :output)]
-      (when-let [[_ id] (re-find #"(?:held|waiting):\s+([a-z0-9-]+)" output)]
+      (when-let [[_ id] (re-find #"(?:held|waiting|resumed-by):\s+([a-z0-9-]+)" output)]
         (g/assoc! :held-id id))
       (when-let [[_ id] (re-find #"(?:queued|held):\s+([a-z0-9-]+)" output)]
         (g/assoc! :turn-id id)))))

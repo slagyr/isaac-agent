@@ -1,5 +1,6 @@
 (ns isaac.agent.bridge.resume-spec
   (:require
+    [isaac.agent.bridge.core :as bridge]
     [isaac.agent.bridge.resume :as sut]
     [isaac.foundation.config.api :as config]
     [isaac.agent.drive.observer :as observer]
@@ -12,6 +13,7 @@
     [isaac.agent.session.store.spi :as store]
     [isaac.agent.spec-helper :as foundation-helper]
     [isaac.agent.turn.queue :as queue]
+    [isaac.agent.turn.worker :as worker]
     [speclj.core :refer :all])
   (:import
     (java.time Instant)))
@@ -229,6 +231,74 @@
     (let [record (first (binding [queue/*root* test-root] (queue/list-held)))]
       (should= [[:subagent "bridge" "child" "scout" "parrot"]] (:observers record))
       (should= "child-turn" (:observer-turn-id record))))
+
+  (it "carries the interrupted record's observers when the restart marker has none"
+    (helper/create-session! test-root "bean-demo")
+    (queue/enqueue! {:id "t-orig" :session "bean-demo" :input "Work the bean" :state :running
+                     :observers [[:foreman "bean-work" "demo-1" {:mode :event :action :work}]]})
+    (store/record-turn-marker! (store/registered-store) "bean-demo"
+                               {:source :hail :session-id "bean-demo" :suspended true
+                                :started-at "2026-04-21T09:59:30Z"})
+    (sut/resume-interrupted-turns! {:session-store (store/registered-store)
+                                    :root test-root :cfg {}
+                                    :now (Instant/parse "2026-04-21T10:00:00Z")})
+    (let [record (first (remove #(= "t-orig" (:id %))
+                                (binding [queue/*root* test-root] (queue/all-turns))))]
+      (should= [[:foreman "bean-work" "demo-1" {:mode :event :action :work}]] (:observers record))
+      (should= "t-orig" (:observer-turn-id record))))
+
+  (it "keeps the first request id across a second restart"
+    (helper/create-session! test-root "bean-demo")
+    (queue/enqueue! {:id "t-resume-1" :session "bean-demo" :input "Continue" :state :running
+                     :observers [[:foreman "bean-work" "demo-1"]]
+                     :observer-turn-id "t-orig"})
+    (store/record-turn-marker! (store/registered-store) "bean-demo"
+                               {:source :hail :session-id "bean-demo" :suspended true
+                                :started-at "2026-04-21T09:59:30Z"})
+    (sut/resume-interrupted-turns! {:session-store (store/registered-store)
+                                    :root test-root :cfg {}
+                                    :now (Instant/parse "2026-04-21T10:00:00Z")})
+    (let [record (first (remove #(= "t-resume-1" (:id %))
+                                (binding [queue/*root* test-root] (queue/all-turns))))]
+      (should= [[:foreman "bean-work" "demo-1"]] (:observers record))
+      (should= "t-orig" (:observer-turn-id record))))
+
+  (it "adds no observer fields when the interrupted record had none"
+    (helper/create-session! test-root "logbook")
+    (queue/enqueue! {:id "t-orig" :session "logbook" :input "Daily check" :state :running})
+    (store/record-turn-marker! (store/registered-store) "logbook"
+                               {:source :cron :session-id "logbook"
+                                :started-at "2026-04-21T09:59:30Z"})
+    (sut/resume-interrupted-turns! {:session-store (store/registered-store)
+                                    :root test-root :cfg {}
+                                    :now (Instant/parse "2026-04-21T10:00:00Z")})
+    (let [record (first (remove #(= "t-orig" (:id %))
+                                (binding [queue/*root* test-root] (queue/all-turns))))]
+      (should-not-contain :observers record)
+      (should-not-contain :observer-turn-id record)))
+
+  (it "drives the resumed turn with the observers and the original request id"
+    (helper/create-session! test-root "bean-demo")
+    (queue/enqueue! {:id "t-orig" :session "bean-demo" :input "Work the bean" :state :running
+                     :observers [[:foreman "bean-work" "demo-1"]]})
+    (store/record-turn-marker! (store/registered-store) "bean-demo"
+                               {:source :hail :session-id "bean-demo" :suspended true
+                                :started-at "2026-04-21T09:59:30Z"})
+    (sut/resume-interrupted-turns! {:session-store (store/registered-store)
+                                    :root test-root :cfg {}
+                                    :now (Instant/parse "2026-04-21T10:00:00Z")})
+    (let [seen (atom nil)
+          id   (:id (first (remove #(= "t-orig" (:id %))
+                                   (binding [queue/*root* test-root] (queue/all-turns)))))]
+      (binding [queue/*root* test-root]
+        (with-redefs [bridge/dispatch!       (fn [charge] (reset! seen charge) {})
+                      store/mark-in-flight!  (fn [_ _] true)
+                      store/clear-in-flight! (fn [_ _] nil)]
+          (worker/tick! {:now (Instant/parse "2026-04-21T10:00:01Z")})
+          (worker/await-idle!)))
+      (should-not-be-nil id)
+      (should= [[:foreman "bean-work" "demo-1"]] (:observers @seen))
+      (should= "t-orig" (:turn-id @seen))))
 
   (it "enqueues a suspended hail marker like any other source, writing nothing under hail/"
     (helper/create-session! test-root "isaac-verify")
