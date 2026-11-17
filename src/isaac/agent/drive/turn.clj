@@ -388,9 +388,14 @@
 
 (defn- kept-usage?
   "A turn that never reaches store-response! but still spent tokens: it died
-   on a provider error, or the user stopped it. A Stop is not free."
+   on a provider error, the user stopped it, or it is parked as weather. A Stop
+   is not free, and neither is a wall with no :error (an OAuth refresh wall).
+   An :unavailable? that is not weather (:context-exhausted) is stored."
   [result]
-  (or (:error result) (:cancelled? result)))
+  (or (:error result)
+      (:cancelled? result)
+      (and (:unavailable? result)
+           (weather/weather-reason (cond-> result (nil? (:reason result)) (assoc :reason :wall))))))
 
 (defn- keep-cycle-usage* [ctx session-key result]
   (when (kept-usage? result)
@@ -541,6 +546,21 @@
     (cond-> usage
       (and (nil? (:requests usage)) (sequential? cycles)) (assoc :requests (count cycles)))))
 
+;; Earlier links are already recorded in the session when fallback starts.
+;; Carry them separately so the final result can report the whole turn without
+;; charging their tokens a second time.
+(defn- add-turn-usage [a b]
+  (merge-with #(if (and (number? %1) (number? %2)) (+ %1 %2) %2) a b))
+
+(defn- with-spent-usage [result abandoned]
+  (let [usage (:usage abandoned)]
+    (cond-> result
+      (map? usage) (update ::spent-usage add-turn-usage usage))))
+
+(defn- with-reported-spend [result spent]
+  (cond-> result
+    (and (map? result) (map? spent)) (update :usage add-turn-usage spent)))
+
 (def ended-by-values #{:reply :cycle-limit :cancelled :error :context-exhausted :provider-unavailable :suspended})
 
 (defn- classify-ended-by [result]
@@ -646,7 +666,8 @@
                 (str/blank? summary-content)
                 (loop-limit-user-echo? summary-content nil current-request)
                 (loop-limit-instruction-echo? summary-content))
-          result
+          ;; A summary that failed was still a request.
+          (assoc result :usage (merge-response-usage (:usage result) summary-response))
           (-> result
               (assoc :content summary-content)
               (assoc :response summary-response)
@@ -705,10 +726,11 @@
   (let [assistant {:role "assistant" :content (or (:content response) "")}]
     (assoc request :messages (conj (vec (:messages request)) assistant))))
 
-(defn- empty-wrap-up-failure []
-  {:error    :empty-terminal-response
-   :message  "empty-terminal-response: wrap-up note was empty"
-   :ended-by :error})
+(defn- empty-wrap-up-failure [usage]
+  (cond-> {:error    :empty-terminal-response
+           :message  "empty-terminal-response: wrap-up note was empty"
+           :ended-by :error}
+    usage (assoc :usage usage)))
 
 (defn- normalize-exhaustion-answer [answer]
   (let [kw (cond
@@ -779,16 +801,19 @@
      (not (empty-terminal-response? result))
      result
 
+     ;; Silence is parked, never stored: the error carries what the turn spent.
      retried?
-     {:error   :empty-terminal-response
-      :message "empty-terminal-response: model returned no content after continuation retry"}
+     (cond-> {:error   :empty-terminal-response
+              :message "empty-terminal-response: model returned no content after continuation retry"}
+       (:usage result) (assoc :usage (:usage result)))
 
      :else
      (let [response   (:response result)
            nudge-req  (continuation-nudge-request current-request response)
            retry-resp (chat-fn nudge-req)]
        (if (:error retry-resp)
-         retry-resp
+         (cond-> retry-resp
+           (:usage result) (assoc :usage (merge-response-usage (:usage result) retry-resp)))
          (guard-empty-terminal-response
            (-> result
                (assoc :response retry-resp)
@@ -1142,14 +1167,18 @@
                             (let [first-result (run-loop @current-request)
                                   ctx*         (model-ctx)
                                   retry        (turn-compaction/overflow-compact-retry! session-key ctx* current-request first-result)
+                                  ;; The overflowed attempt is replaced, not refunded.
+                                  _            (when retry (keep-cycle-usage! ctx session-key first-result))
                                   loop-result  (cond
                                                  (nil? retry) first-result
                                                  (:unavailable? retry) retry
                                                  :else (run-loop retry))]
                               (if (and retry (prompt-too-long? loop-result))
-                                (turn-compaction/context-exhausted-result config session-key
+                                (do
+                                 (keep-cycle-usage! ctx session-key loop-result)
+                                 (turn-compaction/context-exhausted-result config session-key
                                                           (turn-compaction/session-gauge session-key (turn-compaction/mid-turn-compaction-opts ctx*))
-                                                          (:context-window @active*))
+                                                          (:context-window @active*)))
                                 loop-result)))
             request-for   (fn [link]
                             (let [transcript (with-transcript-lock session-key #(store/active-transcript (session-store ctx) session-key))
@@ -1216,6 +1245,9 @@
                                         (if-not weather
                                           result
                                           (do
+                                            ;; Leaving this model: what it spent is spent,
+                                            ;; whichever model (if any) answers next.
+                                            (keep-cycle-usage! ctx session-key result)
                                             (provider-wall/record-wall! (:provider-name link)
                                                                         (:reason weather)
                                                                         (:retry-after-ms weather)
@@ -1223,8 +1255,9 @@
                                             (if-let [[next next-req remaining*] (fallback/search remaining #(prepared % true nil))]
                                               (do
                                                 (log-model-fallback! (:model link) (:model next) (:reason weather))
-                                                (drive! next next-req remaining*))
-                                              (exhausted! link (:reason weather) weather))))))]
+                                                (with-spent-usage (drive! next next-req remaining*) result))
+                                              (exhausted! link (:reason weather)
+                                                          (assoc weather :usage (:usage result) ::usage-kept true)))))))]
                               (let [now      (turn-now)
                                     head-req (prepared head false request)]
                                 (if-let [req head-req]
@@ -1243,7 +1276,8 @@
             ;; Before the wall classifier reshapes the result: a turn that died
             ;; on its last request still burned the cycles that finished
             ;; (isaac-ewxh).
-            _            (keep-cycle-usage! ctx session-key loop-result)
+            kept-loop?   (or (::usage-kept loop-result) (kept-usage? loop-result))
+            _            (when-not (::usage-kept loop-result) (keep-cycle-usage! ctx session-key loop-result))
             result       (if (or (bridge/cancelled? session-key) (:unavailable? loop-result))
                            loop-result
                            (let [normalized (provider-wall/normalize loop-result config (:provider-name @active*))
@@ -1262,7 +1296,10 @@
                                               (apply-stop-exhaustion normalized chat-fn current-request input))]
                              (-> handled
                                  (assoc :cycle-limit cycle-budget)
-                                 finalize-turn-result)))]
+                                 finalize-turn-result)))
+            ;; A clean loop may become a non-reply after the silence or wrap-up guard.
+            _            (when-not kept-loop? (keep-cycle-usage! ctx session-key result))]
+        (with-reported-spend
         (let [{:keys [model provider-name]} @active*
               answered result
               result   (if (bridge/cancelled? session-key)
@@ -1280,21 +1317,27 @@
                 (:cancelled? result)
                 (bridge/cancelled-response? result)
                 (bridge/cancelled? session-key))
-            ;; The turn's cost rides along so :turn/ended reports it.
-            (cond-> (suspend/interrupt-result session-key)
-              (map? (:usage loop-result)) (assoc :usage (interrupted-usage loop-result)))
+            ;; The turn's cost rides along so :turn/ended reports it. A Stop
+            ;; that lands after a clean reply skips store-response!: keep it.
+            (do
+              (when-not (or kept-loop? (kept-usage? answered))
+                (keep-cycle-usage! ctx session-key (assoc answered :cancelled? true)))
+              (cond-> (suspend/interrupt-result session-key)
+                (map? (:usage loop-result)) (assoc :usage (interrupted-usage loop-result))))
 
             (weather/weather-reason result)
             (let [ss (or (:session-store ctx) (nexus/get-in [:sessions :store]))]
               (if ss
-                (weather/stamp-weather! ss session-key result
-                                        {:cfg      config
-                                         :provider provider-name
-                                         :model    model
-                                         :now      (turn-now)
-                                         :model-override (:model-override charge)
-                                         :observers (:observers charge)
-                                         :turn-id (:turn-id charge)})
+                (cond-> (weather/stamp-weather! ss session-key result
+                                                {:cfg      config
+                                                 :provider provider-name
+                                                 :model    model
+                                                 :now      (turn-now)
+                                                 :model-override (:model-override charge)
+                                                 :observers (:observers charge)
+                                                 :turn-id (:turn-id charge)})
+                  ;; Kept above; carried so :turn/ended reports what the park cost.
+                  (map? (:usage answered)) (assoc :usage (:usage answered)))
                 result))
 
             :else
@@ -1302,7 +1345,8 @@
               (when-not (:error result)
                 (log/debug :chat/stream-completed :session session-key))
               (or (process-response! ctx session-key result {:model model :provider provider-name})
-                  result))))))))
+                  result))))
+        (::spent-usage loop-result))))))
 
 (defn- run-turn-body!
   "The successful-path pipeline. Returns the result that finish-turn! should

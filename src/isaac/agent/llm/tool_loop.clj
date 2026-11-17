@@ -77,6 +77,15 @@
     {:results    (->> @results (remove nil?) vec)
      :cancelled? @cancelled*}))
 
+(defn- with-turn-usage
+  "A loop that stops early still paid for every request it made. Fold the
+   earlier cycles, and this response's own partial usage, into what it
+   returns. A first-cycle response that measured nothing passes as it came."
+  [response turn-usage]
+  (if (and (zero? (:requests turn-usage)) (nil? (:usage response)))
+    response
+    (assoc response :usage (usage/add turn-usage (:usage response)))))
+
 (defonce ^:private provider-driver* (atom nil))
 
 (defn install-provider-driver!
@@ -132,7 +141,7 @@
                    nil
                    full-context))
           (if (or (:error response) (:unavailable? response))
-            response
+            (with-turn-usage response turn-usage)
             (let [tool-calls   (response-tool-calls response)
                   new-usage    (usage/add turn-usage (:usage response))
                   budget-left? (< loops max-loops)
@@ -154,7 +163,7 @@
                       (let [new-messages (followup-fn req response tool-calls results)
                             next-req     (after-tools (assoc req :messages new-messages))]
                         (if (or (:error next-req) (:unavailable? next-req))
-                          next-req
+                          (assoc next-req :usage new-usage)
                           (recur next-req
                                  (into all-tools tool-calls)
                                  new-usage
@@ -198,7 +207,8 @@
        :usage          accumulated usage
        :loop-request?  true when the budget was exhausted with tools still pending}
 
-    Returns on error: the error response from chat-fn."
+    Returns on error: the error response from chat-fn (or after-tools), its
+    :usage the turn's total so far, this request included."
   [chat-fn followup-fn request tool-fn & [opts]]
   (let [opts      (or opts {})
         api-impl  (:api opts)

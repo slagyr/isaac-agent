@@ -239,3 +239,24 @@ Feature: Exhausted turns — every turn says how it ended, and the Comm decides 
     And the memory comm has events matching:
       | event    | result.ended-by | result.exhaustion |
       | turn-end | :cycle-limit    | :wrapped-up       |
+
+  Scenario: a silent tool-loop turn parks with all three requests billed
+    Given the following sessions exist:
+      | name  |
+      | quiet |
+    And the following model responses are queued:
+      | type      | tool_call | arguments           | content | model | usage.input_tokens | usage.output_tokens |
+      | tool_call | exec__run | {"command": "true"} |         | echo  | 1000               | 20                  |
+      | text      |           |                     |         | echo  | 1200               | 30                  |
+      | text      |           |                     |         | echo  | 1300               | 0                   |
+    When the user sends "count the cans" on session "quiet" via memory comm
+    Then a turn marker exists for session "quiet" with:
+      | key       | value    |
+      | suspended | true     |
+      | reason    | :silence |
+    And the following sessions match:
+      | id    | input-tokens | output-tokens |
+      | quiet | 3500         | 50            |
+    And the log has entries matching:
+      | level | event       | session | requests | prompt-tokens |
+      | :info | :turn/ended | quiet   | 3        | 3500          |

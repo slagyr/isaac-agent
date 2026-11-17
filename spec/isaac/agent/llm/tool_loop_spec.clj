@@ -447,6 +447,58 @@
 
   )
 
+(defn- tool-cycle [prompt output]
+  {:tool-calls [{:id (str "tc" prompt) :name "read" :arguments {}}]
+   :usage      {:prompt-tokens prompt :output-tokens output}})
+
+(describe "tool-loop/run usage when a turn ends early"
+
+  (it "an error on cycle 3 reports the usage and requests of cycles 1..3"
+    (let [result (sut/run (queue-chat [(tool-cycle 1000 20) (tool-cycle 1200 30) {:error :llm-error :message "boom"}])
+                          (recording-followup (atom [])) {:messages []} (fn [_ _] "ok"))]
+      (should= :llm-error (:error result))
+      (should= "boom" (:message result))
+      (should= {:requests 3 :prompt-tokens 2200 :output-tokens 50 :unsupported-requests 1} (:usage result))))
+
+  (it "an error on cycle 2 that carries partial usage counts it"
+    (let [result (sut/run (queue-chat [(tool-cycle 1000 20) {:error :llm-error :message "cut" :usage {:prompt-tokens 1100 :output-tokens 3}}])
+                          (recording-followup (atom [])) {:messages []} (fn [_ _] "ok"))]
+      (should= {:requests 2 :prompt-tokens 2100 :output-tokens 23} (:usage result))))
+
+  (it "an HTTP provider's cancel on cycle 2 keeps cycle 1's usage"
+    (let [result (sut/run (queue-chat [(tool-cycle 1000 20) {:error :cancelled :message "cancelled"}])
+                          (recording-followup (atom [])) {:messages []} (fn [_ _] "ok"))]
+      (should= :cancelled (:error result))
+      (should= {:requests 2 :prompt-tokens 1000 :output-tokens 20 :unsupported-requests 1} (:usage result))))
+
+  (it "an unavailable result on cycle 2 keeps cycle 1's usage"
+    (let [result (sut/run (queue-chat [(tool-cycle 1000 20) {:unavailable? true :reason :connection-lost}])
+                          (recording-followup (atom [])) {:messages []} (fn [_ _] "ok"))]
+      (should= true (:unavailable? result))
+      (should= 1000 (get-in result [:usage :prompt-tokens]))
+      (should= 2 (get-in result [:usage :requests]))))
+
+  (it "after-tools stopping the loop keeps the cycles already run"
+    (let [result (sut/run (queue-chat [(tool-cycle 1000 20)])
+                          (recording-followup (atom [])) {:messages []} (fn [_ _] "ok")
+                          {:after-tools (fn [_] {:unavailable? true :reason :context-exhausted})})]
+      (should= :context-exhausted (:reason result))
+      (should= {:requests 1 :prompt-tokens 1000 :output-tokens 20} (:usage result))))
+
+  (it "a first-cycle error that measured nothing is returned as it came"
+    (let [response {:error :connection-refused :message "no"}
+          result   (sut/run (queue-chat [response]) (recording-followup (atom [])) {:messages []} (fn [_ _] "ok"))]
+      (should= response result)))
+
+  (it "a completed tool-loop turn is unchanged"
+    (let [result (sut/run (queue-chat [(tool-cycle 1000 20) {:content "done" :usage {:prompt-tokens 1200 :output-tokens 30}}])
+                          (recording-followup (atom [])) {:messages []} (fn [_ _] "ok"))]
+      (should= "done" (get-in result [:response :content]))
+      (should= {:requests 2 :prompt-tokens 2200 :output-tokens 50} (:usage result))
+      (should= false (:loop-request? result))))
+
+  )
+
 (defn- fake-api [cfg]
   (reify api/Api
     (chat [_ _] {})

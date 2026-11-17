@@ -2407,3 +2407,571 @@
             (should= :cancelled (:ended-by entry))
             (should= 2 (:requests entry))
             (should= 3000 (:prompt-tokens entry))))))))
+
+
+(defn- queued-loop
+  "tool-loop/run replaced by the real default loop over a queue of provider
+   responses, with a tool that always answers ok."
+  [responses]
+  (let [queue (atom responses)]
+    (fn [_chat-fn followup-fn request _tool-fn opts]
+      (tool-loop/-run-default (fn [_] (let [r (first @queue)] (swap! queue rest) r))
+                              followup-fn request (fn [_ _] "ok") (dissoc opts :prepare-tool-call)))))
+
+(defn- tool-cycle [prompt output]
+  {:tool-calls [{:id (str "tc" prompt) :name "read" :arguments {}}]
+   :usage      {:prompt-tokens prompt :output-tokens output}})
+
+(describe "tool-loop usage when a turn ends early"
+  #_{:clj-kondo/ignore [:unresolved-symbol]}
+  (around [example]
+    (nexus/-with-nexus {:root test-dir :fs (fs/mem-fs)}
+      (helper/with-memory-store
+        (try (example)
+             (finally (bridge/clear!) (provider-wall/clear-walls!))))))
+
+  (defn- run-turn [session responses]
+    (with-redefs [tool-loop/run (queued-loop responses)]
+      (let [result (#'sut/execute-llm-turn! session "go" (base-execution-ctx (->TestProvider "test" {}) {:model "test-model" :soul "s" :crew "main" :comm null-comm/channel :context-window 128000}))]
+        (log/capture-logs
+          (#'sut/log-turn-ended! session result)
+          {:result  result
+           :session (helper/get-session test-dir session)
+           :ended   (first (filter #(= :turn/ended (:event %)) @log/captured-logs))}))))
+
+  (it "a turn that errors on cycle 3 keeps cycles 1 and 2 in the session and on :turn/ended"
+    (helper/create-session! test-dir "err3")
+    (helper/update-session! test-dir "err3" {:input-tokens 100 :output-tokens 1})
+    (let [{:keys [session ended]} (run-turn "err3" [(tool-cycle 1000 20) (tool-cycle 1200 30)
+                                                    {:error :llm-error :message "boom"}])]
+      (should= 2300 (:input-tokens session))
+      (should= 51 (:output-tokens session))
+      (should= :error (:ended-by ended))
+      (should= 3 (:requests ended))
+      (should= 2200 (:prompt-tokens ended))
+      (should= 50 (:output-tokens ended))))
+
+  (it "an HTTP Stop on cycle 2 keeps cycle 1 in the session and on :turn/ended"
+    (helper/create-session! test-dir "stop2")
+    (let [{:keys [result session ended]} (run-turn "stop2" [(tool-cycle 1000 20)
+                                                           {:error :cancelled :message "cancelled"}])]
+      (should= "cancelled" (:stopReason result))
+      (should= 1000 (:input-tokens session))
+      (should= 20 (:output-tokens session))
+      (should= :cancelled (:ended-by ended))
+      (should= 2 (:requests ended))
+      (should= 1000 (:prompt-tokens ended))))
+
+  (it "a Stop's partial usage on the cancelled request is counted too"
+    (helper/create-session! test-dir "stop2p")
+    (let [{:keys [session ended]} (run-turn "stop2p" [(tool-cycle 1000 20)
+                                                      {:error :cancelled :message "cancelled"
+                                                       :usage {:prompt-tokens 1100 :output-tokens 4}}])]
+      (should= 2100 (:input-tokens session))
+      (should= 24 (:output-tokens session))
+      (should= 2 (:requests ended))
+      (should= 2100 (:prompt-tokens ended))))
+
+  (it "a completed tool-loop turn is counted once, as before"
+    (helper/create-session! test-dir "done2")
+    (let [{:keys [session ended]} (run-turn "done2" [(tool-cycle 1000 20)
+                                                     {:content "done" :model "test-model" :tool-calls [] :stop-reason :end-turn
+                                                      :usage {:prompt-tokens 1200 :output-tokens 30}}])]
+      (should= 2200 (:input-tokens session))
+      (should= 50 (:output-tokens session))
+      (should= :reply (:ended-by ended))
+      (should= 2 (:requests ended)))))
+
+
+(deftype ScriptProvider [name queue]
+  ;; Answers requests made outside the tool loop (the silence nudge, the
+  ;; wrap-up) from a queue; an empty reply once the queue runs dry.
+  api/Api
+  (chat [_ _] (let [r (or (first @queue)
+                          {:content "" :model "test-model" :tool-calls [] :stop-reason :end-turn
+                           :usage {:prompt-tokens 1300 :output-tokens 0}})]
+                (swap! queue rest)
+                r))
+  (chat-stream [this req _] (api/chat this req))
+  (followup-messages [_ request _ _ _] (:messages request))
+  (config [_] {})
+  (display-name [_] name)
+  (format-tools [_ tools] (when (seq tools) (mapv api/wrapped-function-tool tools)))
+  (build-prompt [_ {:keys [model tools]}]
+    {:model model :messages [{:role "user" :content "hi"}] :tools tools}))
+
+(defn- empty-reply [prompt output]
+  {:content "" :model "test-model" :tool-calls [] :stop-reason :end-turn
+   :usage {:prompt-tokens prompt :output-tokens output}})
+
+(describe "every turn-end path records usage exactly once"
+  #_{:clj-kondo/ignore [:unresolved-symbol]}
+  (around [example]
+    (nexus/-with-nexus {:root test-dir :fs (fs/mem-fs)}
+      (helper/with-memory-store
+        (try (example)
+             (finally (bridge/clear!) (provider-wall/clear-walls!)
+                      ((requiring-resolve 'isaac.agent.bridge.suspend/clear!)))))))
+
+  (defn- turn! [session provider loop-fn & [extra]]
+    (with-redefs [tool-loop/run loop-fn]
+      (let [result (#'sut/execute-llm-turn! session "go"
+                     (base-execution-ctx provider (merge {:model "test-model" :soul "s" :crew "main" :comm null-comm/channel
+                                                          :context-window 128000} extra)))]
+        (log/capture-logs
+          (#'sut/log-turn-ended! session result)
+          {:result  result
+           :session (helper/get-session test-dir session)
+           :ended   (first (filter #(= :turn/ended (:event %)) @log/captured-logs))}))))
+
+  (it "a tool-loop turn parked for silence keeps every request it made, the nudge included"
+    (helper/create-session! test-dir "silent")
+    (let [{:keys [result session ended]} (turn! "silent" (->ScriptProvider "test" (atom []))
+                                               (queued-loop [(tool-cycle 1000 20) (empty-reply 1200 30)]))]
+      (should= :silence (:reason result))
+      (should= 3500 (:input-tokens session 0))
+      (should= 50 (:output-tokens session 0))
+      (should= 3 (:requests ended))
+      (should= 3500 (:prompt-tokens ended))))
+
+  (it "a silence nudge that errors keeps the loop's requests and counts the nudge"
+    (helper/create-session! test-dir "nudge-err")
+    (let [{:keys [session ended]} (turn! "nudge-err" (->ScriptProvider "test" (atom [{:error :llm-error :message "boom"}]))
+                                         (queued-loop [(tool-cycle 1000 20) (empty-reply 1200 30)]))]
+      (should= 2200 (:input-tokens session 0))
+      (should= 50 (:output-tokens session 0))
+      (should= :error (:ended-by ended))
+      (should= 3 (:requests ended))))
+
+  (it "a nudge that rescues the reply is stored once, by store-response!"
+    (helper/create-session! test-dir "nudge-ok")
+    (let [{:keys [session ended]} (turn! "nudge-ok" (->ScriptProvider "test" (atom [{:content "here" :model "test-model" :tool-calls []
+                                                                                    :stop-reason :end-turn
+                                                                                    :usage {:prompt-tokens 1300 :output-tokens 5}}]))
+                                         (queued-loop [(tool-cycle 1000 20) (empty-reply 1200 30)]))]
+      (should= 3500 (:input-tokens session 0))
+      (should= 55 (:output-tokens session 0))
+      (should= :reply (:ended-by ended))
+      (should= 3 (:requests ended))))
+
+  (it "a cycle-limit wrap-up that comes back empty is parked with every request counted"
+    (helper/create-session! test-dir "wrap-empty")
+    (with-redefs-fn {#'sut/exhaustion-policy (fn [& _] :wrap-up)}
+      (fn []
+        (let [{:keys [result session]} (turn! "wrap-empty" (->ScriptProvider "test" (atom []))
+                                              (fn [& _] {:response {:content "" :tool-calls []} :tool-calls [] :loop-request? true
+                                                         :usage {:requests 2 :prompt-tokens 2200 :output-tokens 50}}))]
+          (should= :silence (:reason result))
+          (should= 3500 (:input-tokens session 0))
+          (should= 50 (:output-tokens session 0))))))
+
+  (it "a wrap-up that ran tools counts the wrap-up request and the note"
+    (helper/create-session! test-dir "wrap-tools")
+    (with-redefs-fn {#'sut/exhaustion-policy  (fn [& _] :wrap-up)
+                     #'sut/prepare-tool-call! (fn [_ _] {:run (fn [] "ok")})}
+      (fn []
+        (let [{:keys [session ended]} (turn! "wrap-tools" (->ScriptProvider "test" (atom [(assoc (tool-cycle 1300 7) :content "" :model "test-model" :stop-reason :tool-use)
+                                                                                         {:content "note" :model "test-model" :tool-calls []
+                                                                                          :stop-reason :end-turn
+                                                                                          :usage {:prompt-tokens 1400 :output-tokens 9}}]))
+                                             (fn [& _] {:response {:content "" :tool-calls []} :tool-calls [] :loop-request? true
+                                                        :usage {:requests 2 :prompt-tokens 2200 :output-tokens 50}}))]
+          (should= :cycle-limit (:ended-by ended))
+          (should= 4 (:requests ended))
+          (should= 4900 (:input-tokens session 0))
+          (should= 66 (:output-tokens session 0))))))
+
+  (it "a head model walled mid tool loop keeps its cycles when the turn falls back"
+    (helper/create-session! test-dir "fallback")
+    (let [relay {:id "relay" :model "relay-wire" :context-window 128000
+                 :provider (->CountingProvider "relay" (atom 0)) :provider-name "relay"}]
+      (with-redefs [fallback/fallback-links (fn [& _] [relay])]
+        (let [{:keys [session ended]} (turn! "fallback" (->TestProvider "head" {})
+                                             (queued-loop [(tool-cycle 1000 20)
+                                                           {:error :rate-limited :status 429 :message "429 too many"}
+                                                           {:content "done" :model "relay-wire" :tool-calls [] :stop-reason :end-turn
+                                                            :usage {:prompt-tokens 500 :output-tokens 5}}]))]
+          (should= :reply (:ended-by ended))
+          (should= 1500 (:input-tokens session 0))
+          (should= 25 (:output-tokens session 0))))))
+
+  (it "a walled turn with no model left is parked, its cycles counted once"
+    (helper/create-session! test-dir "chain-out")
+    (provider-wall/record-wall! "relay" :wall 600000 (java.time.Instant/now))
+    (let [relay {:id "relay" :model "relay-wire" :context-window 128000
+                 :provider (->CountingProvider "relay" (atom 0)) :provider-name "relay"}]
+      (with-redefs [fallback/fallback-links (fn [& _] [relay])]
+        (let [{:keys [result session]} (turn! "chain-out" (->TestProvider "head" {})
+                                              (queued-loop [(tool-cycle 1000 20)
+                                                            {:error :stream-stalled :unavailable? true :reason :stream-stalled}]))]
+          (should= "suspended" (:stopReason result))
+          (should= 1000 (:input-tokens session 0))
+          (should= 20 (:output-tokens session 0))))))
+
+  (it "a turn walled by a 429 with no model left is parked, its cycles counted"
+    (helper/create-session! test-dir "chain-429")
+    (provider-wall/record-wall! "relay" :wall 600000 (java.time.Instant/now))
+    (let [relay {:id "relay" :model "relay-wire" :context-window 128000
+                 :provider (->CountingProvider "relay" (atom 0)) :provider-name "relay"}]
+      (with-redefs [fallback/fallback-links (fn [& _] [relay])]
+        (let [{:keys [result session]} (turn! "chain-429" (->TestProvider "head" {})
+                                              (queued-loop [(tool-cycle 1000 20)
+                                                            {:error :rate-limited :status 429 :message "429 too many"}]))]
+          (should= "suspended" (:stopReason result))
+          (should= 1000 (:input-tokens session 0))
+          (should= 20 (:output-tokens session 0))))))
+
+  (it "a Stop that lands after the last reply still keeps the turn's usage"
+    (helper/create-session! test-dir "late-stop")
+    (bridge/begin-turn! "late-stop")
+    (let [{:keys [result session ended]} (turn! "late-stop" (->TestProvider "test" {})
+                                                (fn [& _]
+                                                  (bridge/cancel! "late-stop")
+                                                  {:response {:content "done" :tool-calls []} :tool-calls []
+                                                   :usage {:requests 2 :prompt-tokens 2200 :output-tokens 50}}))]
+      (should= "cancelled" (:stopReason result))
+      (should= 2200 (:input-tokens session 0))
+      (should= 50 (:output-tokens session 0))
+      (should= 2 (:requests ended))))
+
+  (it "a turn interrupted by a server suspend keeps its usage"
+    (helper/create-session! test-dir "susp")
+    (bridge/begin-turn! "susp")
+    (swap! @(requiring-resolve 'isaac.agent.bridge.suspend/suspended-sessions*) conj "susp")
+    (let [{:keys [result session ended]} (turn! "susp" (->TestProvider "test" {})
+                                                (fn [& _]
+                                                  (bridge/cancel! "susp")
+                                                  {:error :cancelled :message "cancelled"
+                                                   :usage {:requests 3 :prompt-tokens 3000 :output-tokens 40}}))]
+      (should= "suspended" (:stopReason result))
+      (should= 3000 (:input-tokens session 0))
+      (should= 3 (:requests ended))))
+
+  (it "a parked turn that later resumes and replies is not counted twice"
+    (helper/create-session! test-dir "resume")
+    (turn! "resume" (->ScriptProvider "test" (atom []))
+           (queued-loop [(tool-cycle 1000 20) (empty-reply 1200 30)]))
+    (let [{:keys [session ended]} (turn! "resume" (->TestProvider "test" {})
+                                         (queued-loop [{:content "back" :model "test-model" :tool-calls [] :stop-reason :end-turn
+                                                        :usage {:prompt-tokens 4000 :output-tokens 8}}]))]
+      (should= :reply (:ended-by ended))
+      (should= 7500 (:input-tokens session 0))
+      (should= 58 (:output-tokens session 0)))))
+
+
+;; silence-usage fix.v2: paths the first fix missed, and double-count guards
+;; on combined paths (park/resume/Stop, fallback/Stop, nudge outcomes).
+(defn- rv-turn! [session provider loop-fn & [extra]]
+  (with-redefs [tool-loop/run loop-fn]
+    (let [result (try (#'sut/execute-llm-turn! session "go"
+                        (base-execution-ctx provider (merge {:model "test-model" :soul "s" :crew "main" :comm null-comm/channel
+                                                             :context-window 128000} extra)))
+                      (catch Exception e {:thrown (.getMessage e)}))]
+      (log/capture-logs
+        (when-not (:thrown result) (#'sut/log-turn-ended! session result))
+        {:result  result
+         :session (helper/get-session test-dir session)
+         :ended   (first (filter #(= :turn/ended (:event %)) @log/captured-logs))}))))
+
+(defn- rv-relay [] {:id "relay" :model "relay-wire" :context-window 128000
+                    :provider (->CountingProvider "relay" (atom 0)) :provider-name "relay"})
+
+(defn- cancel-after [session n loop-fn]
+  (let [calls (atom 0)]
+    (fn [& args] (let [r (apply loop-fn args)] (when (= n (swap! calls inc)) (bridge/cancel! session)) r))))
+
+(def ^:private silent-loop #(queued-loop [(tool-cycle 1000 20) (empty-reply 1200 30)]))
+(def ^:private reply-4000 #(queued-loop [{:content "back" :model "test-model" :tool-calls [] :stop-reason :end-turn
+                                          :usage {:prompt-tokens 4000 :output-tokens 8}}]))
+
+(deftype CancelNudgeProvider [session-key]
+  api/Api
+  (chat [_ _]
+    (bridge/cancel! session-key)
+    {:error :cancelled :cancelled? true :message "cancelled"
+     :usage {:prompt-tokens 300 :output-tokens 0}})
+  (chat-stream [this req _] (api/chat this req))
+  (followup-messages [_ request _ _ _] (:messages request))
+  (config [_] {})
+  (display-name [_] "test")
+  (format-tools [_ tools] (when (seq tools) (mapv api/wrapped-function-tool tools)))
+  (build-prompt [_ {:keys [model tools]}]
+    {:model model :messages [{:role "user" :content "hi"}] :tools tools}))
+
+(describe "turn-end usage, fix.v2: missed paths and combined-path guards"
+  #_{:clj-kondo/ignore [:unresolved-symbol]}
+  (around [example]
+    (nexus/-with-nexus {:root test-dir :fs (fs/mem-fs)}
+      (helper/with-memory-store
+        (try (example)
+             (finally (bridge/clear!) (provider-wall/clear-walls!)
+                      ((requiring-resolve 'isaac.agent.bridge.suspend/clear!)))))))
+
+  (it "R1 parked, resumed, resumed turn cancelled mid-loop: 3500 + 4000 once"
+    (helper/create-session! test-dir "r1")
+    (rv-turn! "r1" (->ScriptProvider "test" (atom [])) (silent-loop))
+    (bridge/begin-turn! "r1")
+    (let [{:keys [result session]} (rv-turn! "r1" (->TestProvider "test" {})
+                                             (fn [& _] (bridge/cancel! "r1")
+                                               {:error :cancelled :cancelled? true :message "cancelled"
+                                                :usage {:requests 1 :prompt-tokens 4000 :output-tokens 8}}))]
+      (should= "cancelled" (:stopReason result))
+      (should= 7500 (:input-tokens session 0))
+      (should= 58 (:output-tokens session 0))))
+
+  (it "R2 parked, resumed, late Stop after the resumed reply: 7500"
+    (helper/create-session! test-dir "r2")
+    (rv-turn! "r2" (->ScriptProvider "test" (atom [])) (silent-loop))
+    (bridge/begin-turn! "r2")
+    (let [{:keys [session]} (rv-turn! "r2" (->TestProvider "test" {}) (cancel-after "r2" 1 (reply-4000)))]
+      (should= 7500 (:input-tokens session 0))))
+
+  (it "R3 fallback then Stop during the relay: head 1000 + relay 500"
+    (helper/create-session! test-dir "r3")
+    (bridge/begin-turn! "r3")
+    (with-redefs [fallback/fallback-links (fn [& _] [(rv-relay)])]
+      (let [{:keys [result session]} (rv-turn! "r3" (->TestProvider "head" {})
+                                               (cancel-after "r3" 2
+                                                 (queued-loop [(tool-cycle 1000 20)
+                                                               {:error :rate-limited :status 429 :message "429"}
+                                                               {:error :cancelled :cancelled? true :message "cancelled"
+                                                                :usage {:prompt-tokens 500 :output-tokens 5}}])))]
+        (should= "cancelled" (:stopReason result))
+        (should= 1500 (:input-tokens session 0))
+        (should= 25 (:output-tokens session 0)))))
+
+  (it "R4 fallback then late Stop after the relay's clean reply: 1500"
+    (helper/create-session! test-dir "r4")
+    (bridge/begin-turn! "r4")
+    (with-redefs [fallback/fallback-links (fn [& _] [(rv-relay)])]
+      (let [{:keys [session]} (rv-turn! "r4" (->TestProvider "head" {})
+                                        (cancel-after "r4" 2
+                                          (queued-loop [(tool-cycle 1000 20)
+                                                        {:error :rate-limited :status 429 :message "429"}
+                                                        {:content "done" :model "relay-wire" :tool-calls [] :stop-reason :end-turn
+                                                         :usage {:prompt-tokens 500 :output-tokens 5}}])))]
+        (should= 1500 (:input-tokens session 0)))))
+
+  (it "R5 Stop races the head's 429 (no fallback taken): 1000 once"
+    (helper/create-session! test-dir "r5")
+    (bridge/begin-turn! "r5")
+    (with-redefs [fallback/fallback-links (fn [& _] [(rv-relay)])]
+      (let [{:keys [result session]} (rv-turn! "r5" (->TestProvider "head" {})
+                                               (cancel-after "r5" 1
+                                                 (queued-loop [(tool-cycle 1000 20)
+                                                               {:error :rate-limited :status 429 :message "429"}])))]
+        (should= "cancelled" (:stopReason result))
+        (should= 1000 (:input-tokens session 0)))))
+
+  (it "R6 nudge rescues turn 1, turn 2 parks for silence: 3500 + 3500"
+    (helper/create-session! test-dir "r6")
+    (rv-turn! "r6" (->ScriptProvider "test" (atom [{:content "here" :model "test-model" :tool-calls [] :stop-reason :end-turn
+                                                    :usage {:prompt-tokens 1300 :output-tokens 5}}]))
+              (silent-loop))
+    (let [{:keys [result session]} (rv-turn! "r6" (->ScriptProvider "test" (atom [])) (silent-loop))]
+      (should= :silence (:reason result))
+      (should= 7000 (:input-tokens session 0))
+      (should= 105 (:output-tokens session 0))))
+
+  (it "R7 nudge answered by a 429 is parked as a wall, the loop counted once"
+    (helper/create-session! test-dir "r7")
+    (let [{:keys [result session ended]} (rv-turn! "r7" (->ScriptProvider "test" (atom [{:error :rate-limited :status 429 :message "429"}]))
+                                                   (silent-loop))]
+      (should= "suspended" (:stopReason result))
+      (should= 2200 (:input-tokens session 0))
+      (should= 3 (:requests ended))
+      (should= 2200 (:prompt-tokens ended))))
+
+  (it "R8 Stop during the silence nudge: loop + nudge partial, once"
+    (helper/create-session! test-dir "r8")
+    (bridge/begin-turn! "r8")
+    (let [{:keys [result session]} (rv-turn! "r8" (->CancelNudgeProvider "r8") (silent-loop))]
+      (should= "cancelled" (:stopReason result))
+      (should= 2500 (:input-tokens session 0))))
+
+  (it "R9 stop-accounting's cancelled shape is counted once, not twice"
+    (helper/create-session! test-dir "r9")
+    (bridge/begin-turn! "r9")
+    (let [{:keys [session ended]} (rv-turn! "r9" (->TestProvider "test" {})
+                                            (fn [& _] (bridge/cancel! "r9")
+                                              {:error :cancelled :cancelled? true :message "cancelled"
+                                               :usage {:requests 2 :prompt-tokens 2200 :output-tokens 50}}))]
+      (should= 2200 (:input-tokens session 0))
+      (should= 2 (:requests ended))))
+
+  (it "R10 (path 17) overflow compact-retry keeps the first attempt's cycles"
+    (helper/create-session! test-dir "r10")
+    (with-redefs [turn-compaction/overflow-compact-retry! (fn [_ _ cr first-result]
+                                                           (when (= :context-overflow (:error first-result)) @cr))]
+      (let [{:keys [session]} (rv-turn! "r10" (->TestProvider "test" {})
+                                        (queued-loop [(tool-cycle 1000 20)
+                                                      {:error :context-overflow :message "prompt is too long"}
+                                                      {:content "done" :model "test-model" :tool-calls [] :stop-reason :end-turn
+                                                       :usage {:prompt-tokens 800 :output-tokens 5}}]))]
+        (should= 1800 (:input-tokens session 0)))))
+
+  (it "R16 compact-retry that overflows again keeps both attempts once"
+    (helper/create-session! test-dir "r16")
+    (with-redefs [turn-compaction/overflow-compact-retry! (fn [_ _ cr first-result]
+                                                           (when (= :context-overflow (:error first-result)) @cr))]
+      (let [{:keys [session]} (rv-turn! "r16" (->TestProvider "test" {})
+                                        (queued-loop [(tool-cycle 1000 20)
+                                                      {:error :context-overflow :message "prompt is too long"}
+                                                      (tool-cycle 600 10)
+                                                      {:error :context-overflow :message "prompt is too long"}]))]
+        (should= 1600 (:input-tokens session 0))
+        (should= 30 (:output-tokens session 0)))))
+
+  (it "R17 guard: mid-turn :context-exhausted (not weather) is stored once, not kept too"
+    (helper/create-session! test-dir "r17")
+    (let [{:keys [session]} (rv-turn! "r17" (->TestProvider "test" {})
+                                      (fn [& _] {:unavailable? true :reason :context-exhausted :retry-after-ms 1000
+                                                 :usage {:requests 2 :prompt-tokens 2200 :output-tokens 50}}))]
+      (should= 2200 (:input-tokens session 0))))
+
+  (it "R12 (path 12b) :stop policy whose summary comes back blank counts the summary request"
+    (helper/create-session! test-dir "r12")
+    (with-redefs-fn {#'sut/exhaustion-policy (fn [& _] :stop)}
+      (fn []
+        (let [{:keys [session ended]} (rv-turn! "r12" (->ScriptProvider "test" (atom []))
+                                                (fn [& _] {:response {:content "" :tool-calls []} :tool-calls [] :loop-request? true
+                                                           :usage {:requests 2 :prompt-tokens 2200 :output-tokens 50}}))]
+          (should= :cycle-limit (:ended-by ended))
+          (should= 3 (:requests ended))
+          (should= 3500 (:input-tokens session 0))))))
+
+  (it "R13 (path 12b) :stop policy whose summary errors counts the request"
+    (helper/create-session! test-dir "r13")
+    (with-redefs-fn {#'sut/exhaustion-policy (fn [& _] :stop)}
+      (fn []
+        (let [{:keys [ended]} (rv-turn! "r13" (->ScriptProvider "test" (atom [{:error :llm-error :message "boom"}]))
+                                        (fn [& _] {:response {:content "" :tool-calls []} :tool-calls [] :loop-request? true
+                                                   :usage {:requests 2 :prompt-tokens 2200 :output-tokens 50}}))]
+          (should= 3 (:requests ended))))))
+
+  (it "R14 an :unavailable? wall with no :error after a paid cycle (OAuth refresh wall) keeps the cycle"
+    (helper/create-session! test-dir "r14")
+    (let [{:keys [result session ended]} (rv-turn! "r14" (->TestProvider "test" {})
+                                                   (queued-loop [(tool-cycle 1000 20)
+                                                                 {:unavailable? true :reason :wall :retry-after-ms 60000 :provider "test"}]))]
+      (should= "suspended" (:stopReason result))
+      (should= 1000 (:prompt-tokens ended))
+      (should= 1000 (:input-tokens session 0))))
+
+  (it "R15 same wall shape on the head, relay answers: head's cycle kept"
+    (helper/create-session! test-dir "r15")
+    (with-redefs [fallback/fallback-links (fn [& _] [(rv-relay)])]
+      (let [{:keys [session]} (rv-turn! "r15" (->TestProvider "head" {})
+                                        (queued-loop [(tool-cycle 1000 20)
+                                                      {:unavailable? true :reason :wall :retry-after-ms 60000 :provider "head"}
+                                                      {:content "done" :model "relay-wire" :tool-calls [] :stop-reason :end-turn
+                                                       :usage {:prompt-tokens 500 :output-tokens 5}}]))]
+        (should= 1500 (:input-tokens session 0))))))
+
+
+(defn- fb-relay []
+  {:id "relay" :model "relay-wire" :context-window 128000
+   :provider (->CountingProvider "relay" (atom 0)) :provider-name "relay"})
+
+(def ^:private fb-head-lost
+  {:error :connection-lost :unavailable? true :reason :connection-lost :message "lost"
+   :usage {:requests 1 :prompt-tokens 1500 :output-tokens 1}
+   :cycle-usages [{:prompt-tokens 1500 :output-tokens 1}]})
+
+(defn- fb-run-chain!
+  "The head link drops its connection after billing 1500 tokens; the relay
+   answers with whatever second-result returns."
+  [session-key second-result]
+  (helper/create-session! test-dir session-key)
+  (bridge/begin-turn! session-key)
+  (let [calls (atom 0)]
+    (with-redefs [fallback/fallback-links (fn [& _] [(fb-relay)])
+                  tool-loop/run           (fn [& _]
+                                            (if (= 1 (swap! calls inc))
+                                              fb-head-lost
+                                              (second-result session-key)))]
+      (log/capture-logs
+        (let [result (#'sut/execute-llm-turn! session-key "go"
+                       (base-execution-ctx (->TestProvider "head" {}) {:model "test-model" :soul "s" :crew "main" :comm null-comm/channel}))
+              result (#'sut/finalize-turn-result result)]
+          (#'sut/log-turn-ended! session-key result)
+          {:calls   @calls
+           :result  result
+           :session (helper/get-session test-dir session-key)
+           :ended   (first (filter #(= :turn/ended (:event %)) @log/captured-logs))})))))
+
+(describe "fallback accounting (stop-gaps)"
+  ;; A link the chain walks past still billed its requests. The turn's result,
+  ;; :turn/ended and the session tally carry every model tried, not the last.
+  #_{:clj-kondo/ignore [:unresolved-symbol]}
+  (around [example]
+    (nexus/-with-nexus {:root test-dir :fs (fs/mem-fs)}
+      (helper/with-memory-store
+        (try (example)
+             (finally (bridge/clear!) (provider-wall/clear-walls!))))))
+
+  (it "a Stop on the fallback model keeps the head's usage too"
+    (let [{:keys [calls result session ended]}
+          (fb-run-chain! "fb-stop" (fn [sk]
+                                  (bridge/cancel! sk)
+                                  {:error :cancelled :cancelled? true :message "cancelled"
+                                   :usage {:requests 1 :prompt-tokens 700 :output-tokens 2}
+                                   :cycle-usages [{:prompt-tokens 700 :output-tokens 2}]}))]
+      (should= 2 calls)
+      (should= "cancelled" (:stopReason result))
+      (should= 2200 (:input-tokens session))
+      (should= 3 (:output-tokens session))
+      (should= 2200 (get-in result [:usage :prompt-tokens]))
+      (should= 2 (:requests ended))
+      (should= 2200 (:prompt-tokens ended))))
+
+  (it "an error on the fallback model keeps the head's usage too"
+    (let [{:keys [result session ended]}
+          (fb-run-chain! "fb-error" (fn [_]
+                                   {:error :api-error :status 400 :message "bad request"
+                                    :usage {:requests 1 :prompt-tokens 700 :output-tokens 2}
+                                    :cycle-usages [{:prompt-tokens 700 :output-tokens 2}]}))]
+      (should= :error (:ended-by result))
+      (should= 2200 (:input-tokens session))
+      (should= 2200 (:prompt-tokens ended))
+      (should= 2 (:requests ended))))
+
+  (it "a chain that runs out keeps every link's usage once"
+    ;; The relay's result is unavailable too, so the chain is exhausted on it.
+    (let [{:keys [session]}
+          (fb-run-chain! "fb-exhausted" (fn [_]
+                                       {:error :connection-lost :unavailable? true :reason :connection-lost :message "lost"
+                                        :usage {:requests 1 :prompt-tokens 700 :output-tokens 2}
+                                        :cycle-usages [{:prompt-tokens 700 :output-tokens 2}]}))]
+      (should= 2200 (:input-tokens session))
+      (should= 3 (:output-tokens session))))
+
+  (it "a classified wall on the last link still counts what it billed"
+    ;; classify-wall rebuilds the result and drops :usage; the raw result had it.
+    (let [{:keys [session]}
+          (fb-run-chain! "fb-walled" (fn [_]
+                                    {:error :rate-limited :status 429 :message "429 too many requests"
+                                     :usage {:requests 1 :prompt-tokens 700 :output-tokens 2}
+                                     :cycle-usages [{:prompt-tokens 700 :output-tokens 2}]}))]
+      (should= 2200 (:input-tokens session))))
+
+  (it "a reply from the fallback model is billed with the head's usage"
+    (let [{:keys [result session ended]}
+          (fb-run-chain! "fb-reply" (fn [_]
+                                   {:response   {:content "relay" :model "relay-wire" :tool-calls [] :stop-reason :end-turn
+                                                 :usage {:prompt-tokens 700 :output-tokens 2}}
+                                    :tool-calls []
+                                    :usage      {:requests 1 :prompt-tokens 700 :output-tokens 2}}))]
+      (should= :reply (:ended-by result))
+      (should= 2200 (:input-tokens session))
+      (should= 700 (:last-input-tokens session))
+      (should= 2 (:requests ended))
+      (should= 2200 (:prompt-tokens ended))))
+
+  (it "a turn with no fallback is billed as before"
+    (helper/create-session! test-dir "fb-none")
+    (with-redefs [fallback/fallback-links (fn [& _] [])
+                  tool-loop/run           (fn [& _] fb-head-lost)]
+      (#'sut/execute-llm-turn! "fb-none" "go"
+        (base-execution-ctx (->TestProvider "head" {}) {:model "test-model" :soul "s" :crew "main" :comm null-comm/channel}))
+      (should= 1500 (:input-tokens (helper/get-session test-dir "fb-none"))))))

@@ -25,7 +25,7 @@
 (defn- response-tool-calls* [response] (@response-tool-calls** response))
 (defn- execute-pending-tools! [tool-ctx tool-calls] (@execute-pending-tools!* tool-ctx tool-calls))
 (defn- wrap-up-request [request prompt] (@wrap-up-request* request prompt))
-(defn- empty-wrap-up-failure [] (@empty-wrap-up-failure*))
+(defn- empty-wrap-up-failure [usage] (@empty-wrap-up-failure* usage))
 (defn- merge-response-usage [usage response] (@merge-response-usage* usage response))
 (defn- append-message! [ctx session-key message] (@append-message!* ctx session-key message))
 
@@ -47,18 +47,19 @@
               messages (followup-fn wrap-req wrap-resp wrap-calls results)
               note-req (assoc (assoc wrap-req :messages messages) :tools [])
               note-resp (chat-fn note-req)
-              content   (:content note-resp)]
+              content   (:content note-resp)
+              usage     (-> (:usage result) (merge-response-usage wrap-resp) (merge-response-usage note-resp))]
           (reset! current-request note-req)
           (if (str/blank? content)
-            (empty-wrap-up-failure)
+            (empty-wrap-up-failure usage)
             (-> result
                 (assoc :content content
                        :response note-resp
                        :exhaustion :wrapped-up
                        :loop-request? true)
-                (assoc :usage (merge-response-usage (:usage result) note-resp)))))
+                (assoc :usage usage))))
         (if (str/blank? wrap-content)
-          (empty-wrap-up-failure)
+          (empty-wrap-up-failure (merge-response-usage (:usage result) wrap-resp))
           (do
             (reset! current-request (assoc wrap-req :tools []))
             (-> result
