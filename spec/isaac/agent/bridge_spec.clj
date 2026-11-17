@@ -523,12 +523,11 @@
         (should (bridge-cancel/cancelled? "cancel-test"))
         (bridge-cancel/end-turn! "cancel-test" turn)))
 
-    (it "applies a pending cancel to the next turn"
+    (it "does not apply an idle cancel to the next turn"
       (bridge-cancel/cancel! "cancel-later")
       (let [turn (bridge-cancel/begin-turn! "cancel-later")]
-        (should (bridge-cancel/cancelled? "cancel-later"))
-        (bridge-cancel/end-turn! "cancel-later" turn)
-        (should-not (bridge-cancel/cancelled? "cancel-later"))))
+        (should-not (bridge-cancel/cancelled? "cancel-later"))
+        (bridge-cancel/end-turn! "cancel-later" turn)))
 
     (it "cancelled? is true when the turn marker is stamped :cancelled"
       (helper/with-memory-store

@@ -70,6 +70,12 @@
 (defn in-flight? [store session-id]
   (contains? (get-in @in-flight* [store :sessions] {}) session-id))
 
+(defn in-flight-anywhere?
+  "True when session-id is in flight in any store. For callers that hold no
+   store reference, e.g. a cancel arriving from a comm."
+  [session-id]
+  (boolean (some #(contains? (:sessions %) session-id) (vals @in-flight*))))
+
 (defn in-flight-sessions [store]
   (vec (keys (get-in @in-flight* [store :sessions] {}))))
 

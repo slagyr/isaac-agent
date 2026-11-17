@@ -2,6 +2,7 @@
   "Wake the turn-request waiting room: clock ticks plus release-token nudges."
   (:require
     [clojure.string :as str]
+    [isaac.agent.bridge.cancellation :as bridge-cancel]
     [isaac.agent.bridge.core :as bridge]
     [isaac.agent.comm.registry :as comm-registry]
     [isaac.agent.charge :as charge]
@@ -115,6 +116,14 @@
            :for (:for last-record)
            :held-ids (mapv :id records))))
 
+(defn- release-reservation!
+  "Clears the in-flight reservation admit! took and drops any cancel that
+   landed while it was held but that no turn adopted, so it can't reach the
+   session's next turn."
+  [ss session-key]
+  (store/clear-in-flight! ss session-key)
+  (bridge-cancel/discard-pending! session-key))
+
 (defn- admit! [charge]
   (let [ss (:session-store charge)
         session-key (:session-key charge)]
@@ -131,7 +140,7 @@
                                           {:session-key session-key :cwd (:cwd charge)
                                            :crew (:crew charge) :origin (:origin charge) :now (:now charge)}))]
         (if (:error decision)
-          (do (when reserved? (store/clear-in-flight! ss session-key))
+          (do (when reserved? (release-reservation! ss session-key))
               (if (= :hold (:reason decision))
                 (do (when-let [id (:held-id charge)]
                       (queue/update-turn! id {:state :held}))
@@ -144,7 +153,7 @@
                                             (:cwd charge)))}
             (catch Throwable t
               (pool/release-all! (:leases decision))
-              (when reserved? (store/clear-in-flight! ss session-key))
+              (when reserved? (release-reservation! ss session-key))
               (throw t))))))))
 
 (declare tick!)
@@ -180,7 +189,7 @@
     ;; Keep the reservation through bookkeeping so a nested wake cannot
     ;; reclaim this record before it reaches :finished.
     (when (:session-reserved? admitted)
-      (store/clear-in-flight! (:session-store admitted) (:session-key admitted))
+      (release-reservation! (:session-store admitted) (:session-key admitted))
       (when (and (not (get-in record [:origin :parent]))
                  (not (still-held? result)) (seq (queue/list-held))) (tick!)))))
 
@@ -280,7 +289,7 @@
         (when-not @started?
           (pool/release-all! (:pool-leases admitted))
           (when (:session-reserved? admitted)
-            (store/clear-in-flight! (:session-store admitted) (:session-key admitted))))))))
+            (release-reservation! (:session-store admitted) (:session-key admitted))))))))
 
 (defn- claim-and-start! [record now]
   (let [cfg (wake-config record)

@@ -404,11 +404,13 @@
       (should-be-nil (g/get :turn-future))))
 
   (it "observes cancellation after a live turn clears its durable marker"
-    (let [turn (promise)]
+    (let [turn      (promise)
+          live-turn (bridge/begin-turn! "cancel-test")]
       (g/assoc! :current-key "cancel-test")
       (g/assoc! :turn-future turn)
       (bridge/cancel! "cancel-test")
       (sut/turn-marker-matches "cancel-test" {:rows [["cancelled" "true"]]})
+      (bridge/end-turn! "cancel-test" live-turn)
       (deliver turn true)))
 
   (it "awaits the current turn before counting directory files"

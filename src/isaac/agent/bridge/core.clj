@@ -7,6 +7,7 @@
   paths stay raw. See isaac.agent.comm.render."
   (:require
     [clojure.string :as str]
+    [isaac.agent.bridge.cancellation :as bridge-cancel]
     [isaac.agent.bridge.status :as status]
     [isaac.agent.bridge.suspend :as suspend]
     [isaac.agent.comm.render :as render]
@@ -383,6 +384,8 @@
                               (isolate-cleanup! :clear-in-flight
                                                 #(when-not (:session-reserved? charge)
                                                    (store/clear-in-flight! session-store* session-key)))
+                              (isolate-cleanup! :discard-pending-cancel
+                                                #(bridge-cancel/discard-pending! session-key))
                               ;; A session's own waiting room drains as soon as its running
                               ;; turn releases it; avoid a bridge → worker load cycle.
                               (when-let [root (and (not (get-in charge [:origin :parent]))

@@ -58,3 +58,16 @@ Feature: Turn Cancellation
     And isaac is run with "sessions cancel cancel-test"
     Then the turn result is "cancelled"
     And no turn marker exists for session "cancel-test"
+
+  Scenario: a cancel with no turn running does not cancel the next turn
+    Given the following sessions exist:
+      | name      |
+      | idle-test |
+    When the turn is cancelled on session "idle-test"
+    Given the following model responses are queued:
+      | type | content     | model |
+      | text | Still here! | echo  |
+    When the user sends "hello" on session "idle-test"
+    Then session "idle-test" has transcript matching:
+      | type    | message.role | message.content |
+      | message | assistant    | Still here!     |
