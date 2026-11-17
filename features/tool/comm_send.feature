@@ -160,3 +160,61 @@ Feature: comm_send tool
     And the turn ends on session "dawn-watch"
     Then the comm_send tool result is an error
     And there are no pending comm deliveries
+
+  # Outbound allow-list (isaac-tnry): a comm slot may name the only targets it
+  # will send to. The inbound allow-from lists never guarded the way out.
+
+  @wip
+  Scenario: a send to a target on the slot's allow-list is enqueued (isaac-tnry)
+    Given the telly comm module is registered
+    And config:
+      | key                        | value      |
+      | comms.tannoy.type          | telly      |
+      | comms.tannoy.comm/allow-to | ["bridge"] |
+    And the following model responses are queued:
+      | type     | tool_call  | arguments                                                             |
+      | toolCall | comm__send | {"comm":"tannoy","content":"Lantern is lit.","telly.target":"bridge"} |
+      | text     |            | Done.                                                                 |
+    When the user sends "tell the bridge" on session "dawn-watch"
+    And the turn ends on session "dawn-watch"
+    Then a pending comm delivery matches:
+      | path         | value           |
+      | comm         | tannoy          |
+      | content      | Lantern is lit. |
+      | telly/target | bridge          |
+
+  @wip
+  Scenario: a send to a target off the allow-list is refused and logged without its body (isaac-tnry)
+    Given the telly comm module is registered
+    And config:
+      | key                        | value      |
+      | comms.tannoy.type          | telly      |
+      | comms.tannoy.comm/allow-to | ["bridge"] |
+    And the following model responses are queued:
+      | type     | tool_call  | arguments                                                               |
+      | toolCall | comm__send | {"comm":"tannoy","content":"Lantern is lit.","telly.target":"stowaway"} |
+      | text     |            | Could not send.                                                         |
+    When the user sends "tell the stowaway" on session "dawn-watch"
+    And the turn ends on session "dawn-watch"
+    Then the comm_send tool result is an error
+    And there are no pending comm deliveries
+    And the log has entries matching:
+      | level | event                  | comm   | target   |
+      | warn  | :comm/outbound-refused | tannoy | stowaway |
+    And the log has 0 entries matching "Lantern is lit"
+
+  @wip
+  Scenario: an empty allow-list refuses every send (isaac-tnry)
+    Given the telly comm module is registered
+    And config:
+      | key                        | value |
+      | comms.tannoy.type          | telly |
+      | comms.tannoy.comm/allow-to | []    |
+    And the following model responses are queued:
+      | type     | tool_call  | arguments                                                |
+      | toolCall | comm__send | {"comm":"tannoy","content":"hi","telly.target":"bridge"} |
+      | text     |            | Could not send.                                          |
+    When the user sends "tell the bridge" on session "dawn-watch"
+    And the turn ends on session "dawn-watch"
+    Then the comm_send tool result is an error
+    And there are no pending comm deliveries
