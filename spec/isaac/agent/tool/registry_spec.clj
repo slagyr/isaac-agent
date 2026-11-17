@@ -37,6 +37,15 @@
   (nexus/-with-nexus {:tool-registry (atom {})}
     (f)))
 
+(describe "raw tool result error flag"
+  (it "recognizes isError, error, and fault maps without inspecting output text"
+    (should= true (sut/error-result? {:isError true :error "exit 3"}))
+    (should= true (sut/error-result? {:error "boom"}))
+    (should= true (sut/error-result? {:fault true :error "boom"}))
+    (should= false (sut/error-result? {:result "Error: x"}))
+    (should= false (sut/error-result? "Error: x")))
+  )
+
 (describe "Tool Registry"
 
   (around [it]

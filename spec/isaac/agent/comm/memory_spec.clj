@@ -43,6 +43,14 @@
       (should= "tool-result" (:event (second @events)))
       (should= "exec" (get-in (second @events) [:tool :name]))))
 
+  (it "records the error flag on tool results but not unflagged calls"
+    (let [events (atom [])
+          ch (sut/channel events)]
+      (comm/on-tool-result ch "s" {:id "tc-1" :name "exec__run" :error? true} "Error: exit 3")
+      (comm/on-tool-result ch "s" {:id "tc-2" :name "exec__run" :error? false} "Error: x")
+      (comm/on-tool-result ch "s" {:id "tc-3" :name "exec__run"} "legacy")
+      (should= [true false nil] (mapv :error? @events))))
+
   (it "answers :stop on exhaustion by default"
     (let [ch (sut/channel (atom []))]
       (should= :stop (comm/on-exhausted ch "agent:main:cli:direct:user1" {:cycle-limit 1}))))

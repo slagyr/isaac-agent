@@ -461,6 +461,18 @@
             (should= 1 @tool-count)
             (should= ["tool-call" "tool-result"] (mapv :event @events)))))
 
+    (it "tells comms when an exec result is an error independently of its text"
+      (doseq [[raw expected] [[{:isError true :error "exit 3"} true]
+                              [{:result "Error: x"} false]]]
+        (let [events (atom [])]
+          (with-redefs [bridge/on-cancel! (fn [_ _] nil)
+                        tool-registry/execute (fn [& _] raw)]
+            (#'sut/record-tool-call! {:comm (memory-comm/channel events)
+                                      :session-key "tool-error-flag"
+                                      :allowed-tools #{"exec__run"}
+                                      :tool-count (atom 0)} "exec__run" {:command "echo hi"})
+            (should= expected (:error? (event events "tool-result")))))))
+
     (it "emits tool-progress when the handler calls :progress!"
       (let [events     (atom [])
             tool-count (atom 0)]
@@ -626,6 +638,24 @@
                             last)]
             (should= true (:isError result))
             (should= "Error: unknown tool: exec__run" (:content result))))))
+
+    (it "persists a successful Error:-prefixed output without an isError flag"
+      (helper/create-session! test-dir "mid-flush-prefix")
+      (let [ctx {:session-store (store/registered-store)}]
+        (with-redefs [bridge/on-cancel! (fn [_ _] nil)
+                      tool-registry/execute (fn [& _] {:result "Error: x"})]
+          (#'sut/record-tool-call! {:comm (memory-comm/channel (atom []))
+                                    :session-key "mid-flush-prefix"
+                                    :allowed-tools #{"exec__run"}
+                                    :tool-count (atom 0)
+                                    :result-flags (atom {})
+                                    :ctx ctx} "exec__run" {"command" "echo 'Error: x'"})
+          (let [result (->> (helper/get-transcript test-dir "mid-flush-prefix")
+                            (map :message)
+                            (filter #(= "toolResult" (:role %))) last)]
+            (should= "Error: x" (:content result))
+            (should= false (:isError result))
+            (should (contains? result :isError))))))
 
     (it "leaves a dangling toolCall and no result when the tool reports cancelled"
       (helper/create-session! test-dir "mid-flush-cancel")

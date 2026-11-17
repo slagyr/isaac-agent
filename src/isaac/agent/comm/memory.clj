@@ -82,10 +82,11 @@
 
           :on-tool-result
           (fn [this session-key tool-call result]
-            (append! (.-events this) {:event   "tool-result"
-                                      :session session-key
-                                      :tool    {:name (:name tool-call)}
-                                      :result  result}))
+            (append! (.-events this) (cond-> {:event   "tool-result"
+                                               :session session-key
+                                               :tool    {:name (:name tool-call)}
+                                               :result  result}
+                                        (contains? tool-call :error?) (assoc :error? (:error? tool-call)))))
 
           :on-tool-progress
           (fn [this session-key tool-call chunk]

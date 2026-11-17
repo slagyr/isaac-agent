@@ -176,15 +176,18 @@
   [ctx session-key tc result]
   (when (and ctx session-key tc)
     (let [start-ns (System/nanoTime)
-          error?   (boolean (or (and (string? result) (str/starts-with? result "Error:"))
-                                (and (map? result) (:isError result))))]
+          error?   (if (contains? tc :error?)
+                     (:error? tc)
+                     (boolean (or (and (string? result) (str/starts-with? result "Error:"))
+                                  (and (map? result) (:isError result)))))]
       (append-message! ctx session-key
                        (cond-> {:role "toolResult" :id (:id tc) :content (if (and (map? result) (= "image" (:type result)))
                                                                    (format "[image: %s, %s, %d bytes]"
                                                                            (.getName (java.io.File. ^String (:path result)))
                                                                            (:media-type result) (:bytes result))
                                                                    result)}
-                               error? (assoc :isError true)))
+                               (contains? tc :error?) (assoc :isError (boolean error?))
+                               (and error? (not (contains? tc :error?))) (assoc :isError true)))
       (log/debug :tool/result-persisted :elapsed-ms (elapsed-ms start-ns)))))
 
 (defn run-tool-calls!
@@ -725,10 +728,12 @@
   "Write toolResult entries in model call order. Nil slots (cancelled) are skipped.
    Mid-batch crash: assistant batch entry is on disk, results written so far are not
    flushed until this call."
-  [ctx session-key tool-calls results]
+  [ctx session-key tool-calls results result-flags]
   (doseq [[tc result] (map vector tool-calls results)]
     (when (and tc result)
-      (persist-tool-result! ctx session-key tc result))))
+      (persist-tool-result! ctx session-key
+                            (cond-> tc (and result-flags (contains? @result-flags (:id tc)))
+                              (assoc :error? (get @result-flags (:id tc)))) result))))
 
 (defn- execute-pending-tools! [tool-ctx tool-calls]
   (let [ctx (:ctx tool-ctx)
@@ -738,7 +743,7 @@
                           (let [{:keys [run]} (prepare-tool-call! tool-ctx tc)]
                             (run)))
                         tool-calls)]
-      (persist-tool-results-in-order! ctx session-key tool-calls results)
+      (persist-tool-results-in-order! ctx session-key tool-calls results (:result-flags tool-ctx))
       results)))
 
 (defn- apply-stop-exhaustion [result chat-fn current-request input]
@@ -865,7 +870,10 @@
                               after-result! (when (map? raw-result) (:after-result! raw-result))]
                           (when (compare-and-set! tool-state :running :completed)
                             (swap! tool-count inc)
-                            (comm/on-tool-result ch session-key tc result)
+                            (let [flagged-tc (assoc tc :error? (tool-registry/error-result? raw-result))]
+                              (comm/on-tool-result ch session-key flagged-tc result)
+                              (when-let [flags (:result-flags tool-ctx)]
+                                (swap! flags assoc (:id tc) (:error? flagged-tc))))
                             (when after-result!
                               (try
                                 (after-result!)
@@ -889,7 +897,9 @@
     (persist-tool-batch! (:ctx tool-ctx) (:session-key tool-ctx) [tc])
     (let [{:keys [run]} (prepare-tool-call! tool-ctx tc)
           result (run)]
-      (persist-tool-result! (:ctx tool-ctx) (:session-key tool-ctx) tc result)
+      (persist-tool-result! (:ctx tool-ctx) (:session-key tool-ctx)
+                            (cond-> tc (:result-flags tool-ctx)
+                              (assoc :error? (get @(:result-flags tool-ctx) (:id tc)))) result)
       result)))
 
 (defn- turn-now []
@@ -1072,6 +1082,7 @@
                             :module-index   module-index
                             :caps           caps
                             :tool-count     tool-count
+                            :result-flags   (atom {})
                             :ctx            ctx
                             :end-aside!     end-aside!
                             :window-cache   window-cache
@@ -1094,7 +1105,7 @@
                                               :max-parallel-tools max-parallel
                                               :prepare-tool-call  #(prepare-tool-call! tool-ctx %)
                                               :on-tool-batch      #(persist-tool-batch! ctx session-key %)
-                                              :on-tool-batch-results #(persist-tool-results-in-order! ctx session-key %1 %2)
+                                              :on-tool-batch-results #(persist-tool-results-in-order! ctx session-key %1 %2 (:result-flags tool-ctx))
                                               :cancelled?         #(bridge/cancelled? session-key)
                                               :after-tools        (fn [req]
                                                                    (let [start-ns (System/nanoTime)

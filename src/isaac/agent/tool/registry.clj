@@ -421,6 +421,12 @@
          (maybe-cache-hit name arguments raw cache cycle)))
      (unknown-tool-error name))))
 
+(defn error-result?
+  "Classify a raw tool execution result, before presentation can erase its error flag."
+  [result]
+  (and (map? result)
+       (boolean (or (:isError result) (:error result) (:fault result)))))
+
 (defn present-result
   "Normalize a raw tool execution result to the string payload sent back to the model."
   [{:keys [result error isError] :as raw-result}]
