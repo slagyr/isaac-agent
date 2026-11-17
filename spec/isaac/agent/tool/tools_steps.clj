@@ -656,6 +656,28 @@
 (defn tool-result-indicates-error []
   (g/should (:isError (g/get :tool-result))))
 
+(defn- ps-field [field pid]
+  (let [proc (.start (ProcessBuilder. ["ps" "-o" (str field "=") "-p" (str pid)]))
+        text (str/trim (slurp (.getInputStream proc)))]
+    (.waitFor proc)
+    text))
+
+(defn tool-result-not-this-process-group []
+  (let [actual (str/trim (result-text))
+        pid    (.pid (java.lang.ProcessHandle/current))]
+    (g/should (boolean (re-matches #"[0-9]+" actual)))
+    (g/should (not= (ps-field "pgid" pid) actual))))
+
+(defn process-recorded-in-file-not-running [name]
+  (let [pid (parse-long (str/trim (slurp (resolve-path name))))
+        end (+ (System/currentTimeMillis) 2000)]
+    (g/should (some? pid))
+    (loop []
+      (let [running? (not (str/blank? (ps-field "pid" pid)))]
+        (if (and running? (< (System/currentTimeMillis) end))
+          (do (Thread/sleep 10) (recur))
+          (g/should-not running?))))))
+
 (defn file-has-content [name content]
   (let [path   (resolve-path name)
         actual (with-feature-fs #(isaac-fs/slurp (or (g/get :mem-fs) (nexus/get :fs) (isaac-fs/real-fs)) path))
@@ -784,6 +806,11 @@
 (defthen "the comm_send tool result is an error" isaac.agent.tool.tools-steps/comm-send-tool-result-is-error)
 
 (defthen "the tool result should indicate an error" isaac.agent.tool.tools-steps/tool-result-indicates-error)
+
+(defthen "the tool result is not this process's group id" isaac.agent.tool.tools-steps/tool-result-not-this-process-group)
+
+(defthen "the process recorded in file {name:string} is not running"
+  isaac.agent.tool.tools-steps/process-recorded-in-file-not-running)
 
 (defthen "the file {name:string} has content {content:string}" isaac.agent.tool.tools-steps/file-has-content)
 

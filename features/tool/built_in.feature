@@ -194,14 +194,12 @@ Feature: Built-in Tools
       | command | exit 1 |
     Then the tool result is an error
 
-  @wip
   Scenario: A command runs in its own process group, apart from the server's (isaac-hqb6)
     When the tool "exec__run" is called with:
       | command | ps -o pgid= -p $$ |
     Then the tool result is not an error
     And the tool result is not this process's group id
 
-  @wip
   Scenario: A timed-out command's background child is stopped with it (isaac-hqb6)
     Given a directory "bgdir" exists with files "marker.txt"
     When the tool "exec__run" is called with:

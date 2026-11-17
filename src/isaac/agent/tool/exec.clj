@@ -38,7 +38,8 @@
   ;; deref the captured output.
   (let [command (get args "command")
         workdir (get args "workdir")
-        pb      (doto (ProcessBuilder. ["/bin/sh" "-c" command])
+        pb      (doto (ProcessBuilder. ["perl" "-e" "setpgrp(0,0) or die qq(setpgrp: $!); exec @ARGV or die qq(exec: $!)"
+                              "/bin/sh" "-c" command])
                   (.redirectErrorStream true))]
     (when workdir
       (.directory pb (io/file workdir)))
@@ -55,13 +56,21 @@
 (defn process-finished? [proc timeout-ms]
   (.waitFor (:proc proc) timeout-ms TimeUnit/MILLISECONDS))
 
+(defn- signal-group! [proc signal]
+  ;; The perl launcher becomes the shell via exec, so its pid is the group id.
+  ;; Do not use a shell kill here: a negative pgid must be passed as one argument.
+  (let [pid (.pid (:proc proc))
+        killer (.start (ProcessBuilder. ["perl" "-e" "kill $ARGV[0], -$ARGV[1]" signal (str pid)]))]
+    (.waitFor killer)))
+
 (defn destroy-process!
   ([proc]
    (destroy-process! proc 100))
   ([proc grace-ms]
-   (.destroy (:proc proc))
-   (when-not (process-finished? proc grace-ms)
-     (.destroyForcibly (:proc proc)))))
+   (signal-group! proc "TERM")
+   (process-finished? proc grace-ms)
+   ;; Even if the shell has exited, a child may still own the process group.
+   (signal-group! proc "KILL")))
 
 (defn read-process-output [proc]
   @(:output proc))
